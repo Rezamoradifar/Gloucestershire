@@ -1,0 +1,31 @@
+LOCAL EVM SIMULATION ONLY. URLs and addresses below are simulated test output, NOT public deployments.
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/contract-source/bnb-contracts/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/contract-source/bnb-contracts/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+Step 1/4: https://testnet.bscscan.com/tx/0x3a94a63be9879bfe987d19d7d420609f6d277d0b982d399f2e20b2161d28f379
+Confirmed MockToken: 0x230f0a9a9eDB98B38799ff3bcbdDC322009Aa6e7
+Step 2/4: https://testnet.bscscan.com/tx/0xd99202edf9c99b63a00f9223c8aad3617171bc05082d90d6232a10c11f765f2d
+Confirmed MockFeed: 0x8E7074Bd1eAC6E277894a21069f91d19f22B8600
+Step 3/4: https://testnet.bscscan.com/tx/0x8f993cb77dd005018963383218fdafb855e199001dd297bd2f6dd05e80276c3c
+Confirmed MockFeed: 0xB595fAF9c350c6A828DBFa96EAe39E3664a4048c
+Step 4/4: https://testnet.bscscan.com/tx/0x2867bd78a0725968e1825db0190b801e77b5fd57215769dc453177053c21562b
+Confirmed DropshippingVault: 0xac2992c632eC0e58d269F087C20B58183A2Dc41A
+Confirmed MockToken: 0x230f0a9a9eDB98B38799ff3bcbdDC322009Aa6e7
+Confirmed MockFeed: 0x8E7074Bd1eAC6E277894a21069f91d19f22B8600
+Confirmed MockFeed: 0xB595fAF9c350c6A828DBFa96EAe39E3664a4048c
+Confirmed DropshippingVault: 0xac2992c632eC0e58d269F087C20B58183A2Dc41A
+✔ server deployment verifies configured owner and safely resumes without duplicates (928.519997ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1204.022801

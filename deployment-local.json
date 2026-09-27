@@ -1,0 +1,58 @@
+{
+  "environment": "LOCAL EVM LAB ONLY — NOT PUBLIC BSC TESTNET",
+  "chainId": 31337,
+  "rpc": "http://127.0.0.1:8545",
+  "publicDeployment": false,
+  "createdAt": "2026-09-27T22:53:19.285Z",
+  "operationsWallet": "0x8c4AC9b009808a0B49Ba77b58e3871e7cDba463c",
+  "owner": "0x8147bA3994A43177BC489BE3B2e490320bBa1096",
+  "partners": [
+    "0x8147bA3994A43177BC489BE3B2e490320bBa1096",
+    "0xc937b2E0ef5Adee5B30D772e1c52cac3a2411bfc",
+    "0x2F9d9a5038B4C4109E4D7df05610d40D889a4ed3",
+    "0xc3e2d3e998990B700784BDFB28Cb48b540AAd9dB",
+    "0x03E32c4aA8bb5DA62De5617c8f69cfA7b4fb6463",
+    "0x819cE361FE91e4FBD96e7081c208d1B0e89db9dD",
+    "0x25cbDd0C92b62bAC3B206b191E676b2bD0513570"
+  ],
+  "accountsNote": "Owner and partners are ephemeral local simulation accounts, not production identities.",
+  "deployments": {
+    "MockToken": {
+      "address": "0xC4F6385BC72e8a02e7c7037EAbA3F30fcfd8ACDB",
+      "transactionHash": "0x37b74106fa97bb7573d960441f7fbbe66fa43cef5b1bab0ccf92862889ec7b37",
+      "blockNumber": 1,
+      "gasUsed": "503387"
+    },
+    "BnbFeed": {
+      "address": "0xe4Ec46BE01aba87Cf09568b17Cd62bC6EE8D45a3",
+      "transactionHash": "0xcdcb1dd917c484a7022fc01e14ea8659478e31d6a5a83e9dbd33722c1f060e23",
+      "blockNumber": 2,
+      "gasUsed": "234463"
+    },
+    "UsdFeed": {
+      "address": "0xF0405F9D1B7257b7E9e9315d49AEDd1Eeaa7B382",
+      "transactionHash": "0xe4d57ff7110e5d3c3cce06f57b35b5461e6c7ca22b4f95fa489b74275234fe9e",
+      "blockNumber": 3,
+      "gasUsed": "234451"
+    },
+    "DropshippingVault": {
+      "address": "0xD04bA0c3DfAC7f41AEFc45f0e86B27a50ddf226c",
+      "transactionHash": "0xf9d52fc1ccda6a62664e7088eea7ab3f784dbd787a2fd61257d8a26a5d1d6e73",
+      "blockNumber": 4,
+      "gasUsed": "4483581"
+    }
+  },
+  "checks": {
+    "runtimeCodePresent": true,
+    "tokenDeposit80_10_10": true,
+    "nativeDeposit80_10_10": true,
+    "tokenDepositTx": "0xe7d899915bb0bb5a63d88517553d38f854b0e774bccca5c76bcb4a060d9ba72c",
+    "nativeDepositTx": "0xc252f97bad3ca7c9b2986abec5630fe736c397469f86670ba33b288b8ab0643f"
+  },
+  "limitations": [
+    "Mock USDT and mock price feeds",
+    "No public explorer link",
+    "Local in-memory state is lost when process stops; rerun script to redeploy",
+    "No real funds or public transactions"
+  ]
+}

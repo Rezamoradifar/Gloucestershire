@@ -1,0 +1,66 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bnb-dropshipping-vault@0.4.0 test
+> node --test --test-concurrency=1 test/*.test.mjs
+
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/contract-source/bnb-contracts/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/contract-source/bnb-contracts/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+Compiled Solidity 0.8.30+commit.73712a01.Emscripten.clang; vault runtime 16110 bytes
+✔ hard-coded fee wallets and no replacement/upgrade entrypoint (1794.561906ms)
+✔ USDT deposit credits 100%, routes 80/10/10 without consuming reserve (243.43797ms)
+✔ BNB deposit and separate reserve accounting (196.640143ms)
+✔ zero reserve permits atomic 80/10/10 deposit routing (1230.371915ms)
+✔ native value mismatch and unsupported assets rejected (58.543238ms)
+✔ minimum deposit and decimal tier gaps resolved (260.077783ms)
+✔ stale, negative, future and incomplete oracle rounds rejected (420.14956ms)
+✔ only funded reporter settlements create profits; duplicate ID rejected (247.684427ms)
+✔ profit withdrawal fee, cap, cooldown and exact 72h boundary (616.027057ms)
+✔ principal locked 90 days, partial/full withdrawals charge 30% (272.188758ms)
+✔ configuration delay/access caps and old principal terms preserved (530.882387ms)
+✔ five plan referral table preserved, target never accrues automatic profit (101.938664ms)
+✔ immutable referral DAG rejects self registration and referrer changes (141.124033ms)
+✔ non-VIP level four is excluded even with active direct customer; no deposit referrals (705.724401ms)
+✔ non-VIP and inactive referral shares stay with seller (499.675235ms)
+✔ invite-count milestones are removed from ABI and do not create profit (455.581071ms)
+✔ bounded funded batch allocation, replay and over-allocation rejected (683.237444ms)
+✔ reinvest conserves assets, opens new lock, no new deposit fees or external cap inflation (698.570399ms)
+✔ internal transfer preserves totals and imposes sender cap and recipient cooldown (608.212839ms)
+✔ pause stops deposits and settlements but permits funded exits (556.106965ms)
+✔ partner drain cannot touch principal, reserves or rewards; surplus needs votes and delay (750.224306ms)
+✔ native withdrawal resists recipient reentrancy (1009.543722ms)
+✔ seeded mixed operation sequence preserves ledger sums and collateral (18349.150119ms)
+✔ six-decimal token retains correct USD valuations and fees (1195.345696ms)
+✔ 90-day unlock boundary tested one second before and at unlock (248.018561ms)
+✔ governance validates referral cap, descending rates, targets and partner threshold (140.890996ms)
+✔ VIP capital requires reporter KYC and no deposit creates sales status (545.32103ms)
+✔ expired proposal cannot drain surplus and voting threshold is snapshotted (308.972618ms)
+✔ owner-managed USDT: full access, unchanged claims, failed exit rollback and capital return (586.271671ms)
+✔ owner-managed BNB: full access, unchanged claims, failed exit rollback and capital return (441.221635ms)
+✔ capital return creates no profit or deposit fee, excess is unallocated cash (494.211648ms)
+✔ two immutable deposit payments survive full owner withdrawal (352.739766ms)
+✔ only accepted new owner has treasury withdrawal authority (84.824072ms)
+✔ exactly seven unique nonzero partners are required (283.888444ms)
+✔ all seven partners can vote once and seven-vote quorum is enforceable (628.509779ms)
+✔ quorum cannot exceed seven and removed exchange selectors cannot execute (63.926615ms)
+✔ 80/10/10 USDT split and principal penalty retained, no fee destination receives penalty (248.223656ms)
+✔ 80/10/10 BNB split and principal penalty retained, no fee destination receives penalty (149.327507ms)
+✔ level four requires current active VIP with KYC; downgrade or KYC revocation stops eligibility (664.543026ms)
+✔ rounding remainder belongs to operations and preserves exact sum (100.353198ms)
+✔ operations wallet validation and immutability (132.011621ms)
+✔ rejected BNB operations transfer rolls back fees, claims, outstanding and registration (324.349679ms)
+✔ operations wallet callback cannot reenter deposit (308.324109ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 43
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 47802.988772

@@ -1,0 +1,49 @@
+{
+  "version": "0.4.0",
+  "status": "43 local EVM tests passed; not publicly deployed or independently audited",
+  "tests": 43,
+  "passed": 43,
+  "failed": 0,
+  "compiler": "0.8.30+commit.73712a01.Emscripten.clang",
+  "runtimeBytes": 16110,
+  "contractSha256": "04743e54bd2ca26e5d656db99330c4aa2107c601ac7205ffde3dcb795431547e",
+  "publicChainTests": false,
+  "partnerCount": 7,
+  "initialQuorum": 2,
+  "partnerAddressesSupplied": true,
+  "exchangeAndBridgeRemoved": true,
+  "operationsWalletAddressSupplied": true,
+  "frontendModified": false,
+  "depositSplitPercent": {
+    "fixedWallet1": 10,
+    "fixedWallet2": 10,
+    "operationsWallet": 80
+  },
+  "principalPenaltyDestination": "retained in vault; owner withdrawal powers remain",
+  "level4Eligibility": "current VIP tier, active and KYC approved",
+  "operationsWallet": "0x8c4AC9b009808a0B49Ba77b58e3871e7cDba463c",
+  "operationsWalletChecksumValid": true,
+  "configurationUpdate": "Owner, seven partners and operations wallet supplied; no public deployment performed",
+  "localDeploymentVerified": true,
+  "localChainId": 31337,
+  "localDeploymentReport": "deployment-local.json",
+  "partnerAddressesChecksumValid": true,
+  "partners": [
+    "0xA7705F5c98263Caae042626a5d49528Dd982Af5F",
+    "0x2F980aC9ae92DB23cA2AEAd1CE8188A5764a7Bfa",
+    "0x730C4664C58aE506C05b50e06c1CE73f71D82b87",
+    "0xa63AD5EEe7907D76B22eb140cC4009fDc3a6c977",
+    "0xba869ec421be39c5F5410033Cf7Ec203298B151a",
+    "0x4274d411FF49Cfd2FCf1eC97Fb05f51099d5E0A3",
+    "0x63c5B98AEfd69658B652d5F35FFda3C6c06847E3"
+  ],
+  "ownerAddressSupplied": true,
+  "initialOwner": "0xeBfbE2348a0edD7D643ffA441cF6F7B1F2425Be5",
+  "ownerAddressChecksumValid": true,
+  "serverDeploymentTests": {
+    "passed": 1,
+    "failed": 0,
+    "environment": "local EVM simulation",
+    "report": "server-test-results.txt"
+  }
+}
