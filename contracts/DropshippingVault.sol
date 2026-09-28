@@ -73,7 +73,6 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     event SaleSettled(bytes32 indexed id,address indexed seller,address indexed asset,uint256 grossProfit,uint256 salesUsd,bytes32 evidenceHash);
     event Withdrawal(address indexed user,address indexed asset,uint256 gross,uint256 fee,bool principal);
     event Reinvested(address indexed user,address indexed asset,uint256 amount,uint256 position);
-    event InternalTransfer(address indexed sender,address indexed recipient,address indexed asset,uint256 amount);
     event CustomerStatus(address indexed user,bool active,bool vipKyc);
     event ConfigurationQueued(bytes32 indexed hash,uint256 executeAfter);
     event ConfigurationApplied(bytes32 indexed hash);
@@ -279,12 +278,5 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
         uint256 usd=quoteUsd(asset,amount); if(usd<minDepositUsd) revert Insufficient(); _takeProfit(msg.sender,asset,amount,false);
         uint256 id=_open(msg.sender,asset,amount,usd); emit Reinvested(msg.sender,asset,amount,id);
     }
-    function transferProfit(address asset,address recipient,uint256 amount) external nonReentrant live {
-        if(recipient==msg.sender||!users[recipient].registered) revert Invalid();
-        // Uses the sender's withdrawal cap and cooldown; recipient inherits the release time.
-        _takeProfit(msg.sender,asset,amount,true); _credit(recipient,asset,amount,bytes32(0));
-        uint256 release=accounts[msg.sender][asset].nextWithdrawal;
-        if(accounts[recipient][asset].nextWithdrawal<release) accounts[recipient][asset].nextWithdrawal=release;
-        emit InternalTransfer(msg.sender,recipient,asset,amount);
-    }
+    // Member-to-member internal balance transfers are intentionally unsupported.
 }

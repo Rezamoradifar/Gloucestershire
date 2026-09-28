@@ -1,0 +1,121 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bnb-dropshipping-vault@0.5.1 test
+> node --test --test-concurrency=1 test/*.test.mjs
+
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+Step 1/4: https://testnet.bscscan.com/tx/0x7d9a1998f9d8fd0a1debf6b987a02dbb973dede43805c2a94613e7d2974661ad
+Confirmed MockToken: 0x6573965e6cFdF73a500Cfa3AF7201a67DF1744De
+Step 2/4: https://testnet.bscscan.com/tx/0xaa04c21eae5a57f83ef5ba1079b853ddcc90cba7b90789d6c812e891a25641e9
+Confirmed MockFeed: 0x3c421b6Edd223371264F1695d86F1b44B7F446F7
+Step 3/4: https://testnet.bscscan.com/tx/0x8e2b69d0e6bbcb8c93d35fbb5915dceeee5a03c8248d2858a5ec379feccb2603
+Confirmed MockFeed: 0x252081F6495f14Bc4f7368aB1692555052cb9f7d
+Step 4/4: https://testnet.bscscan.com/tx/0x22366696a4cd2cbe56672f5f6b8d8a5667676d00ce4007898b8da3883be41c14
+Confirmed DropshippingVault: 0xB70721bFc1E657d3B89d1a0f4321dB4E94d7a77e
+PASS: Deployed bytecode inputs, owner, operations wallet and seven partners match
+PASS: Test feeds are current
+PASS: Below-minimum deposit rejected
+PASS: Non-owner capital withdrawal rejected
+PASS: Non-reporter profit settlement rejected
+PASS: TEST USDT deposit routed 10/10/80 and full principal recorded
+PASS: TEST USDT principal locked before 90 days
+PASS: test BNB deposit routed 10/10/80 and full principal recorded
+PASS: test BNB principal locked before 90 days
+PASS: Profit withdrawal with no liquidity rejected
+Report: /tmp/global-health-k7SOPp/health-public.json
+Previously completed; no new transactions sent.
+✔ live health runner verifies routes/reverts, blocks mainnet and does not repeat deposits (2832.287025ms)
+✔ mainnet preparation pins network, assets, feeds and gas cap without signing (36.293656ms)
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+Step 1/4: https://testnet.bscscan.com/tx/0xca5002f9e7797a99ca700b5ed1352633ae24a532790c8a905191b2b3800ff4e9
+Confirmed MockToken: 0x64F3E4DDb93772AB1e31BA67ff2c6715F1e6CA9C
+Step 2/4: https://testnet.bscscan.com/tx/0xe3673ecb51bbf94fa56bec891438638e31fced5c8d3a6ec7bce0116fbad60731
+Confirmed MockFeed: 0xD428292A9807549991D50ba8BE0B6385be530B72
+Step 3/4: https://testnet.bscscan.com/tx/0xd7be1dde6d9b7e00837054c41282550a89bba7dcbe05af0881b24c2b48af1247
+Confirmed MockFeed: 0xE0eda6660Fb06Ad86eeA6839F78be80f51CE151d
+Step 4/4: https://testnet.bscscan.com/tx/0x6445c10e2514a86635e12de0f01f41b8b28f9543009b345753acc4c62059d858
+Confirmed DropshippingVault: 0x05Ba6110b2a236171dAb91c0199bAaB668254167
+Confirmed MockToken: 0x64F3E4DDb93772AB1e31BA67ff2c6715F1e6CA9C
+Confirmed MockFeed: 0xD428292A9807549991D50ba8BE0B6385be530B72
+Confirmed MockFeed: 0xE0eda6660Fb06Ad86eeA6839F78be80f51CE151d
+Confirmed DropshippingVault: 0x05Ba6110b2a236171dAb91c0199bAaB668254167
+✔ server deployment verifies configured owner and safely resumes without duplicates (969.28439ms)
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+Compiled Solidity 0.8.30+commit.73712a01.Emscripten.clang; vault runtime 15565 bytes
+✔ hard-coded fee wallets and no replacement/upgrade entrypoint (1836.675759ms)
+✔ USDT deposit credits 100%, routes 80/10/10 without consuming reserve (280.987124ms)
+✔ BNB deposit and separate reserve accounting (181.486244ms)
+✔ zero reserve permits atomic 80/10/10 deposit routing (1155.005096ms)
+✔ native value mismatch and unsupported assets rejected (65.593969ms)
+✔ minimum deposit and decimal tier gaps resolved (218.09727ms)
+✔ stale, negative, future and incomplete oracle rounds rejected (404.060571ms)
+✔ only funded reporter settlements create profits; duplicate ID rejected (253.466418ms)
+✔ profit withdrawal fee, cap, cooldown and exact 72h boundary (704.525248ms)
+✔ principal locked 90 days, partial/full withdrawals charge 30% (294.904938ms)
+✔ configuration delay/access caps and old principal terms preserved (757.594787ms)
+✔ five plan referral table preserved, target never accrues automatic profit (105.641448ms)
+✔ immutable referral DAG rejects self registration and referrer changes (146.320202ms)
+✔ non-VIP level four is excluded even with active direct customer; no deposit referrals (694.67894ms)
+✔ non-VIP and inactive referral shares stay with seller (522.292364ms)
+✔ invite-count milestones are removed from ABI and do not create profit (405.810769ms)
+✔ bounded funded batch allocation, replay and over-allocation rejected (738.19028ms)
+✔ reinvest conserves assets, opens new lock, no new deposit fees or external cap inflation (638.887385ms)
+✔ removed internal transfer rejects legacy calldata for BNB and USDT without changing accounts (1184.633538ms)
+✔ pause stops deposits and settlements but permits funded exits (640.422565ms)
+✔ configuration requires two distinct partner votes and two days; partners cannot withdraw (277.667164ms)
+✔ native withdrawal resists recipient reentrancy (1004.728342ms)
+✔ seeded mixed operation sequence preserves ledger sums and collateral (20066.35156ms)
+✔ six-decimal token retains correct USD valuations and fees (1603.403005ms)
+✔ 90-day unlock boundary tested one second before and at unlock (269.148515ms)
+✔ governance validates referral cap, descending rates, targets and partner threshold (392.652633ms)
+✔ VIP capital requires reporter KYC and no deposit creates sales status (577.685686ms)
+✔ configuration quorum is snapshotted and approved votes do not skip delay (327.711763ms)
+✔ cancel and requeue never reuse old votes and calldata cannot be substituted (415.386207ms)
+✔ owner-managed USDT: full access, unchanged claims, failed exit rollback and capital return (611.295949ms)
+✔ owner-managed BNB: full access, unchanged claims, failed exit rollback and capital return (481.216778ms)
+✔ capital return creates no profit or deposit fee, excess is unallocated cash (502.06619ms)
+✔ two immutable deposit payments survive full owner withdrawal (346.911463ms)
+✔ only accepted new owner has treasury withdrawal authority (88.200673ms)
+✔ exactly seven unique nonzero partners are required (278.654446ms)
+✔ all seven partners can vote once and seven-vote quorum is enforceable (587.235364ms)
+✔ quorum cannot exceed seven and removed exchange selectors cannot execute (171.733762ms)
+✔ 80/10/10 USDT split and principal penalty retained, no fee destination receives penalty (259.816136ms)
+✔ 80/10/10 BNB split and principal penalty retained, no fee destination receives penalty (149.578017ms)
+✔ level four requires current active VIP with KYC; downgrade or KYC revocation stops eligibility (598.641358ms)
+✔ rounding remainder belongs to operations and preserves exact sum (130.841616ms)
+✔ operations wallet validation and immutability (126.30019ms)
+✔ rejected BNB operations transfer rolls back fees, claims, outstanding and registration (314.957959ms)
+✔ operations wallet callback cannot reenter deposit (373.621417ms)
+✔ all six governed setters require votes and governance pays no partner funds (1043.635175ms)
+ℹ tests 48
+ℹ suites 0
+ℹ pass 48
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 56805.580434

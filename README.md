@@ -1,3 +1,7 @@
+## v0.5.1 — no member-to-member transfers
+
+Removed `transferProfit` and `InternalTransfer`. Legacy calldata reverts for both BNB and USDT. Withdrawals to the caller and reinvestment remain available. See `no-transfer-test-results.txt`. Existing deployments are immutable and require a new deployment to adopt this change.
+
 > **نسخه ۰٫۵٫۰ — تغییر نقش شرکا:** هفت شریک فقط حق رأی برای تنظیمات دارند. مسیر برداشت مازاد حذف شد. دو رأی و دو روز تأخیر لازم است. قرارداد تستی قبلی نسخه ۰٫۴٫۰ است؛ قابل ارتقا نیست.
 
 # GLOBAL — BNB Testnet contract

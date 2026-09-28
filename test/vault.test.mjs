@@ -2,7 +2,7 @@ import {test,before,beforeEach,after} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ganache from 'ganache';
-import {BrowserProvider,ContractFactory,parseEther,ZeroAddress,ZeroHash,keccak256,toUtf8Bytes,zeroPadValue} from 'ethers';
+import {BrowserProvider,ContractFactory,Interface,parseEther,ZeroAddress,ZeroHash,keccak256,toUtf8Bytes,zeroPadValue} from 'ethers';
 import {compile} from '../scripts/compile.mjs';
 const E=parseEther, id=s=>keccak256(toUtf8Bytes(s));
 let rpc,provider,signers,addr,vault,token,bnbFeed,usdFeed,snapshot,output;
@@ -138,10 +138,27 @@ test('reinvest conserves assets, opens new lock, no new deposit fees or external
  const a=await vault.accounts(addr[3],token.target);assert.equal(a.principal,E('1050'));assert.equal(a.profit,E('50'));assert.equal(a.externalDeposited,E('1000'));
  assert.equal(await vault.assetBalance(token.target),balance);assert.equal((await vault.ledgers(token.target)).feeReserve,reserve);assert.equal(await vault.positionCount(addr[3]),2n);await solvent();
 });
-test('internal transfer preserves totals and imposes sender cap and recipient cooldown',async()=>{
- await deposit();await deposit(4);await sale();await tx(vault.connect(signers[3]).transferProfit(token.target,addr[4],E('50')));
- assert.equal((await vault.accounts(addr[4],token.target)).profit,E('50'));assert.equal((await vault.ledgers(token.target)).profit,E('100'));
- await fails(vault.connect(signers[3]).transferProfit(token.target,addr[4],1n));await fails(vault.connect(signers[4]).withdrawProfit(token.target,1n));await solvent();
+test('removed internal transfer rejects legacy calldata for BNB and USDT without changing accounts',async()=>{
+ assert.equal(vault.interface.getFunction('transferProfit'),null);
+ assert.equal(vault.interface.getEvent('InternalTransfer'),null);
+ const legacy=new Interface(['function transferProfit(address asset,address recipient,uint256 amount)']);
+ for(const asset of [token.target,ZeroAddress]) {
+  const capital=asset===ZeroAddress?E('1'):E('100');
+  const profit=asset===ZeroAddress?E('0.1'):E('10');
+  await deposit(3,capital,asset);await deposit(4,capital,asset);await sale(3,profit,asset,'no-transfer-'+asset);
+  const beforeSender=Array.from(await vault.accounts(addr[3],asset));
+  const beforeRecipient=Array.from(await vault.accounts(addr[4],asset));
+  const beforeLedger=Array.from(await vault.ledgers(asset));
+  const cash=await vault.assetBalance(asset);
+  const data=legacy.encodeFunctionData('transferProfit',[asset,addr[4],E('0.05')]);
+  await fails(signers[3].sendTransaction({to:vault.target,data,gasLimit:200000}));
+  assert.deepEqual(Array.from(await vault.accounts(addr[3],asset)),beforeSender);
+  assert.deepEqual(Array.from(await vault.accounts(addr[4],asset)),beforeRecipient);
+  assert.deepEqual(Array.from(await vault.ledgers(asset)),beforeLedger);
+  assert.equal(await vault.assetBalance(asset),cash);
+  await tx(vault.connect(signers[3]).withdrawProfit(asset,E('0.05')));
+ }
+ await solvent();
 });
 test('pause stops deposits and settlements but permits funded exits',async()=>{
  await deposit();await sale();await tx(vault.setPaused(true));await fails(vault.connect(signers[4]).deposit(token.target,E('100'),ZeroAddress));
