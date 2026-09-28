@@ -9,6 +9,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {ThreeLinePlan} from "./ThreeLinePlan.sol";
+
 interface IPriceFeed {
     function decimals() external view returns (uint8);
     function latestRoundData() external view returns (uint80,int256,uint256,uint256,uint80);
@@ -16,7 +18,7 @@ interface IPriceFeed {
 
 /// @notice Non-upgradeable owner-managed treasury. Balances are claims, not guaranteed liquid backing. No automatic daily yield.
 /// @dev USD values use 18 decimals. address(0) is native BNB. Sales evidence is an off-chain trust boundary.
-contract DropshippingVault is Ownable2Step, ReentrancyGuard {
+contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     using SafeERC20 for IERC20;
     uint256 public constant BPS = 10_000;
     uint256 public constant CONFIG_DELAY = 2 days;
@@ -98,11 +100,11 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
         if(IPriceFeed(bnbFeed).decimals()>18 || IPriceFeed(tokenFeed).decimals()>18) revert Invalid();
         for(uint256 i;i<partners.length;i++) { address p=partners[i]; if(p==address(0)||isPartner[p]) revert Invalid(); isPartner[p]=true; partnerWallets[i]=p; }
         partnerVotesRequired=2; reporters[initialOwner]=true;
-        tiers[0]=Tier(10 ether,50,100,5,2500 ether,[uint16(600),300,150,50]);
-        tiers[1]=Tier(500 ether+1,70,120,10,10000 ether,[uint16(800),400,200,100]);
-        tiers[2]=Tier(2500 ether+1,90,150,25,50000 ether,[uint16(1000),500,200,100]);
-        tiers[3]=Tier(10000 ether+1,110,180,50,250000 ether,[uint16(1200),600,300,100]);
-        tiers[4]=Tier(50000 ether+1,130,200,100,1000000 ether,[uint16(1400),700,300,100]);
+        tiers[0]=Tier(10 ether,50,100,4,2500 ether,[uint16(600),300,150,50]);
+        tiers[1]=Tier(500 ether+1,70,120,6,10000 ether,[uint16(800),400,200,100]);
+        tiers[2]=Tier(2500 ether+1,90,150,8,50000 ether,[uint16(1000),500,200,100]);
+        tiers[3]=Tier(10000 ether+1,110,180,10,250000 ether,[uint16(1200),600,300,100]);
+        tiers[4]=Tier(50000 ether+1,130,200,12,1000000 ether,[uint16(1400),700,300,100]);
     }
     // Unclassified native transfers are surplus, never principal or profit.
     receive() external payable {}
@@ -137,7 +139,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     function setMinDeposit(uint256 usd) external onlyOwner delayed { if(usd==0) revert Invalid(); minDepositUsd=usd; }
     function setPartnerVoteRequired(uint8 required) external onlyOwner delayed { if(required<2 || required>partnerCount) revert Invalid(); partnerVotesRequired=required; }
     function setTierConfig(uint8 index,Tier calldata config) external onlyOwner delayed {
-        if(index>=5 || config.minUsd==0 || config.baseDailyBps>config.maxDailyBps || config.maxDailyBps>1000) revert Invalid();
+        if(index>=5 || config.minUsd==0 || config.requiredSalesUsd==0 || config.requiredDirect<3 || config.baseDailyBps>config.maxDailyBps || config.maxDailyBps>1000) revert Invalid();
         if(index>0 && config.minUsd<=tiers[index-1].minUsd) revert Invalid();
         if(index<4 && config.minUsd>=tiers[index+1].minUsd) revert Invalid();
         uint256 sum; for(uint256 j;j<4;j++) { sum+=config.referrals[j]; if(j>0 && config.referrals[j]>config.referrals[j-1]) revert Invalid(); }
@@ -148,8 +150,9 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     function dailyTargetBps(address who) external view returns(uint16) {
         Tier storage t=tiers[tierOf(who)]; User storage u=users[who];
         if(u.capitalUsd<tiers[0].minUsd) return 0;
-        return u.activeDirect>=t.requiredDirect && u.salesUsd>=t.requiredSalesUsd ? t.maxDailyBps:t.baseDailyBps;
+        return rankQualified(who,t.requiredDirect,t.requiredSalesUsd) ? t.maxDailyBps:t.baseDailyBps;
     }
+    function _networkParent(address who) internal view override returns(address) { return users[who].referrer; }
     function register(address referrer) external live { _register(msg.sender,referrer); }
     function _register(address who,address parent) internal {
         if(users[who].registered || who==parent || (parent!=address(0)&&!users[parent].registered)) revert Invalid();
@@ -213,6 +216,8 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     function _open(address who,address asset,uint256 amount,uint256 usd) internal returns(uint256 id) {
         if(users[who].capitalUsd+usd>=tiers[4].minUsd && !users[who].vipKyc) revert Unauthorized();
         id=positions[who].length; positions[who].push(Position(asset,amount,usd,block.timestamp+lockDuration,principalPenaltyBps));
+        _capitalChanged(who,users[who].capitalUsd,users[who].capitalUsd+usd);
+        _addNetworkVolume(who,usd);
         accounts[who][asset].principal+=amount; ledgers[asset].principal+=amount; users[who].capitalUsd+=usd;
     }
     function deposit(address asset,uint256 amount,address referrer) external payable nonReentrant live {
@@ -236,7 +241,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     function settleSalesProfit(bytes32 id,address asset,address seller,uint256 gross,uint256 salesUsd,bytes32 evidenceHash)
         external payable reporter nonReentrant live {
         if(id==bytes32(0)||usedSettlement[id]||!users[seller].registered||salesUsd==0||evidenceHash==bytes32(0)) revert Invalid();
-        usedSettlement[id]=true; _pull(asset,gross); users[seller].salesUsd+=salesUsd;
+        usedSettlement[id]=true; _pull(asset,gross); users[seller].salesUsd+=salesUsd; _addNetworkVolume(seller,salesUsd);
         Tier storage t=tiers[tierOf(seller)]; uint256 commissions; address parent=users[seller].referrer;
         for(uint256 level;level<4 && parent!=address(0);level++) {
             User storage u=users[parent];
@@ -274,6 +279,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
         uint256 fee=Math.mulDiv(amount,p.penaltyBps,BPS);
         _requireLiquidity(p.asset,amount); // require gross cash so the penalty remains physically in the vault
         uint256 usd=amount==p.principal?p.capitalUsd:Math.mulDiv(p.capitalUsd,amount,p.principal);
+        _capitalChanged(msg.sender,users[msg.sender].capitalUsd,users[msg.sender].capitalUsd-usd);
         p.principal-=amount; p.capitalUsd-=usd; users[msg.sender].capitalUsd-=usd; a.principal-=amount; ledgers[p.asset].principal-=amount;
         a.nextWithdrawal=block.timestamp+withdrawalCooldown;
         retainedPrincipalPenalties[p.asset]+=fee;
@@ -283,5 +289,16 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
         uint256 usd=quoteUsd(asset,amount); if(usd<minDepositUsd) revert Insufficient(); _takeProfit(msg.sender,asset,amount,false);
         uint256 id=_open(msg.sender,asset,amount,usd); cumulativeReinvested[msg.sender][asset]+=amount; emit Reinvested(msg.sender,asset,amount,id);
     }
+    /// @notice Credit earned USD reward as USDT profit from a separately funded reward budget.
+    /// @dev Standard profit withdrawal fee, cap and cooldown apply. No principal is minted.
+    function claimNetworkReward(uint256 group) external nonReentrant live {
+        uint256 usd=_consumeReward(msg.sender,group);
+        uint256 amount=quoteAsset(usdt,usd);
+        if(amount==0 || ledgers[usdt].rewards<amount) revert Insufficient();
+        _requireLiquidity(usdt,amount);
+        ledgers[usdt].rewards-=amount;
+        _credit(msg.sender,usdt,amount,keccak256(abi.encode("NETWORK",msg.sender,group,rewardGroupStageNonce++)));
+    }
+    uint256 private rewardGroupStageNonce;
     // Member-to-member internal balance transfers are intentionally unsupported.
 }

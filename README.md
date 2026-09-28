@@ -112,3 +112,8 @@ bash ubuntu-setup.sh
 ```
 
 این دستور کامپایل و تست را انجام می‌دهد؛ دیپلوی نمی‌کند. تا زمان استقرار تازه از صفحه وب استقرار نسخه ۰٫۴٫۰ یا گزارش وریفای قرارداد قبلی برای نسخه جدید استفاده نکنید. ابزار تست زنده موجود به قرارداد قدیمی پین شده و با artifact جدید عمداً بررسی تطابق را رد می‌کند؛ این اسکریپت باید هنگام تعیین آدرس تست جدید به‌روز شود. اگر قبلاً تراکنش اصلی امضا کرده‌اید، journal را حذف نکنید و برای بررسی توقف کنید.
+
+## v0.6.0 — Three-line ranks and funded sequential rewards
+See `NETWORK-PLAN.fa.md` for the complete rules. Deposits, consumed-profit reinvestments and reporter-attested sales create cumulative USD branch volume. Rank targets use the three largest independent branches (70/20/10) and 4/6/8/10/12 directs with current principal >= $100. Daily targets do not accrue automatic yield.
+Users explicitly create permanent, disjoint triplets. Each triplet has fourteen sequential rewards and independent consumed volume; excess carries forward and cannot be reused in another group for that user. Reward claims credit USDT profit from `fundRewards`, using the existing oracle, withdrawal fee, per-asset cap and cooldown. BNB deposits do not create USDT withdrawal capacity. Stage 14 terminates the group. Rank historical volume is independent of reward consumption.
+Volume propagates eight ancestors automatically; operators or any caller must finish deeper jobs through `processNetworkVolume(job, steps)` (1–64 steps). Monitor queued jobs before displaying qualification as complete. Sales are reporter assertions, and cumulative business volume is not cash or profit. Existing owner access to all cash remains. No mainnet deployment or independent audit is claimed.
