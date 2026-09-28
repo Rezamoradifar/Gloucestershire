@@ -1,12 +1,12 @@
 {
-  "version": "0.4.0",
-  "status": "43 local EVM tests passed; not publicly deployed or independently audited",
-  "tests": 43,
-  "passed": 43,
+  "version": "0.5.0",
+  "status": "48 local tests passed; v0.5.0 not publicly deployed or independently audited",
+  "tests": 48,
+  "passed": 48,
   "failed": 0,
   "compiler": "0.8.30+commit.73712a01.Emscripten.clang",
-  "runtimeBytes": 16110,
-  "contractSha256": "04743e54bd2ca26e5d656db99330c4aa2107c601ac7205ffde3dcb795431547e",
+  "runtimeBytes": 16024,
+  "contractSha256": "b6f22f51b3e22319f0191875b5d44128e7f9c886848ff334da8cdb88227bf4e1",
   "publicChainTests": false,
   "partnerCount": 7,
   "initialQuorum": 2,
@@ -24,7 +24,7 @@
   "operationsWallet": "0x8c4AC9b009808a0B49Ba77b58e3871e7cDba463c",
   "operationsWalletChecksumValid": true,
   "configurationUpdate": "Owner, seven partners and operations wallet supplied; no public deployment performed",
-  "localDeploymentVerified": true,
+  "localDeploymentVerified": false,
   "localChainId": 31337,
   "localDeploymentReport": "deployment-local.json",
   "partnerAddressesChecksumValid": true,
@@ -45,5 +45,8 @@
     "failed": 0,
     "environment": "local EVM simulation",
     "report": "server-test-results.txt"
-  }
+  },
+  "partnerGovernance": "Owner-proposed configuration only; two initial votes, two-day delay; no partner withdrawals or role-based payouts",
+  "partnerWithdrawalFunctionsRemoved": true,
+  "localDeploymentReportVersion": "0.4.0 (historical)"
 }

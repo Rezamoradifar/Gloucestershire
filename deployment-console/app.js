@@ -3,7 +3,7 @@ import {guard,requestFor,verify} from './core.mjs';
 const $=id=>document.getElementById(id);
 let config,artifacts,raw,provider,busy=false,records=[],done=[],estimate=null;
 const labels=['توکن آزمایشی TUSDT','منبع قیمت آزمایشی BNB','منبع قیمت آزمایشی TUSDT','قرارداد GLOBAL'];
-const KEY='global-testnet-deployment-v040-owner-ebfb';
+const KEY='global-testnet-deployment-v050-owner-ebfb';
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
 function save(){localStorage.setItem(KEY,JSON.stringify(records));}
 function render(){

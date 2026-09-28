@@ -56,9 +56,10 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     uint8 public constant partnerCount = 7;
     address[7] public partnerWallets;
     uint8 public partnerVotesRequired;
-    struct Proposal { address asset; address recipient; uint256 amount; uint256 executeAfter; uint256 expiresAt; uint8 votes; uint8 required; bool executed; }
-    Proposal[] public proposals;
-    mapping(uint256 => mapping(address => bool)) public hasVoted;
+    mapping(bytes32 => uint256) public configRound;
+    mapping(bytes32 => uint8) public configVotes;
+    mapping(bytes32 => uint8) public configVotesRequired;
+    mapping(bytes32 => mapping(uint256 => mapping(address => bool))) public hasConfigVoted;
 
     error Invalid(); error Unauthorized(); error Insufficient(); error Locked(); error StalePrice(); error Unsupported(); error InsufficientLiquidity();
     event OwnerCapitalWithdrawn(address indexed owner,address indexed asset,address indexed recipient,uint256 amount);
@@ -77,15 +78,15 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     event ConfigurationQueued(bytes32 indexed hash,uint256 executeAfter);
     event ConfigurationApplied(bytes32 indexed hash);
     event PauseChanged(bool paused);
-    event DrainProposed(uint256 indexed id,address indexed recipient,address asset,uint256 amount);
-    event DrainVoted(uint256 indexed id,address indexed partner);
-    event SurplusWithdrawn(uint256 indexed id,address indexed asset,address indexed recipient,uint256 amount);
+    event ConfigurationVoted(bytes32 indexed hash,uint256 indexed round,address indexed partner);
+    event ConfigurationCancelled(bytes32 indexed hash,uint256 indexed round);
 
     modifier live() { if(paused) revert Locked(); _; }
     modifier reporter() { if(!reporters[msg.sender]) revert Unauthorized(); _; }
     modifier delayed() {
         bytes32 h=keccak256(msg.data); uint256 eta=queuedConfig[h];
-        if(eta==0 || block.timestamp<eta) revert Locked(); delete queuedConfig[h]; _; emit ConfigurationApplied(h);
+        if(eta==0 || block.timestamp<eta || configVotes[h]<configVotesRequired[h]) revert Locked();
+        delete queuedConfig[h]; delete configVotes[h]; delete configVotesRequired[h]; _; emit ConfigurationApplied(h);
     }
     constructor(address initialOwner,address token,address bnbFeed,address tokenFeed,uint256 oracleAge,address[] memory partners,address operationsWallet)
         Ownable(initialOwner) {
@@ -106,8 +107,25 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     // Unclassified native transfers are surplus, never principal or profit.
     receive() external payable {}
     function renounceOwnership() public override onlyOwner { revert Unsupported(); }
-    function queueConfiguration(bytes32 h) external onlyOwner { queuedConfig[h]=block.timestamp+CONFIG_DELAY; emit ConfigurationQueued(h,block.timestamp+CONFIG_DELAY); }
-    function cancelConfiguration(bytes32 h) external onlyOwner { delete queuedConfig[h]; }
+    /// @notice Owner proposes exact calldata hash; a fresh round needs partner votes and the delay.
+    function queueConfiguration(bytes32 h) external onlyOwner {
+        if(h==bytes32(0)||queuedConfig[h]!=0) revert Invalid();
+        configRound[h]++; configVotes[h]=0; configVotesRequired[h]=partnerVotesRequired;
+        queuedConfig[h]=block.timestamp+CONFIG_DELAY;
+        emit ConfigurationQueued(h,queuedConfig[h]);
+    }
+    function voteConfiguration(bytes32 h) external {
+        if(!isPartner[msg.sender]) revert Unauthorized();
+        uint256 round=configRound[h];
+        if(queuedConfig[h]==0||hasConfigVoted[h][round][msg.sender]) revert Invalid();
+        hasConfigVoted[h][round][msg.sender]=true; configVotes[h]++;
+        emit ConfigurationVoted(h,round,msg.sender);
+    }
+    function cancelConfiguration(bytes32 h) external onlyOwner {
+        if(queuedConfig[h]==0) revert Invalid();
+        delete queuedConfig[h]; delete configVotes[h]; delete configVotesRequired[h];
+        emit ConfigurationCancelled(h,configRound[h]);
+    }
     function setPaused(bool value) external onlyOwner { paused=value; emit PauseChanged(value); }
     function setReporter(address who,bool enabled) external onlyOwner delayed { if(who==address(0)) revert Invalid(); reporters[who]=enabled; }
     function setFees(uint16 profit,uint16 penalty) external onlyOwner delayed {
@@ -268,20 +286,5 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
         uint256 release=accounts[msg.sender][asset].nextWithdrawal;
         if(accounts[recipient][asset].nextWithdrawal<release) accounts[recipient][asset].nextWithdrawal=release;
         emit InternalTransfer(msg.sender,recipient,asset,amount);
-    }
-    function proposeSurplusWithdrawal(address asset,address recipient,uint256 amount) external returns(uint256 id) {
-        if(!isPartner[msg.sender]) revert Unauthorized(); _asset(asset);
-        if(recipient==address(0)||recipient==address(this)||amount==0||amount>surplus(asset)) revert Invalid();
-        id=proposals.length; proposals.push(Proposal(asset,recipient,amount,block.timestamp+CONFIG_DELAY,block.timestamp+7 days,0,partnerVotesRequired,false));
-        emit DrainProposed(id,recipient,asset,amount);
-    }
-    function voteSurplusWithdrawal(uint256 id) external {
-        if(!isPartner[msg.sender]) revert Unauthorized(); Proposal storage p=proposals[id];
-        if(hasVoted[id][msg.sender]||p.executed||block.timestamp>p.expiresAt) revert Invalid();
-        hasVoted[id][msg.sender]=true; p.votes++; emit DrainVoted(id,msg.sender);
-    }
-    function executeSurplusWithdrawal(uint256 id) external nonReentrant {
-        Proposal storage p=proposals[id]; if(p.executed||p.votes<p.required||block.timestamp<p.executeAfter||block.timestamp>p.expiresAt) revert Locked();
-        if(p.amount>surplus(p.asset)) revert Insufficient(); p.executed=true; _pay(p.asset,p.recipient,p.amount); emit SurplusWithdrawn(id,p.asset,p.recipient,p.amount);
     }
 }

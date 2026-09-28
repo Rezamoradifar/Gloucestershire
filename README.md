@@ -1,3 +1,5 @@
+> **نسخه ۰٫۵٫۰ — تغییر نقش شرکا:** هفت شریک فقط حق رأی برای تنظیمات دارند. مسیر برداشت مازاد حذف شد. دو رأی و دو روز تأخیر لازم است. قرارداد تستی قبلی نسخه ۰٫۴٫۰ است؛ قابل ارتقا نیست.
+
 # GLOBAL — BNB Testnet contract
 
 قرارداد، تست‌ها و نصب اوبونتو برای پروژه GLOBAL. [راهنمای کامل فارسی](README.fa.md)
@@ -22,7 +24,7 @@ bash ubuntu-testnet.sh deploy
 
 ## Validation
 
-43 contract tests passed locally; an additional local integration test covers the server deployer, ownership, chain restriction and resume behavior. Public-chain deployment has not been performed by this package's author. No independent audit has been completed.
+See governance-test-results.txt for the v0.5.0 local test run. Server and health-check integration tests use local EVM simulations. Public-chain deployment has not been performed by this package's author. No independent audit has been completed.
 
 ## نصب مستقیم از گیت‌هاب
 
@@ -88,3 +90,13 @@ bash ubuntu-mainnet.sh deploy
 محدودیت: قرارداد ممیزی مستقل نشده است؛ تست زنده چرخه سود/برداشت و VIP کامل نیست. کل واریزها خارج می‌شود ولی کل اصل بدهی باقی می‌ماند و مالک به همه نقدینگی دسترسی دارد. قرارداد هنگام استقرار متوقف نیست؛ استقرار شبکه اصلی به معنای تأیید امنیت، سودآوری یا آماده بودن فرانت نیست.
 
 تست خودکار prepare شامل شبکه اشتباه، آدرس نامعتبر، قیمت کهنه و سقف گس است. تلاش بررسی زنده از محیط توسعه با timeout مواجه شد؛ بررسی‌های زنده باید هنگام اجرای prepare روی سرور موفق شوند.
+
+## اجرای نسخه جدید
+
+```bash
+cd ~/global-bnb
+git pull --ff-only
+bash ubuntu-setup.sh
+```
+
+این دستور کامپایل و تست را انجام می‌دهد؛ دیپلوی نمی‌کند. تا زمان استقرار تازه از صفحه وب استقرار نسخه ۰٫۴٫۰ یا گزارش وریفای قرارداد قبلی برای نسخه جدید استفاده نکنید. ابزار تست زنده موجود به قرارداد قدیمی پین شده و با artifact جدید عمداً بررسی تطابق را رد می‌کند؛ این اسکریپت باید هنگام تعیین آدرس تست جدید به‌روز شود. اگر قبلاً تراکنش اصلی امضا کرده‌اید، journal را حذف نکنید و برای بررسی توقف کنید.

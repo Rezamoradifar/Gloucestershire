@@ -14,7 +14,8 @@ async function warp(s) {await rpc.request({method:'evm_increaseTime',params:[s]}
 async function refresh() {const b=await rpc.request({method:'eth_getBlockByNumber',params:['latest',false]});for(const [f,p] of [[bnbFeed,600n*10n**8n],[usdFeed,10n**8n]])await tx(f.set(p,Number(b.timestamp),1,1));}
 async function deposit(i=3,amount=E('1000'),asset=token.target,parent=ZeroAddress) {await tx(vault.connect(signers[i]).deposit(asset,amount,parent,{...(asset===ZeroAddress?{value:amount}:{}),gasLimit:1500000}));}
 async function sale(i=3,amount=E('100'),asset=token.target,key='sale') {await tx(vault.settleSalesProfit(id(key),asset,addr[i],amount,E('1000'),id('receipt'),{...(asset===ZeroAddress?{value:amount}:{}),gasLimit:1500000}));}
-async function queueCall(name,args) {const data=vault.interface.encodeFunctionData(name,args);await tx(vault.queueConfiguration(keccak256(data)));await warp(2*86400);await tx(vault[name](...args,{gasLimit:2000000}));}
+async function approveConfig(h) {await tx(vault.voteConfiguration(h));await tx(vault.connect(signers[1]).voteConfiguration(h));}
+async function queueCall(name,args) {const data=vault.interface.encodeFunctionData(name,args);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);await tx(vault[name](...args,{gasLimit:2000000}));}
 // Routed deposits intentionally leave claims unbacked by vault cash. Verify exact reported gap.
 async function solvent() {for(const a of [ZeroAddress,token.target]) {const cash=await vault.assetBalance(a), debt=await vault.accounted(a);assert.equal(await vault.liquidityShortfall(a),debt>cash?debt-cash:0n);assert.equal(await vault.surplus(a),cash>debt?cash-debt:0n);}}
 before(async()=>{
@@ -146,12 +147,19 @@ test('pause stops deposits and settlements but permits funded exits',async()=>{
  await deposit();await sale();await tx(vault.setPaused(true));await fails(vault.connect(signers[4]).deposit(token.target,E('100'),ZeroAddress));
  await tx(vault.connect(signers[3]).withdrawProfit(token.target,E('100')));await solvent();
 });
-test('partner drain cannot touch principal, reserves or rewards; surplus needs votes and delay',async()=>{
- await deposit();await fails(vault.proposeSurplusWithdrawal(token.target,addr[8],1n));await tx(vault.returnCapital(token.target,E('1000')));await tx(token.transfer(vault.target,E('10')));
- await tx(vault.proposeSurplusWithdrawal(token.target,addr[8],E('10')));await tx(vault.voteSurplusWithdrawal(0));
- await fails(vault.voteSurplusWithdrawal(0));await fails(vault.connect(signers[4]).voteSurplusWithdrawal(0));await fails(vault.executeSurplusWithdrawal(0));
- await tx(vault.connect(signers[1]).voteSurplusWithdrawal(0));await fails(vault.executeSurplusWithdrawal(0));await warp(2*86400);
- await tx(vault.executeSurplusWithdrawal(0,{gasLimit:500000}));assert.equal(await vault.surplus(token.target),0n);await fails(vault.executeSurplusWithdrawal(0));await solvent();
+test('configuration requires two distinct partner votes and two days; partners cannot withdraw',async()=>{
+ const data=vault.interface.encodeFunctionData('setFees',[1500,4000]),h=keccak256(data);
+ await tx(vault.queueConfiguration(h));
+ await fails(vault.setFees(1500,4000));await fails(vault.connect(signers[3]).voteConfiguration(h));
+ await tx(vault.voteConfiguration(h));await fails(vault.voteConfiguration(h));
+ await warp(2*86400);await fails(vault.setFees(1500,4000,{gasLimit:500000}));
+ await tx(vault.connect(signers[1]).voteConfiguration(h));
+ await fails(vault.connect(signers[1]).setFees(1500,4000,{gasLimit:500000}));
+ await tx(vault.setFees(1500,4000,{gasLimit:500000}));assert.equal(await vault.profitFeeBps(),1500n);
+ await fails(vault.setFees(1500,4000,{gasLimit:500000}));await fails(vault.voteConfiguration(h));
+ await fails(vault.connect(signers[1]).ownerWithdrawCapital(token.target,addr[1],1n));
+ for(const name of ['proposeSurplusWithdrawal','voteSurplusWithdrawal','executeSurplusWithdrawal','proposals','hasVoted'])assert.equal(vault.interface.getFunction(name),null);
+ for(const sig of ['proposeSurplusWithdrawal(address,address,uint256)','voteSurplusWithdrawal(uint256)','executeSurplusWithdrawal(uint256)'])await fails(signers[1].sendTransaction({to:vault.target,data:id(sig).slice(0,10)+'00'.repeat(96),gasLimit:500000}));
 });
 test('native withdrawal resists recipient reentrancy',async()=>{
  const attacker=await deploy('ReentrantCustomer',[vault.target]);await tx(attacker.deposit({value:E('1')}));
@@ -184,11 +192,11 @@ test('90-day unlock boundary tested one second before and at unlock',async()=>{
 });
 test('governance validates referral cap, descending rates, targets and partner threshold',async()=>{
  const config=[10n*10n**18n,50,100,5,E('2500'),[1500,700,300,100]];
- let data=vault.interface.encodeFunctionData('setTierConfig',[0,config]);await tx(vault.queueConfiguration(keccak256(data)));await warp(2*86400);
+ let data=vault.interface.encodeFunctionData('setTierConfig',[0,config]);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);
  await fails(vault.setTierConfig(0,config,{gasLimit:1500000}));
- config[5]=[100,200,0,0];data=vault.interface.encodeFunctionData('setTierConfig',[0,config]);await tx(vault.queueConfiguration(keccak256(data)));await warp(2*86400);
+ config[5]=[100,200,0,0];data=vault.interface.encodeFunctionData('setTierConfig',[0,config]);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);
  await fails(vault.setTierConfig(0,config,{gasLimit:1500000}));
- data=vault.interface.encodeFunctionData('setPartnerVoteRequired',[1]);await tx(vault.queueConfiguration(keccak256(data)));await warp(2*86400);
+ data=vault.interface.encodeFunctionData('setPartnerVoteRequired',[1]);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);
  await fails(vault.setPartnerVoteRequired(1,{gasLimit:1500000}));
 });
 test('VIP capital requires reporter KYC and no deposit creates sales status',async()=>{
@@ -196,10 +204,22 @@ test('VIP capital requires reporter KYC and no deposit creates sales status',asy
  await tx(vault.connect(signers[3]).register(ZeroAddress));await tx(vault.setCustomerStatus(addr[3],false,true));await deposit(3,E('50001'));
  assert.equal(await vault.tierOf(addr[3]),4n);assert.equal((await vault.users(addr[3])).active,false);await solvent();
 });
-test('expired proposal cannot drain surplus and voting threshold is snapshotted',async()=>{
- await tx(token.transfer(vault.target,E('10')));await tx(vault.proposeSurplusWithdrawal(token.target,addr[8],E('10')));
- await tx(vault.voteSurplusWithdrawal(0));await tx(vault.connect(signers[1]).voteSurplusWithdrawal(0));await queueCall('setPartnerVoteRequired',[3]);
- assert.equal((await vault.proposals(0)).required,2n);await warp(6*86400);await fails(vault.executeSurplusWithdrawal(0,{gasLimit:500000}));await solvent();
+test('configuration quorum is snapshotted and approved votes do not skip delay',async()=>{
+ const h=keccak256(vault.interface.encodeFunctionData('setMinDeposit',[E('20')]));
+ await tx(vault.queueConfiguration(h));await approveConfig(h);
+ await fails(vault.setMinDeposit(E('20'),{gasLimit:500000}));
+ await queueCall('setPartnerVoteRequired',[3]);assert.equal(await vault.configVotesRequired(h),2n);
+ await tx(vault.setMinDeposit(E('20'),{gasLimit:500000}));assert.equal(await vault.minDepositUsd(),E('20'));
+});
+test('cancel and requeue never reuse old votes and calldata cannot be substituted',async()=>{
+ const h=keccak256(vault.interface.encodeFunctionData('setMinDeposit',[E('20')]));
+ await fails(vault.queueConfiguration(ZeroHash));await tx(vault.queueConfiguration(h));await approveConfig(h);
+ await fails(vault.queueConfiguration(h));await fails(vault.connect(signers[1]).cancelConfiguration(h));
+ await tx(vault.cancelConfiguration(h));await fails(vault.voteConfiguration(h));
+ await tx(vault.queueConfiguration(h));assert.equal(await vault.configRound(h),2n);assert.equal(await vault.configVotes(h),0n);
+ await warp(2*86400);await fails(vault.setMinDeposit(E('20'),{gasLimit:500000}));await approveConfig(h);
+ await fails(vault.setMinDeposit(E('21'),{gasLimit:500000}));await tx(vault.setMinDeposit(E('20'),{gasLimit:500000}));
+ await tx(vault.queueConfiguration(h));assert.equal(await vault.configRound(h),3n);assert.equal(await vault.configVotes(h),0n);
 });
 
 for(const native of [false,true]) {
@@ -264,19 +284,18 @@ test('exactly seven unique nonzero partners are required',async()=>{
  for(let i=0;i<7;i++){assert.equal(await vault.partnerWallets(i),partners[i]);assert.equal(await vault.isPartner(partners[i]),true);}
 });
 test('all seven partners can vote once and seven-vote quorum is enforceable',async()=>{
- await tx(token.transfer(vault.target,E('10')));await queueCall('setPartnerVoteRequired',[7]);
- await tx(vault.connect(signers[11]).proposeSurplusWithdrawal(token.target,addr[12],E('10')));
+ await queueCall('setPartnerVoteRequired',[7]);
+ const h=keccak256(vault.interface.encodeFunctionData('setMinDeposit',[E('20')]));await tx(vault.queueConfiguration(h));
  const voters=[0,1,2,8,9,10,11];await warp(2*86400);
  for(let i=0;i<7;i++){
-  if(i<7)await fails(vault.executeSurplusWithdrawal(0,{gasLimit:500000}));
-  await tx(vault.connect(signers[voters[i]]).voteSurplusWithdrawal(0));
-  await fails(vault.connect(signers[voters[i]]).voteSurplusWithdrawal(0,{gasLimit:500000}));
+  await fails(vault.setMinDeposit(E('20'),{gasLimit:500000}));
+  await tx(vault.connect(signers[voters[i]]).voteConfiguration(h));
+  await fails(vault.connect(signers[voters[i]]).voteConfiguration(h,{gasLimit:500000}));
  }
- await tx(vault.executeSurplusWithdrawal(0,{gasLimit:500000}));assert.equal(await token.balanceOf(addr[12]),E('1000010'));
- await fails(vault.connect(signers[3]).proposeSurplusWithdrawal(token.target,addr[3],1n));
+ await tx(vault.setMinDeposit(E('20'),{gasLimit:500000}));assert.equal(await vault.minDepositUsd(),E('20'));
 });
 test('quorum cannot exceed seven and removed exchange selectors cannot execute',async()=>{
- const data=vault.interface.encodeFunctionData('setPartnerVoteRequired',[8]);await tx(vault.queueConfiguration(keccak256(data)));await warp(2*86400);
+ const data=vault.interface.encodeFunctionData('setPartnerVoteRequired',[8]);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);
  await fails(vault.setPartnerVoteRequired(8,{gasLimit:500000}));
  for(const name of ['swapProfit','bridgeProfit','setAdapter','swapAdapters','bridgeAdapters','bridgeFeeBps'])assert.equal(vault.interface.getFunction(name),null);
  for(const sig of ['swapProfit(address,address,uint256,address,uint256,uint256)','bridgeProfit(address,uint256,address,uint256,bytes32)','setAdapter(address,bool,bool)']){
@@ -342,4 +361,18 @@ test('operations wallet callback cannot reenter deposit',async()=>{
  await tx(v.connect(signers[3]).deposit(ZeroAddress,E('1'),ZeroAddress,{value:E('1'),gasLimit:1500000}));
  assert.equal(await receiver.attempted(),true);assert.equal(await receiver.succeeded(),false);
  assert.equal(await v.positionCount(addr[3]),1n);
+});
+
+test('all six governed setters require votes and governance pays no partner funds',async()=>{
+ const changes=[['setReporter',[addr[12],true]],['setFees',[1200,3000]],['setWithdrawalRules',[90*86400,72*3600]],['setMinDeposit',[E('11')]],['setTierConfig',[0,[E('10'),50,100,5,E('2500'),[600,300,150,50]]]],['setPartnerVoteRequired',[2]]];
+ const cash=await vault.assetBalance(token.target),native=await vault.assetBalance(ZeroAddress);
+ const balances=await Promise.all([0,1,2,8,9,10,11].map(i=>token.balanceOf(addr[i])));
+ for(const [name,args]of changes){
+  const h=keccak256(vault.interface.encodeFunctionData(name,args));await tx(vault.queueConfiguration(h));await warp(2*86400);
+  await fails(vault[name](...args,{gasLimit:1500000}));await tx(vault.voteConfiguration(h));
+  await fails(vault[name](...args,{gasLimit:1500000}));await tx(vault.connect(signers[1]).voteConfiguration(h));
+  await tx(vault[name](...args,{gasLimit:1500000}));
+ }
+ assert.equal(await vault.assetBalance(token.target),cash);assert.equal(await vault.assetBalance(ZeroAddress),native);
+ assert.deepEqual(await Promise.all([0,1,2,8,9,10,11].map(i=>token.balanceOf(addr[i]))),balances);
 });
