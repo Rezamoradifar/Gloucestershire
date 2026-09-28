@@ -32,7 +32,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     IPriceFeed public immutable usdtUsdFeed;
     uint256 public immutable maxOracleAge;
     uint256 public minDepositUsd = 10 ether;
-    uint16 public profitFeeBps = 1000;
+    uint16 public profitFeeBps = 500;
     uint16 public principalPenaltyBps = 3000;
     uint32 public lockDuration = 90 days;
     uint32 public withdrawalCooldown = 72 hours;
@@ -128,7 +128,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     function setPaused(bool value) external onlyOwner { paused=value; emit PauseChanged(value); }
     function setReporter(address who,bool enabled) external onlyOwner delayed { if(who==address(0)) revert Invalid(); reporters[who]=enabled; }
     function setFees(uint16 profit,uint16 penalty) external onlyOwner delayed {
-        if(profit>2000 || penalty>5000) revert Invalid(); profitFeeBps=profit; principalPenaltyBps=penalty;
+        if(profit>1000 || penalty>5000) revert Invalid(); profitFeeBps=profit; principalPenaltyBps=penalty;
     }
     function setWithdrawalRules(uint32 duration,uint32 cooldown) external onlyOwner delayed {
         if(duration>3650 days || cooldown>30 days) revert Invalid(); lockDuration=duration; withdrawalCooldown=cooldown;

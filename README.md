@@ -1,3 +1,7 @@
+## v0.5.2 — profit withdrawal fee capped at 10%
+
+Initial profit withdrawal fee is 5%. Owner configuration permits 0–10% with the existing partner quorum and two-day delay. Values above 1000 basis points revert even after approval. Principal penalty limits are unchanged. See fee-cap-test-results.txt.
+
 ## v0.5.1 — no member-to-member transfers
 
 Removed `transferProfit` and `InternalTransfer`. Legacy calldata reverts for both BNB and USDT. Withdrawals to the caller and reinvestment remain available. See `no-transfer-test-results.txt`. Existing deployments are immutable and require a new deployment to adopt this change.

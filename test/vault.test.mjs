@@ -79,7 +79,7 @@ test('only funded reporter settlements create profits; duplicate ID rejected',as
 test('profit withdrawal fee, cap, cooldown and exact 72h boundary',async()=>{
  await deposit();await sale(3,E('300'));await fails(vault.connect(signers[3]).withdrawProfit(token.target,E('100.01')));
  const before=await token.balanceOf(addr[3]);await tx(vault.connect(signers[3]).withdrawProfit(token.target,E('100')));
- assert.equal(await token.balanceOf(addr[3])-before,E('90'));await fails(vault.connect(signers[3]).withdrawProfit(token.target,E('1')));
+ assert.equal(await token.balanceOf(addr[3])-before,E('95'));await fails(vault.connect(signers[3]).withdrawProfit(token.target,E('1')));
  await warp(72*3600);await tx(vault.connect(signers[3]).withdrawProfit(token.target,E('100'),{gasLimit:500000}));await solvent();
 });
 test('principal locked 90 days, partial/full withdrawals charge 30%',async()=>{
@@ -91,10 +91,10 @@ test('principal locked 90 days, partial/full withdrawals charge 30%',async()=>{
 test('configuration delay/access caps and old principal terms preserved',async()=>{
  await deposit();const p=await vault.positionOf(addr[3],0);
  await fails(vault.setFees(1000,4000));await fails(vault.connect(signers[3]).queueConfiguration(id('bad')));
- await queueCall('setFees',[1500,4000]);await queueCall('setWithdrawalRules',[120*86400,72*3600]);await refresh();
+ await queueCall('setFees',[500,4000]);await queueCall('setWithdrawalRules',[120*86400,72*3600]);await refresh();
  await deposit(3,E('100'));const old=await vault.positionOf(addr[3],0),next=await vault.positionOf(addr[3],1);
  assert.equal(old.penaltyBps,3000n);assert.equal(old.unlockAt,p.unlockAt);assert.equal(next.penaltyBps,4000n);
- await fails(vault.setFees(1500,4000)); // consumed queue
+ await fails(vault.setFees(500,4000)); // consumed queue
 });
 test('five plan referral table preserved, target never accrues automatic profit',async()=>{
  assert.deepEqual(Array.from((await vault.tierConfig(4)).referrals),[1400n,700n,300n,100n]);
@@ -165,15 +165,15 @@ test('pause stops deposits and settlements but permits funded exits',async()=>{
  await tx(vault.connect(signers[3]).withdrawProfit(token.target,E('100')));await solvent();
 });
 test('configuration requires two distinct partner votes and two days; partners cannot withdraw',async()=>{
- const data=vault.interface.encodeFunctionData('setFees',[1500,4000]),h=keccak256(data);
+ const data=vault.interface.encodeFunctionData('setFees',[500,4000]),h=keccak256(data);
  await tx(vault.queueConfiguration(h));
- await fails(vault.setFees(1500,4000));await fails(vault.connect(signers[3]).voteConfiguration(h));
+ await fails(vault.setFees(500,4000));await fails(vault.connect(signers[3]).voteConfiguration(h));
  await tx(vault.voteConfiguration(h));await fails(vault.voteConfiguration(h));
- await warp(2*86400);await fails(vault.setFees(1500,4000,{gasLimit:500000}));
+ await warp(2*86400);await fails(vault.setFees(500,4000,{gasLimit:500000}));
  await tx(vault.connect(signers[1]).voteConfiguration(h));
- await fails(vault.connect(signers[1]).setFees(1500,4000,{gasLimit:500000}));
- await tx(vault.setFees(1500,4000,{gasLimit:500000}));assert.equal(await vault.profitFeeBps(),1500n);
- await fails(vault.setFees(1500,4000,{gasLimit:500000}));await fails(vault.voteConfiguration(h));
+ await fails(vault.connect(signers[1]).setFees(500,4000,{gasLimit:500000}));
+ await tx(vault.setFees(500,4000,{gasLimit:500000}));assert.equal(await vault.profitFeeBps(),500n);
+ await fails(vault.setFees(500,4000,{gasLimit:500000}));await fails(vault.voteConfiguration(h));
  await fails(vault.connect(signers[1]).ownerWithdrawCapital(token.target,addr[1],1n));
  for(const name of ['proposeSurplusWithdrawal','voteSurplusWithdrawal','executeSurplusWithdrawal','proposals','hasVoted'])assert.equal(vault.interface.getFunction(name),null);
  for(const sig of ['proposeSurplusWithdrawal(address,address,uint256)','voteSurplusWithdrawal(uint256)','executeSurplusWithdrawal(uint256)'])await fails(signers[1].sendTransaction({to:vault.target,data:id(sig).slice(0,10)+'00'.repeat(96),gasLimit:500000}));
@@ -264,7 +264,7 @@ for(const native of [false,true]) {
   const bal=async x=>native?BigInt(await rpc.request({method:'eth_getBalance',params:[x,'latest']})):await token.balanceOf(x);
   const before=await bal(feeWallet), old=await bal(await vault.FEE_WALLET_1());
   await tx(vault.connect(signers[3]).withdrawProfit(a,claim.profit,{gasLimit:500000}));
-  assert.equal(await bal(feeWallet)-before,claim.profit/10n);assert.equal(await bal(await vault.FEE_WALLET_1()),old);
+  assert.equal(await bal(feeWallet)-before,claim.profit/20n);assert.equal(await bal(await vault.FEE_WALLET_1()),old);
   await warp(72*3600);await tx(vault.connect(signers[3]).withdrawPrincipal(0,claim.principal,{gasLimit:500000}));
   assert.equal(await bal(await vault.FEE_WALLET_1())-old,0n);
   await solvent();
@@ -381,7 +381,7 @@ test('operations wallet callback cannot reenter deposit',async()=>{
 });
 
 test('all six governed setters require votes and governance pays no partner funds',async()=>{
- const changes=[['setReporter',[addr[12],true]],['setFees',[1200,3000]],['setWithdrawalRules',[90*86400,72*3600]],['setMinDeposit',[E('11')]],['setTierConfig',[0,[E('10'),50,100,5,E('2500'),[600,300,150,50]]]],['setPartnerVoteRequired',[2]]];
+ const changes=[['setReporter',[addr[12],true]],['setFees',[800,3000]],['setWithdrawalRules',[90*86400,72*3600]],['setMinDeposit',[E('11')]],['setTierConfig',[0,[E('10'),50,100,5,E('2500'),[600,300,150,50]]]],['setPartnerVoteRequired',[2]]];
  const cash=await vault.assetBalance(token.target),native=await vault.assetBalance(ZeroAddress);
  const balances=await Promise.all([0,1,2,8,9,10,11].map(i=>token.balanceOf(addr[i])));
  for(const [name,args]of changes){
@@ -392,4 +392,14 @@ test('all six governed setters require votes and governance pays no partner fund
  }
  assert.equal(await vault.assetBalance(token.target),cash);assert.equal(await vault.assetBalance(ZeroAddress),native);
  assert.deepEqual(await Promise.all([0,1,2,8,9,10,11].map(i=>token.balanceOf(addr[i]))),balances);
+});
+
+ test('profit withdrawal fee accepts zero and ten percent but rejects above ten even with governance approval',async()=>{
+ await queueCall('setFees',[0,3000]);assert.equal(await vault.profitFeeBps(),0n);
+ await queueCall('setFees',[1000,3000]);assert.equal(await vault.profitFeeBps(),1000n);
+ for(const rate of [1001,2000]) {
+  await fails(queueCall('setFees',[rate,3000]));
+  assert.equal(await vault.profitFeeBps(),1000n);
+  assert.equal(await vault.principalPenaltyBps(),3000n);
+ }
 });
