@@ -1,3 +1,7 @@
+## v0.5.3 — reinvestment increases the profit withdrawal cap
+
+Gross cap per withdrawal = 10% of lifetime external deposits plus completed reinvestments, separately per asset. Personal profit and credited network commissions share the reinvestable profit balance. Merely earning profit does not raise the cap. Principal withdrawals do not reduce this cumulative basis. Reinvestment consumes profit once, opens a locked position, and does not repeat the deposit split. Initial withdrawal fee remains 5%; liquidity, profit balance and cooldown still apply. See reinvest-cap-test-results.txt.
+
 ## v0.5.2 — profit withdrawal fee capped at 10%
 
 Initial profit withdrawal fee is 5%. Owner configuration permits 0–10% with the existing partner quorum and two-day delay. Values above 1000 basis points revert even after approval. Principal penalty limits are unchanged. See fee-cap-test-results.txt.

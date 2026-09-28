@@ -129,13 +129,13 @@ test('invite-count milestones are removed from ABI and do not create profit',asy
 });
 test('bounded funded batch allocation, replay and over-allocation rejected',async()=>{
  await deposit();await fails(vault.batchProfit(id('batch'),token.target,[addr[3]],[E('10')]));await tx(vault.fundRewards(token.target,E('10')));
- await tx(vault.batchProfit(id('batch'),token.target,[addr[3]],[E('10')]));await fails(vault.batchProfit(id('batch'),token.target,[addr[3]],[1n]));
+ await tx(vault.batchProfit(id('batch'),token.target,[addr[3]],[E('10')],{gasLimit:500000}));await fails(vault.batchProfit(id('batch'),token.target,[addr[3]],[1n]));
  await fails(vault.batchProfit(id('other'),token.target,[addr[3]],[]));await solvent();
 });
-test('reinvest conserves assets, opens new lock, no new deposit fees or external cap inflation',async()=>{
+test('reinvest conserves assets, opens new lock, no new deposit fees and increases withdrawal cap',async()=>{
  await deposit();await sale();const balance=await vault.assetBalance(token.target),reserve=(await vault.ledgers(token.target)).feeReserve;
  await tx(vault.connect(signers[3]).reinvest(token.target,E('50')));
- const a=await vault.accounts(addr[3],token.target);assert.equal(a.principal,E('1050'));assert.equal(a.profit,E('50'));assert.equal(a.externalDeposited,E('1000'));
+ const a=await vault.accounts(addr[3],token.target);assert.equal(a.principal,E('1050'));assert.equal(a.profit,E('50'));assert.equal(a.externalDeposited,E('1000'));assert.equal(await vault.cumulativeReinvested(addr[3],token.target),E('50'));assert.equal(await vault.profitWithdrawalCap(addr[3],token.target),E('105'));
  assert.equal(await vault.assetBalance(token.target),balance);assert.equal((await vault.ledgers(token.target)).feeReserve,reserve);assert.equal(await vault.positionCount(addr[3]),2n);await solvent();
 });
 test('removed internal transfer rejects legacy calldata for BNB and USDT without changing accounts',async()=>{
@@ -402,4 +402,29 @@ test('all six governed setters require votes and governance pays no partner fund
   assert.equal(await vault.profitFeeBps(),1000n);
   assert.equal(await vault.principalPenaltyBps(),3000n);
  }
+});
+
+for(const native of [false,true])test(`reinvest raises ${native?'BNB':'USDT'} cap from personal and network profit, enforces exact boundary and rollback`,async()=>{
+ const asset=native?ZeroAddress:token.target,other=native?token.target:ZeroAddress;
+ const initial=E(native?'1':'1000'), topup=initial/2n;
+ await deposit(3,initial,asset);await tx(vault.setCustomerStatus(addr[3],true,false));
+ await deposit(4,initial,asset,addr[3]);await sale(3,initial,asset,'own');await sale(4,initial,asset,'network');
+ const profit=(await vault.accounts(addr[3],asset)).profit;assert.ok(profit>initial);
+ assert.equal(await vault.profitWithdrawalCap(addr[3],asset),initial/10n);
+ await tx(vault.connect(signers[3]).reinvest(asset,topup));
+ await tx(vault.connect(signers[3]).reinvest(asset,profit-topup));
+ assert.equal(await vault.cumulativeReinvested(addr[3],asset),profit);
+ assert.equal(await vault.profitWithdrawalCap(addr[3],other),0n);
+ const cap=(initial+profit)/10n;
+ assert.equal(await vault.profitWithdrawalCap(addr[3],asset),cap);
+ await fails(vault.connect(signers[3]).reinvest(asset,topup,{gasLimit:1000000}));
+ assert.equal(await vault.cumulativeReinvested(addr[3],asset),profit);
+ await sale(3,initial,asset,'refill');
+ await fails(vault.connect(signers[3]).withdrawProfit(asset,cap+1n,{gasLimit:500000}));
+ const before=(await vault.accounts(addr[3],asset)).profit;
+ await tx(vault.connect(signers[3]).withdrawProfit(asset,cap,{gasLimit:500000}));
+ assert.equal((await vault.accounts(addr[3],asset)).profit,before-cap);
+ await fails(vault.connect(signers[3]).withdrawProfit(asset,1n,{gasLimit:500000}));
+ await warp(90*86400);await tx(vault.connect(signers[3]).withdrawPrincipal(0,initial,{gasLimit:500000}));
+ assert.equal(await vault.profitWithdrawalCap(addr[3],asset),cap);await solvent();
 });

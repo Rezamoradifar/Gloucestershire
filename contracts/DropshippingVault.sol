@@ -44,6 +44,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     mapping(address => Ledger) public ledgers;
     struct Account { uint256 principal; uint256 profit; uint256 externalDeposited; uint256 nextWithdrawal; }
     mapping(address => mapping(address => Account)) public accounts; // user => asset
+    mapping(address => mapping(address => uint256)) public cumulativeReinvested; // user => asset; consumed profit only
     struct User { address referrer; bool registered; bool active; bool vipKyc; uint32 activeDirect; uint256 capitalUsd; uint256 salesUsd; }
     mapping(address => User) public users;
     struct Position { address asset; uint256 principal; uint256 capitalUsd; uint256 unlockAt; uint16 penaltyBps; }
@@ -254,9 +255,13 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
         if(ledgers[asset].rewards<total) revert Insufficient(); ledgers[asset].rewards-=total;
         for(uint256 i;i<recipients.length;i++) _credit(recipients[i],asset,amounts[i],id);
     }
+    /// @notice Gross per-withdrawal ceiling from lifetime deposits plus completed reinvestments of the same asset.
+    function profitWithdrawalCap(address who,address asset) public view returns(uint256) {
+        return (accounts[who][asset].externalDeposited+cumulativeReinvested[who][asset])/10;
+    }
     function _takeProfit(address who,address asset,uint256 amount,bool cooldown) internal {
         _asset(asset); Account storage a=accounts[who][asset]; if(amount==0||a.profit<amount) revert Insufficient();
-        if(cooldown) { if(block.timestamp<a.nextWithdrawal) revert Locked(); if(amount>a.externalDeposited/10) revert Insufficient(); a.nextWithdrawal=block.timestamp+withdrawalCooldown; }
+        if(cooldown) { if(block.timestamp<a.nextWithdrawal) revert Locked(); if(amount>profitWithdrawalCap(who,asset)) revert Insufficient(); a.nextWithdrawal=block.timestamp+withdrawalCooldown; }
         a.profit-=amount; ledgers[asset].profit-=amount;
     }
     function withdrawProfit(address asset,uint256 amount) external nonReentrant {
@@ -276,7 +281,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard {
     }
     function reinvest(address asset,uint256 amount) external nonReentrant live {
         uint256 usd=quoteUsd(asset,amount); if(usd<minDepositUsd) revert Insufficient(); _takeProfit(msg.sender,asset,amount,false);
-        uint256 id=_open(msg.sender,asset,amount,usd); emit Reinvested(msg.sender,asset,amount,id);
+        uint256 id=_open(msg.sender,asset,amount,usd); cumulativeReinvested[msg.sender][asset]+=amount; emit Reinvested(msg.sender,asset,amount,id);
     }
     // Member-to-member internal balance transfers are intentionally unsupported.
 }
