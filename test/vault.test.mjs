@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ganache from 'ganache';
 import {BrowserProvider,ContractFactory,Interface,parseEther,ZeroAddress,ZeroHash,keccak256,toUtf8Bytes,zeroPadValue} from 'ethers';
-import {compile} from '../scripts/compile.mjs';
 const E=parseEther, id=s=>keccak256(toUtf8Bytes(s));
 let rpc,provider,signers,addr,vault,token,bnbFeed,usdFeed,snapshot,output;
 const artifact=n=>JSON.parse(fs.readFileSync('artifacts/'+n+'.json'));
@@ -19,10 +18,9 @@ async function queueCall(name,args) {const data=vault.interface.encodeFunctionDa
 // Routed deposits intentionally leave claims unbacked by vault cash. Verify exact reported gap.
 async function solvent() {for(const a of [ZeroAddress,token.target]) {const cash=await vault.assetBalance(a), debt=await vault.accounted(a);assert.equal(await vault.liquidityShortfall(a),debt>cash?debt-cash:0n);assert.equal(await vault.surplus(a),cash>debt?cash-debt:0n);}}
 before(async()=>{
- compile();
- rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},wallet:{totalAccounts:15,defaultBalance:100000},miner:{blockGasLimit:30000000}});
+ rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},wallet:{totalAccounts:80,defaultBalance:100000},miner:{blockGasLimit:30000000}});
  provider=new BrowserProvider(rpc);provider.pollingInterval=10;
- signers=await Promise.all(Array.from({length:15},(_,i)=>provider.getSigner(i)));addr=await Promise.all(signers.map(s=>s.getAddress()));
+ signers=await Promise.all(Array.from({length:80},(_,i)=>provider.getSigner(i)));addr=await Promise.all(signers.map(s=>s.getAddress()));
  token=await deploy('MockToken',[18]); bnbFeed=await deploy('MockFeed',[600n*10n**8n]);usdFeed=await deploy('MockFeed',[10n**8n]);
  vault=await deploy('DropshippingVault',[addr[0],token.target,bnbFeed.target,usdFeed.target,86400,[addr[0],addr[1],addr[2],addr[8],addr[9],addr[10],addr[11]],addr[14]]);
  output=await deploy('MockToken',[18]);
@@ -183,7 +181,7 @@ test('native withdrawal resists recipient reentrancy',async()=>{
  await tx(vault.settleSalesProfit(id('attack'),ZeroAddress,attacker.target,E('0.1'),E('1'),id('e'),{value:E('0.1')}));
  await tx(attacker.withdraw(E('0.1'),{gasLimit:1000000}));assert.equal(await attacker.attacked(),true);assert.equal(await attacker.reentrySucceeded(),false);await solvent();
 });
-test('seeded mixed operation sequence preserves ledger sums and collateral',async()=>{
+test('seeded mixed operation sequence preserves ledger sums and reports cash shortfall',async()=>{
  let seed=7;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed;};
  for(let i=3;i<8;i++)await deposit(i,E('1000'));
  for(let n=0;n<35;n++){const i=3+random()%5,amount=E(String(10+random()%50));
@@ -532,4 +530,105 @@ test('all fourteen rewards consume exact cumulative volume then stop; withdrawal
  const fee=await vault.WITHDRAWAL_FEE_WALLET();const before=await token.balanceOf(fee);
  await tx(vault.connect(signers[3]).withdrawProfit(token.target,E('10')));
  assert.equal(await token.balanceOf(fee)-before,E('0.5'));
+});
+
+// Independent state model: volume is computed from source ancestry, not the Solidity top-three algorithm.
+test('health: seeded 72-operation model preserves every branch total, ranking and qualified-direct count',async()=>{
+ const parent={3:0,4:3,5:3,6:3,7:3,8:4,9:4,10:5,11:6,12:7,13:8};
+ const expected=new Map(),capital=new Map();let seed=0x51a0beef;
+ const next=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+ for(let i=3;i<=13;i++){await tx(vault.connect(signers[i]).register(parent[i]?addr[parent[i]]:ZeroAddress));capital.set(i,0n);}
+ const record=(source,usd)=>{let child=source;while(parent[child]){const p=parent[child],k=p+':'+child;expected.set(k,(expected.get(k)||0n)+usd);child=p;}};
+ for(let step=0;step<72;step++){
+  const who=4+next()%10,kind=next()%3;
+  if(kind===0){const amount=E(String(10+next()%250));await deposit(who,amount,token.target,addr[parent[who]]);record(who,amount);capital.set(who,capital.get(who)+amount);}
+  if(kind===1){const amount=E(String(2+next()%9))/100n,usd=amount*600n;await deposit(who,amount,ZeroAddress,addr[parent[who]]);record(who,usd);capital.set(who,capital.get(who)+usd);}
+  if(kind===2){const usd=E(String(1+next()%1000));await tx(vault.settleSalesProfit(id('model'+step),token.target,addr[who],E('1'),usd,id('model-evidence'),{gasLimit:1500000}));record(who,usd);}
+  if(step%12===11){
+   for(let p=3;p<=13;p++){
+    const children=Object.keys(parent).map(Number).filter(i=>parent[i]===p);
+    let qualified=0n;const volumes=[];
+    for(const child of children){const value=expected.get(p+':'+child)||0n;assert.equal(await vault.branchVolumeUsd(addr[p],addr[child]),value);volumes.push(value);if(capital.get(child)>=E('100'))qualified++;}
+    assert.equal(await vault.qualifiedDirects(addr[p]),qualified);
+    const expectedTop=volumes.sort((a,b)=>a>b?-1:a<b?1:0).slice(0,3);while(expectedTop.length<3)expectedTop.push(0n);
+    const seen=new Set();for(let k=0;k<3;k++){const child=await vault.largestBranches(addr[p],k);if(child!==ZeroAddress){assert.ok(!seen.has(child));seen.add(child);assert.ok(children.some(i=>addr[i]===child));}assert.equal(await vault.branchVolumeUsd(addr[p],child),expectedTop[k]);}
+   }
+  }
+ }
+});
+test('health: reward branch roles rotate using only remaining volume; failed claim cannot advance',async()=>{
+ await networkRoot();await groupDeposit([4,5,6],[350,100,50]);await groupCreate([4,5,6]);await tx(vault.fundRewards(token.target,E('100')));
+ await tx(vault.connect(signers[3]).claimNetworkReward(0));
+ await groupDeposit([4,5,6],[100,700,190]);
+ const before=await vault.rewardGroup(addr[3],0);await fails(vault.connect(signers[3]).claimNetworkReward(0));assert.deepEqual((await vault.rewardGroup(addr[3],0)).toArray(true),before.toArray(true));
+ await deposit(6,E('10'),token.target,addr[3]);const preview=await vault.rewardPreview(addr[3],0);
+ assert.equal(preview.eligible,true);assert.deepEqual(Array.from(preview.consume),[E('100'),E('700'),E('200')]);
+ const cash=await token.balanceOf(vault.target),debt=await vault.accounted(token.target);
+ await tx(vault.connect(signers[3]).claimNetworkReward(0,{gasLimit:600000}));
+ assert.equal(await token.balanceOf(vault.target),cash);assert.equal(await vault.accounted(token.target),debt);
+ assert.deepEqual(Array.from((await vault.rewardGroup(addr[3],0)).consumedUsd),[E('450'),E('800'),E('250')]);
+});
+test('health: independent accounts cannot claim another user group; rejected group creation is atomic',async()=>{
+ await networkRoot();await groupDeposit([4,5,6],[350,100,50]);
+ await fails(vault.connect(signers[3]).createRewardGroup([addr[4],addr[5],addr[4]]));
+ assert.equal(await vault.groupedBranch(addr[3],addr[4]),false);assert.equal(await vault.groupedBranch(addr[3],addr[5]),false);
+ await groupCreate([4,5,6]);await tx(vault.fundRewards(token.target,E('25')));
+ await fails(vault.connect(signers[7]).claimNetworkReward(0));await fails(vault.connect(signers[3]).claimNetworkReward(1));
+ assert.equal((await vault.rewardGroup(addr[3],0)).stage,0n);assert.equal((await vault.ledgers(token.target)).rewards,E('25'));
+});
+test('health: incomplete deep-volume jobs can finish out of order without replay or cross-branch attribution',async()=>{
+ await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=13;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
+ await deposit(13,E('100'),token.target,addr[12]);await deposit(12,E('200'),token.target,addr[11]);
+ assert.equal(await vault.volumeJobCount(),2n);
+ await tx(vault.processNetworkVolume(1,1));await tx(vault.processNetworkVolume(0,1));
+ assert.equal(await vault.branchVolumeUsd(addr[3],addr[4]),E('200'));
+ await tx(vault.processNetworkVolume(0,1));await tx(vault.processNetworkVolume(1,64));await tx(vault.processNetworkVolume(0,64));
+ assert.equal(await vault.branchVolumeUsd(addr[3],addr[4]),E('300'));
+ for(let p=3;p<12;p++)assert.equal(await vault.branchVolumeUsd(addr[p],addr[p+1]),E('300'));
+ assert.equal(await vault.branchVolumeUsd(addr[12],addr[13]),E('100'));
+ await fails(vault.processNetworkVolume(2,1));
+});
+test('health: full principal withdrawal removes active direct once but preserves historical volume and cap',async()=>{
+ await networkRoot();await deposit(4,E('100'),token.target,addr[3]);await tx(vault.setCustomerStatus(addr[4],true,false));
+ assert.equal(await vault.qualifiedDirects(addr[3]),1n);await warp(90*86400);
+ await tx(vault.connect(signers[4]).withdrawPrincipal(0,E('1'),{gasLimit:600000}));assert.equal(await vault.qualifiedDirects(addr[3]),0n);
+ await warp(72*3600);await tx(vault.connect(signers[4]).withdrawPrincipal(0,E('99'),{gasLimit:600000}));
+ assert.equal(await vault.qualifiedDirects(addr[3]),0n);assert.equal(await vault.branchVolumeUsd(addr[3],addr[4]),E('100'));
+ assert.equal(await vault.profitWithdrawalCap(addr[4],token.target),E('10'));
+ await fails(vault.connect(signers[4]).withdrawPrincipal(0,1n));
+});
+test('health: decimal and depeg conversion credits funded USDT units, not a hard-coded dollar peg',async()=>{
+ const t=await deploy('MockToken',[6]);const v=await deploy('DropshippingVault',[addr[0],t.target,bnbFeed.target,usdFeed.target,86400,[addr[0],addr[1],addr[2],addr[8],addr[9],addr[10],addr[11]],addr[14]]);
+ await tx(v.connect(signers[3]).register(ZeroAddress));
+ for(const i of [4,5,6])await tx(v.connect(signers[i]).register(addr[3]));
+ await tx(t.mint(addr[0],1000n*10n**6n));await tx(t.approve(v.target,1000n*10n**6n));
+ for(let j=0;j<3;j++)await tx(v.settleSalesProfit(id('decimal'+j),t.target,addr[j+4],1_000_000n,E(String([350,100,50][j])),id('receipt'),{gasLimit:1500000}));
+ await tx(v.connect(signers[3]).createRewardGroup([addr[4],addr[5],addr[6]]));await tx(v.fundRewards(t.target,100_000_000n));
+ const b=await rpc.request({method:'eth_getBlockByNumber',params:['latest',false]});await tx(usdFeed.set(80_000_000n,Number(b.timestamp),1,1));
+ await tx(v.connect(signers[3]).claimNetworkReward(0));
+ assert.equal((await v.accounts(addr[3],t.target)).profit,31_250_000n);assert.equal((await v.ledgers(t.target)).rewards,68_750_000n);
+});
+test('health: a BNB-only member needs USDT cap for USDT rewards; reinvest creates that cap',async()=>{
+ await deposit(3,E('1'),ZeroAddress);await groupDeposit([4,5,6],[350,100,50]);await groupCreate([4,5,6]);
+ await tx(vault.fundRewards(token.target,E('25')));await tx(vault.connect(signers[3]).claimNetworkReward(0));
+ assert.equal(await vault.profitWithdrawalCap(addr[3],token.target),0n);await fails(vault.connect(signers[3]).withdrawProfit(token.target,E('1')));
+ await tx(vault.connect(signers[3]).reinvest(token.target,E('10')));
+ assert.equal(await vault.profitWithdrawalCap(addr[3],token.target),E('1'));await tx(vault.connect(signers[3]).withdrawProfit(token.target,E('1'),{gasLimit:600000}));
+});
+test('health: local deployment and deepest automatic deposit fit explicit gas budgets',async()=>{
+ const a=artifact('DropshippingVault');assert.ok(a.evm.deployedBytecode.object.length/2<=24576);
+ const receipt=await vault.deploymentTransaction().wait();assert.ok(receipt.gasUsed<8_000_000n,'deployment gas');
+ await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=13;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
+ const depositReceipt=await tx(vault.connect(signers[13]).deposit(token.target,E('100'),addr[12],{gasLimit:1500000}));assert.ok(depositReceipt.gasUsed<1_500_000n);
+ console.log('HEALTH_GAS '+JSON.stringify({deployment:receipt.gasUsed.toString(),eightAncestorDeposit:depositReceipt.gasUsed.toString(),runtimeBytes:a.evm.deployedBytecode.object.length/2}));
+});
+test('health: 74-level ancestry processes a full 64-step batch within gas budget and preserves final two ancestors',async()=>{
+ await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=77;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
+ await deposit(77,E('0.2'),ZeroAddress,addr[76]);const job=(await vault.volumeJobCount())-1n;
+ assert.equal((await vault.volumeJobs(job)).ancestor,addr[68]);
+ const receipt=await tx(vault.processNetworkVolume(job,64,{gasLimit:12_000_000}));
+ assert.equal((await vault.volumeJobs(job)).ancestor,addr[4]);assert.equal(await vault.branchVolumeUsd(addr[3],addr[4]),0n);
+ assert.ok(receipt.gasUsed<12_000_000n);await tx(vault.processNetworkVolume(job,64));
+ assert.equal((await vault.volumeJobs(job)).ancestor,ZeroAddress);assert.equal(await vault.branchVolumeUsd(addr[3],addr[4]),E('120'));
+ console.log('HEALTH_QUEUE_GAS '+receipt.gasUsed.toString());
 });

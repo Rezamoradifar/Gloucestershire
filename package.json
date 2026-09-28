@@ -5,12 +5,23 @@
   "type": "module",
   "scripts": {
     "compile": "node scripts/compile.mjs",
-    "test": "node --test --test-concurrency=1 test/*.test.mjs"
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "pretest": "npm run compile"
   },
   "dependencies": {
+    "ethers": "6.17.0"
+  },
+  "devDependencies": {
     "@openzeppelin/contracts": "5.4.0",
-    "ethers": "6.15.0",
     "ganache": "7.9.2",
     "solc": "0.8.30"
+  },
+  "overrides": {
+    "ethers": {
+      "ws": "8.21.0"
+    },
+    "solc": {
+      "tmp": "0.2.7"
+    }
   }
 }

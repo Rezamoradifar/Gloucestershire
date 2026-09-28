@@ -1,0 +1,15 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bnb-dropshipping-vault@0.6.0 compile
+> node scripts/compile.mjs
+
+Compiled Solidity 0.8.30+commit.73712a01.Emscripten.clang; vault runtime 21693 bytes
+✔ deployment console bytecode and verification sources match the freshly compiled contract (4.460805ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 84.019981

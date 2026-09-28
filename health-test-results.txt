@@ -1,0 +1,154 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bnb-dropshipping-vault@0.6.0 pretest
+> npm run compile
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bnb-dropshipping-vault@0.6.0 compile
+> node scripts/compile.mjs
+
+Compiled Solidity 0.8.30+commit.73712a01.Emscripten.clang; vault runtime 21693 bytes
+
+> bnb-dropshipping-vault@0.6.0 test
+> node --test --test-concurrency=1 test/*.test.mjs
+
+✔ deployment console bytecode and verification sources match the freshly compiled contract (4.50152ms)
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+Step 1/4: https://testnet.bscscan.com/tx/0xe2ff16c97bd2572ec5d79f5c9fa725ab90fb417cee5e5fec8c4ff0ece63e73d7
+Confirmed MockToken: 0x568fDDaF9eC47577541ec9936f5854cD77b28fed
+Step 2/4: https://testnet.bscscan.com/tx/0x676fe604c56e340fec21fb25140352e18b6de0c7aaef9377879785e6683b9a9e
+Confirmed MockFeed: 0x85D0b9b232E182BfA034f80ad503104b58ebe533
+Step 3/4: https://testnet.bscscan.com/tx/0xc297e0a1ee5ff6e00535daf458cb53d517ab5a0f6cc76df8054fe95e7d5b11b1
+Confirmed MockFeed: 0xdd91c4864CA1822aEBF17Ab276bb028597069Ebc
+Step 4/4: https://testnet.bscscan.com/tx/0x5cbc9b5b37258494350ffa1b7cb93661be4b2a731292e407fd9ae6f2a7333eac
+Confirmed DropshippingVault: 0x64Aa87A3c633f27362F75e10328d2983A546034f
+PASS: Deployed bytecode inputs, owner, operations wallet and seven partners match
+PASS: Test feeds are current
+PASS: Below-minimum deposit rejected
+PASS: Non-owner capital withdrawal rejected
+PASS: Non-reporter profit settlement rejected
+PASS: TEST USDT deposit routed 10/10/80 and full principal recorded
+PASS: TEST USDT principal locked before 90 days
+PASS: test BNB deposit routed 10/10/80 and full principal recorded
+PASS: test BNB principal locked before 90 days
+PASS: Profit withdrawal with no liquidity rejected
+Report: /tmp/global-health-ErmE9C/health-public.json
+Previously completed; no new transactions sent.
+✔ live health runner verifies routes/reverts, blocks mainnet and does not repeat deposits (3030.792869ms)
+✔ mainnet preparation pins network, assets, feeds and gas cap without signing (39.622319ms)
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+Step 1/4: https://testnet.bscscan.com/tx/0x43a3361a03bad2ee6d64b1cdbd3b2a04dc355260e0a3dd773327e0a58ee4e69f
+Confirmed MockToken: 0xa9ba3A5135085186aC9B6Fe4FeDCeFc88B8EA8a4
+Step 2/4: https://testnet.bscscan.com/tx/0x4f77da36475e1dc7e7ed8305f622eee6a088436e733bdf78406162d655a06b0c
+Confirmed MockFeed: 0xfb2887e01811e4E1479DDc17c963C9c6B2866884
+Step 3/4: https://testnet.bscscan.com/tx/0xd9e4f7edc971ed5b1975c494c0b506c0a29705d46763e836d255011184590683
+Confirmed MockFeed: 0x6cCf08b2Adc31bEc7Eb950A6d0d58c398ddEE95d
+Step 4/4: https://testnet.bscscan.com/tx/0xbf9bea6c3382c52f828dd34d9cccc5adbe178ad39f8ef464daa5499858226a04
+Confirmed DropshippingVault: 0xF3Fdb248d45f4a6C42E1bD9BaD109bd385e9B162
+Confirmed MockToken: 0xa9ba3A5135085186aC9B6Fe4FeDCeFc88B8EA8a4
+Confirmed MockFeed: 0xfb2887e01811e4E1479DDc17c963C9c6B2866884
+Confirmed MockFeed: 0x6cCf08b2Adc31bEc7Eb950A6d0d58c398ddEE95d
+Confirmed DropshippingVault: 0xF3Fdb248d45f4a6C42E1bD9BaD109bd385e9B162
+✔ server deployment verifies configured owner and safely resumes without duplicates (1282.002163ms)
+This version of µWS is not compatible with your Node.js build:
+
+Error: Cannot find module '../binaries/uws_linux_x64_137.node'
+Require stack:
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/node_modules/@trufflesuite/uws-js-unofficial/src/uws.js
+- /workspace/scratch/1d6d8de53bc8/global-bnb/node_modules/ganache/dist/node/core.js
+Falling back to a NodeJS implementation; performance may be degraded.
+
+
+✔ hard-coded fee wallets and no replacement/upgrade entrypoint (1946.455863ms)
+✔ USDT deposit credits 100%, routes 80/10/10 without consuming reserve (212.671711ms)
+✔ BNB deposit and separate reserve accounting (235.30064ms)
+✔ zero reserve permits atomic 80/10/10 deposit routing (1289.76958ms)
+✔ native value mismatch and unsupported assets rejected (72.016364ms)
+✔ minimum deposit and decimal tier gaps resolved (257.979957ms)
+✔ stale, negative, future and incomplete oracle rounds rejected (456.515798ms)
+✔ only funded reporter settlements create profits; duplicate ID rejected (297.650388ms)
+✔ profit withdrawal fee, cap, cooldown and exact 72h boundary (812.671029ms)
+✔ principal locked 90 days, partial/full withdrawals charge 30% (338.992198ms)
+✔ configuration delay/access caps and old principal terms preserved (804.70814ms)
+✔ five plan referral table preserved, target never accrues automatic profit (120.089797ms)
+✔ immutable referral DAG rejects self registration and referrer changes (203.930262ms)
+✔ non-VIP level four is excluded even with active direct customer; no deposit referrals (812.528244ms)
+✔ non-VIP and inactive referral shares stay with seller (690.433211ms)
+✔ invite-count milestones are removed from ABI and do not create profit (469.430867ms)
+✔ bounded funded batch allocation, replay and over-allocation rejected (525.442542ms)
+✔ reinvest conserves assets, opens new lock, no new deposit fees and increases withdrawal cap (852.003955ms)
+✔ removed internal transfer rejects legacy calldata for BNB and USDT without changing accounts (1534.196147ms)
+✔ pause stops deposits and settlements but permits funded exits (714.040301ms)
+✔ configuration requires two distinct partner votes and two days; partners cannot withdraw (293.718452ms)
+✔ native withdrawal resists recipient reentrancy (1176.217874ms)
+✔ seeded mixed operation sequence preserves ledger sums and reports cash shortfall (22106.184842ms)
+✔ six-decimal token retains correct USD valuations and fees (1839.169027ms)
+✔ 90-day unlock boundary tested one second before and at unlock (305.910523ms)
+✔ governance validates referral cap, descending rates, targets and partner threshold (466.532718ms)
+✔ VIP capital requires reporter KYC and no deposit creates sales status (717.46047ms)
+✔ configuration quorum is snapshotted and approved votes do not skip delay (361.309443ms)
+✔ cancel and requeue never reuse old votes and calldata cannot be substituted (402.128856ms)
+✔ owner-managed USDT: full access, unchanged claims, failed exit rollback and capital return (646.841812ms)
+✔ owner-managed BNB: full access, unchanged claims, failed exit rollback and capital return (613.563014ms)
+✔ capital return creates no profit or deposit fee, excess is unallocated cash (665.082871ms)
+✔ two immutable deposit payments survive full owner withdrawal (382.944455ms)
+✔ only accepted new owner has treasury withdrawal authority (130.374095ms)
+✔ exactly seven unique nonzero partners are required (277.747517ms)
+✔ all seven partners can vote once and seven-vote quorum is enforceable (749.359933ms)
+✔ quorum cannot exceed seven and removed exchange selectors cannot execute (191.341785ms)
+✔ 80/10/10 USDT split and principal penalty retained, no fee destination receives penalty (267.167068ms)
+✔ 80/10/10 BNB split and principal penalty retained, no fee destination receives penalty (178.324354ms)
+✔ level four requires current active VIP with KYC; downgrade or KYC revocation stops eligibility (970.734568ms)
+✔ rounding remainder belongs to operations and preserves exact sum (108.707387ms)
+✔ operations wallet validation and immutability (189.111621ms)
+✔ rejected BNB operations transfer rolls back fees, claims, outstanding and registration (397.378755ms)
+✔ operations wallet callback cannot reenter deposit (404.869363ms)
+✔ all six governed setters require votes and governance pays no partner funds (1034.037544ms)
+✔ profit withdrawal fee accepts zero and ten percent but rejects above ten even with governance approval (684.091091ms)
+✔ reinvest raises USDT cap from personal and network profit, enforces exact boundary and rollback (1856.809004ms)
+✔ reinvest raises BNB cap from personal and network profit, enforces exact boundary and rollback (1767.631582ms)
+✔ network reward table is exact across all fourteen stages (326.249795ms)
+✔ rank requires independent 70/20/10 branches and four capital-qualified directs (1197.090032ms)
+✔ two disjoint triplets earn separately; branch reassignment and duplicate branches rejected (2706.1513ms)
+✔ second reward consumes 1000 additional volume, keeps surplus and cannot replay first reward (1933.105286ms)
+✔ unfunded, stale oracle, paused and empty-cash reward claims roll back stage and consumed volume (1980.21233ms)
+✔ deposit, reinvest and reported sales add once under the immediate branch; returns and rewards add no volume (1859.273123ms)
+✔ bounded ancestry processing resumes without loss or duplicate volume (960.583676ms)
+✔ largest branches reorder and excess large branch never substitutes for a small branch (1636.945076ms)
+✔ all fourteen rewards consume exact cumulative volume then stop; withdrawal retains existing fee and cap (2623.649483ms)
+✔ health: seeded 72-operation model preserves every branch total, ranking and qualified-direct count (14031.386267ms)
+✔ health: reward branch roles rotate using only remaining volume; failed claim cannot advance (3304.196857ms)
+✔ health: independent accounts cannot claim another user group; rejected group creation is atomic (1253.149469ms)
+✔ health: incomplete deep-volume jobs can finish out of order without replay or cross-branch attribution (1649.726011ms)
+✔ health: full principal withdrawal removes active direct once but preserves historical volume and cap (658.756391ms)
+✔ health: decimal and depeg conversion credits funded USDT units, not a hard-coded dollar peg (1975.709379ms)
+✔ health: a BNB-only member needs USDT cap for USDT rewards; reinvest creates that cap (2027.465145ms)
+HEALTH_GAS {"deployment":"5689924","eightAncestorDeposit":"1032906","runtimeBytes":21693}
+✔ health: local deployment and deepest automatic deposit fit explicit gas budgets (716.959231ms)
+HEALTH_QUEUE_GAS 5102391
+✔ health: 74-level ancestry processes a full 64-step batch within gas budget and preserves final two ancestors (5115.38678ms)
+ℹ tests 70
+ℹ suites 0
+ℹ pass 70
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 103798.730945
