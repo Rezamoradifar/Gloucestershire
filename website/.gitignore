@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.env.local
+
+*.tsbuildinfo
+/public/assets/global-trade-hero.png

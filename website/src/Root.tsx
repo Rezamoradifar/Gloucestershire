@@ -1,0 +1,4 @@
+import {lazy,Suspense,useEffect,useState} from 'react';
+import Landing from './Landing';
+const Dashboard=lazy(()=>import('./App'));
+export default function Root(){const [dashboard,setDashboard]=useState(location.hash==='#dashboard');useEffect(()=>{const change=()=>{const next=location.hash==='#dashboard';setDashboard(next);if(next||location.hash===''||location.hash==='#')window.scrollTo(0,0);};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);useEffect(()=>{document.title=dashboard?'GLOBAL | Capital dashboard':'GLOBAL | Dropshipping, economics & network';if(!dashboard&&location.hash.length>1)requestAnimationFrame(()=>document.getElementById(location.hash.slice(1))?.scrollIntoView());},[dashboard]);return dashboard?<><a href="#" className="dashboard-home-link">Back to website</a><Suspense fallback={<div className="dashboard-loading">Loading your dashboard...</div>}><Dashboard/></Suspense></>:<Landing/>;}
