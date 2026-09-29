@@ -632,3 +632,34 @@ test('health: 74-level ancestry processes a full 64-step batch within gas budget
  assert.equal((await vault.volumeJobs(job)).ancestor,ZeroAddress);assert.equal(await vault.branchVolumeUsd(addr[3],addr[4]),E('120'));
  console.log('HEALTH_QUEUE_GAS '+receipt.gasUsed.toString());
 });
+
+for (const native of [false,true]) test(`small ${native?'BNB':'USDT'} reinvest is independent of deposit minimum and preserves accounting`,async()=>{
+ const asset=native?ZeroAddress:token.target, small=native?E('0.00001'):E('0.01');
+ await deposit(3,native?E('1'):E('100'),asset); await sale(3,native?E('0.01'):E('1'),asset,'small-reinvest');
+ await queueCall('setMinDeposit',[E('20')]); await refresh();
+ assert.equal(await vault.minDepositUsd(),E('20'));
+ await fails(vault.connect(signers[3]).deposit(asset,small,ZeroAddress,{...(native?{value:small}:{}),gasLimit:1500000}));
+ const a=await vault.accounts(addr[3],asset),cash=await vault.assetBalance(asset),count=await vault.positionCount(addr[3]);
+ const wallets=[await vault.FEE_WALLET_1(),await vault.FEE_WALLET_2(),await vault.dropshippingWallet()];
+ const balances=await Promise.all(wallets.map(w=>native?provider.getBalance(w):token.balanceOf(w)));
+ const usd=await vault.quoteUsd(asset,small),capital=(await vault.users(addr[3])).capitalUsd;
+ await tx(vault.connect(signers[3]).reinvest(asset,small));
+ const b=await vault.accounts(addr[3],asset),pos=await vault.positionOf(addr[3],count);
+ assert.equal(b.profit,a.profit-small);assert.equal(b.principal,a.principal+small);
+ assert.equal(b.externalDeposited,a.externalDeposited);assert.equal(b.nextWithdrawal,a.nextWithdrawal);
+ assert.equal(await vault.assetBalance(asset),cash);assert.equal(await vault.cumulativeReinvested(addr[3],asset),small);
+ assert.equal(await vault.profitWithdrawalCap(addr[3],asset),(a.externalDeposited+small)/10n);
+ assert.equal((await vault.users(addr[3])).capitalUsd,capital+usd);assert.equal(pos.principal,small);assert.equal(pos.capitalUsd,usd);
+ assert.deepEqual(await Promise.all(wallets.map(w=>native?provider.getBalance(w):token.balanceOf(w))),balances);
+ await fails(vault.connect(signers[3]).reinvest(asset,0n,{gasLimit:1000000}));
+ await fails(vault.connect(signers[3]).reinvest(asset,b.profit+1n,{gasLimit:1000000}));
+ assert.equal(await vault.positionCount(addr[3]),count+1n);assert.equal((await vault.accounts(addr[3],asset)).profit,b.profit);
+});
+test('reinvest rejects zero-dollar rounding dust without consuming profit',async()=>{
+ await deposit();await sale();const b=await rpc.request({method:'eth_getBlockByNumber',params:['latest',false]});
+ await tx(usdFeed.set(50000000n,Number(b.timestamp),1,1));
+ assert.equal(await vault.quoteUsd(token.target,1n),0n);
+ const a=await vault.accounts(addr[3],token.target);
+ await fails(vault.connect(signers[3]).reinvest(token.target,1n,{gasLimit:1000000}));
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,a.profit);
+});

@@ -286,7 +286,8 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         emit PrincipalPenaltyRetained(msg.sender,p.asset,fee); _pay(p.asset,msg.sender,amount-fee); emit Withdrawal(msg.sender,p.asset,amount,fee,true);
     }
     function reinvest(address asset,uint256 amount) external nonReentrant live {
-        uint256 usd=quoteUsd(asset,amount); if(usd<minDepositUsd) revert Insufficient(); _takeProfit(msg.sender,asset,amount,false);
+        // Reinvest earned profit independently of the external-deposit minimum.
+        uint256 usd=quoteUsd(asset,amount); if(usd==0) revert Insufficient(); _takeProfit(msg.sender,asset,amount,false);
         uint256 id=_open(msg.sender,asset,amount,usd); cumulativeReinvested[msg.sender][asset]+=amount; emit Reinvested(msg.sender,asset,amount,id);
     }
     /// @notice Credit earned USD reward as USDT profit from a separately funded reward budget.
