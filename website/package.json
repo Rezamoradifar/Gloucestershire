@@ -7,8 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "vitest run",
-    "prebuild": "bash ../scripts/website-assets.sh"
+    "test": "vitest run"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",

@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "checks": [
+    "desktop/mobile render",
+    "supplier and market example",
+    "privacy/terms dialog and Escape",
+    "mobile navigation",
+    "no overflow or broken images",
+    "dashboard navigation",
+    "no uncaught JS errors"
+  ],
+  "metrics": {
+    "width": 390,
+    "scrollWidth": 390,
+    "images": [
+      {
+        "src": "/assets/commerce-world.webp",
+        "ok": true
+      },
+      {
+        "src": "/assets/commerce-story.webp",
+        "ok": true
+      },
+      {
+        "src": "/assets/commerce-world.webp",
+        "ok": true
+      }
+    ]
+  }
+}

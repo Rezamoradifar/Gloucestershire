@@ -17,3 +17,10 @@ Prompt:
 - Typeface: Inter via `@fontsource/inter` (SIL Open Font License); bundled locally. The earlier Vazirmatn dependency remains in the base styles.
 - The English hero mirrors the original image in CSS to place the vessel on the right.
 - Brand mark: typographic G, implemented in CSS as part of the interface.
+
+## Commerce redesign (2026-10-01)
+
+- `public/assets/commerce-world.webp`: generated with the built-in image tool. Conceptual orbital Earth with restrained gold trade routes above a cargo port, black/charcoal and champagne palette, no text or logos. Used in the hero and global-scale sections; routes do not represent verified operations. Original PNG remains in the conversation's generated_images directory when available. WebP conversion preserves the composition.
+- `public/assets/commerce-story.webp`: optimized WebP of the original project-generated cargo-ship image described above, now used in Our Story.
+- AI-engine orbit: native CSS and Lucide icon illustration, not a live analysis feed.
+- Company history and scale figures come from user-supplied copy and are labelled as not independently verified. Price comparisons are explicitly illustrative.
