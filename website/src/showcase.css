@@ -1,0 +1,83 @@
+/* Presentation polish for the Vercel preview; no financial behavior changes. */
+.gdt-page {
+  --text: #f4f0e8;
+  --dim: #b1b1a9;
+  --border: #e8d8ae20;
+  background: #0b0e0e;
+}
+.gdt-header { border-bottom-color: #d4b87a26; }
+.gdt-mark { background: radial-gradient(circle, #d4b87a13, transparent 75%); }
+.gdt-links a { transition: color .2s; }
+.gdt-hero-image { filter: saturate(1.08) brightness(1.06); }
+.gdt-hero-shade {
+  background: linear-gradient(90deg, #090c0ef0, #090c0eac 42%, #090c0e05 82%),
+    linear-gradient(0deg, #0b0e0e, transparent 30%);
+}
+.gdt-hero-content > p { color: #d3d0c7; max-width: 540px; }
+.gdt-button { border-radius: 6px; box-shadow: 0 5px 24px #d4b87a14; }
+.gdt-stats { padding-block: 40px; }
+.gdt-model-band, .gdt-ai-band {
+  background: radial-gradient(ellipse at 50% 0, #d4b87a08, transparent 60%), #101413;
+}
+.gdt-models article {
+  padding: 18px 18px 28px;
+  border: 1px solid #d4b87a26;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #ffffff04, #ffffff00);
+}
+.gdt-model-photo { border-radius: 9px; border-color: #d4b87a26; }
+.gdt-model-photo > span { border-radius: 4px; backdrop-filter: blur(8px); }
+.gdt-models h3 { margin-top: 12px; }
+.gdt-models p { font-size: 14px; line-height: 1.85; }
+.gdt-challenges article {
+  border-radius: 10px;
+  background: linear-gradient(135deg, #ffffff06, #ffffff01);
+}
+.gdt-challenges h3 { color: #f1eadb; }
+.gdt-demo-panel { border-radius: 14px; overflow: hidden; box-shadow: 0 20px 60px #0003; }
+.gdt-step-list button { border-radius: 7px; }
+.gdt-step-list button[aria-selected="true"] {
+  border-color: #d4b87a68;
+  background: linear-gradient(100deg, #d4b87a12, #d4b87a02);
+}
+.gdt-neural-inset { border-radius: 12px; overflow: hidden; }
+.gdt-signal-grid { gap: 16px; }
+.gdt-signal-grid article {
+  padding: 12px 12px 17px;
+  border: 1px solid #d4b87a20;
+  border-radius: 11px;
+  background: #ffffff03;
+}
+.gdt-signal-photo { border-radius: 6px; border: 0; }
+.gdt-signal-grid h3 { margin-bottom: 9px; }
+.gdt-signal-grid p { font-size: 12px; }
+.gdt-trade-panel { border-radius: 12px; overflow: hidden; }
+.gdt-feed-refresh { border-radius: 5px; }
+.gdt-faq-list details { transition: background .2s; }
+.gdt-faq-list details[open] { background: #d4b87a05; }
+.gdt-faq-list summary { padding-inline: 12px; }
+.gdt-faq-list details > p { padding-inline: 42px 22px; }
+.gdt-contact {
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 90% 50%, #d4b87a12, transparent 65%), #121714;
+}
+@media (max-width: 760px) {
+  .gdt-hero-shade {
+    background: linear-gradient(90deg, #090c0ee8, #090c0e68),
+      linear-gradient(0deg, #0b0e0e, transparent 55%);
+  }
+  .gdt-page h1 { font-size: clamp(34px, 9vw, 54px); }
+  .gdt-hero-content > p { font-size: 14px; line-height: 1.85; }
+  .gdt-models { gap: 22px; }
+  .gdt-models article, .gdt-models article:last-child { padding: 14px 14px 24px; }
+  .gdt-models .gdt-plus { display: none; }
+  .gdt-models p { font-size: 13px; }
+  .gdt-signal-grid { gap: 12px; }
+  .gdt-signal-grid article { padding: 9px 9px 15px; }
+  .gdt-signal-grid h3 { font-size: 15px; }
+  .gdt-faq-list summary { padding-inline: 4px; }
+  .gdt-faq-list details > p { padding-inline: 28px 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gdt-links a, .gdt-faq-list details { transition: none; }
+}

@@ -3,6 +3,7 @@ import {ArrowRight,ArrowUpRight,ArrowDown,Menu,X,Globe2,Package,Layers3,Trending
 import {UserTerms} from './LegalStatus';
 import './global-commerce.css';
 import './upgrades.css';
+import './showcase.css';
 import MediaImage from './MediaImage';
 import Faq from './Faq';
 import LiveTrades from './LiveTrades';
