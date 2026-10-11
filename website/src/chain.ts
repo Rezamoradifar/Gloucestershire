@@ -39,7 +39,9 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
  if(action.kind==='profit'&&await vault.profitFeeBps()!==action.expectedFee)throw Error('The fee changed. Refresh and review the transaction again.');
  if(['deposit','reinvest'].includes(action.kind)){
   if(await vault.lockDuration()!==action.expectedLock||await vault.principalPenaltyBps()!==action.expectedPenalty)throw Error('Lock or penalty terms changed. Review the updated terms.');
-  if(await vault.quoteUsd(a,amount)<await vault.minDepositUsd())throw Error('The amount is below the minimum deposit value in USD.');
+  const usd=await vault.quoteUsd(a,amount);
+  if(action.kind==='deposit'&&usd<await vault.minDepositUsd())throw Error('The amount is below the minimum deposit value in USD.');
+  if(action.kind==='reinvest'&&usd===0n)throw Error('The reinvestment is too small to have a nonzero USD value.');
  }
  if(['profit','principal','ownerWithdraw'].includes(action.kind)&&await vault.assetBalance(a)<amount)throw Error('Insufficient liquid treasury balance. The owner must restore funds before this withdrawal can succeed.');
  const funded=['deposit','reserve','rewards','settle','returnCapital'].includes(action.kind);
@@ -73,5 +75,5 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
  onStatus('Confirm the transaction in your wallet');const sent=await vault[method!](...args!);onStatus('Transaction submitted. Waiting for confirmation.',sent.hash);
  return receipt(sent);
 }
-export function errorText(error:unknown){const e=error as any;if(e?.code===4001||e?.code==='ACTION_REJECTED')return 'The request was rejected in your wallet.';const name=e?.revert?.name;const errors:Record<string,string>={InsufficientLiquidity:'The treasury lacks liquid funds. Withdrawal depends on capital being returned.',Insufficient:'Insufficient balance, reserve or allowed withdrawal amount.',Locked:'This operation is locked. Check the withdrawal time or pause status.',Unauthorized:'This account does not have the required permission.',Invalid:'The request parameters are invalid.',StalePrice:'The oracle price is invalid or stale.',Unsupported:'This asset or operation is unsupported.'};return errors[name]||e?.shortMessage||e?.message||'Network request failed. Please try again.';}
+export function errorText(error:unknown){const e=error as any;if(e?.code===4001||e?.code==='ACTION_REJECTED')return 'The request was rejected in your wallet.';const name=e?.revert?.name;const errors:Record<string,string>={NetworkStageChanged:'This reward stage has changed. Refresh and review it again.',NetworkPreparationRequired:'Prepare the group in batches before claiming.',NetworkInsufficient:'The current reward stage needs more eligible branch volume.',NetworkInvalid:'Check the group, direct branch addresses and batch size.',InsufficientLiquidity:'The treasury lacks liquid funds. Withdrawal depends on capital being returned.',Insufficient:'Insufficient balance, reserve or allowed withdrawal amount.',Locked:'This operation is locked. Check the withdrawal time or pause status.',Unauthorized:'This account does not have the required permission.',Invalid:'The request parameters are invalid.',StalePrice:'The oracle price is invalid or stale.',Unsupported:'This asset or operation is unsupported.'};return errors[name]||e?.shortMessage||e?.message||'Network request failed. Please try again.';}
 export function actionFee(action:Action,amount:bigint){return ['profit','principal'].includes(action.kind)?feeOf(amount,action.expectedFee):0n;}

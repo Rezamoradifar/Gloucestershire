@@ -295,8 +295,19 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     function prepareNetworkReward(uint256 group,uint256 steps) external nonReentrant live {
         _prepareReward(msg.sender,group,steps);
     }
+    function prepareNetworkRewardAtStage(uint256 group,uint8 expectedStage,uint256 steps) external nonReentrant live {
+        _checkRewardStage(msg.sender,group,expectedStage);
+        _prepareReward(msg.sender,group,steps);
+    }
     /// @dev Standard profit withdrawal fee, cap and cooldown apply. No principal is minted.
     function claimNetworkReward(uint256 group) external nonReentrant live {
+        _claimNetworkReward(group);
+    }
+    function claimNetworkRewardAtStage(uint256 group,uint8 expectedStage) external nonReentrant live {
+        _checkRewardStage(msg.sender,group,expectedStage);
+        _claimNetworkReward(group);
+    }
+    function _claimNetworkReward(uint256 group) private {
         uint256 usd=_consumeReward(msg.sender,group);
         uint256 amount=quoteAsset(usdt,usd);
         if(amount==0 || ledgers[usdt].rewards<amount) revert Insufficient();
