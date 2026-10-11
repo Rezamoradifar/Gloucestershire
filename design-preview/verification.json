@@ -1,0 +1,38 @@
+{
+  "viewports": [
+    {
+      "width": 320,
+      "scroll": 320,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "scroll": 390,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "scroll": 768,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "scroll": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "scroll": 1440,
+      "overflow": []
+    }
+  ],
+  "interactions": [
+    "Mobile navigation opens, follows the section link, and closes.",
+    "Projector image, keyboard workflow selection, and next-step navigation work.",
+    "All 18 FAQ entries remain present; accordion opens.",
+    "Privacy dialog opens and closes.",
+    "Preview feed clearly reports NOT CONNECTED.",
+    "Primary CTA opens the existing dashboard route."
+  ],
+  "errors": []
+}
