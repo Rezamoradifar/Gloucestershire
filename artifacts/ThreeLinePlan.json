@@ -16,6 +16,11 @@
       "type": "error"
     },
     {
+      "inputs": [],
+      "name": "NetworkStageChanged",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -199,6 +204,19 @@
     {
       "inputs": [],
       "name": "NETWORK_BATCH_LIMIT",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "NETWORK_PLAN_VERSION",
       "outputs": [
         {
           "internalType": "uint256",

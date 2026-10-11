@@ -737,3 +737,35 @@ test('reinvest rejects zero-dollar rounding dust without consuming profit',async
  await fails(vault.connect(signers[3]).reinvest(token.target,1n,{gasLimit:1000000}));
  assert.equal((await vault.accounts(addr[3],token.target)).profit,a.profit);
 });
+
+test('reviewed stage guards reject stale preparation and claims without consuming the next stage',async()=>{
+ await networkRoot();await groupDeposit([4,5],[1000,1000]);await groupCreate([4,5]);
+ await tx(vault.fundRewards(token.target,E('105')));
+ assert.equal(await vault.NETWORK_PLAN_VERSION(),2n);
+ await tx(vault.connect(signers[3]).prepareNetworkRewardAtStage(0,0,64));
+ await tx(vault.connect(signers[3]).claimNetworkRewardAtStage(0,0));
+ const before=(await vault.rewardGroup(addr[3],0)).toArray(true);
+ const profit=(await vault.accounts(addr[3],token.target)).profit;
+ await assert.rejects(vault.connect(signers[3]).claimNetworkRewardAtStage.staticCall(0,0),e=>e.revert?.name==='NetworkStageChanged');
+ await fails(vault.connect(signers[3]).prepareNetworkRewardAtStage(0,0,64,{gasLimit:700000}));
+ await fails(vault.connect(signers[3]).claimNetworkRewardAtStage(0,0,{gasLimit:700000}));
+ assert.deepEqual((await vault.rewardGroup(addr[3],0)).toArray(true),before);
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,profit);
+ await tx(vault.connect(signers[3]).prepareNetworkRewardAtStage(0,1,64));
+ await tx(vault.connect(signers[3]).claimNetworkRewardAtStage(0,1));
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,E('105'));
+ assert.equal((await vault.rewardProgress(addr[3],0)).stage,2n);
+ await fails(vault.connect(signers[3]).prepareNetworkRewardAtStage(9,0,64));
+});
+test('guarded preparation preserves reservations when liquidity is missing and when paused',async()=>{
+ await networkRoot();await groupDeposit([4,5],[300,200]);await groupCreate([4,5]);
+ await tx(vault.connect(signers[3]).prepareNetworkRewardAtStage(0,0,64));
+ const before=(await vault.rewardGroup(addr[3],0)).toArray(true);
+ await fails(vault.connect(signers[3]).claimNetworkRewardAtStage(0,0,{gasLimit:700000}));
+ await tx(vault.setPaused(true));
+ await fails(vault.connect(signers[3]).prepareNetworkRewardAtStage(0,0,64,{gasLimit:700000}));
+ assert.deepEqual((await vault.rewardGroup(addr[3],0)).toArray(true),before);
+ await tx(vault.setPaused(false));await tx(vault.fundRewards(token.target,E('35')));
+ await tx(vault.connect(signers[3]).claimNetworkRewardAtStage(0,0));
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,E('35'));
+});

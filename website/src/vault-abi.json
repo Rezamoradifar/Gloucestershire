@@ -76,6 +76,11 @@
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "NetworkStageChanged",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -881,6 +886,19 @@
   },
   {
     "inputs": [],
+    "name": "NETWORK_PLAN_VERSION",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "WITHDRAWAL_FEE_WALLET",
     "outputs": [
       {
@@ -1100,6 +1118,24 @@
       }
     ],
     "name": "claimNetworkReward",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "group",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "expectedStage",
+        "type": "uint8"
+      }
+    ],
+    "name": "claimNetworkRewardAtStage",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1706,6 +1742,29 @@
       }
     ],
     "name": "prepareNetworkReward",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "group",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "expectedStage",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "steps",
+        "type": "uint256"
+      }
+    ],
+    "name": "prepareNetworkRewardAtStage",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

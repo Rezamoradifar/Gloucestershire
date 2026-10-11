@@ -1,0 +1,58 @@
+import {useEffect,useRef,useState} from 'react';
+import {ArrowLeft,ArrowRight,RefreshCw,X} from 'lucide-react';
+import {displayAmount} from './money';
+import {errorText} from './chain';
+import {chainName,vaultAddress} from './config';
+import {BRANCH_PAGE,GROUP_PAGE,loadNetwork,parseBranches,type NetworkAction,type NetworkPage} from './network';
+import './network.css';
+const dollars=(n:bigint)=>displayAmount(n,18,2);
+const labels={create:'Create reward group',append:'Add direct branches',prepare:'Prepare next batch',claim:'Claim stage reward'};
+type Props={who:string;connected:boolean;busy:boolean;block:number;onExecute:(action:NetworkAction)=>Promise<void>};
+export default function NetworkRewards({who,connected,busy,block,onExecute}:Props){
+ const [page,setPage]=useState<NetworkPage|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
+ const [branchStart,setBranchStart]=useState(0n),[groupStart,setGroupStart]=useState(0n),[reload,setReload]=useState(0);
+ const [addresses,setAddresses]=useState(''),[destination,setDestination]=useState('new'),[draft,setDraft]=useState<NetworkAction|null>(null);
+ const dialog=useRef<HTMLDialogElement>(null);
+ useEffect(()=>{setBranchStart(0n);setGroupStart(0n);setDestination('new');setAddresses('');setDraft(null);},[who,connected]);
+ useEffect(()=>{let stopped=false;setPage(null);setError('');if(!connected){setLoading(false);return;}
+  setLoading(true);loadNetwork(who,branchStart,groupStart).then(p=>{if(!stopped)setPage(p);}).catch(e=>{if(!stopped)setError(errorText(e));}).finally(()=>{if(!stopped)setLoading(false);});
+  return()=>{stopped=true;};
+ },[who,connected,branchStart,groupStart,reload,block]);
+ useEffect(()=>{if(draft)dialog.current?.showModal();else dialog.current?.close();},[draft]);
+ const editable=!!page&&page.registered&&!busy&&!loading;
+ function reviewBranches(){try{const branches=parseBranches(addresses);setDraft(destination==='new'?{kind:'create',branches}:{kind:'append',group:BigInt(destination),branches});setError('');}catch(e){setError(errorText(e));}}
+ async function confirm(){if(!draft||busy)return;const action=draft;setDraft(null);await onExecute(action);setReload(n=>n+1);}
+ const reviewedStage=draft&&(draft.kind==='claim'||draft.kind==='prepare')?page?.stages[draft.stage]:undefined;
+ return <section className="network-rewards" aria-labelledby="network-rewards-title">
+  <div className="section-toolbar"><h2 id="network-rewards-title">Network volume & rewards</h2><button className="small-button" disabled={!connected||busy||loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={15}/> Refresh network</button></div>
+  {!connected&&<div className="notice neutral">Connect your wallet to the configured contract to manage reward groups.</div>}
+  {loading&&<p role="status">Loading confirmed network data…</p>}
+  {error&&<div className="notice error" role="alert">{error}</div>}
+  {page&&<>
+   <div className="network-summary"><span>Capital-qualified directs <strong>{page.qualified.toString()}</strong></span><span>Independent branches <strong>{page.branchCount.toString()}</strong></span><span>Reward groups <strong>{page.groupCount.toString()}</strong></span></div>
+   {page.paused&&<p className="notice neutral">Reward preparation and claims are paused by the contract.</p>}
+   <section className="panel"><h3>Direct branches with recorded volume</h3><p>Each branch contributes up to the stage cap. A branch can belong to only one group.</p>
+    <div className="network-table"><table><thead><tr><th>Direct branch</th><th>Historical USD volume</th><th>Group status</th></tr></thead><tbody>{page.branches.map(b=><tr key={b.address}><td><code>{b.address}</code></td><td>{dollars(b.volume)}</td><td>{b.grouped?'Already assigned':'Available'}</td></tr>)}</tbody></table></div>
+    {!page.branches.length&&<p>No recorded branches on this page. Pending deep-ancestry volume must be processed on-chain before it appears.</p>}
+    <div className="network-pagination"><button className="small-button" disabled={busy||branchStart===0n} onClick={()=>setBranchStart(n=>n-BRANCH_PAGE)}><ArrowLeft size={15}/>Previous branches</button><span>Page {(branchStart/BRANCH_PAGE+1n).toString()}</span><button className="small-button" disabled={busy||branchStart+BRANCH_PAGE>=page.branchCount} onClick={()=>setBranchStart(n=>n+BRANCH_PAGE)}>Next branches<ArrowRight size={15}/></button></div>
+   </section>
+   <section className="panel"><h3>Build your reward group</h3><p>Use any total number of direct branches. Submit up to 64 addresses at a time; add another batch to the same group when needed.</p>
+    <form className="network-group-form" onSubmit={e=>{e.preventDefault();reviewBranches();}}>
+     <label className="field">Destination<select value={destination} disabled={!editable} onChange={e=>setDestination(e.target.value)}><option value="new">Create a new group</option>{page.groups.filter(g=>g.stage<14).map(g=><option key={g.id.toString()} value={g.id.toString()}>Group {(g.id+1n).toString()}</option>)}</select></label>
+     <label className="field">Direct branch addresses<textarea rows={4} dir="ltr" value={addresses} disabled={!editable} onChange={e=>setAddresses(e.target.value)} placeholder="One 0x address per line"/></label>
+     <p className="muted">Group assignments are permanent. Assigned branches cannot be moved to another group.</p><button className="primary-button" disabled={!editable||!addresses.trim()}>Review branches</button>
+    </form>
+   </section>
+   <div className="network-group-grid">{page.groups.map(g=>{const stage=page.stages[g.stage];return <article className="panel" key={g.id.toString()}><div className="panel-title"><h3>Group {(g.id+1n).toString()}</h3><span className="tag">{g.stage>=14?'Completed':`Stage ${g.stage+1} / 14`}</span></div><p>{g.branches.toString()} branches · Next scan index {g.cursor.toString()}</p>{stage?<>
+    <div className="plan-detail"><span>Stage volume target</span><b>{dollars(stage.goal)} USD</b></div><div className="plan-detail"><span>Maximum per branch</span><b>{Number(stage.cap)/100}% · {dollars(stage.goal*stage.cap/10000n)} USD</b></div><div className="plan-detail"><span>Prepared volume</span><b>{dollars(g.prepared)} / {dollars(stage.goal)} USD</b></div><div className="plan-detail"><span>Stage reward</span><b>{dollars(stage.reward)} USD</b></div>
+    <progress aria-label={`Prepared volume for group ${g.id+1n}`} max={10000} value={Number(g.prepared*10000n/stage.goal)}/>
+    <div className="network-group-actions"><button className="small-button" disabled={!editable||page.paused||g.prepared>=stage.goal} onClick={()=>setDraft({kind:'prepare',group:g.id,stage:g.stage})}>Prepare up to 64 branches</button><button className="primary-button" disabled={!editable||page.paused||g.prepared<stage.goal} onClick={()=>setDraft({kind:'claim',group:g.id,stage:g.stage})}>Review reward claim</button></div>
+   </>:<p>All fourteen stages have been claimed.</p>}</article>;})}</div>
+   {!page.groups.length&&<p>No reward groups on this page. Create a group using your direct branch addresses.</p>}
+   <div className="network-pagination"><button className="small-button" disabled={busy||groupStart===0n} onClick={()=>{setGroupStart(n=>n-GROUP_PAGE);setDestination('new');}}><ArrowLeft size={15}/>Previous groups</button><span>Page {(groupStart/GROUP_PAGE+1n).toString()}</span><button className="small-button" disabled={busy||groupStart+GROUP_PAGE>=page.groupCount} onClick={()=>{setGroupStart(n=>n+GROUP_PAGE);setDestination('new');}}>Next groups<ArrowRight size={15}/></button></div>
+   <section className="panel"><h3>Seller plan recorded in this contract</h3><p>Percentages apply to funded gross sales profit, using the seller's tier. Recipient activity and VIP/KYC conditions still apply.</p><div className="network-table"><table><thead><tr><th>Seller tier</th><th>Direct parent</th><th>Level 2</th><th>Level 3</th><th>Level 4</th></tr></thead><tbody>{page.tiers.map((rates,i)=><tr key={i}><td>{i===4?'VIP':`Tier ${i+1}`}</td>{rates.map((rate,j)=><td key={j}>{Number(rate)/100}%</td>)}</tr>)}</tbody></table></div></section>
+   <p className="muted">Rewards use additional unconsumed volume for each stage and a separately funded USDT budget. A claim credits USDT profit; withdrawing it is a separate action with the existing fee, cap and cooldown. Data block: {page.block}.</p>
+  </>}
+  <dialog ref={dialog} className="confirm-dialog" aria-labelledby="network-review-title" onCancel={()=>setDraft(null)} onClose={()=>setDraft(null)}>{draft&&<><div className="panel-title"><h2 id="network-review-title">Review: {labels[draft.kind]}</h2><button className="icon-button" aria-label="Close network review" onClick={()=>setDraft(null)}><X/></button></div><p>Network: {chainName}</p><p className="network-address">Contract: {vaultAddress}</p>{'group' in draft&&<p>Group {(draft.group+1n).toString()}</p>}{'branches' in draft?<><p>{draft.branches.length} direct branches. Assignments cannot be undone or transferred.</p><ul className="network-review-addresses">{draft.branches.map(b=><li key={b}><code>{b}</code></li>)}</ul></>:<><p>Stage {draft.stage+1}. If another transaction changes this stage, the contract rejects this request.</p>{draft.kind==='prepare'?<p>Reserve eligible volume from up to 64 branches for this stage. This does not pay a reward.</p>:<p>Credit a {reviewedStage?dollars(reviewedStage.reward):'selected'} USD reward as USDT profit at the contract's current oracle rate, subject to available funding and liquidity.</p>}</>}<p className="muted">Your wallet shows the network gas fee. These actions do not require a token allowance.</p><div className="dialog-actions"><button className="primary-button" disabled={busy||!editable} onClick={()=>void confirm()}>Confirm in wallet</button><button className="small-button" onClick={()=>setDraft(null)}>Back</button></div></>}</dialog>
+ </section>;
+}

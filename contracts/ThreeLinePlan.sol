@@ -5,9 +5,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Cumulative USD business-volume metrics, not cash or guaranteed income.
 abstract contract ThreeLinePlan {
-    error NetworkInvalid(); error NetworkInsufficient(); error NetworkPreparationRequired();
+    error NetworkInvalid(); error NetworkInsufficient(); error NetworkPreparationRequired(); error NetworkStageChanged();
     uint256 public constant ACTIVE_DIRECT_USD = 100 ether;
     uint256 public constant NETWORK_BATCH_LIMIT = 64;
+    uint256 public constant NETWORK_PLAN_VERSION = 2;
     mapping(address => uint256) public qualifiedDirects;
     mapping(address => mapping(address => uint256)) public branchVolumeUsd;
     mapping(address => address[]) private networkBranches;
@@ -100,6 +101,11 @@ abstract contract ThreeLinePlan {
     function rewardGroup(address who,uint256 group) external view returns(RewardGroup memory) { return rewardGroups[who][group]; }
     function rewardProgress(address who,uint256 group) external view returns(uint8 stage,uint256 preparedUsd,uint256 cursor,uint256 branches) {
         RewardGroup storage g=rewardGroups[who][group]; return(g.stage,g.preparedUsd,g.cursor,g.branches.length);
+    }
+    /// @dev Bind a reviewed transaction to one stage even if another transaction confirms first.
+    function _checkRewardStage(address who,uint256 group,uint8 expectedStage) internal view {
+        if(group>=rewardGroups[who].length) revert NetworkInvalid();
+        if(rewardGroups[who][group].stage!=expectedStage) revert NetworkStageChanged();
     }
     function rewardBranch(address who,uint256 group,uint256 index) external view returns(address branch,uint256 consumedUsd,uint256 reservedForStageUsd) {
         RewardGroup storage g=rewardGroups[who][group];return(g.branches[index],g.consumedUsd[index],reservedUsd[who][group][g.stage][index]);
