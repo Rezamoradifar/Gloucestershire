@@ -1,6 +1,6 @@
-# GLOBAL English frontend v0.5.0
+# GLOBAL English frontend v0.7.0
 
-React / TypeScript / Vite / ethers. Requires DropshippingVault v0.3.0 ABI. Development release, no public contract configured.
+React / TypeScript / Vite / ethers. Ships the ABI compiled from the current v0.7.0 source. Development release, no public contract configured.
 
 ## Changes
 

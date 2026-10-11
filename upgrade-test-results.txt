@@ -1,0 +1,67 @@
+GLOBAL v0.7.0 - requested upgrade verification
+
+Base revision: 6502d113c7fafcc7d4cf08c3c83d2ed39627f26f
+Branch: codex/global-plan-and-visuals-20261011
+
+PASS npm test: 87 tests, 0 failures (local EVM and read-only API tests).
+PASS npm test --prefix website: 5 tests, 0 failures.
+PASS npm run build --prefix website: TypeScript and Vite production build.
+PASS test/artifact-consistency.test.mjs after adding the frontend-ABI consistency gate.
+PASS scripts/test-website-installer.py: initial install, SSL-preserving update,
+     invalid Nginx configuration rollback (mock host services).
+PASS scripts/test-api-installer.py: unprivileged service install, release update,
+     environment preservation, health-check rollback (mock host services).
+PASS bash -n: ubuntu-api.sh, ubuntu-website.sh, scripts/install-website.sh.
+PASS release checksum, all 97 packaged website files and installer match source/build.
+PASS git diff --check.
+
+Financial checks include:
+- All 5 seller tiers, exact ancestor payouts and conservation of funded gross profit.
+- VIP fourth-level qualification and governance maximum of 34 percent.
+- All 14 rewards and cap transitions (60 / 45 / 35 percent).
+- Five-line qualification, dominant-line clipping, exact threshold and one-wei shortfall.
+- Append-only disjoint reward groups and prevention of volume reuse.
+- 65-line reward using bounded preparation with no total group-size cap.
+- Failed payout preserves previously prepared entitlement; failed single-call claims
+  roll back their new consumption and do not advance the stage.
+- All fourteen sequential stages consume exact additional volume and then terminate.
+- Existing reserve/treasury accounting, withdrawals, fees, reinvestment, KYC,
+  governance, ancestry propagation, asset decimals and oracle failures.
+
+Measured local gas:
+Runtime bytecode: 23101 bytes (EIP-170 maximum: 24576).
+Deployment: 5993862 gas.
+Deposit with 8 automatic ancestors: 1056592 gas (existing 1500000 budget preserved).
+64-ancestor continuation: 4547865 gas (existing 12000000 budget preserved).
+
+API checks include:
+- Actual local EVM SaleSettled event -> HTTP API -> same transaction hash/amounts.
+- Confirmation depth, wrong chain, missing contract, unexpected assets, 6-decimal
+  token and native amounts, duplicate/removed logs and reorg block consistency.
+- Concurrent request deduplication, bounded queries, stale cache labels, recovery.
+- Read-only HTTP methods, input limits and no fabricated data when unconfigured.
+
+Limitations / not executed:
+- No mainnet or public-testnet deployment transaction was signed or broadcast.
+- No migration of existing users, funds or deployed contracts was attempted.
+- No verified public-chain RPC/contract connection was supplied for the new API.
+- Production SSH attempt could not resolve globaldroptrade.com in this environment;
+  server installation/activation has NOT been executed.
+- Browser visual QA could not complete: local Chromium launch returned EACCES,
+  and the cloud browser could not reach the localhost preview (connection refused).
+  Mobile CSS and responsive assets are implemented, but no visual-device pass is claimed.
+- No independent security audit. Existing owner/liquidity trust model is unchanged.
+
+Connection follow-up verification (2026-10-11):
+PASS node --test test/connect-settlement-feed.test.mjs: 7 tests, 0 failures.
+     Includes actual local-EVM reads of every new plan rate/cap/reward, unchanged
+     account nonce (no transactions sent), legacy-plan reporting, ambiguous
+     network refusal and safe private environment rendering.
+PASS python3 scripts/test-connect-installer.py: mock-service connection preflight,
+     existing-environment preservation, API install/live-check rollback, and
+     HTTPS failure never reporting connection success.
+PASS bash -n ubuntu-connect.sh and git diff --check.
+These follow-up checks do not claim a production connection. A new SSH attempt
+again failed DNS resolution; no SSH agent, conventional key or known-host entry
+was available in this environment. Run the prepared installer in the actual
+server terminal; supply missing read-only RPC/target settings only there.

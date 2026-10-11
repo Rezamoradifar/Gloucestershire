@@ -100,11 +100,11 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         if(IPriceFeed(bnbFeed).decimals()>18 || IPriceFeed(tokenFeed).decimals()>18) revert Invalid();
         for(uint256 i;i<partners.length;i++) { address p=partners[i]; if(p==address(0)||isPartner[p]) revert Invalid(); isPartner[p]=true; partnerWallets[i]=p; }
         partnerVotesRequired=2; reporters[initialOwner]=true;
-        tiers[0]=Tier(10 ether,50,100,4,2500 ether,[uint16(600),300,150,50]);
-        tiers[1]=Tier(500 ether+1,70,120,6,10000 ether,[uint16(800),400,200,100]);
-        tiers[2]=Tier(2500 ether+1,90,150,8,50000 ether,[uint16(1000),500,200,100]);
-        tiers[3]=Tier(10000 ether+1,110,180,10,250000 ether,[uint16(1200),600,300,100]);
-        tiers[4]=Tier(50000 ether+1,130,200,12,1000000 ether,[uint16(1400),700,300,100]);
+        tiers[0]=Tier(10 ether,50,100,4,2500 ether,[uint16(800),400,200,0]);
+        tiers[1]=Tier(500 ether+1,70,120,6,10000 ether,[uint16(1000),500,300,0]);
+        tiers[2]=Tier(2500 ether+1,90,150,8,50000 ether,[uint16(1200),600,400,0]);
+        tiers[3]=Tier(10000 ether+1,110,180,10,250000 ether,[uint16(1400),700,500,0]);
+        tiers[4]=Tier(50000 ether+1,130,200,12,1000000 ether,[uint16(1600),800,600,400]);
     }
     // Unclassified native transfers are surplus, never principal or profit.
     receive() external payable {}
@@ -143,7 +143,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         if(index>0 && config.minUsd<=tiers[index-1].minUsd) revert Invalid();
         if(index<4 && config.minUsd>=tiers[index+1].minUsd) revert Invalid();
         uint256 sum; for(uint256 j;j<4;j++) { sum+=config.referrals[j]; if(j>0 && config.referrals[j]>config.referrals[j-1]) revert Invalid(); }
-        if(sum>2500) revert Invalid(); tiers[index]=config;
+        if(sum>3400 || (index<4 && config.referrals[3]!=0)) revert Invalid(); tiers[index]=config;
     }
     function tierConfig(uint256 index) external view returns(Tier memory) { return tiers[index]; }
     function tierOf(address who) public view returns(uint8 t) { for(uint8 i=1;i<5;i++) { if(users[who].capitalUsd>=tiers[i].minUsd) t=i; } }
@@ -291,6 +291,10 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         uint256 id=_open(msg.sender,asset,amount,usd); cumulativeReinvested[msg.sender][asset]+=amount; emit Reinvested(msg.sender,asset,amount,id);
     }
     /// @notice Credit earned USD reward as USDT profit from a separately funded reward budget.
+    /// @notice Bounded preparation for groups with many branches; reserved volume stays attached to the current stage until claimed.
+    function prepareNetworkReward(uint256 group,uint256 steps) external nonReentrant live {
+        _prepareReward(msg.sender,group,steps);
+    }
     /// @dev Standard profit withdrawal fee, cap and cooldown apply. No principal is minted.
     function claimNetworkReward(uint256 group) external nonReentrant live {
         uint256 usd=_consumeReward(msg.sender,group);

@@ -1,3 +1,7 @@
+## Current release: v0.7.0 — 2026-10-11
+
+Updated seller rates, capped aggregation across any number of lines, new reward schedule, image upgrades, FAQ and a read-only settlement API. [Release and installation guide](UPGRADE-2026-10-11.md) · [Current Persian network rules](NETWORK-PLAN.fa.md). The older notes below describe release history and may be superseded by these current rules. No production deployment is implied.
+
 ## v0.5.3 — reinvestment increases the profit withdrawal cap
 
 Gross cap per withdrawal = 10% of lifetime external deposits plus completed reinvestments, separately per asset. Personal profit and credited network commissions share the reinvestable profit balance. Merely earning profit does not raise the cap. Principal withdrawals do not reduce this cumulative basis. Reinvestment consumes profit once, opens a locked position, and does not repeat the deposit split. Initial withdrawal fee remains 5%; liquidity, profit balance and cooldown still apply. See reinvest-cap-test-results.txt.

@@ -7,6 +7,7 @@ test('deployment console bytecode and verification sources match the freshly com
  const input=JSON.parse(fs.readFileSync('artifacts/standard-input.json'));
  assert.equal(consoleArtifact.bytecode,'0x'+artifact.evm.bytecode.object);
  assert.deepEqual(consoleArtifact.abi,artifact.abi);
+ assert.deepEqual(JSON.parse(fs.readFileSync('website/src/vault-abi.json')),artifact.abi);
  for(const name of fs.readdirSync('contracts').filter(x=>x.endsWith('.sol')))assert.equal(input.sources[name].content,fs.readFileSync('contracts/'+name,'utf8'));
  assert.ok(artifact.evm.deployedBytecode.object.length/2<=24576);
 });

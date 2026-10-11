@@ -1,3 +1,4 @@
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
-export default defineConfig({plugins:[react()],base:'./'});
+const proxy={'/api':{target:'http://127.0.0.1:3115',changeOrigin:false}};
+export default defineConfig({plugins:[react()],base:'./',server:{proxy},preview:{proxy}});
