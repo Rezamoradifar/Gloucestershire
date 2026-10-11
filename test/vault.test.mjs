@@ -94,8 +94,8 @@ test('configuration delay/access caps and old principal terms preserved',async()
  assert.equal(old.penaltyBps,3000n);assert.equal(old.unlockAt,p.unlockAt);assert.equal(next.penaltyBps,4000n);
  await fails(vault.setFees(500,4000)); // consumed queue
 });
-test('five plan referral table preserved, target never accrues automatic profit',async()=>{
- assert.deepEqual(Array.from((await vault.tierConfig(4)).referrals),[1400n,700n,300n,100n]);
+test('updated five plan referral table, target never accrues automatic profit',async()=>{
+ assert.deepEqual(Array.from((await vault.tierConfig(4)).referrals),[1600n,800n,600n,400n]);
  await deposit();await warp(86400*10);assert.equal((await vault.accounts(addr[3],token.target)).profit,0n);
 });
 test('immutable referral DAG rejects self registration and referrer changes',async()=>{
@@ -110,14 +110,14 @@ test('non-VIP level four is excluded even with active direct customer; no deposi
  for(let i=3;i<=7;i++)await tx(vault.setCustomerStatus(addr[i],true,false));
  await deposit(7,E('100'),token.target,addr[6]);assert.equal((await vault.accounts(addr[6],token.target)).profit,0n);
  await sale(7,E('100'));
- for(const [i,v] of [[6,'6'],[5,'3'],[4,'1.5'],[3,'0'],[7,'89.5']]) assert.equal((await vault.accounts(addr[i],token.target)).profit,E(v));
+ for(const [i,v] of [[6,'8'],[5,'4'],[4,'2'],[3,'0'],[7,'86']]) assert.equal((await vault.accounts(addr[i],token.target)).profit,E(v));
  await solvent();
 });
 test('non-VIP and inactive referral shares stay with seller',async()=>{
  await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=7;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
  for(const i of [3,5,6,7])await tx(vault.setCustomerStatus(addr[i],true,false));await sale(7,E('100'));
  assert.equal((await vault.accounts(addr[3],token.target)).profit,0n);assert.equal((await vault.accounts(addr[4],token.target)).profit,0n);
- assert.equal((await vault.accounts(addr[7],token.target)).profit,E('91'));await solvent();
+ assert.equal((await vault.accounts(addr[7],token.target)).profit,E('88'));await solvent();
 });
 test('invite-count milestones are removed from ABI and do not create profit',async()=>{
  for(const name of ['claimMilestone','setMilestoneBonus','milestoneBonusUsd','milestoneCustomers']) assert.equal(vault.interface.getFunction(name),null);
@@ -206,7 +206,7 @@ test('90-day unlock boundary tested one second before and at unlock',async()=>{
  await vault.connect(signers[3]).withdrawPrincipal.staticCall(0,E('1000'));await tx(vault.connect(signers[3]).withdrawPrincipal(0,E('1000'),{gasLimit:500000}));await solvent();
 });
 test('governance validates referral cap, descending rates, targets and partner threshold',async()=>{
- const config=[10n*10n**18n,50,100,5,E('2500'),[1500,700,300,100]];
+ const config=[10n*10n**18n,50,100,5,E('2500'),[1800,1100,600,0]];
  let data=vault.interface.encodeFunctionData('setTierConfig',[0,config]);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);
  await fails(vault.setTierConfig(0,config,{gasLimit:1500000}));
  config[5]=[100,200,0,0];data=vault.interface.encodeFunctionData('setTierConfig',[0,config]);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);
@@ -341,16 +341,17 @@ test('level four requires current active VIP with KYC; downgrade or KYC revocati
  await tx(vault.connect(signers[3]).register(ZeroAddress));
  for(let i=4;i<=7;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
  await tx(vault.setCustomerStatus(addr[3],true,true));await deposit(3,E('50001'));
+ await tx(vault.setCustomerStatus(addr[7],false,true));await deposit(7,E('50001'),token.target,addr[6]);
  // No active direct customers: VIP replaces that old condition.
  assert.equal((await vault.users(addr[3])).activeDirect,0n);
- await sale(7,E('100'),token.target,'vip-on');assert.equal((await vault.accounts(addr[3],token.target)).profit,E('0.5'));
+ await sale(7,E('100'),token.target,'vip-on');assert.equal((await vault.accounts(addr[3],token.target)).profit,E('4'));
  await tx(vault.setCustomerStatus(addr[3],true,false));await sale(7,E('100'),token.target,'kyc-off');
- assert.equal((await vault.accounts(addr[3],token.target)).profit,E('0.5'));
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,E('4'));
  await tx(vault.setCustomerStatus(addr[3],true,true));await warp(90*86400);
  await tx(vault.connect(signers[3]).withdrawPrincipal(0,E('2'),{gasLimit:500000}));
  assert.equal(await vault.tierOf(addr[3]),3n);await sale(7,E('100'),token.target,'tier-down');
- assert.equal((await vault.accounts(addr[3],token.target)).profit,E('0.5'));
- assert.equal((await vault.accounts(addr[7],token.target)).profit,E('299.5'));
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,E('4'));
+ assert.equal((await vault.accounts(addr[7],token.target)).profit,E('296'));
 });
 test('rounding remainder belongs to operations and preserves exact sum',async()=>{
  const amount=E('100')+7n,before=await token.balanceOf(addr[14]);await deposit(3,amount);
@@ -379,7 +380,7 @@ test('operations wallet callback cannot reenter deposit',async()=>{
 });
 
 test('all six governed setters require votes and governance pays no partner funds',async()=>{
- const changes=[['setReporter',[addr[12],true]],['setFees',[800,3000]],['setWithdrawalRules',[90*86400,72*3600]],['setMinDeposit',[E('11')]],['setTierConfig',[0,[E('10'),50,100,5,E('2500'),[600,300,150,50]]]],['setPartnerVoteRequired',[2]]];
+ const changes=[['setReporter',[addr[12],true]],['setFees',[800,3000]],['setWithdrawalRules',[90*86400,72*3600]],['setMinDeposit',[E('11')]],['setTierConfig',[0,[E('10'),50,100,5,E('2500'),[800,400,200,0]]]],['setPartnerVoteRequired',[2]]];
  const cash=await vault.assetBalance(token.target),native=await vault.assetBalance(ZeroAddress);
  const balances=await Promise.all([0,1,2,8,9,10,11].map(i=>token.balanceOf(addr[i])));
  for(const [name,args]of changes){
@@ -428,17 +429,88 @@ for(const native of [false,true])test(`reinvest raises ${native?'BNB':'USDT'} ca
 });
 
 async function networkRoot(){ await deposit(3,E('100')); }
+test('all seller tiers pay the exact approved rates and conserve gross funded profit',async()=>{
+ const rates=[[8,4,2,0],[10,5,3,0],[12,6,4,0],[14,7,5,0],[16,8,6,4]];
+ await tx(vault.connect(signers[3]).register(ZeroAddress));
+ for(let i=4;i<=7;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
+ for(let i=3;i<=7;i++)await tx(vault.setCustomerStatus(addr[i],true,true));
+ await deposit(3,E('50001'));
+ const capital=[100,501,2501,10001,50001];let current=0;
+ for(let tier=0;tier<5;tier++){
+  await deposit(7,E(String(capital[tier]-current)),token.target,addr[6]);current=capital[tier];
+  assert.deepEqual(Array.from((await vault.tierConfig(tier)).referrals),rates[tier].map(x=>BigInt(x*100)));
+  const before=await Promise.all([3,4,5,6,7].map(i=>vault.accounts(addr[i],token.target)));
+  await sale(7,E('100'),token.target,'rates-'+tier);
+  let paid=0n;for(let level=0;level<4;level++){const index=6-level;const delta=(await vault.accounts(addr[index],token.target)).profit-before[index-3].profit;assert.equal(delta,E(String(rates[tier][level])));paid+=delta;}
+  assert.equal((await vault.accounts(addr[7],token.target)).profit-before[4].profit,E('100')-paid);
+ }
+});
+test('governance accepts VIP 34 percent and rejects excess and non-VIP fourth level',async()=>{
+ const t=await vault.tierConfig(4);const good=[t.minUsd,t.baseDailyBps,t.maxDailyBps,t.requiredDirect,t.requiredSalesUsd,[1600,800,600,400]];
+ await queueCall('setTierConfig',[4,good]);assert.deepEqual(Array.from((await vault.tierConfig(4)).referrals),[1600n,800n,600n,400n]);
+ good[5]=[1601,800,600,400];const h=keccak256(vault.interface.encodeFunctionData('setTierConfig',[4,good]));await tx(vault.queueConfiguration(h));await approveConfig(h);await warp(2*86400);await fails(vault.setTierConfig(4,good));
+});
+test('rank caps match all fourteen goals, and arbitrary many lines can qualify',async()=>{
+ await networkRoot();await groupDeposit([4,5,6,7,8],[2000,2000,2000,2000,2000]);
+ assert.equal(await vault.rankQualified(addr[3],5,E('10000')),true);
+ assert.equal(await vault.rankQualified(addr[3],6,E('10000')),false);
+ assert.equal(await vault.networkBranchCount(addr[3]),5n);
+ let summed=0n;for(let start=0;start<5;start+=2){const page=await vault.rankVolumePage(addr[3],E('10000'),start,2);summed+=page.eligibleUsd;assert.equal(page.next,BigInt(Math.min(5,start+2)));}assert.equal(summed,E('10000'));
+ for(let i=0;i<14;i++){const [target]=await vault.rewardStage(i);assert.equal(await vault.branchCapBps(target),BigInt(i<5?6000:i<8?4500:3500));}
+ await fails(vault.rankVolumePage(addr[3],E('10000'),0,65));await fails(vault.rankVolumePage(addr[3],0,0,1));
+});
+test('ten-thousand goal clips a dominant branch; equality and one-wei shortage are exact',async()=>{
+ await networkRoot();await groupDeposit([4,5,6],[8000,1000,1000]);
+ assert.equal(await vault.rankQualified(addr[3],3,E('10000')),false);
+ assert.equal((await vault.rankVolumePage(addr[3],E('10000'),0,64)).eligibleUsd,E('8000'));
+ await deposit(7,E('2000')-1n,token.target,addr[3]);assert.equal(await vault.rankQualified(addr[3],4,E('10000')),false);
+ await tx(vault.settleSalesProfit(id('one-wei'),token.target,addr[7],1n,1n,id('evidence')));
+ assert.equal(await vault.rankQualified(addr[3],4,E('10000')),true);
+});
+test('reward groups grow beyond three lines without reusing branches or resetting progress',async()=>{
+ await networkRoot();await groupDeposit([4,5,6,7,8],[100,100,100,100,100]);await groupCreate([4,5]);
+ assert.equal((await vault.rewardPreview(addr[3],0)).eligible,false);
+ await tx(vault.connect(signers[3]).addRewardBranches(0,[addr[6],addr[7],addr[8]]));
+ assert.equal((await vault.rewardPreview(addr[3],0)).eligible,true);
+ await tx(vault.fundRewards(token.target,E('35')));await tx(vault.connect(signers[3]).claimNetworkReward(0));
+ const group=await vault.rewardGroup(addr[3],0);assert.equal(group.stage,1n);assert.deepEqual(Array.from(group.consumedUsd),Array(5).fill(E('100')));
+ await fails(vault.connect(signers[3]).addRewardBranches(0,[addr[4]]));await fails(vault.connect(signers[3]).createRewardGroup([addr[8]]));await fails(vault.connect(signers[4]).addRewardBranches(0,[addr[5]]));
+});
+test('partial preparation cannot exceed the per-line cap, replay volume, or lose reservations on a failed payout',async()=>{
+ await networkRoot();await groupDeposit([4,5],[1000,10]);await groupCreate([4,5]);
+ await tx(vault.connect(signers[3]).prepareNetworkReward(0,64,{gasLimit:600000}));
+ assert.equal((await vault.rewardProgress(addr[3],0)).preparedUsd,E('310'));
+ for(let i=0;i<2;i++)await tx(vault.connect(signers[3]).prepareNetworkReward(0,64,{gasLimit:600000}));
+ assert.equal((await vault.rewardProgress(addr[3],0)).preparedUsd,E('310'));
+ assert.equal((await vault.rewardBranch(addr[3],0,0)).reservedForStageUsd,E('300'));
+ await deposit(5,E('190'),token.target,addr[3]);await tx(vault.connect(signers[3]).prepareNetworkReward(0,64,{gasLimit:600000}));
+ const before=(await vault.rewardGroup(addr[3],0)).toArray(true);await fails(vault.connect(signers[3]).claimNetworkReward(0));assert.deepEqual((await vault.rewardGroup(addr[3],0)).toArray(true),before);
+ await tx(vault.fundRewards(token.target,E('35')));await tx(vault.connect(signers[3]).claimNetworkReward(0));assert.equal((await vault.accounts(addr[3],token.target)).profit,E('35'));
+ assert.equal((await vault.rewardProgress(addr[3],0)).preparedUsd,0n);await fails(vault.connect(signers[3]).claimNetworkReward(0));
+});
+test('65 independent branches complete a reward through bounded preparation with no total branch limit',async()=>{
+ await networkRoot();const branches=[];
+ for(let i=4;i<=68;i++){await tx(vault.connect(signers[i]).register(addr[3]));await tx(vault.settleSalesProfit(id('wide-'+i),token.target,addr[i],1n,E(String(i===68?52:7)),id('receipt'),{gasLimit:1500000}));branches.push(addr[i]);}
+ await tx(vault.connect(signers[3]).createRewardGroup(branches.slice(0,64),{gasLimit:8000000}));await tx(vault.connect(signers[3]).addRewardBranches(0,branches.slice(64)));
+ await tx(vault.fundRewards(token.target,E('35')));await fails(vault.connect(signers[3]).claimNetworkReward(0,{gasLimit:12000000}));
+ assert.equal((await vault.rewardProgress(addr[3],0)).preparedUsd,0n);
+ const receipt=await tx(vault.connect(signers[3]).prepareNetworkReward(0,64,{gasLimit:8000000}));assert.ok(receipt.gasUsed<8000000n);
+ assert.equal((await vault.rewardProgress(addr[3],0)).preparedUsd,E('448'));
+ await tx(vault.connect(signers[3]).claimNetworkReward(0));assert.equal((await vault.accounts(addr[3],token.target)).profit,E('35'));assert.equal((await vault.rewardProgress(addr[3],0)).stage,1n);
+ const g=await vault.rewardGroup(addr[3],0);assert.equal(g.consumedUsd.reduce((a,b)=>a+b,0n),E('500'));
+ await fails(vault.connect(signers[3]).prepareNetworkReward(0,0));await fails(vault.connect(signers[3]).prepareNetworkReward(0,65));
+});
 async function groupDeposit(indices,amounts){for(let j=0;j<indices.length;j++)await deposit(indices[j],E(String(amounts[j])),token.target,addr[3]);}
 async function groupCreate(indices){await tx(vault.connect(signers[3]).createRewardGroup(indices.map(i=>addr[i])));}
 test('network reward table is exact across all fourteen stages',async()=>{
  const volumes=[500,1000,3000,5000,10000,30000,50000,100000,300000,500000,1000000,3000000,5000000,10000000];
- const rewards=[25,50,150,250,500,1500,2500,5000,12000,20000,40000,90000,150000,300000];
+ const rewards=[35,70,210,350,700,1800,3000,6000,15000,25000,50000,90000,150000,300000];
  for(let i=0;i<14;i++)assert.deepEqual(Array.from(await vault.rewardStage(i)),[E(String(volumes[i])),E(String(rewards[i]))]);
  await fails(vault.rewardStage(14));
  for(let i=0;i<5;i++)assert.equal((await vault.tierConfig(i)).requiredDirect,BigInt([4,6,8,10,12][i]));
 });
-test('rank requires independent 70/20/10 branches and four capital-qualified directs',async()=>{
- await networkRoot();await groupDeposit([4,5,6,7],[1750,500,249,100]);
+test('rank aggregates capped independent branches and four capital-qualified directs',async()=>{
+ await networkRoot();await groupDeposit([4,5,6,7],[1500,500,399,100]);
  assert.equal(await vault.qualifiedDirects(addr[3]),4n);
  assert.equal(await vault.dailyTargetBps(addr[3]),50n);
  await deposit(6,E('10'),token.target,addr[3]);
@@ -448,39 +520,39 @@ test('rank requires independent 70/20/10 branches and four capital-qualified dir
  await refresh();await deposit(7,E('10'),token.target,addr[3]);assert.equal(await vault.qualifiedDirects(addr[3]),4n);
 });
 test('two disjoint triplets earn separately; branch reassignment and duplicate branches rejected',async()=>{
- await networkRoot();await groupDeposit([4,5,6,7,8,9],[350,100,50,350,100,50]);
+ await networkRoot();await groupDeposit([4,5,6,7,8,9],[300,100,100,300,100,100]);
  await fails(vault.connect(signers[3]).createRewardGroup([addr[4],addr[4],addr[6]]));
  await fails(vault.connect(signers[3]).createRewardGroup([addr[4],addr[5],addr[0]]));
  await groupCreate([4,5,6]);await groupCreate([7,8,9]);
  await fails(vault.connect(signers[3]).createRewardGroup([addr[4],addr[8],addr[9]]));
  await tx(vault.fundRewards(token.target,E('100')));
  await tx(vault.connect(signers[3]).claimNetworkReward(0));await tx(vault.connect(signers[3]).claimNetworkReward(1));
- assert.equal((await vault.accounts(addr[3],token.target)).profit,E('50'));
- assert.equal((await vault.ledgers(token.target)).rewards,E('50'));
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,E('70'));
+ assert.equal((await vault.ledgers(token.target)).rewards,E('30'));
  await fails(vault.connect(signers[3]).claimNetworkReward(0));
 });
 test('second reward consumes 1000 additional volume, keeps surplus and cannot replay first reward',async()=>{
- await networkRoot();await groupDeposit([4,5,6],[350,100,50]);await groupCreate([4,5,6]);
- await tx(vault.fundRewards(token.target,E('100')));await tx(vault.connect(signers[3]).claimNetworkReward(0));
- await groupDeposit([4,5,6],[700,200,90]);assert.equal((await vault.rewardPreview(addr[3],0)).eligible,false);
+ await networkRoot();await groupDeposit([4,5,6],[300,100,100]);await groupCreate([4,5,6]);
+ await tx(vault.fundRewards(token.target,E('200')));await tx(vault.connect(signers[3]).claimNetworkReward(0));
+ await groupDeposit([4,5,6],[600,200,190]);assert.equal((await vault.rewardPreview(addr[3],0)).eligible,false);
  await deposit(6,E('10'),token.target,addr[3]);await tx(vault.connect(signers[3]).claimNetworkReward(0,{gasLimit:600000}));
- assert.equal((await vault.accounts(addr[3],token.target)).profit,E('75'));
- assert.deepEqual(Array.from((await vault.rewardGroup(addr[3],0)).consumedUsd),[E('1050'),E('300'),E('150')]);
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,E('105'));
+ assert.deepEqual(Array.from((await vault.rewardGroup(addr[3],0)).consumedUsd),[E('900'),E('300'),E('300')]);
  assert.equal((await vault.rewardGroup(addr[3],0)).stage,2n);
  await fails(vault.connect(signers[3]).claimNetworkReward(0));
 });
 test('unfunded, stale oracle, paused and empty-cash reward claims roll back stage and consumed volume',async()=>{
- await networkRoot();await groupDeposit([4,5,6],[350,100,50]);await groupCreate([4,5,6]);
+ await networkRoot();await groupDeposit([4,5,6],[300,100,100]);await groupCreate([4,5,6]);
  await fails(vault.connect(signers[3]).claimNetworkReward(0));
- await tx(vault.fundRewards(token.target,E('25')));await warp(90000);
+ await tx(vault.fundRewards(token.target,E('35')));await warp(90000);
  await fails(vault.connect(signers[3]).claimNetworkReward(0));await refresh();
  await tx(vault.setPaused(true));await fails(vault.connect(signers[3]).claimNetworkReward(0));await tx(vault.setPaused(false));
  await tx(vault.ownerWithdrawCapital(token.target,addr[0],await token.balanceOf(vault.target)));
  await fails(vault.connect(signers[3]).claimNetworkReward(0));
  assert.equal((await vault.rewardGroup(addr[3],0)).stage,0n);
  assert.deepEqual(Array.from((await vault.rewardGroup(addr[3],0)).consumedUsd),[0n,0n,0n]);
- await tx(vault.returnCapital(token.target,E('25')));await tx(vault.connect(signers[3]).claimNetworkReward(0,{gasLimit:600000}));
- assert.equal((await vault.accounts(addr[3],token.target)).profit,E('25'));
+ await tx(vault.returnCapital(token.target,E('35')));await tx(vault.connect(signers[3]).claimNetworkReward(0,{gasLimit:600000}));
+ assert.equal((await vault.accounts(addr[3],token.target)).profit,E('35'));
 });
 test('deposit, reinvest and reported sales add once under the immediate branch; returns and rewards add no volume',async()=>{
  await networkRoot();await deposit(4,E('100'),token.target,addr[3]);
@@ -507,9 +579,9 @@ test('bounded ancestry processing resumes without loss or duplicate volume',asyn
  await tx(vault.processNetworkVolume(job,64));assert.equal(await vault.branchVolumeUsd(addr[3],addr[4]),E('100'));
  assert.equal((await vault.volumeJobs(job)).ancestor,ZeroAddress);
 });
-test('largest branches reorder and excess large branch never substitutes for a small branch',async()=>{
+test('excess dominant branch is clipped and other branches supply the remainder',async()=>{
  await networkRoot();await groupDeposit([4,5,6,7],[100,100,100,5000]);
- assert.equal(await vault.largestBranches(addr[3],0),addr[7]);
+ assert.equal(await vault.networkBranchCount(addr[3]),4n);
  assert.equal(await vault.rankQualified(addr[3],4,E('2500')),false);
  await groupCreate([7,4,5]);assert.equal((await vault.rewardPreview(addr[3],0)).eligible,true);
  await tx(vault.fundRewards(token.target,E('100')));await tx(vault.connect(signers[3]).claimNetworkReward(0));
@@ -518,7 +590,7 @@ test('largest branches reorder and excess large branch never substitutes for a s
 test('all fourteen rewards consume exact cumulative volume then stop; withdrawal retains existing fee and cap',async()=>{
  await networkRoot();for(const i of [4,5,6])await tx(vault.connect(signers[i]).register(addr[3]));
  let total=0n,totalRewards=0n;for(let i=0;i<14;i++){const s=await vault.rewardStage(i);total+=s[0];totalRewards+=s[1];}
- const volumes=[total*70n/100n,total*20n/100n,total*10n/100n];
+ const volumes=[0n,0n,0n];for(let i=0;i<14;i++){const [target]=await vault.rewardStage(i);const cap=target*BigInt(i<5?60:i<8?45:35)/100n;let left=target;for(let j=0;j<3;j++){const n=left<cap?left:cap;volumes[j]+=n;left-=n;}}
  for(let j=0;j<3;j++)await tx(vault.settleSalesProfit(id('all'+j),token.target,addr[j+4],E('1'),volumes[j],id('evidence'),{gasLimit:1500000}));
  await groupCreate([4,5,6]);await tx(vault.fundRewards(token.target,totalRewards));
  for(let i=0;i<14;i++)await tx(vault.connect(signers[3]).claimNetworkReward(0,{gasLimit:600000}));
@@ -550,31 +622,33 @@ test('health: seeded 72-operation model preserves every branch total, ranking an
     let qualified=0n;const volumes=[];
     for(const child of children){const value=expected.get(p+':'+child)||0n;assert.equal(await vault.branchVolumeUsd(addr[p],addr[child]),value);volumes.push(value);if(capital.get(child)>=E('100'))qualified++;}
     assert.equal(await vault.qualifiedDirects(addr[p]),qualified);
-    const expectedTop=volumes.sort((a,b)=>a>b?-1:a<b?1:0).slice(0,3);while(expectedTop.length<3)expectedTop.push(0n);
-    const seen=new Set();for(let k=0;k<3;k++){const child=await vault.largestBranches(addr[p],k);if(child!==ZeroAddress){assert.ok(!seen.has(child));seen.add(child);assert.ok(children.some(i=>addr[i]===child));}assert.equal(await vault.branchVolumeUsd(addr[p],child),expectedTop[k]);}
+    const count=Number(await vault.networkBranchCount(addr[p]));const nonzero=children.filter(i=>(expected.get(p+':'+i)||0n)>0n);assert.equal(count,nonzero.length);
+    const seen=new Set();for(let k=0;k<count;k++){const child=await vault.networkBranch(addr[p],k);assert.ok(!seen.has(child));seen.add(child);assert.ok(nonzero.some(i=>addr[i]===child));}
+    for(const goal of [1000n,30000n,300000n]){const target=goal*10n**18n,cap=target*(goal<=10000n?60n:goal<=100000n?45n:35n)/100n;const capped=volumes.reduce((sum,v)=>sum+(v<cap?v:cap),0n);assert.equal(await vault.rankQualified(addr[p],0,target),capped>=target);}
+
    }
   }
  }
 });
-test('health: reward branch roles rotate using only remaining volume; failed claim cannot advance',async()=>{
- await networkRoot();await groupDeposit([4,5,6],[350,100,50]);await groupCreate([4,5,6]);await tx(vault.fundRewards(token.target,E('100')));
+test('health: reward caps follow remaining volume; failed claim cannot advance',async()=>{
+ await networkRoot();await groupDeposit([4,5,6],[300,100,100]);await groupCreate([4,5,6]);await tx(vault.fundRewards(token.target,E('200')));
  await tx(vault.connect(signers[3]).claimNetworkReward(0));
- await groupDeposit([4,5,6],[100,700,190]);
+ await groupDeposit([4,5,6],[100,600,290]);
  const before=await vault.rewardGroup(addr[3],0);await fails(vault.connect(signers[3]).claimNetworkReward(0));assert.deepEqual((await vault.rewardGroup(addr[3],0)).toArray(true),before.toArray(true));
  await deposit(6,E('10'),token.target,addr[3]);const preview=await vault.rewardPreview(addr[3],0);
- assert.equal(preview.eligible,true);assert.deepEqual(Array.from(preview.consume),[E('100'),E('700'),E('200')]);
+ assert.equal(preview.eligible,true);assert.deepEqual(Array.from(preview.consume),[E('100'),E('600'),E('300')]);
  const cash=await token.balanceOf(vault.target),debt=await vault.accounted(token.target);
  await tx(vault.connect(signers[3]).claimNetworkReward(0,{gasLimit:600000}));
  assert.equal(await token.balanceOf(vault.target),cash);assert.equal(await vault.accounted(token.target),debt);
- assert.deepEqual(Array.from((await vault.rewardGroup(addr[3],0)).consumedUsd),[E('450'),E('800'),E('250')]);
+ assert.deepEqual(Array.from((await vault.rewardGroup(addr[3],0)).consumedUsd),[E('400'),E('700'),E('400')]);
 });
 test('health: independent accounts cannot claim another user group; rejected group creation is atomic',async()=>{
- await networkRoot();await groupDeposit([4,5,6],[350,100,50]);
+ await networkRoot();await groupDeposit([4,5,6],[300,100,100]);
  await fails(vault.connect(signers[3]).createRewardGroup([addr[4],addr[5],addr[4]]));
  assert.equal(await vault.groupedBranch(addr[3],addr[4]),false);assert.equal(await vault.groupedBranch(addr[3],addr[5]),false);
- await groupCreate([4,5,6]);await tx(vault.fundRewards(token.target,E('25')));
+ await groupCreate([4,5,6]);await tx(vault.fundRewards(token.target,E('35')));
  await fails(vault.connect(signers[7]).claimNetworkReward(0));await fails(vault.connect(signers[3]).claimNetworkReward(1));
- assert.equal((await vault.rewardGroup(addr[3],0)).stage,0n);assert.equal((await vault.ledgers(token.target)).rewards,E('25'));
+ assert.equal((await vault.rewardGroup(addr[3],0)).stage,0n);assert.equal((await vault.ledgers(token.target)).rewards,E('35'));
 });
 test('health: incomplete deep-volume jobs can finish out of order without replay or cross-branch attribution',async()=>{
  await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=13;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
@@ -602,15 +676,15 @@ test('health: decimal and depeg conversion credits funded USDT units, not a hard
  await tx(v.connect(signers[3]).register(ZeroAddress));
  for(const i of [4,5,6])await tx(v.connect(signers[i]).register(addr[3]));
  await tx(t.mint(addr[0],1000n*10n**6n));await tx(t.approve(v.target,1000n*10n**6n));
- for(let j=0;j<3;j++)await tx(v.settleSalesProfit(id('decimal'+j),t.target,addr[j+4],1_000_000n,E(String([350,100,50][j])),id('receipt'),{gasLimit:1500000}));
+ for(let j=0;j<3;j++)await tx(v.settleSalesProfit(id('decimal'+j),t.target,addr[j+4],1_000_000n,E(String([300,100,100][j])),id('receipt'),{gasLimit:1500000}));
  await tx(v.connect(signers[3]).createRewardGroup([addr[4],addr[5],addr[6]]));await tx(v.fundRewards(t.target,100_000_000n));
  const b=await rpc.request({method:'eth_getBlockByNumber',params:['latest',false]});await tx(usdFeed.set(80_000_000n,Number(b.timestamp),1,1));
  await tx(v.connect(signers[3]).claimNetworkReward(0));
- assert.equal((await v.accounts(addr[3],t.target)).profit,31_250_000n);assert.equal((await v.ledgers(t.target)).rewards,68_750_000n);
+ assert.equal((await v.accounts(addr[3],t.target)).profit,43_750_000n);assert.equal((await v.ledgers(t.target)).rewards,56_250_000n);
 });
 test('health: a BNB-only member needs USDT cap for USDT rewards; reinvest creates that cap',async()=>{
- await deposit(3,E('1'),ZeroAddress);await groupDeposit([4,5,6],[350,100,50]);await groupCreate([4,5,6]);
- await tx(vault.fundRewards(token.target,E('25')));await tx(vault.connect(signers[3]).claimNetworkReward(0));
+ await deposit(3,E('1'),ZeroAddress);await groupDeposit([4,5,6],[300,100,100]);await groupCreate([4,5,6]);
+ await tx(vault.fundRewards(token.target,E('35')));await tx(vault.connect(signers[3]).claimNetworkReward(0));
  assert.equal(await vault.profitWithdrawalCap(addr[3],token.target),0n);await fails(vault.connect(signers[3]).withdrawProfit(token.target,E('1')));
  await tx(vault.connect(signers[3]).reinvest(token.target,E('10')));
  assert.equal(await vault.profitWithdrawalCap(addr[3],token.target),E('1'));await tx(vault.connect(signers[3]).withdrawProfit(token.target,E('1'),{gasLimit:600000}));

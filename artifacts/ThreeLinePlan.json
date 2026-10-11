@@ -11,6 +11,11 @@
       "type": "error"
     },
     {
+      "inputs": [],
+      "name": "NetworkPreparationRequired",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -45,6 +50,43 @@
         }
       ],
       "name": "NetworkRewardEarned",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "group",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "stage",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "preparedUsd",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "cursor",
+          "type": "uint256"
+        }
+      ],
+      "name": "NetworkRewardPrepared",
       "type": "event"
     },
     {
@@ -108,9 +150,34 @@
         },
         {
           "indexed": false,
-          "internalType": "address[3]",
+          "internalType": "address[]",
           "name": "branches",
-          "type": "address[3]"
+          "type": "address[]"
+        }
+      ],
+      "name": "RewardBranchesAdded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "group",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address[]",
+          "name": "branches",
+          "type": "address[]"
         }
       ],
       "name": "RewardGroupCreated",
@@ -127,6 +194,56 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "NETWORK_BATCH_LIMIT",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "group",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address[]",
+          "name": "branches",
+          "type": "address[]"
+        }
+      ],
+      "name": "addRewardBranches",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "targetUsd",
+          "type": "uint256"
+        }
+      ],
+      "name": "branchCapBps",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "pure",
       "type": "function"
     },
     {
@@ -156,9 +273,9 @@
     {
       "inputs": [
         {
-          "internalType": "address[3]",
+          "internalType": "address[]",
           "name": "branches",
-          "type": "address[3]"
+          "type": "address[]"
         }
       ],
       "name": "createRewardGroup",
@@ -194,21 +311,40 @@
       "inputs": [
         {
           "internalType": "address",
-          "name": "",
+          "name": "who",
           "type": "address"
         },
         {
           "internalType": "uint256",
-          "name": "",
+          "name": "index",
           "type": "uint256"
         }
       ],
-      "name": "largestBranches",
+      "name": "networkBranch",
       "outputs": [
         {
           "internalType": "address",
           "name": "",
           "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "who",
+          "type": "address"
+        }
+      ],
+      "name": "networkBranchCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",
@@ -289,6 +425,84 @@
         },
         {
           "internalType": "uint256",
+          "name": "targetUsd",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "start",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "limit",
+          "type": "uint256"
+        }
+      ],
+      "name": "rankVolumePage",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "eligibleUsd",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "next",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "who",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "group",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        }
+      ],
+      "name": "rewardBranch",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "branch",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "consumedUsd",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "reservedForStageUsd",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "who",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
           "name": "group",
           "type": "uint256"
         }
@@ -298,19 +512,29 @@
         {
           "components": [
             {
-              "internalType": "address[3]",
+              "internalType": "address[]",
               "name": "branches",
-              "type": "address[3]"
+              "type": "address[]"
             },
             {
-              "internalType": "uint256[3]",
+              "internalType": "uint256[]",
               "name": "consumedUsd",
-              "type": "uint256[3]"
+              "type": "uint256[]"
             },
             {
               "internalType": "uint8",
               "name": "stage",
               "type": "uint8"
+            },
+            {
+              "internalType": "uint256",
+              "name": "preparedUsd",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "cursor",
+              "type": "uint256"
             }
           ],
           "internalType": "struct ThreeLinePlan.RewardGroup",
@@ -371,9 +595,48 @@
           "type": "uint256"
         },
         {
-          "internalType": "uint256[3]",
+          "internalType": "uint256[]",
           "name": "consume",
-          "type": "uint256[3]"
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "who",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "group",
+          "type": "uint256"
+        }
+      ],
+      "name": "rewardProgress",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "stage",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint256",
+          "name": "preparedUsd",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "cursor",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "branches",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",

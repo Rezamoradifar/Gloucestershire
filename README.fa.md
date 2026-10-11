@@ -1,3 +1,7 @@
+## Current release: v0.7.0 — 2026-10-11
+
+Updated seller rates, capped aggregation across any number of lines, new reward schedule, image upgrades, FAQ and a read-only settlement API. [Release and installation guide](UPGRADE-2026-10-11.md) · [Current Persian network rules](NETWORK-PLAN.fa.md). The older notes below describe release history and may be superseded by these current rules. No production deployment is implied.
+
 ## اصلاح نسخه ۰٫۵٫۳
 
 ری‌اینویست سود شخصی یا پورسانت شبکه، مبنای سقف هر برداشت سود را افزایش می‌دهد. فقط سود ثبت‌شده و مصرف‌شده برای ری‌اینویست محاسبه می‌شود؛ صرف دریافت سود سقف را افزایش نمی‌دهد. مبنا برای هر دارایی جدا و تجمعی است؛ برداشت اصل آن را کم نمی‌کند. مثال: ۱۰۰۰ USDT واریز و ۵۰۰ USDT ری‌اینویست، سقف ناخالص هر برداشت را به ۱۵۰ USDT می‌رساند؛ کارمزد اولیه ۵٪ از آن کسر می‌شود. موجودی سود، نقدینگی و فاصله زمانی برداشت همچنان لازم است.

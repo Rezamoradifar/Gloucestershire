@@ -9,12 +9,20 @@ conf=/etc/nginx/sites-available/globaldroptrade.com
 link=/etc/nginx/sites-enabled/globaldroptrade.com
 backup_dir=$(mktemp -d)
 trap 'rm -rf -- "$backup_dir"' EXIT
+api_snippet=/etc/nginx/snippets/globaldroptrade-api.conf
+snippet_existed=0
+if [ -e "$api_snippet" ]; then
+ [ -f "$api_snippet" ] && [ ! -L "$api_snippet" ] && grep -q '^# Managed by Global Drop Trade' "$api_snippet" || { echo 'Unexpected API snippet; stopped to preserve it.'; exit 1; }
+ cp -p "$api_snippet" "$backup_dir/api-original.conf"
+ snippet_existed=1
+fi
 existed=0
 if [ -f "$conf" ] && [ ! -L "$conf" ]; then
  grep -q 'server_name globaldroptrade.com www.globaldroptrade.com;' "$conf" || { echo 'Unexpected domain config; stopped without changing it.'; exit 1; }
  grep -Eq '^[[:space:]]*root[[:space:]]+/var/www/globaldroptrade/releases/[^;[:space:]]+;' "$conf" || { echo 'Unexpected site root; stopped without changing it.'; exit 1; }
  [ -L "$link" ] && [ "$(readlink -f "$link")" = "$conf" ] || { echo 'Unexpected enabled-site configuration; stopped.'; exit 1; }
  cp -p "$conf" "$backup_dir/original.conf"
+ if grep -Eq 'location[[:space:]]+[^;{]*\/api' "$conf"; then echo 'Existing custom API location found; stopped to preserve it.'; exit 1; fi
  existed=1
 elif [ -e "$conf" ] || [ -L "$conf" ] || [ -e "$link" ] || [ -L "$link" ]; then
  echo 'Unexpected config path; stopped.'; exit 1
@@ -28,12 +36,16 @@ find "$release" -type d -exec chmod 755 {} +
 find "$release" -type f -exec chmod 644 {} +
 if [ "$existed" -eq 1 ]; then
  sed -E "s#(^[[:space:]]*root[[:space:]]+)/var/www/globaldroptrade/releases/[^;[:space:]]+;#\1$release;#" "$backup_dir/original.conf" > "$backup_dir/new.conf"
+ if ! grep -Fq "include $api_snippet;" "$backup_dir/new.conf"; then
+  sed -i "/server_name globaldroptrade.com www.globaldroptrade.com;/a\\    include $api_snippet;" "$backup_dir/new.conf"
+ fi
 else
  cat > "$backup_dir/new.conf" <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name globaldroptrade.com www.globaldroptrade.com;
+    include $api_snippet;
     root $release;
     index index.html;
     add_header X-Content-Type-Options nosniff always;
@@ -46,7 +58,21 @@ EOF
 fi
 restore_config() {
  if [ "$existed" -eq 1 ]; then cp -p "$backup_dir/original.conf" "$conf"; else rm -f "$link" "$conf"; fi
+ if [ "$snippet_existed" -eq 1 ]; then cp -p "$backup_dir/api-original.conf" "$api_snippet"; else rm -f "$api_snippet"; fi
 }
+install -d -m 755 /etc/nginx/snippets
+cat > "$api_snippet" <<'API'
+# Managed by Global Drop Trade - read-only settlement feed
+location /api/ {
+    proxy_pass http://127.0.0.1:3115;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 15s;
+    add_header Cache-Control "no-store" always;
+}
+API
 install -m 644 "$backup_dir/new.conf" "$conf"
 if [ "$existed" -eq 0 ]; then ln -s "$conf" "$link"; fi
 if ! nginx -t; then restore_config; echo 'Invalid config; original configuration restored.'; exit 1; fi

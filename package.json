@@ -1,12 +1,14 @@
 {
   "name": "bnb-dropshipping-vault",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
     "compile": "node scripts/compile.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "pretest": "npm run compile"
+    "pretest": "npm run compile",
+    "api": "node server/trades-api.mjs",
+    "sync:artifacts": "node scripts/sync-contract-artifacts.mjs"
   },
   "dependencies": {
     "ethers": "6.17.0"
