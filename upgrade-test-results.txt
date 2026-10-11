@@ -51,3 +51,17 @@ Limitations / not executed:
   and the cloud browser could not reach the localhost preview (connection refused).
   Mobile CSS and responsive assets are implemented, but no visual-device pass is claimed.
 - No independent security audit. Existing owner/liquidity trust model is unchanged.
+
+Connection follow-up verification (2026-10-11):
+PASS node --test test/connect-settlement-feed.test.mjs: 7 tests, 0 failures.
+     Includes actual local-EVM reads of every new plan rate/cap/reward, unchanged
+     account nonce (no transactions sent), legacy-plan reporting, ambiguous
+     network refusal and safe private environment rendering.
+PASS python3 scripts/test-connect-installer.py: mock-service connection preflight,
+     existing-environment preservation, API install/live-check rollback, and
+     HTTPS failure never reporting connection success.
+PASS bash -n ubuntu-connect.sh and git diff --check.
+These follow-up checks do not claim a production connection. A new SSH attempt
+again failed DNS resolution; no SSH agent, conventional key or known-host entry
+was available in this environment. Run the prepared installer in the actual
+server terminal; supply missing read-only RPC/target settings only there.
