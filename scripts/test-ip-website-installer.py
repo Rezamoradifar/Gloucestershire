@@ -20,10 +20,12 @@ with tempfile.TemporaryDirectory() as directory:
     (root / 'bin/nginx').write_text(f'''#!/bin/bash
 if [ "$1" = '-T' ]; then cat '{root}/nginx.dump'; fi
 if [ "$1" = '-t' ] && [ -f '{root}/nginx-fail' ] && [ -f '{conf}' ] && ! grep -q '/releases/old;' '{conf}'; then exit 1; fi
+if [ "$1" = '-t' ] && [ -f '{root}/conflict-warning' ]; then echo 'conflicting server name "104.167.16.102" on 0.0.0.0:8961, ignored'; fi
 exit 0
 ''')
     (root / 'bin/systemctl').write_text('#!/bin/bash\nexit 0\n')
     (root / 'bin/curl').write_text(f'''#!/bin/bash
+printf '%s\\n' "$*" >> '{root}/curl-calls'
 [ ! -f '{root}/health-fail' ] || exit 22
 while [ "$#" -gt 0 ]; do
  if [ "$1" = '-o' ]; then cp '{root}/site/index.html' "$2"; exit 0; fi
@@ -57,4 +59,19 @@ exit 1
     assert run().returncode != 0 and conf.read_text() == original
     assert domain.read_text() == 'existing domain SSL configuration'
     assert default.read_text() == 'existing default website'
-    print('PASS: IP validation; existing-host collision; IP routing; repeat installation; config and HTTP-check rollback; existing sites preserved.')
+    (root / 'health-fail').unlink()
+    for invalid in ('0', '65536', '08961', '8961;bad'):
+        assert run(GLOBAL_SITE_PORT=invalid).returncode != 0
+    (root / 'nginx.dump').write_text('server_name 104.167.16.102;\n')
+    result = run(GLOBAL_SITE_PORT='8961')
+    assert result.returncode == 0, result.stdout + result.stderr
+    port_conf = root / 'nginx/sites-available/globaldroptrade-ip-104.167.16.102-8961'
+    assert 'listen 8961;' in port_conf.read_text() and 'listen [::]:8961;' in port_conf.read_text()
+    assert 'SITE_READY http://104.167.16.102:8961' in result.stdout
+    assert 'http://127.0.0.1:8961/' in (root / 'curl-calls').read_text()
+    assert conf.read_text() == original
+    previous = port_conf.read_text()
+    (root / 'conflict-warning').touch()
+    assert run(GLOBAL_SITE_PORT='8961').returncode != 0
+    assert port_conf.read_text() == previous
+    print('PASS: IP and port validation; host collision; port 8961 routing and local HTTP check; existing port 80 preserved; update and rollback; duplicate-host warning rejection.')
