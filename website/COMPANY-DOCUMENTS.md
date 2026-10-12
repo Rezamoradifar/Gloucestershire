@@ -1,6 +1,8 @@
 # Company registration and operating licence images
 
-The `#company-documents` section appears below the FAQ and has a link in the footer. The default configuration intentionally has no document images: neither a registration certificate nor an operating licence was supplied for this release. The pending state does not claim registration, authorisation or an application in progress.
+The `#company-documents` section appears below the FAQ and has a link in the footer. It displays two generated editorial sample photos until actual records are provided: an anonymous corporate building and a portfolio with blank stationery. Both carry a visible `SAMPLE IMAGE` label and `Illustrative image · Original document pending` caption. Neither a registration certificate nor an operating licence was supplied for this release. The pending state does not claim registration, authorisation or an application in progress.
+
+Sample photos are configured separately in `sampleImage`; `document` remains null. Samples have no document viewer, original-file link, issuer or reference number. Filling `document` with an actual supplied record automatically replaces the sample photo and enables its document controls. See `ASSETS.md` for image provenance.
 
 To publish a supplied document:
 
