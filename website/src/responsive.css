@@ -1,0 +1,82 @@
+/* Data stays inside its panel; controls remain usable on touch screens. */
+.gdt-page img{max-width:100%}
+.gdt-page :is(.gdt-hero-content,.gdt-hero-visual,.gdt-split>*,.gdt-signal-grid article,.gdt-faq>*){min-width:0}
+.gdt-page :is(.gdt-contact,.gdt-footer,.gdt-dialog){overflow-wrap:anywhere}
+.gdt-page .gdt-links a,.gdt-page .gdt-footer nav :is(a,button){min-height:44px;display:inline-flex;align-items:center}
+.gdt-page .gdt-menu-button{flex-shrink:0}
+.gdt-page .gdt-links.open{max-height:calc(100dvh - 74px);overflow-y:auto;overscroll-behavior:contain}
+.gdt-page .gdt-trade-scroll{max-width:100%;overscroll-behavior-x:contain}
+.shell :is(.workspace,main,.panel,.stat,.dashboard-grid>*,.topbar>*,.network-summary>*){min-width:0}
+.shell :is(.icon-button,.wallet-button,.refresh-button,.small-button,.asset-picker button,.text-button){min-height:44px}
+.shell .icon-button{min-width:44px}
+.shell .sidebar-close{display:none}
+.shell .operation-tabs{flex-wrap:wrap;gap:6px}
+.shell .operation-tabs button{flex:1 1 100px;min-height:44px;white-space:normal;line-height:1.4;padding:10px 8px}
+.shell :is(.operation-summary>div,.plan-detail,.confirmation-details>div){align-items:flex-start;gap:12px}
+.shell :is(.operation-summary bdi,.plan-detail strong,.confirmation-details bdi,.copy-row code){min-width:0;overflow-wrap:anywhere}
+.shell .operation-summary bdi{text-align:right;flex:0 1 48%}
+.shell .copy-row code{flex:1}
+.shell .table-wrap,.shell .network-table{max-width:100%;overscroll-behavior-x:contain}
+.shell .confirm-dialog{max-height:calc(100dvh - 32px);overscroll-behavior:contain;overflow-x:hidden}
+.shell .wallet-options button{min-width:0}
+.shell .wallet-options span{min-width:0;overflow-wrap:anywhere}
+.shell .confirmation-details .net bdi{max-width:60%;text-align:right}
+.shell input,.shell select,.shell textarea{font-size:16px}
+@media(min-width:961px){.shell .sidebar{overflow-y:auto}.shell .sidebar-bottom{padding-top:24px}}
+@media(max-width:1000px){.gdt-page .gdt-links{top:100%}}
+@media(max-width:960px){
+ .shell .sidebar{padding-top:64px;padding-bottom:max(22px,env(safe-area-inset-bottom));height:100dvh;overflow-y:auto}
+ .shell .sidebar-close{display:grid;place-items:center;position:absolute;top:12px;right:14px}
+ .shell .sidebar .brand{margin-bottom:28px}
+ .shell .sidebar-bottom{padding-top:24px}
+ .shell .dashboard-grid{grid-template-columns:minmax(0,1fr)}
+ .shell .side-panels{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+ .shell .side-panels .panel{margin-bottom:0}
+}
+@media(max-width:640px){
+ .shell main{padding-inline:max(16px,env(safe-area-inset-left));padding-bottom:max(24px,env(safe-area-inset-bottom))}
+ .shell .topbar{height:auto;min-height:72px;padding-block:10px;gap:8px;flex-wrap:wrap}
+ .shell .breadcrumb{flex:1;min-width:0}
+ .shell .breadcrumb strong{overflow-wrap:anywhere}
+ .shell .top-actions{max-width:100%}
+ .shell .wallet-button{max-width:100%;white-space:normal}
+ .shell .side-panels{grid-template-columns:1fr}
+ .shell .section-toolbar{flex-wrap:wrap}
+ .shell .section-toolbar h2{flex:1 1 160px}
+ .shell .page-title h1{font-size:clamp(22px,6vw,28px)}
+ .shell .notice span{min-width:0;flex:1 1 180px}
+ .shell .notice a{overflow-wrap:anywhere}
+ .shell .account-read-status>div{min-width:0}
+ .shell .account-read-status a{white-space:normal;margin-left:0;min-height:44px}
+ .shell .network-summary>span{gap:12px;flex-wrap:wrap}
+ .shell .network-summary strong{overflow-wrap:anywhere;max-width:100%}
+ .shell .confirm-dialog{padding:20px 16px;width:calc(100% - 24px)}
+ .shell .panel-title h2{overflow-wrap:anywhere}
+ .shell .stat-foot,.shell .detail-note,.shell .account-read-status p{font-size:12px}
+ .gdt-page .gdt-nav-cta{min-height:44px;padding:10px 12px}
+ .gdt-page .gdt-wrap{width:calc(100% - 32px)}
+ .gdt-page .gdt-nav{gap:8px}
+ .gdt-page .gdt-step-list button{min-width:0;align-items:flex-start}
+ .gdt-page .gdt-step-list button>b{overflow-wrap:anywhere;font-size:12px}
+ .gdt-page .gdt-terminal-head{flex-wrap:wrap;letter-spacing:0}
+ .gdt-page .gdt-price-rows>div{flex-wrap:wrap}
+ .gdt-page .gdt-price-rows strong{margin-left:auto}
+ .gdt-page .gdt-fulfillment{flex-direction:column;padding-block:24px}
+ .gdt-page .gdt-fulfillment>svg{transform:rotate(90deg)}
+ .gdt-page .gdt-hero-bottom>span{flex-wrap:wrap;line-height:1.8}
+ .gdt-page .gdt-section-top{flex-wrap:wrap;gap:12px}
+ .gdt-page .gdt-feed-status{margin-bottom:20px}
+}
+@media(max-width:360px){
+ .gdt-page .gdt-brand{gap:6px;font-size:12px}
+ .gdt-page .gdt-mark{width:30px;height:30px}
+ .gdt-page .gdt-nav-cta{font-size:10px;gap:6px;padding-inline:9px}
+ .gdt-page .gdt-step-list{grid-template-columns:1fr}
+ .gdt-page .gdt-hero-insight{gap:10px;left:8px;right:8px}
+ .gdt-page .gdt-hero-insight>img{width:60px}
+ .gdt-page .gdt-hero-insight strong{font-size:16px}
+}
+@media(pointer:coarse){.shell :is(input,select,textarea){min-height:48px}}
+
+.shell .dashboard-return{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:var(--yellow)}
+.shell .sidebar .dashboard-return{width:100%;justify-content:center;margin-bottom:16px}
