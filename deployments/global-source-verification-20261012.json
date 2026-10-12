@@ -1,0 +1,92 @@
+{
+  "checkedAt": "2026-10-12T06:19:22.804095+00:00",
+  "chainId": 97,
+  "environment": "BNB Testnet; mock token and price feeds",
+  "provider": "Sourcify v2",
+  "compilerVersion": "0.8.30+commit.73712a01",
+  "compilerSettings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "viaIR": true,
+    "evmVersion": "paris"
+  },
+  "publicSourceRevision": "12de0606aaf2d3a047db53ebfe50aefe66a9efa1",
+  "standardInputSha256": "93b8353b30a09029087632b6824fd45b9d9a89ae00a4304eadade27bcd420226",
+  "publicStandardInputUrl": "https://raw.githubusercontent.com/Rezamoradifar/Gloucestershire/12de0606aaf2d3a047db53ebfe50aefe66a9efa1/artifacts/standard-input.json",
+  "allCreationAndRuntimeMatchesExact": true,
+  "contracts": [
+    {
+      "contractIdentifier": "DropshippingVault.sol:DropshippingVault",
+      "creationTransactionHash": "0xc4c8dc765bdbf0a73a2ec3fa87af525b5000b16724b7991f44f02cd3b0d534a0",
+      "verificationId": "fba2ce99-1a62-4305-9801-4187a6a9bea0",
+      "match": "exact_match",
+      "creationMatch": "exact_match",
+      "runtimeMatch": "exact_match",
+      "chainId": "97",
+      "address": "0x7f19354B765920B9b17003d0840EEaA133883DcA",
+      "verifiedAt": "2026-10-12T06:11:44Z",
+      "matchId": "55965056",
+      "sourceUrl": "https://repo.sourcify.dev/97/0x7f19354B765920B9b17003d0840EEaA133883DcA",
+      "apiUrl": "https://sourcify.dev/server/v2/contract/97/0x7f19354B765920B9b17003d0840EEaA133883DcA",
+      "bscscanUrl": "https://testnet.bscscan.com/address/0x7f19354B765920B9b17003d0840EEaA133883DcA#code",
+      "externalEtherscanSubmissionReturned": true,
+      "bscscanVerificationConfirmed": null
+    },
+    {
+      "contractIdentifier": "TestMocks.sol:MockToken",
+      "creationTransactionHash": "0xe7d76ad2ad26e450db365fd4f532f07edc113f711a3d6c5323434c348bab472c",
+      "verificationId": "b3aa9f00-f32a-4726-a107-f176ec81dcda",
+      "match": "exact_match",
+      "creationMatch": "exact_match",
+      "runtimeMatch": "exact_match",
+      "chainId": "97",
+      "address": "0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89",
+      "verifiedAt": "2026-10-12T06:13:00Z",
+      "matchId": "55965118",
+      "sourceUrl": "https://repo.sourcify.dev/97/0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89",
+      "apiUrl": "https://sourcify.dev/server/v2/contract/97/0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89",
+      "bscscanUrl": "https://testnet.bscscan.com/address/0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89#code",
+      "externalEtherscanSubmissionReturned": true,
+      "bscscanVerificationConfirmed": null
+    },
+    {
+      "contractIdentifier": "TestMocks.sol:MockFeed",
+      "creationTransactionHash": "0x84a535886c434022dccbaa509dce9c473f564ac7dfc762f711431a5dc844dd6b",
+      "verificationId": "02cb285d-1581-4bf2-b1e6-5f158da51922",
+      "match": "exact_match",
+      "creationMatch": "exact_match",
+      "runtimeMatch": "exact_match",
+      "chainId": "97",
+      "address": "0xDA264c16Ec8832748a1A5A31b963deD9E48e337a",
+      "verifiedAt": "2026-10-12T06:13:06Z",
+      "matchId": "55965119",
+      "sourceUrl": "https://repo.sourcify.dev/97/0xDA264c16Ec8832748a1A5A31b963deD9E48e337a",
+      "apiUrl": "https://sourcify.dev/server/v2/contract/97/0xDA264c16Ec8832748a1A5A31b963deD9E48e337a",
+      "bscscanUrl": "https://testnet.bscscan.com/address/0xDA264c16Ec8832748a1A5A31b963deD9E48e337a#code",
+      "externalEtherscanSubmissionReturned": true,
+      "bscscanVerificationConfirmed": null
+    },
+    {
+      "contractIdentifier": "TestMocks.sol:MockFeed",
+      "creationTransactionHash": "0xb0aa6af208f15bc499f4135f20d692ab2d6771496dd29f23d59ee3f044cf1638",
+      "verificationId": "e4767abe-5682-47df-b902-f83409d20e7d",
+      "match": "exact_match",
+      "creationMatch": "exact_match",
+      "runtimeMatch": "exact_match",
+      "chainId": "97",
+      "address": "0xE7D68dF5e1e9B0F5BeB3201b4Ab1d64aC7761454",
+      "verifiedAt": "2026-10-12T06:13:13Z",
+      "matchId": "55965121",
+      "sourceUrl": "https://repo.sourcify.dev/97/0xE7D68dF5e1e9B0F5BeB3201b4Ab1d64aC7761454",
+      "apiUrl": "https://sourcify.dev/server/v2/contract/97/0xE7D68dF5e1e9B0F5BeB3201b4Ab1d64aC7761454",
+      "bscscanUrl": "https://testnet.bscscan.com/address/0xE7D68dF5e1e9B0F5BeB3201b4Ab1d64aC7761454#code",
+      "externalEtherscanSubmissionReturned": true,
+      "bscscanVerificationConfirmed": null
+    }
+  ],
+  "externalExplorerLimitation": "Etherscan status/source API required an API key. BscScan public pages returned HTTP 403 from this environment. External verification completion is unconfirmed.",
+  "transactionsSent": 0,
+  "securityAuditPerformed": false
+}
