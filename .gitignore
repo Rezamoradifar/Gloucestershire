@@ -4,6 +4,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+# Reviewed public build settings only; local overrides and secrets stay ignored.
+!/website/.env.production
 *.key
 *.pem
 *.log
