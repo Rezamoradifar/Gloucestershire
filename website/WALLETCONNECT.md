@@ -4,6 +4,8 @@ The dashboard offers a browser-wallet option and a WalletConnect option for QR/m
 
 ## Required public setting
 
+The user's Project ID `41040f658e4d4120399041c145b5e8b0` is now configured in the tracked, public `website/.env.production`, together with chain 97 and the verified testnet vault. A normal production build, including `ubuntu-domain.sh`, reads this file. Existing process environment variables and mode-specific local overrides can take precedence. This does not change any contract wallet.
+
 Create or open the Global Drop Trade project at https://dashboard.reown.com and copy its **Project ID**. Add these domains under the project's Configuration / Domain settings:
 
 - `globaldroptrade.com`
@@ -30,6 +32,7 @@ If the ID is missing or malformed, the QR/mobile option is visibly unavailable, 
 - 21 frontend tests passed, including selected-provider routing, rejected connections, stale provider events, explicit disconnect, late connection cancellation, testnet switching, and refusal to sign on the wrong chain.
 - Existing local-contract integration tests passed: small reinvestment, reward-group preparation/claim and account-change rejection. No economic contract source was changed.
 - TypeScript and the Vite production build passed with the verified testnet vault configured.
-- **A real Project ID has not been supplied.** No QR/mobile session, owner-wallet connection, or public deployment of this feature has been confirmed. Complete an end-to-end mobile connection and cancellation check after installing with the actual project ID.
+- **The user's Project ID is configured for the production build.** No paired QR/mobile session or owner-wallet connection has been confirmed. Complete an end-to-end mobile connection and cancellation check after installing, with the site's domains allowlisted in Reown.
+- Publishing through the connected Vercel account was blocked by HTTP 403 for scope `rusekingdom-4810`; no Vercel environment or deployment was changed. No CLI credentials or server SSH access were available. The server installation remains a separate execution step.
 
 Official references: https://docs.reown.com/advanced/providers/ethereum and https://docs.reown.com/appkit/domain-verification
