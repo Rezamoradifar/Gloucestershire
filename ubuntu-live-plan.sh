@@ -4,6 +4,11 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root'; exit 1; }
 state_dir=${1:-/root/global-testnet-v071/.testnet-server}
+case "${2:-plan}" in
+ plan) runner=scripts/live-plan-test.mjs; report_dir=live-plan-v1; report_source=plan-public; report_name=testnet-plan ;;
+ million) runner=scripts/million-testnet.mjs; report_dir=million-test-v1; report_source=million-public; report_name=testnet-million ;;
+ *) echo 'Choose plan or million'; exit 1 ;;
+esac
 [ -f "$state_dir/deployer.key" ] && [ -f "$state_dir/deployment-public.json" ] || {
  echo 'Existing TEST-ONLY DEPLOYER files not found. No new wallet or contract was created.'; exit 1;
 }
@@ -22,14 +27,19 @@ export PATH="$node_dir/bin:$PATH"
 npm ci --include=dev --ignore-scripts --no-audit --no-fund
 npm run compile
 # The lock lives with the persistent journal, so concurrent checkouts cannot replay.
-flock -n "$state_dir/live-plan.lock" node scripts/live-plan-test.mjs "$state_dir"
+flock -n "$state_dir/live-plan.lock" node "$runner" "$state_dir"
 # Only the two public reports may enter the web root. Never copy the key directory.
-python3 - "$state_dir/live-plan-v1" <<'PY'
+python3 - "$state_dir/$report_dir" "$report_source" "$report_name" <<'PY'
 import json,pathlib,re,sys
 reports=pathlib.Path(sys.argv[1])
-report=json.loads((reports/'plan-public.json').read_text())
+source_name,public_name=sys.argv[2:4]
+if (source_name,public_name) not in [('plan-public','testnet-plan'),('million-public','testnet-million')]:
+    raise SystemExit('Unexpected report type')
+report=json.loads((reports/(source_name+'.json')).read_text())
 if report.get('status')!='completed' or report.get('chainId')!=97:
     raise SystemExit('Test incomplete; no completed report published')
+if public_name=='testnet-million' and (report.get('accountCount')!=20 or report.get('totalDepositedTestUsdt')!='1000000'):
+    raise SystemExit('Million total mismatch; no completed report published')
 roots=set()
 for name in ('globaldroptrade.com','globaldroptrade-ip-104.167.16.102-8961'):
     config=pathlib.Path('/etc/nginx/sites-available')/name
@@ -41,15 +51,16 @@ for name in ('globaldroptrade.com','globaldroptrade-ip-104.167.16.102-8961'):
         if root.is_dir() and root.resolve().parent==pathlib.Path('/var/www/globaldroptrade/releases').resolve():
             roots.add(root)
 for root in roots:
-    for source,name in [('plan-public.html','testnet-plan.html'),('plan-public.json','testnet-plan.json')]:
+    for suffix in ('.html','.json'):
+        source,name=source_name+suffix,public_name+suffix
         target=root/name
         if target.is_symlink(): raise SystemExit('Unexpected report symlink; stopped')
         temp=root/(name+'.tmp')
         with temp.open('xb') as out: out.write((reports/source).read_bytes())
         temp.chmod(0o644);temp.replace(target)
 if roots:
-    print('PUBLIC_REPORT_WRITTEN /testnet-plan.html')
-    print('Open https://globaldroptrade.com/testnet-plan.html or http://104.167.16.102:8961/testnet-plan.html')
+    print('PUBLIC_REPORT_WRITTEN /'+public_name+'.html')
+    print('Open https://globaldroptrade.com/'+public_name+'.html or http://104.167.16.102:8961/'+public_name+'.html')
 else:
-    print('No managed active website root found; report saved only at '+str(reports/'plan-public.html'))
+    print('No managed active website root found; report saved only at '+str(reports/(source_name+'.html')))
 PY
