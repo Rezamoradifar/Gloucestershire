@@ -30,7 +30,14 @@
   "feeWalletsAndDefaultsMatch": true,
   "sourceRevision": "ed57c9b8f95e8c670af1d46039c31896cfc4cd45",
   "transactionsSentByThisCheck": 0,
-  "explorerSourceVerificationPerformed": false,
   "settlementFeedVerified": false,
-  "settlementFeedLimitation": "Public BNB RPC returned -32005 limit exceeded for eth_getLogs; alternate official endpoint returned 503, PublicNode returned 403 from this environment. No trade list was claimed live."
+  "settlementFeedLimitation": "Public BNB RPC returned -32005 limit exceeded for eth_getLogs; alternate official endpoint returned 503, PublicNode returned 403 from this environment. No trade list was claimed live.",
+  "sourceVerification": {
+    "provider": "Sourcify v2",
+    "creationMatch": "exact_match",
+    "runtimeMatch": "exact_match",
+    "verifiedAt": "2026-10-12T06:11:44Z",
+    "report": "global-source-verification-20261012.json",
+    "bscscanVerificationConfirmed": null
+  }
 }
