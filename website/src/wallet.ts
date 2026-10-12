@@ -11,6 +11,15 @@ export type WalletKind='injected'|'walletconnect';
 export const walletConnectProjectId=String(import.meta.env.VITE_WALLETCONNECT_PROJECT_ID||'').trim();
 export const walletConnectReady=/^[a-f0-9]{32}$/i.test(walletConnectProjectId);
 
+export function walletConnectionError(error:unknown){
+ const e=error as {code?:number|string;message?:string;shortMessage?:string}|null;
+ const message=e?.shortMessage||e?.message||'The wallet connection could not be completed.';
+ if(e?.code===4001||e?.code==='ACTION_REJECTED')return 'Connection declined in the wallet. Choose Connect wallet when you are ready to retry.';
+ if(/proposal expired/i.test(message))return 'The connection request expired. Open Connect wallet again to create a fresh QR code, then approve it in your wallet.';
+ if(/connection request reset|user rejected|modal closed/i.test(message))return 'The wallet connection was cancelled. You can reopen Connect wallet to try again.';
+ return message;
+}
+
 // A single selected EIP-1193 provider is shared by account reads and all signing.
 // Connecting only requests account access; it never signs or submits a transaction.
 export class WalletConnection {
