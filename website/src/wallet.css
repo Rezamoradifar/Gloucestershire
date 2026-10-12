@@ -1,0 +1,11 @@
+.wallet-picker{max-width:460px;width:calc(100% - 32px)}
+.wallet-picker .panel-title{gap:14px}.wallet-picker h2{font-size:21px}
+.wallet-options{display:grid;gap:12px;margin:22px 0}
+.wallet-options button{display:flex;align-items:center;gap:16px;padding:18px;text-align:left;border:1px solid #bda36966;border-radius:12px;background:#bda3690c;color:inherit;width:100%}
+.wallet-options button:hover:not(:disabled){border-color:#c9ae70;background:#bda36920}
+.wallet-options button:focus-visible{outline:2px solid #c9ae70;outline-offset:3px}
+.wallet-options button:disabled{opacity:.5;cursor:not-allowed}
+.wallet-options svg{flex-shrink:0;color:#bda369}.wallet-options span{display:grid;gap:5px}
+.wallet-options strong{font-size:15px}.wallet-options small{font-size:12px;line-height:1.6}
+.connected-wallet{overflow-wrap:anywhere;font-size:12px;padding:12px;border-radius:8px;background:#bda36912}
+.wallet-connection-note{font-size:12px;line-height:1.7}

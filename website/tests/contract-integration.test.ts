@@ -4,7 +4,7 @@ import ganache from 'ganache';
 import {BrowserProvider,ContractFactory,parseEther,ZeroAddress,keccak256,toUtf8Bytes} from 'ethers';
 const E=parseEther;
 let rpc:any,provider:BrowserProvider,signers:any[],addresses:string[],vault:any,token:any,selected:string,saved:string;
-let chain:typeof import('../src/chain'),network:typeof import('../src/network');
+let chain:typeof import('../src/chain'),network:typeof import('../src/network'),wallet:typeof import('../src/wallet');
 async function send(p:Promise<any>){return(await p).wait();}
 async function deploy(name:string,args:unknown[]=[]){const a=JSON.parse(fs.readFileSync(new URL('../../artifacts/'+name+'.json',import.meta.url),'utf8'));const c=await new ContractFactory(a.abi,a.evm.bytecode.object,signers[0]).deploy(...args);await c.waitForDeployment();return c;}
 beforeAll(async()=>{
@@ -19,10 +19,10 @@ beforeAll(async()=>{
  await send(vault.batchProfit(keccak256(toUtf8Bytes('small-profit')),token.target,[addresses[3]],[E('1')]));
  vi.stubEnv('VITE_CHAIN_ID','97');vi.stubEnv('VITE_VAULT_ADDRESS',vault.target);vi.resetModules();
  vi.stubGlobal('window',{ethereum:{request:async({method,params}:any)=>['eth_accounts','eth_requestAccounts'].includes(method)?[selected]:rpc.request({method,params:params||[]})}});
- chain=await import('../src/chain');network=await import('../src/network');saved=await rpc.request({method:'evm_snapshot',params:[]});
+ chain=await import('../src/chain');network=await import('../src/network');wallet=await import('../src/wallet');saved=await rpc.request({method:'evm_snapshot',params:[]});
 },60000);
-beforeEach(async()=>{await rpc.request({method:'evm_revert',params:[saved]});saved=await rpc.request({method:'evm_snapshot',params:[]});selected=addresses[3];});
-afterAll(async()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();await provider?.destroy();await rpc?.disconnect();});
+beforeEach(async()=>{await rpc.request({method:'evm_revert',params:[saved]});saved=await rpc.request({method:'evm_snapshot',params:[]});selected=addresses[3];await wallet.wallets.connect('injected');});
+afterAll(async()=>{await wallet?.wallets.disconnect();vi.unstubAllGlobals();vi.unstubAllEnvs();await provider?.destroy();await rpc?.disconnect();});
 describe('Actual wallet client against a local contract',()=>{
  it('allows reinvesting one dollar of funded profit while keeping the deposit minimum',async()=>{
   const s=await chain.readSnapshot(addresses[3],'USDT',20),status=vi.fn();

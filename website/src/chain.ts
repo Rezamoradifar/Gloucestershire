@@ -2,6 +2,7 @@ import {BrowserProvider,Contract,ZeroAddress,isAddress,keccak256,toUtf8Bytes} fr
 import abi from './vault-abi.json';
 import {chainId,configured,vaultAddress,feeWallets} from './config';
 import {parseAmount,feeOf} from './money';
+import {getWalletProvider} from './wallet';
 export const erc20Abi=['function decimals() view returns(uint8)','function balanceOf(address) view returns(uint256)','function allowance(address,address) view returns(uint256)','function approve(address,uint256) returns(bool)'];
 export type Asset='BNB'|'USDT';
 export type Position={id:number;asset:string;principal:bigint;capitalUsd:bigint;unlockAt:bigint;penaltyBps:bigint};
@@ -9,10 +10,10 @@ export type Snapshot={partners:string[];partnerQuorum:number;who:string;asset:st
 export type Action={kind:'deposit'|'profit'|'principal'|'reinvest'|'transfer'|'reserve'|'rewards'|'settle'|'ownerWithdraw'|'returnCapital';value:string;recipient?:string;referrer?:string;position?:Position;settlementId?:string;evidence?:string;salesUsd?:string;expectedFee:bigint;expectedLock?:bigint;expectedPenalty?:bigint;expectedClaim?:bigint};
 export const actionNames={deposit:'Deposit capital',profit:'Withdraw profit',principal:'Withdraw principal',reinvest:'Reinvest',transfer:'Transfer profit',reserve:'Fund fee reserve',rewards:'Fund rewards',settle:'Settle sales profit',ownerWithdraw:'Deploy treasury capital',returnCapital:'Return treasury capital'};
 export async function session(expected?:string){
- if(!window.ethereum)throw Error('Open a compatible wallet browser or extension.');
+ const wallet=getWalletProvider();if(!wallet)throw Error('Connect your wallet to continue.');
  if(!configured)throw Error('The contract address is not configured.');
- const raw=await window.ethereum.request({method:'eth_chainId'});if(Number(raw)!==chainId)throw Error('Your wallet is on a different network.');
- const provider=new BrowserProvider(window.ethereum);const signer=await provider.getSigner();const who=await signer.getAddress();
+ const raw=await wallet.request({method:'eth_chainId'});if(Number(raw)!==chainId)throw Error('Your wallet is on a different network.');
+ const provider=new BrowserProvider(wallet);const signer=await provider.getSigner();const who=await signer.getAddress();
  if(expected&&who.toLowerCase()!==expected.toLowerCase())throw Error('The wallet account changed. Reload your account data.');
  const vault=new Contract(vaultAddress,abi,signer);
  if(await provider.getCode(vaultAddress)==='0x')throw Error('No contract exists at this address on the selected network.');
