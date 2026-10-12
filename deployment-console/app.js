@@ -1,9 +1,9 @@
 import {BrowserProvider,formatEther,getAddress} from './ethers.js';
-import {guard,requestFor,verify} from './core.mjs';
+import {deploymentKey,guard,requestFor,verify} from './core.mjs';
 const $=id=>document.getElementById(id);
 let config,artifacts,raw,provider,busy=false,records=[],done=[],estimate=null;
 const labels=['توکن آزمایشی TUSDT','منبع قیمت آزمایشی BNB','منبع قیمت آزمایشی TUSDT','قرارداد GLOBAL'];
-const KEY='global-testnet-deployment-v050-owner-ebfb';
+let KEY;
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
 function save(){localStorage.setItem(KEY,JSON.stringify(records));}
 function render(){
@@ -25,7 +25,7 @@ function render(){
  if(done[3]){$('contract').textContent=done[3].address;$('explorer').href='https://testnet.bscscan.com/address/'+done[3].address;}
 }
 async function run(fn){if(busy)return;busy=true;render();try{await fn();}catch(e){status(e.code===4001||e.code==='ACTION_REJECTED'?'درخواست در کیف پول لغو شد.':e.shortMessage||e.message||'خطا در ارتباط با کیف پول.',true);}finally{busy=false;render();}}
-function selectWallet(){const p=window.safepalProvider||window.ethereum;if(!p?.request)throw Error('این لینک را در مرورگر داخلی SafePal باز کنید؛ در این مرورگر کیف پول شناسایی نشد.');return p;}
+function selectWallet(){const p=window.safepalProvider||window.ethereum;if(!p?.request)throw Error('این لینک را در مرورگر کیف پول SafePal یا MetaMask باز کنید؛ کیف پول شناسایی نشد.');return p;}
 function invalidate(){estimate=null;done=[];provider=null;$('connection').textContent='اتصال نیاز به بررسی دارد';status('حساب یا شبکه تغییر کرد؛ دوباره اتصال را بررسی کنید.');render();}
 async function connect(){
  raw=selectWallet();await raw.request({method:'eth_requestAccounts'});await guard(raw,config.initialOwner);
@@ -60,6 +60,7 @@ try{
  [config,...artifacts]=await Promise.all(['config','MockToken','MockFeed','DropshippingVault'].map(n=>fetch(n+'.json').then(r=>{if(!r.ok)throw Error('بارگذاری فایل قرارداد ناموفق بود.');return r.json();})));
  artifacts=Object.fromEntries(['MockToken','MockFeed','DropshippingVault'].map((n,i)=>[n,artifacts[i]]));
  config.initialOwner=getAddress(config.initialOwner);config.partners=config.partners.map(getAddress);if(config.partners.length!==7||new Set(config.partners).size!==7)throw Error('تنظیمات شرکا نامعتبر است.');
+ KEY=deploymentKey(config,artifacts);
  try{const stored=JSON.parse(localStorage.getItem(KEY)||'[]');if(Array.isArray(stored)&&stored.length<=4&&stored.every(x=>x&&/^0x[0-9a-f]{64}$/i.test(x.hash)))records=stored;}catch{}
  $('owner').textContent=config.initialOwner;
  const rows=[['ولت عملیاتی ۸۰٪',config.dropshippingWallet],['سهم ثابت اول ۱۰٪','0x7037Cc199499D7A3431285a01E435454EaE51265'],['سهم ثابت دوم ۱۰٪','0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632'],['کارمزد برداشت سود','0x74015deDF36677485793f1714Ec7bD4893907b26']];

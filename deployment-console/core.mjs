@@ -1,5 +1,10 @@
-import {ContractFactory,Contract,getAddress} from './ethers.js';
+import {ContractFactory,Contract,getAddress,keccak256,toUtf8Bytes} from './ethers.js';
 export const names=['MockToken','MockFeed','MockFeed','DropshippingVault'];
+export function deploymentKey(c,artifacts){
+ if(c.chainId!==97)throw Error('تنظیمات باید برای BNB Testnet با شناسه 97 باشد.');
+ const identity=[c.chainId,getAddress(c.initialOwner),getAddress(c.dropshippingWallet),c.partners.map(getAddress),c.maxOracleAge,names.map(n=>artifacts[n].bytecode.toLowerCase())];
+ return 'global-testnet-deployment-'+keccak256(toUtf8Bytes(JSON.stringify(identity)));
+}
 export function argsFor(i,c,done){
  if(i===0)return [18]; if(i===1)return [60000000000n]; if(i===2)return [100000000n];
  if(!done.slice(0,3).every(x=>x?.address))throw Error('ابتدا سه مرحله قبلی را تکمیل کنید.');
@@ -21,6 +26,7 @@ export async function verify(i,hash,provider,c,done,artifacts){
  if(!tx||tx.chainId!==97n||tx.to!==null||tx.value!==0n||getAddress(tx.from)!==getAddress(c.initialOwner)||tx.data.toLowerCase()!==expected.data.toLowerCase())throw Error('رسید با مشخصات این استقرار مطابقت ندارد.');
  if(!receipt.contractAddress||await provider.getCode(receipt.contractAddress)==='0x')throw Error('کد قرارداد در شبکه پیدا نشد.');
  if(i===3){const v=new Contract(receipt.contractAddress,artifacts.DropshippingVault.abi,provider);
+  if(await v.NETWORK_PLAN_VERSION()!==2n)throw Error('نسخه پلن قرارداد مطابقت ندارد.');
   if(getAddress(await v.owner())!==getAddress(c.initialOwner)||getAddress(await v.dropshippingWallet())!==getAddress(c.dropshippingWallet))throw Error('مالک یا مقصد عملیاتی مطابقت ندارد.');
   for(let j=0;j<7;j++)if(getAddress(await v.partnerWallets(j))!==getAddress(c.partners[j]))throw Error('آدرس شریک مطابقت ندارد.');
  }
