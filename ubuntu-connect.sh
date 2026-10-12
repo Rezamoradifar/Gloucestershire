@@ -3,6 +3,14 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root: sudo bash ubuntu-connect.sh /root/global-bnb'; exit 1; }
+if [ -n "${GLOBAL_SITE_IP:-}" ]; then
+ export GLOBAL_SITE_IP GLOBAL_SITE_PORT=${GLOBAL_SITE_PORT:-80}
+ python3 - "$GLOBAL_SITE_IP" "$GLOBAL_SITE_PORT" <<'PY'
+import ipaddress,sys
+ipaddress.IPv4Address(sys.argv[1])
+port=int(sys.argv[2]); assert 1<=port<=65535 and str(port)==sys.argv[2], 'Invalid port'
+PY
+fi
 source_dir=$(realpath -- "${1:-/root/global-bnb}")
 [ -d "$source_dir" ] && [ "$source_dir" != "$PWD" ] || { echo 'Use a separate release checkout; pass the existing project directory as argument.'; exit 1; }
 # Older Global installs keep Node under /root. Copy that existing runtime to a
@@ -30,8 +38,9 @@ node scripts/connect-settlement-feed.mjs "$source_dir" "$stage"
 export VITE_CHAIN_ID VITE_VAULT_ADDRESS
 VITE_CHAIN_ID=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).chainId)' "$stage/connection-public.json")
 VITE_VAULT_ADDRESS=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).contractAddress)' "$stage/connection-public.json")
-npm ci --ignore-scripts --no-audit --no-fund --prefix website
+npm ci --include=dev --ignore-scripts --no-audit --no-fund --prefix website
 npm run build --prefix website
+cp -R deployment-console website/dist/deploy
 python3 scripts/package-website.py
 envfile=/etc/globaldroptrade/trades.env
 backup_dir="/etc/globaldroptrade/backups/$(date -u +%Y%m%dT%H%M%S)-$$"
@@ -48,11 +57,19 @@ if ! curl -fsS --max-time 55 'http://127.0.0.1:3115/api/trades?limit=1' -o "$sta
  restore_env; echo 'API live check failed; previous connection settings restored.'; exit 1
 fi
 node -e 'const fs=require("fs"),a=JSON.parse(fs.readFileSync(process.argv[1])),b=JSON.parse(fs.readFileSync(process.argv[2]));if(a.status!=="live"||a.chainId!==b.chainId||a.contract!==b.contractAddress)process.exit(1)' "$stage/active.json" "$stage/connection-public.json" || { restore_env; echo 'Active API target mismatch; previous settings restored.'; exit 1; }
-bash ubuntu-website.sh
-install -m 600 "$stage/connection-public.json" /etc/globaldroptrade/connection-public.json
-# Check the actual HTTPS virtual host locally, retaining certificate validation.
-curl -fsS --max-time 55 --resolve globaldroptrade.com:443:127.0.0.1 'https://globaldroptrade.com/api/trades?limit=1' -o "$stage/public.json"
+if ! bash ubuntu-website.sh; then restore_env; echo 'Website activation failed; previous API settings restored.'; exit 1; fi
+# Check the selected virtual host locally; keep certificate validation for HTTPS.
+if [ -n "${GLOBAL_SITE_IP:-}" ]; then
+ curl -fsS --max-time 55 -H "Host: $GLOBAL_SITE_IP" "http://127.0.0.1:$GLOBAL_SITE_PORT/api/trades?limit=1" -o "$stage/public.json"
+else
+ curl -fsS --max-time 55 --resolve globaldroptrade.com:443:127.0.0.1 'https://globaldroptrade.com/api/trades?limit=1' -o "$stage/public.json"
+fi
 node -e 'const fs=require("fs"),a=JSON.parse(fs.readFileSync(process.argv[1])),b=JSON.parse(fs.readFileSync(process.argv[2]));if(a.status!=="live"||a.chainId!==b.chainId||a.contract!==b.contractAddress)process.exit(1)' "$stage/public.json" "$stage/connection-public.json"
-echo 'HTTPS_SITE_AND_READ_ONLY_FEED_CONNECTED'
+install -m 600 "$stage/connection-public.json" /etc/globaldroptrade/connection-public.json
+if [ -n "${GLOBAL_SITE_IP:-}" ]; then
+ echo "IP_SITE_AND_READ_ONLY_FEED_CONNECTED http://$GLOBAL_SITE_IP:$GLOBAL_SITE_PORT"
+else
+ echo 'HTTPS_SITE_AND_READ_ONLY_FEED_CONNECTED'
+fi
 cat /etc/globaldroptrade/connection-public.json
 echo 'This operation sent no blockchain transactions. Check requestedPlanChecksMatch above; false means the connected contract still differs from the requested upgrade.'

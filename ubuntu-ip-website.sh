@@ -4,9 +4,11 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root: sudo bash ubuntu-ip-website.sh 104.167.16.102'; exit 1; }
 export GLOBAL_SITE_IP=${1:?Pass the server public IPv4 address}
-python3 - "$GLOBAL_SITE_IP" <<'PY'
+export GLOBAL_SITE_PORT=${2:-80}
+python3 - "$GLOBAL_SITE_IP" "$GLOBAL_SITE_PORT" <<'PY'
 import ipaddress,sys
 ipaddress.IPv4Address(sys.argv[1])
+port=int(sys.argv[2]); assert 1<=port<=65535 and str(port)==sys.argv[2], 'Invalid port'
 PY
 for tool in nginx curl tar xz sha256sum systemctl; do command -v "$tool" >/dev/null || { echo "Missing dependency: $tool"; exit 1; }; done
 nginx -t

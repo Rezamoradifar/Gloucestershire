@@ -6,6 +6,7 @@ real_node=shutil.which('node')
 with tempfile.TemporaryDirectory() as directory:
     p=Path(directory); release=p/'release'; source=p/'existing'; bin=p/'bin'; etc=p/'etc/globaldroptrade'
     for d in [release,source,bin,etc]:d.mkdir(parents=True)
+    (release/'deployment-console').mkdir();(release/'website/dist').mkdir(parents=True)
     script=(root/'ubuntu-connect.sh').read_text().replace('/etc/globaldroptrade',str(etc))
     (release/'ubuntu-connect.sh').write_text(script)
     address='0x1111111111111111111111111111111111111111'
@@ -23,6 +24,10 @@ with tempfile.TemporaryDirectory() as directory:
       'npm':f'echo build >> "{p}/build-calls"', 'python3':'exit 0',
       'curl':f'''[ ! -f '{p}/api-fail' ] || exit 22
       if [[ "$*" = *https://globaldroptrade.com* ]] && [ -f '{p}/https-fail' ]; then exit 60; fi
+      if [[ "$*" = *http://127.0.0.1:8961/* ]]; then
+        [ ! -f '{p}/ip-fail' ] || exit 22
+        printf '%s' "$*" > '{p}/ip-check'
+      fi
       printf '%s' '{json.dumps(active)}' > "${{@: -1}}"'''
     }
     for name,body in scripts.items():
@@ -44,4 +49,10 @@ with tempfile.TemporaryDirectory() as directory:
         assert 'original-private' not in result.stdout+result.stderr
     (p/'https-fail').touch();result=run()
     assert result.returncode!=0 and 'HTTPS_SITE_AND_READ_ONLY_FEED_CONNECTED' not in result.stdout
-    print('PASS: connection preflight; private settings preservation; API install/live-check rollback; HTTPS failure never reports success (mock host services).')
+    env.update(GLOBAL_SITE_IP='104.167.16.102',GLOBAL_SITE_PORT='8961')
+    result=run();assert result.returncode==0,result.stdout+result.stderr
+    assert 'IP_SITE_AND_READ_ONLY_FEED_CONNECTED http://104.167.16.102:8961' in result.stdout
+    assert 'Host: 104.167.16.102' in (p/'ip-check').read_text()
+    (p/'ip-fail').touch();result=run()
+    assert result.returncode!=0 and 'IP_SITE_AND_READ_ONLY_FEED_CONNECTED' not in result.stdout
+    print('PASS: connection preflight; settings preservation; API rollback; HTTPS and port 8961 public feed checks; failed host checks never report success (mock host services).')
