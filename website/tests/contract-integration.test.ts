@@ -26,11 +26,15 @@ afterAll(async()=>{await wallet?.wallets.disconnect();vi.unstubAllGlobals();vi.u
 describe('Actual wallet client against a local contract',()=>{
  it('allows reinvesting one dollar of funded profit while keeping the deposit minimum',async()=>{
   const s=await chain.readSnapshot(addresses[3],'USDT',20),status=vi.fn();
+  expect(s.reinvested).toBe(0n);
   const action={kind:'reinvest' as const,value:'1',expectedFee:0n,expectedLock:s.lock,expectedPenalty:s.penalty};
   await chain.execute(action,s,status);
   expect((await vault.accounts(addresses[3],token.target)).principal).toBe(E('101'));
   expect((await vault.accounts(addresses[3],token.target)).profit).toBe(0n);
   expect(await vault.cumulativeReinvested(addresses[3],token.target)).toBe(E('1'));
+  const updated=await chain.readSnapshot(addresses[3],'USDT',20);
+  expect(updated.reinvested).toBe(E('1'));
+  expect(updated.withdrawalLimit).toBe((updated.externalDeposited+updated.reinvested)/10n);
   await expect(chain.execute({...action,kind:'deposit'},s,status)).rejects.toThrow('minimum deposit');
  },45000);
  it('creates a group, prepares and claims the exact reward through the real frontend methods',async()=>{
