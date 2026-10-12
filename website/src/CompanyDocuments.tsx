@@ -38,7 +38,11 @@ export default function CompanyDocuments() {
           {doc && !unavailable ? <button className="gdt-document-image" onClick={() => setSelected(item)} aria-label={`Enlarge ${item.title.toLowerCase()}`}>
             <img src={doc.image} alt={doc.imageAlt} loading="lazy" onError={() => imageFailed(item.id)}/>
             <span><ZoomIn size={17}/>View document</span>
-          </button> : <div className="gdt-document-empty">
+          </button> : !doc && item.sampleImage && !failedImages.includes(`sample-${item.id}`) ? <figure className="gdt-document-sample">
+            <img src={item.sampleImage.src} alt={item.sampleImage.alt} width="1536" height="1024" loading="lazy" decoding="async" onError={() => imageFailed(`sample-${item.id}`)}/>
+            <span className="gdt-document-sample-badge">SAMPLE IMAGE</span>
+            <figcaption>Illustrative image · Original document pending</figcaption>
+          </figure> : <div className="gdt-document-empty">
             <span className="gdt-document-image-mark" aria-hidden="true"><ImageIcon size={34} strokeWidth={1.1}/></span>
             <strong>{doc ? 'Preview unavailable' : 'Document not yet published'}</strong>
             <span>{doc ? 'Use the original file link below.' : 'The document image will appear here.'}</span>

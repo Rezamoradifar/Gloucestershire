@@ -1,5 +1,20 @@
 # Asset provenance
 
+## Company document sample photos (2026-10-12)
+
+Created with the built-in ImageGen tool at the user's request for temporary images until actual company records arrive. Full-resolution WebP copies are used in the project. They are illustrative photos, not actual premises, registration certificates, operating licences or evidence of authorisation. The UI labels both as `SAMPLE IMAGE`; real-document fields remain null.
+
+- `public/assets/company-registration-sample.webp` — anonymous corporate architecture. Original generation: `generated_images/exec-cdfd2867-a2c5-4826-bf1c-17fd11a119a8.png` in the conversation workspace; preserved.
+- `public/assets/operating-documents-sample.webp` — a portfolio with blank stationery. Original generation: `generated_images/exec-1a31f8fd-e801-4f10-8596-1e2d5c5e2f90.png` in the conversation workspace; preserved.
+
+Company-image prompt:
+
+> Use case: photorealistic-natural. Asset type: temporary illustrative photo for the company-registration card on the Global Drop Trade website, not a photograph of an actual company office. Create one premium architectural editorial photograph of an anonymous modern corporate building: finely detailed dark glass facade, vertical bronze fins, warm interior glow, one tasteful entrance and subtle greenery, late blue-hour natural light. Restrained deep charcoal, muted forest black and champagne-gold palette matching a luxury commerce website. Landscape 3:2 composition; clean centered subject, building entrance visible, sharp believable materials. No people, brands, company names, street signs, logos, emblems, certificates, seals or text. This is concept imagery for a clearly labelled sample-image placeholder, not evidence of a registered company.
+
+Operating-documents prompt:
+
+> Use case: photorealistic-natural. Asset type: temporary illustrative photo for an operating-documents card on the Global Drop Trade website; not an actual licence. Create one elegant editorial still life of business paperwork: matte charcoal document portfolio partly open on a dark polished desk, a few completely blank ivory sheets, refined champagne-gold fountain pen and one minimal bronze paper clip, soft side light and realistic paper and leather textures, shallow depth of field, sophisticated understated corporate mood. Landscape 3:2 composition, centered portfolio, close view. Restrained charcoal, deep forest black, warm ivory and champagne-gold colors to match a luxury commerce website. No certificates, printing, writing, signatures, numbers, QR codes, stamps, official seals, emblems, badges, logos or people. Entirely generic stationery for a clearly labelled sample-image placeholder, not evidence of authorisation.
+
 ## Hero photograph
 
 - Project asset: `public/assets/global-trade-hero.png`
