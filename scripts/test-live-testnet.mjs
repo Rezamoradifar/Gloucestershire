@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {Wallet,JsonRpcProvider,Contract,ContractFactory,parseEther,getAddress,ZeroAddress,keccak256,toUtf8Bytes} from 'ethers';
-const TARGET='0x8C77C442F6CB8C2462a12bB395186be944259504';
-export async function liveHealth({provider,wallet,config,deployment,artifacts,dir}){
+const TARGET='0x7f19354B765920B9b17003d0840EEaA133883DcA';
+export async function verifyTestDeployment({provider,wallet,config,deployment,artifacts}){
  if(Number((await provider.getNetwork()).chainId)!==97||deployment.chainId!==97)throw Error('Only BNB Testnet 97 is allowed.');
- const v=new Contract(deployment.contractAddress,artifacts.DropshippingVault.abi,wallet.connect(provider));
  if(wallet.address===getAddress(config.initialOwner))throw Error('Use the separate test deployer, not the owner wallet.');
+ const v=new Contract(deployment.contractAddress,artifacts.DropshippingVault.abi,wallet.connect(provider));
  const destination=[await v.FEE_WALLET_1(),await v.FEE_WALLET_2(),await v.dropshippingWallet()];
  if(await v.owner()!==getAddress(config.initialOwner)||destination[2]!==getAddress(config.dropshippingWallet))throw Error('Configured owner/operations do not match.');
  for(let i=0;i<7;i++)if(await v.partnerWallets(i)!==getAddress(config.partners[i]))throw Error('Partner mismatch.');
@@ -20,6 +20,10 @@ export async function liveHealth({provider,wallet,config,deployment,artifacts,di
   const tx=await provider.getTransaction(row.hash),receipt=await provider.getTransactionReceipt(row.hash);
   if(!tx||tx.chainId!==97n||tx.to!==null||tx.value!==0n||tx.data!==expected.data||receipt?.status!==1||receipt.contractAddress!==addresses[i])throw Error('Deployment provenance mismatch at step '+i);
  }
+ return {v,addresses,destination};
+}
+export async function liveHealth({provider,wallet,config,deployment,artifacts,dir}){
+ const {v,addresses,destination}=await verifyTestDeployment({provider,wallet,config,deployment,artifacts});
  fs.mkdirSync(dir,{recursive:true,mode:0o700});
  const reportPath=path.join(dir,'health-public.json'),marker=path.join(dir,'health-run.json');
  if(fs.existsSync(marker)){
