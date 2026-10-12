@@ -4,6 +4,14 @@ Run `bash ubuntu-ip-website.sh 104.167.16.102 8961` as root from this release ch
 
 The installer creates an explicit `server_name 104.167.16.102` virtual host, retaining the existing default website and domain/SSL configurations. Assets, FAQ, company-document sample images, dashboard and the `/deploy/` console come from this release. Releases live in `/var/www/globaldroptrade/releases/`; the temporary virtual host is `/etc/nginx/sites-available/globaldroptrade-ip-104.167.16.102-8961`. Failed Nginx validation, reload, or the local HTTP content check restores the previous configuration.
 
+### Recovery from the reported local health-check failure
+
+The user's 12 October screenshot showed a successful frontend build and Nginx validation, followed by `IP site health check failed; original configuration restored.` The installer had checked the served HTML only once immediately after reload, without reporting the HTTP status or content mismatch. The screenshot alone does not establish the server-side cause.
+
+The health check now retries up to ten times with one-second intervals and three-second request timeouts, waiting for the exact expected HTML. Requests go directly to localhost without environment HTTP proxies, carry the correct IP:port Host header, and use a release-specific query plus a no-cache header. A persistent wrong response still fails and rolls back. Before rollback, the script prints the last HTTP status and expected/received HTML checksums, and saves the attempted site configuration and response under a root-only `/var/log/globaldroptrade/install-failure-*` directory. Diagnostics do not disable validation or turn a mismatch into success.
+
+Mocked regression checks passed for old-worker HTML followed by the new page, temporary HTTP failures followed by success, permanent mismatches with rollback/diagnostics, and preservation of other hosts. The original Vite chunk-size warning is non-fatal and unrelated to this health-check failure. The fix must still be run on the target server; no SSH access was available.
+
 This temporary URL is HTTP. HTTPS is not provisioned by this command. The installer sends no blockchain transactions and never reads any deployer key or deployment journal. The contract and live settlement feed still need a verified deployment and explicit connection settings. `/api/` keeps the existing read-only proxy to port 3115; it does not invent trading activity if that backend is unavailable.
 
 Validation: TypeScript/Vite production build; shell syntax; initial install, domain SSL preservation, IP host collision, repeated update, invalid IP rejection and configuration/HTTP-check rollback with mocked system services. The actual target returned the Nginx welcome page before preparation. Remote installation requires running the command on that server; no SSH credentials were available to this workspace.

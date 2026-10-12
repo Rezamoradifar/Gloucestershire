@@ -107,7 +107,38 @@ if ! systemctl enable --now nginx || ! systemctl reload nginx; then
  echo 'Reload failed; original configuration restored.'; exit 1
 fi
 if [ -n "${GLOBAL_SITE_IP:-}" ]; then
- if ! curl -fsS --max-time 15 -H "Host: $site_host" "http://127.0.0.1:$site_port/" -o "$backup_dir/served.html" || ! cmp -s site/index.html "$backup_dir/served.html"; then
+ # nginx reload returns before new workers necessarily serve requests. Poll for
+ # the exact release, bypassing shell proxies and caches, before rolling back.
+ healthy=0
+ for attempt in {1..10}; do
+  rm -f "$backup_dir/served.html"
+  if curl -fsS --noproxy '*' --connect-timeout 2 --max-time 3 \
+   -H "Host: $site_host:$site_port" -H 'Cache-Control: no-cache' -H 'Connection: close' \
+   "http://127.0.0.1:$site_port/?global_release=${release##*/}" \
+   -D "$backup_dir/served.headers" -w '%{http_code}' -o "$backup_dir/served.html" \
+   > "$backup_dir/http-status" 2> "$backup_dir/curl-error" \
+   && cmp -s site/index.html "$backup_dir/served.html"; then
+   healthy=1; break
+  fi
+  if [ "$attempt" -eq 1 ]; then echo "Waiting for the new frontend on port $site_port..."; fi
+  if [ "$attempt" -lt 10 ]; then sleep 1; fi
+ done
+ if [ "$healthy" -ne 1 ]; then
+  diagnostic_dir="/var/log/globaldroptrade/install-failure-$(date -u +%Y%m%dT%H%M%S)-$$"
+  # Reporting must never prevent rollback if the log filesystem is full.
+  if install -d -m 700 "$diagnostic_dir"; then
+   cp "$conf" "$diagnostic_dir/site.conf" || true
+   cp site/index.html "$diagnostic_dir/expected.html" || true
+   for file in served.html served.headers http-status curl-error; do
+    if [ -f "$backup_dir/$file" ]; then cp "$backup_dir/$file" "$diagnostic_dir/$file" || true; fi
+   done
+   echo "Diagnostics: $diagnostic_dir"
+  fi
+  echo "Health check failed after 10 attempts. Host: $site_host:$site_port"
+  printf 'Last HTTP status: '; cat "$backup_dir/http-status" || true; echo
+  printf 'Expected HTML: '; sha256sum site/index.html || true
+  if [ -f "$backup_dir/served.html" ]; then printf 'Received HTML: '; sha256sum "$backup_dir/served.html" || true; fi
+  if [ -s "$backup_dir/curl-error" ]; then cat "$backup_dir/curl-error" || true; fi
   restore_config
   nginx -t && systemctl reload nginx || true
   echo 'IP site health check failed; original configuration restored.'; exit 1
