@@ -8,6 +8,7 @@ import MediaImage from './MediaImage';
 import Faq from './Faq';
 import LiveTrades from './LiveTrades';
 import CompanyDocuments from './CompanyDocuments';
+import './responsive.css';
 
 const nav=[['How It Works','how-it-works'],['Our AI','our-ai'],['Our Story','our-story'],['Transactions','transactions'],['FAQ','faq'],['Contact','contact']];
 const signals=[{Icon:Activity,title:'Demand',copy:'Analyzing signals of product demand across different markets.'},{Icon:ChartNoAxesCombined,title:'Price',copy:'Comparing product and supplier pricing across multiple sources.'},{Icon:Layers3,title:'Competition',copy:'Evaluating competitive conditions within potential marketplaces.'},{Icon:TrendingUp,title:'Trends',copy:'Identifying changing product and consumer trends.'},{Icon:Sparkles,title:'Margin Potential',copy:'Analyzing the commercial potential of relevant data and market conditions.'},{Icon:Target,title:'Market Fit',copy:'Determining where a product may have the strongest market opportunity.'}];
@@ -17,11 +18,19 @@ function CTA({label='Get Started',className=''}:{label?:string,className?:string
 function Eyebrow({children}:{children:React.ReactNode}){return <div className="gdt-eyebrow"><span/>{children}</div>}
 export default function Landing(){
  const [menu,setMenu]=useState(false),[step,setStep]=useState(1),[policy,setPolicy]=useState<'privacy'|'terms'|null>(null);
- const dialog=useRef<HTMLDialogElement>(null),lastFocus=useRef<HTMLElement|null>(null);
+ const dialog=useRef<HTMLDialogElement>(null),lastFocus=useRef<HTMLElement|null>(null),menuButton=useRef<HTMLButtonElement>(null);
+ useEffect(()=>{
+  if(!menu)return;
+  const close=(event:KeyboardEvent)=>{if(event.key==='Escape'){setMenu(false);menuButton.current?.focus();}};
+  const desktop=window.matchMedia('(min-width: 1001px)');
+  const resize=()=>{if(desktop.matches)setMenu(false);};
+  window.addEventListener('keydown',close);desktop.addEventListener('change',resize);
+  return()=>{window.removeEventListener('keydown',close);desktop.removeEventListener('change',resize);};
+ },[menu]);
  useEffect(()=>{if(policy){lastFocus.current=document.activeElement as HTMLElement;dialog.current?.showModal();document.body.style.overflow='hidden';}else {dialog.current?.close();document.body.style.overflow='';lastFocus.current?.focus();}return()=>{document.body.style.overflow='';};},[policy]);
  return <div className="gdt-page" dir="ltr">
  <a className="gdt-skip" href="#main-content">Skip to content</a>
- <header className="gdt-header"><div className="gdt-wrap gdt-nav"><a className="gdt-brand" href="#" aria-label="Global Drop Trade home"><span className="gdt-mark"><Globe2 size={24}/></span><span>GLOBAL<span className="gdt-brand-sub">DROP TRADE</span></span></a><nav id="gdt-menu" className={menu?'gdt-links open':'gdt-links'} aria-label="Main navigation">{nav.map(([label,id])=><a key={id} href={`#${id}`} onClick={()=>setMenu(false)}>{label}</a>)}</nav><CTA className="gdt-nav-cta"/><button className="gdt-menu-button" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} aria-controls="gdt-menu" onClick={()=>setMenu(!menu)}>{menu?<X/>:<Menu/>}</button></div></header>
+ <header className="gdt-header"><div className="gdt-wrap gdt-nav"><a className="gdt-brand" href="#" aria-label="Global Drop Trade home"><span className="gdt-mark"><Globe2 size={24}/></span><span>GLOBAL<span className="gdt-brand-sub">DROP TRADE</span></span></a><nav id="gdt-menu" className={menu?'gdt-links open':'gdt-links'} aria-label="Main navigation">{nav.map(([label,id])=><a key={id} href={`#${id}`} onClick={()=>setMenu(false)}>{label}</a>)}</nav><CTA className="gdt-nav-cta"/><button ref={menuButton} className="gdt-menu-button" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} aria-controls="gdt-menu" onClick={()=>setMenu(!menu)}>{menu?<X/>:<Menu/>}</button></div></header>
  <main id="main-content">
  <section className="gdt-hero" aria-labelledby="hero-title">
   <div className="gdt-wrap gdt-hero-grid">
