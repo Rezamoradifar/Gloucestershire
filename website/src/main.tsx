@@ -4,4 +4,5 @@ import './styles.css';
 import './landing.css';
 import './international.css';
 import Root from './Root';
+document.documentElement.dataset.appStarted='true';
 createRoot(document.getElementById('root')!).render(<React.StrictMode><Root/></React.StrictMode>);

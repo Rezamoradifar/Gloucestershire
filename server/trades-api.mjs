@@ -55,7 +55,7 @@ export function createTradeFeed(config,{provider,metadata,now=Date.now,ttlMs=150
  let response;
  return {configured,async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed){
+export function createApiServer(feed,{responseTimeoutMs=10000}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
@@ -64,7 +64,12 @@ export function createApiServer(feed){
   if(url.pathname==='/api/health')return send(200,{status:'ok',configured:feed.configured,source});
   if(url.pathname!=='/api/trades')return send(404,{error:'Not found'});
   let limit;try{limit=integer(url.searchParams.get('limit')??20,20,1,100);}catch{return send(400,{error:'limit must be an integer from 1 to 100'});}
-  try{const result=await feed.get();send(['live','stale'].includes(result.status)?200:503,{...result,trades:result.trades.slice(0,limit)});}catch{send(503,{status:'unavailable',source,trades:[],updatedAt:null});}
+  let timer;
+  try{
+   const result=await Promise.race([feed.get(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Feed deadline')),responseTimeoutMs);})]);
+   if(!res.destroyed)send(['live','stale'].includes(result.status)?200:503,{...result,trades:result.trades.slice(0,limit)});
+  }catch{if(!res.destroyed)send(503,{status:'unavailable',source,trades:[],updatedAt:null});}
+  finally{clearTimeout(timer);}
  });
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){

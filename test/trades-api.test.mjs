@@ -41,3 +41,17 @@ test('integration: an actual local EVM SaleSettled transaction appears in the li
   const c={...config(),address:v.target,startBlock:receipt.blockNumber};const feed=createTradeFeed(c,{provider});server=createApiServer(feed);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const response=await fetch(`http://127.0.0.1:${server.address().port}/api/trades`);assert.equal(response.status,200);const data=await response.json();assert.equal(data.status,'live');assert.equal(data.trades.length,1);assert.equal(data.trades[0].transactionHash,receipt.hash);assert.equal(data.trades[0].grossProfit,'2.5');assert.equal(data.trades[0].salesUsd,'125.0');assert.equal(data.trades[0].seller,addresses[8]);
  }finally{if(server)await new Promise(resolve=>server.close(resolve));await provider.destroy();await rpc.disconnect();}
 });
+
+test('HTTP feed deadline returns JSON and stays healthy after a stalled RPC',async()=>{
+ let stalled=true;
+ const feed={configured:true,get:()=>stalled?new Promise(()=>{}):Promise.resolve({status:'live',trades:[],updatedAt:null})};
+ const server=createApiServer(feed,{responseTimeoutMs:30});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const url=`http://127.0.0.1:${server.address().port}`;
+ try{
+  const response=await fetch(url+'/api/trades');assert.equal(response.status,503);
+  assert.equal((await response.json()).status,'unavailable');
+  assert.equal((await fetch(url+'/api/health')).status,200);
+  stalled=false;assert.equal((await fetch(url+'/api/trades')).status,200);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});

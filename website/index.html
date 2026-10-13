@@ -1,1 +1,15 @@
-<!doctype html><html lang="en" dir="ltr"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#07080b"/><meta name="description" content="Explore Global Drop Trade’s approach to dropshipping, product arbitrage and AI-powered global market intelligence."/><link rel="icon" type="image/svg+xml" href="/favicon.svg"/><title>Global Drop Trade | AI-Powered Global Commerce</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<!doctype html>
+<html lang="en" dir="ltr">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#07080b"/><meta name="description" content="Explore Global Drop Trade’s approach to dropshipping, product arbitrage and AI-powered global market intelligence."/><link rel="icon" type="image/svg+xml" href="/favicon.svg"/><title>Global Drop Trade | AI-Powered Global Commerce</title>
+<style>body{margin:0;background:#0b0d0e}.boot-status{min-height:100dvh;display:grid;place-content:center;gap:18px;padding:24px;color:#eeeae3;font:16px/1.7 Arial,sans-serif;text-align:center;box-sizing:border-box}.boot-status h1{font-size:24px;margin:0}.boot-status p{max-width:420px;color:#bbb;margin:0}.boot-status button{min-height:48px;padding:12px 24px;border:0;background:#d4b87a;color:#151510;font:inherit;cursor:pointer}.boot-status a{color:#d4b87a}.boot-status [hidden]{display:none}</style>
+</head><body><div id="root"><div class="boot-status" id="boot-status" role="status"><h1>GLOBAL DROP TRADE</h1><p id="boot-message">Loading the platform…</p><button id="boot-retry" hidden>Reload latest version</button><noscript><p>Enable JavaScript to use the platform.</p></noscript></div></div>
+<script>
+(function(){
+ var retry=document.getElementById('boot-retry');
+ function help(){if(document.documentElement.dataset.appStarted)return;var message=document.getElementById('boot-message');if(message)message.textContent='Loading is taking longer than expected. Check your connection or reload the latest version.';retry.hidden=false;}
+ retry.addEventListener('click',function(){var url=new URL(location.href);url.searchParams.set('reload',String(Date.now()));location.replace(url.href);});
+ window.addEventListener('error',function(event){if(event.target&&event.target.tagName==='SCRIPT')help();},true);
+ setTimeout(help,12000);
+})();
+</script>
+<script type="module" src="/src/main.tsx"></script></body></html>
