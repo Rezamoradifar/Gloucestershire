@@ -12,14 +12,21 @@ async function fails(p) {await assert.rejects(async()=>{const r=await p;if(r?.wa
 async function warp(s) {await rpc.request({method:'evm_increaseTime',params:[s]});await rpc.request({method:'evm_mine',params:[]});}
 async function refresh() {const b=await rpc.request({method:'eth_getBlockByNumber',params:['latest',false]});for(const [f,p] of [[bnbFeed,600n*10n**8n],[usdFeed,10n**8n]])await tx(f.set(p,Number(b.timestamp),1,1));}
 async function deposit(i=3,amount=E('1000'),asset=token.target,parent=ZeroAddress) {await tx(vault.connect(signers[i]).deposit(asset,amount,parent,{...(asset===ZeroAddress?{value:amount}:{}),gasLimit:1500000}));}
-async function sale(i=3,amount=E('100'),asset=token.target,key='sale') {await tx(vault.settleSalesProfit(id(key),asset,addr[i],amount,E('1000'),id('receipt'),{...(asset===ZeroAddress?{value:amount}:{}),gasLimit:1500000}));}
+async function sale(i=3,amount=E('100'),asset=token.target,key='sale') {
+ // Fixtures explicitly fund eligible additive commissions before settlement.
+ const tier=await vault.tierConfig(await vault.tierOf(addr[i]));let parent=(await vault.users(addr[i])).referrer,needed=0n;
+ for(let level=0;level<4&&parent!==ZeroAddress;level++){const u=await vault.users(parent),vip=await vault.tierOf(parent)===4n;if(u.active&&(!vip||u.vipKyc)&&(level!==3||vip))needed+=amount*tier.referrals[level]/10000n;parent=u.referrer;}
+ const reserve=(await vault.ledgers(asset)).rewards;
+ if(needed>reserve){const funding=needed-reserve;await tx(vault.fundRewards(asset,funding,{...(asset===ZeroAddress?{value:funding}:{}),gasLimit:500000}));}
+ await tx(vault.settleSalesProfit(id(key),asset,addr[i],amount,E('1000'),id('receipt'),{...(asset===ZeroAddress?{value:amount}:{}),gasLimit:1500000}));}
 async function approveConfig(h) {await tx(vault.voteConfiguration(h));await tx(vault.connect(signers[1]).voteConfiguration(h));}
 async function queueCall(name,args) {const data=vault.interface.encodeFunctionData(name,args);await tx(vault.queueConfiguration(keccak256(data)));await approveConfig(keccak256(data));await warp(2*86400);await tx(vault[name](...args,{gasLimit:2000000}));}
 // Routed deposits intentionally leave claims unbacked by vault cash. Verify exact reported gap.
 async function solvent() {for(const a of [ZeroAddress,token.target]) {const cash=await vault.assetBalance(a), debt=await vault.accounted(a);assert.equal(await vault.liquidityShortfall(a),debt>cash?debt-cash:0n);assert.equal(await vault.surplus(a),cash>debt?cash-debt:0n);}}
 before(async()=>{
  rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},wallet:{totalAccounts:80,defaultBalance:100000},miner:{blockGasLimit:30000000}});
- provider=new BrowserProvider(rpc);provider.pollingInterval=10;
+ // Snapshot, cancel/requeue and time travel must not reuse cached eth_estimateGas results.
+ provider=new BrowserProvider(rpc,undefined,{cacheTimeout:-1});provider.pollingInterval=10;
  signers=await Promise.all(Array.from({length:80},(_,i)=>provider.getSigner(i)));addr=await Promise.all(signers.map(s=>s.getAddress()));
  token=await deploy('MockToken',[18]); bnbFeed=await deploy('MockFeed',[600n*10n**8n]);usdFeed=await deploy('MockFeed',[10n**8n]);
  vault=await deploy('DropshippingVault',[addr[0],token.target,bnbFeed.target,usdFeed.target,86400,[addr[0],addr[1],addr[2],addr[8],addr[9],addr[10],addr[11]],addr[14]]);
@@ -110,14 +117,14 @@ test('non-VIP level four is excluded even with active direct customer; no deposi
  for(let i=3;i<=7;i++)await tx(vault.setCustomerStatus(addr[i],true,false));
  await deposit(7,E('100'),token.target,addr[6]);assert.equal((await vault.accounts(addr[6],token.target)).profit,0n);
  await sale(7,E('100'));
- for(const [i,v] of [[6,'8'],[5,'4'],[4,'2'],[3,'0'],[7,'86']]) assert.equal((await vault.accounts(addr[i],token.target)).profit,E(v));
+ for(const [i,v] of [[6,'8'],[5,'4'],[4,'2'],[3,'0'],[7,'100']]) assert.equal((await vault.accounts(addr[i],token.target)).profit,E(v));
  await solvent();
 });
-test('non-VIP and inactive referral shares stay with seller',async()=>{
+test('non-VIP and inactive referral shares remain in the funded reward pool',async()=>{
  await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=7;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
- for(const i of [3,5,6,7])await tx(vault.setCustomerStatus(addr[i],true,false));await sale(7,E('100'));
+ for(const i of [3,5,6,7])await tx(vault.setCustomerStatus(addr[i],true,false));await tx(vault.fundRewards(token.target,E('14')));await sale(7,E('100'));
  assert.equal((await vault.accounts(addr[3],token.target)).profit,0n);assert.equal((await vault.accounts(addr[4],token.target)).profit,0n);
- assert.equal((await vault.accounts(addr[7],token.target)).profit,E('88'));await solvent();
+ assert.equal((await vault.accounts(addr[7],token.target)).profit,E('100'));assert.equal((await vault.ledgers(token.target)).rewards,E('2'));await solvent();
 });
 test('invite-count milestones are removed from ABI and do not create profit',async()=>{
  for(const name of ['claimMilestone','setMilestoneBonus','milestoneBonusUsd','milestoneCustomers']) assert.equal(vault.interface.getFunction(name),null);
@@ -351,7 +358,7 @@ test('level four requires current active VIP with KYC; downgrade or KYC revocati
  await tx(vault.connect(signers[3]).withdrawPrincipal(0,E('2'),{gasLimit:500000}));
  assert.equal(await vault.tierOf(addr[3]),3n);await sale(7,E('100'),token.target,'tier-down');
  assert.equal((await vault.accounts(addr[3],token.target)).profit,E('4'));
- assert.equal((await vault.accounts(addr[7],token.target)).profit,E('296'));
+ assert.equal((await vault.accounts(addr[7],token.target)).profit,E('300'));
 });
 test('rounding remainder belongs to operations and preserves exact sum',async()=>{
  const amount=E('100')+7n,before=await token.balanceOf(addr[14]);await deposit(3,amount);
@@ -429,7 +436,7 @@ for(const native of [false,true])test(`reinvest raises ${native?'BNB':'USDT'} ca
 });
 
 async function networkRoot(){ await deposit(3,E('100')); }
-test('all seller tiers pay the exact approved rates and conserve gross funded profit',async()=>{
+test('all seller tiers keep full seller profit and separately fund exact additive rates',async()=>{
  const rates=[[8,4,2,0],[10,5,3,0],[12,6,4,0],[14,7,5,0],[16,8,6,4]];
  await tx(vault.connect(signers[3]).register(ZeroAddress));
  for(let i=4;i<=7;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
@@ -442,7 +449,7 @@ test('all seller tiers pay the exact approved rates and conserve gross funded pr
   const before=await Promise.all([3,4,5,6,7].map(i=>vault.accounts(addr[i],token.target)));
   await sale(7,E('100'),token.target,'rates-'+tier);
   let paid=0n;for(let level=0;level<4;level++){const index=6-level;const delta=(await vault.accounts(addr[index],token.target)).profit-before[index-3].profit;assert.equal(delta,E(String(rates[tier][level])));paid+=delta;}
-  assert.equal((await vault.accounts(addr[7],token.target)).profit-before[4].profit,E('100')-paid);
+  assert.equal((await vault.accounts(addr[7],token.target)).profit-before[4].profit,E('100'));assert.equal((await vault.ledgers(token.target)).rewards,0n);
  }
 });
 test('governance accepts VIP 34 percent and rejects excess and non-VIP fourth level',async()=>{
@@ -768,4 +775,32 @@ test('guarded preparation preserves reservations when liquidity is missing and w
  await tx(vault.setPaused(false));await tx(vault.fundRewards(token.target,E('35')));
  await tx(vault.connect(signers[3]).claimNetworkRewardAtStage(0,0));
  assert.equal((await vault.accounts(addr[3],token.target)).profit,E('35'));
+});
+
+for(const native of [false,true])test(`additive ${native?'BNB':'USDT'} settlement credits 100 plus 14 and atomically rejects underfunding`,async()=>{
+ const asset=native?ZeroAddress:token.target,amount=E(native?'1':'100'),commission=amount*14n/100n;
+ await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=6;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
+ for(let i=3;i<=5;i++)await tx(vault.setCustomerStatus(addr[i],true,false));
+ const key=id('additive'),volume=E('1000'),supply=await token.totalSupply();
+ const settle=()=>vault.settleSalesProfit(key,asset,addr[6],amount,volume,id('evidence'),{...(native?{value:amount}:{}),gasLimit:1500000});
+ const beforeCash=await vault.assetBalance(asset);
+ await fails(settle());assert.equal(await vault.usedSettlement(key),false);assert.equal((await vault.users(addr[6])).salesUsd,0n);assert.equal(await vault.assetBalance(asset),beforeCash);
+ await tx(vault.fundRewards(asset,commission-1n,{...(native?{value:commission-1n}:{}),gasLimit:500000}));
+ await fails(settle());assert.equal((await vault.ledgers(asset)).rewards,commission-1n);assert.equal((await vault.accounts(addr[6],asset)).profit,0n);
+ await tx(vault.fundRewards(asset,1n,{...(native?{value:1n}:{}),gasLimit:500000}));
+ const cash=await vault.assetBalance(asset);await tx(vault.ownerWithdrawCapital(asset,addr[0],cash));
+ await fails(settle());assert.equal(await vault.usedSettlement(key),false);assert.equal((await vault.ledgers(asset)).rewards,commission);assert.equal(await vault.assetBalance(asset),0n);
+ await tx(vault.returnCapital(asset,commission,{...(native?{value:commission}:{}),gasLimit:500000}));
+ await tx(settle());assert.equal((await vault.accounts(addr[6],asset)).profit,amount);
+ for(const [i,rate]of [[5,8n],[4,4n],[3,2n]])assert.equal((await vault.accounts(addr[i],asset)).profit,amount*rate/100n);
+ assert.equal((await vault.ledgers(asset)).profit,amount+commission);assert.equal((await vault.ledgers(asset)).rewards,0n);assert.equal(await vault.assetBalance(asset),amount+commission);
+ assert.equal(await token.totalSupply(),supply);assert.equal(await vault.SALES_REFERRAL_MODEL_VERSION(),2n);await fails(settle());
+});
+test('skipped uplines retain the reserved share without reducing seller profit or creating referral volume',async()=>{
+ await tx(vault.connect(signers[3]).register(ZeroAddress));for(let i=4;i<=6;i++)await tx(vault.connect(signers[i]).register(addr[i-1]));
+ for(const i of [3,5])await tx(vault.setCustomerStatus(addr[i],true,false));
+ await tx(vault.fundRewards(token.target,E('14')));const supply=await token.totalSupply();
+ await tx(vault.settleSalesProfit(id('skipped'),token.target,addr[6],E('100'),E('1000'),id('evidence')));
+ assert.equal((await vault.accounts(addr[6],token.target)).profit,E('100'));assert.equal((await vault.accounts(addr[5],token.target)).profit,E('8'));assert.equal((await vault.accounts(addr[4],token.target)).profit,0n);assert.equal((await vault.accounts(addr[3],token.target)).profit,E('2'));
+ assert.equal((await vault.ledgers(token.target)).rewards,E('4'));assert.equal((await vault.ledgers(token.target)).profit,E('110'));assert.equal(await vault.assetBalance(token.target),E('10114'));assert.equal(await vault.branchVolumeUsd(addr[5],addr[6]),E('1000'));assert.equal(await token.totalSupply(),supply);
 });

@@ -38,7 +38,7 @@ test('connection preflight refuses a stale/unavailable feed without exposing pri
 test('legacy contract connection reports that requested plan checks did not match',async()=>{
  const config=readConfig({TRADES_RPC_URL:'https://rpc.invalid/private',TRADES_CHAIN_ID:'97',TRADES_VAULT_ADDRESS:address});
  const result=await verifyConnection(config,{provider:{},feedFactory:()=>({get:async()=>({status:'live',trades:[],latestBlock:99})}),contractFactory:()=>({owner:async()=>address,tierConfig:async()=>{throw Error('Old contract');}})});
- assert.equal(result.requestedPlanChecksMatch,false);assert.equal(result.networkControlsSupported,false);assert.equal(result.transactionsSent,0);assert.ok(!JSON.stringify(result).includes('private'));
+ assert.equal(result.salesReferralModelVersion,1);assert.equal(result.requestedPlanChecksMatch,false);assert.equal(result.networkControlsSupported,false);assert.equal(result.transactionsSent,0);assert.ok(!JSON.stringify(result).includes('private'));
 });
 test('actual local EVM connection verifies all new plan parameters without sending transactions',async()=>{
  const rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},wallet:{totalAccounts:10}});
@@ -50,7 +50,7 @@ test('actual local EVM connection verifies all new plan parameters without sendi
   const vault=await deploy('DropshippingVault',[addresses[0],token.target,feed.target,feed.target,86400,addresses.slice(0,7),addresses[9]]);
   const before=await provider.getTransactionCount(addresses[0]);
   const result=await verifyConnection(readConfig({TRADES_RPC_URL:'http://local.invalid',TRADES_VAULT_ADDRESS:vault.target,TRADES_CHAIN_ID:'97'}),{provider});
-  assert.equal(result.requestedPlanChecksMatch,true);assert.equal(result.networkControlsSupported,true);assert.equal(result.owner,addresses[0]);assert.equal(result.settlementsInWindow,0);assert.equal(await provider.getTransactionCount(addresses[0]),before);
+  assert.equal(result.salesReferralModelVersion,2);assert.equal(result.requestedPlanChecksMatch,true);assert.equal(result.networkControlsSupported,true);assert.equal(result.owner,addresses[0]);assert.equal(result.settlementsInWindow,0);assert.equal(await provider.getTransactionCount(addresses[0]),before);
   await assert.rejects(verifyConnection(readConfig({TRADES_RPC_URL:'http://local.invalid',TRADES_VAULT_ADDRESS:addresses[8],TRADES_CHAIN_ID:'97'}),{provider}),/RPC connection check failed/);
  }finally{await provider.destroy();await rpc.disconnect();}
 });

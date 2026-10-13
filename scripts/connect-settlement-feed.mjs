@@ -47,6 +47,7 @@ export function discoverSettings({source,installed={},env={},read=readEnv,exists
 export async function verifyConnection(config,{provider,feedFactory=createTradeFeed,contractFactory=(address,p)=>new Contract(address,[
  'function owner() view returns(address)',
  'function NETWORK_PLAN_VERSION() view returns(uint256)',
+ 'function SALES_REFERRAL_MODEL_VERSION() view returns(uint256)',
  'function tierConfig(uint256) view returns(tuple(uint256 minUsd,uint16 baseDailyBps,uint16 maxDailyBps,uint32 requiredDirect,uint256 requiredSalesUsd,uint16[4] referrals))',
  'function branchCapBps(uint256) view returns(uint16)',
  'function rewardStage(uint256) view returns(uint256,uint256)',
@@ -68,9 +69,12 @@ export async function verifyConnection(config,{provider,feedFactory=createTradeF
    const stages=await Promise.all(goals.map((_,i)=>vault.rewardStage(i)));
    planMatches=tiers.every((t,i)=>Array.from(t.referrals,Number).every((n,j)=>n===rates[i][j]))&&caps.every((n,i)=>Number(n)===[6000,4500,3500][i])&&stages.every((s,i)=>s[0]===parseEther(String(goals[i]))&&s[1]===parseEther(String(rewards[i])));
   }catch{ /* Older immutable contracts remain readable; never call them upgraded. */ }
+  let salesReferralModelVersion=1;
+  try{salesReferralModelVersion=Number(await vault.SALES_REFERRAL_MODEL_VERSION());}catch{ /* Legacy subtractive referral model. */ }
+  planMatches=planMatches&&salesReferralModelVersion===2;
   let networkControlsSupported=false;
   try{networkControlsSupported=await vault.NETWORK_PLAN_VERSION()===2n;}catch{ /* A matching economic schedule does not imply guarded client methods exist. */ }
-  return {chainId:config.chainId,contractAddress:config.address,owner,feedStatus:snapshot.status,latestBlock:snapshot.latestBlock,settlementsInWindow:snapshot.trades.length,requestedPlanChecksMatch:planMatches,networkControlsSupported,checkedAt:new Date().toISOString(),transactionsSent:0};
+  return {chainId:config.chainId,contractAddress:config.address,owner,feedStatus:snapshot.status,latestBlock:snapshot.latestBlock,settlementsInWindow:snapshot.trades.length,requestedPlanChecksMatch:planMatches,salesReferralModelVersion,networkControlsSupported,checkedAt:new Date().toISOString(),transactionsSent:0};
  }finally{if(owned)provider.destroy();}
 }
 
