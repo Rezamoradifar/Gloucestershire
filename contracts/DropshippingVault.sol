@@ -33,6 +33,8 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     IPriceFeed public immutable bnbUsdFeed;
     IPriceFeed public immutable usdtUsdFeed;
     uint256 public immutable maxOracleAge;
+    uint256 public constant SALES_REFERRAL_MODEL_VERSION = 2;
+    event SalesReferralBudgetUsed(bytes32 indexed settlementId,address indexed asset,uint256 amount);
     uint256 public minDepositUsd = 10 ether;
     uint16 public profitFeeBps = 500;
     uint16 public principalPenaltyBps = 3000;
@@ -237,7 +239,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     function _credit(address who,address asset,uint256 amount,bytes32 id) internal {
         accounts[who][asset].profit+=amount; ledgers[asset].profit+=amount; emit ProfitCredited(who,asset,amount,id);
     }
-    /// @notice Each item is gross REAL sales profit; referrals are carved out of it, not minted on top.
+    /// @notice Seller receives full funded gross profit. Eligible uplines use the separately funded reward budget.
     function settleSalesProfit(bytes32 id,address asset,address seller,uint256 gross,uint256 salesUsd,bytes32 evidenceHash)
         external payable reporter nonReentrant live {
         if(id==bytes32(0)||usedSettlement[id]||!users[seller].registered||salesUsd==0||evidenceHash==bytes32(0)) revert Invalid();
@@ -250,7 +252,12 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
             }
             parent=u.referrer;
         }
-        _credit(seller,asset,gross-commissions,id); emit SaleSettled(id,seller,asset,gross,salesUsd,evidenceHash);
+        if(ledgers[asset].rewards<commissions) revert Insufficient();
+        _requireLiquidity(asset,gross+commissions);
+        ledgers[asset].rewards-=commissions;
+        _credit(seller,asset,gross,id);
+        emit SalesReferralBudgetUsed(id,asset,commissions);
+        emit SaleSettled(id,seller,asset,gross,salesUsd,evidenceHash);
     }
     /// @notice Funded leaderboard/performance allocations, never referral rewards on deposits.
     function batchProfit(bytes32 id,address asset,address[] calldata recipients,uint256[] calldata amounts) external reporter nonReentrant live {

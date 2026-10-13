@@ -1,3 +1,7 @@
+## Sales referral model 2
+
+The seller receives 100% of the funded gross settlement. Eligible upline commissions are additive, debited from the separately funded reward budget of the same asset. Ineligible shares remain in that budget. A Starter settlement of 100 plus 14 of funded referral budget credits 100 to the seller and 8/4/2 to eligible uplines. No tokens are minted. Insufficient budget or gross cash rolls back the entire settlement. The immutable existing testnet contract is unchanged; redeployment is required. Connection preflight now checks SALES_REFERRAL_MODEL_VERSION=2 as well as the rate and stage tables.
+
 ## Current release: v0.7.0 — 2026-10-11
 
 Updated seller rates, capped aggregation across any number of lines, new reward schedule, image upgrades, FAQ and a read-only settlement API. [Release and installation guide](UPGRADE-2026-10-11.md) · [Current Persian network rules](NETWORK-PLAN.fa.md). The older notes below describe release history and may be superseded by these current rules. No production deployment is implied.
