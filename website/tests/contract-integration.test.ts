@@ -54,8 +54,8 @@ describe('Actual wallet client against a local contract',()=>{
   const status=vi.fn();
   await network.executeNetwork({kind:'create',branches:[addresses[4]]},addresses[3],status);
   await network.executeNetwork({kind:'append',group:0n,branches:[addresses[5]]},addresses[3],status);
-  await network.executeNetwork({kind:'prepare',group:0n,stage:0},addresses[3],status);
-  expect((await vault.rewardProgress(addresses[3],0)).preparedUsd).toBe(E('500'));
+  const unprepared=await network.loadNetwork(addresses[3],0n,0n);expect(unprepared.groups[0].prepared).toBe(0n);expect(unprepared.groups[0].eligibleUsd).toBe(E('500'));
+  expect(network.rewardBlockers(unprepared,unprepared.groups[0],E('500'))).toEqual([]);
   await network.executeNetwork({kind:'claim',group:0n,stage:0},addresses[3],status);
   expect((await vault.accounts(addresses[3],token.target)).profit).toBe(E('36'));
   expect((await vault.rewardProgress(addresses[3],0)).stage).toBe(1n);

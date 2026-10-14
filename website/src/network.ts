@@ -6,7 +6,7 @@ export type NetworkAction=
  | {kind:'create';branches:string[]}
  | {kind:'append';group:bigint;branches:string[]}
  | {kind:'prepare'|'claim';group:bigint;stage:number};
-export type NetworkGroup={id:bigint;stage:number;prepared:bigint;cursor:bigint;branches:bigint;claimAmount:bigint|null;quoteError:string};
+export type NetworkGroup={id:bigint;stage:number;prepared:bigint;cursor:bigint;branches:bigint;eligibleUsd?:bigint;claimAmount:bigint|null;quoteError:string};
 export type NetworkPage={rewardBudget:bigint;treasuryCash:bigint;tokenDecimals:number;salesModel:bigint;block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
 
 export function parseBranches(value:string):string[]{
@@ -28,7 +28,7 @@ export async function readSalesModel(vault:Contract,options:Record<string,unknow
 export function rewardBlockers(page:Pick<NetworkPage,'paused'|'rewardBudget'|'treasuryCash'>,group:NetworkGroup,goal:bigint):string[]{
  const reasons:string[]=[];
  if(page.paused)reasons.push('Reward claims are paused.');
- if(group.prepared<goal)reasons.push('Prepare more eligible branch volume for this stage.');
+ if((group.eligibleUsd??group.prepared)<goal)reasons.push('More eligible branch volume or batch preparation is needed for this stage.');
  if(group.claimAmount===null)reasons.push(group.quoteError||'Reward conversion is unavailable.');
  else {if(group.claimAmount===0n)reasons.push('The converted reward is too small.');if(page.rewardBudget<group.claimAmount)reasons.push('The system reward budget needs funding.');if(page.treasuryCash<group.claimAmount)reasons.push('The treasury needs additional USDT cash.');}
  return reasons;
@@ -46,7 +46,7 @@ export async function readNetworkPage(vault:Contract,who:string,block:number,bra
  const groupLength=Number(groupCount>groupStart?(groupCount-groupStart<GROUP_PAGE?groupCount-groupStart:GROUP_PAGE):0n);
  const [branches,groups]=await Promise.all([
   Promise.all(Array.from({length:branchLength},async(_,i)=>{const address=await vault.networkBranch(who,branchStart+BigInt(i),options);const [volume,grouped]=await Promise.all([vault.branchVolumeUsd(who,address,options),vault.groupedBranch(who,address,options)]);return {address,volume,grouped};})),
-  Promise.all(Array.from({length:groupLength},async(_,i)=>{const id=groupStart+BigInt(i),g=await vault.rewardProgress(who,id,options);let claimAmount:bigint|null=null,quoteError='';if(Number(g.stage)<14){try{claimAmount=await vault.quoteAsset(token,stages[Number(g.stage)].reward,options);}catch(e){if((e as {code?:string}).code!=='CALL_EXCEPTION')throw e;quoteError='The contract cannot quote this reward. Its price feed may be invalid or stale.';}}return {id,stage:Number(g.stage),prepared:g.preparedUsd,cursor:g.cursor,branches:g.branches,claimAmount,quoteError};}))
+  Promise.all(Array.from({length:groupLength},async(_,i)=>{const id=groupStart+BigInt(i),g=await vault.rewardProgress(who,id,options);let claimAmount:bigint|null=null,quoteError='';if(Number(g.stage)<14){try{claimAmount=await vault.quoteAsset(token,stages[Number(g.stage)].reward,options);}catch(e){if((e as {code?:string}).code!=='CALL_EXCEPTION')throw e;quoteError='The contract cannot quote this reward. Its price feed may be invalid or stale.';}}let eligibleUsd:bigint|undefined;if(Number(g.stage)<14&&g.branches<=64n){const preview=await vault.rewardPreview(who,id,options);eligibleUsd=Array.from(preview.consume as bigint[]).reduce((n,v)=>n+v,0n);}return {id,stage:Number(g.stage),prepared:g.preparedUsd,cursor:g.cursor,branches:g.branches,eligibleUsd,claimAmount,quoteError};}))
  ]);
  return {rewardBudget:ledger.rewards,treasuryCash,tokenDecimals:Number(tokenDecimals),salesModel,block,qualified,branchCount,groupCount,paused,registered:user.registered,tiers,stages,branches,groups};
 }
