@@ -6,8 +6,8 @@ export type NetworkAction=
  | {kind:'create';branches:string[]}
  | {kind:'append';group:bigint;branches:string[]}
  | {kind:'prepare'|'claim';group:bigint;stage:number};
-export type NetworkGroup={id:bigint;stage:number;prepared:bigint;cursor:bigint;branches:bigint};
-export type NetworkPage={block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
+export type NetworkGroup={id:bigint;stage:number;prepared:bigint;cursor:bigint;branches:bigint;claimAmount:bigint|null;quoteError:string};
+export type NetworkPage={rewardBudget:bigint;treasuryCash:bigint;tokenDecimals:number;salesModel:bigint;block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
 
 export function parseBranches(value:string):string[]{
  const branches=value.trim().split(/[\s,،;]+/).filter(Boolean);
@@ -22,8 +22,21 @@ async function requireVersion(vault:Contract,options:Record<string,unknown>={}){
  try{version=await vault.NETWORK_PLAN_VERSION(options);}catch{throw Error('This contract does not support the updated network controls. Connect the reviewed new deployment.');}
  if(version!==2n)throw Error('This network-plan version is not supported by this client.');
 }
+export async function readSalesModel(vault:Contract,options:Record<string,unknown>):Promise<bigint>{
+ try{return await vault.SALES_REFERRAL_MODEL_VERSION(options);}catch(e){if((e as {code?:string}).code==='CALL_EXCEPTION')return 1n;throw e;}
+}
+export function rewardBlockers(page:Pick<NetworkPage,'paused'|'rewardBudget'|'treasuryCash'>,group:NetworkGroup,goal:bigint):string[]{
+ const reasons:string[]=[];
+ if(page.paused)reasons.push('Reward claims are paused.');
+ if(group.prepared<goal)reasons.push('Prepare more eligible branch volume for this stage.');
+ if(group.claimAmount===null)reasons.push(group.quoteError||'Reward conversion is unavailable.');
+ else {if(group.claimAmount===0n)reasons.push('The converted reward is too small.');if(page.rewardBudget<group.claimAmount)reasons.push('The system reward budget needs funding.');if(page.treasuryCash<group.claimAmount)reasons.push('The treasury needs additional USDT cash.');}
+ return reasons;
+}
 export async function readNetworkPage(vault:Contract,who:string,block:number,branchStart=0n,groupStart=0n):Promise<NetworkPage>{
  const options={blockTag:block};await requireVersion(vault,options);
+ const token=await vault.usdt(options);
+ const [ledger,treasuryCash,tokenDecimals,salesModel]=await Promise.all([vault.ledgers(token,options),vault.assetBalance(token,options),vault.tokenDecimals(options),readSalesModel(vault,options)]);
  const [qualified,branchCount,groupCount,paused,user,tiers,stages]=await Promise.all([
   vault.qualifiedDirects(who,options),vault.networkBranchCount(who,options),vault.rewardGroupCount(who,options),vault.paused(options),vault.users(who,options),
   Promise.all(Array.from({length:5},async(_,i)=>Array.from((await vault.tierConfig(i,options)).referrals) as bigint[])),
@@ -33,9 +46,9 @@ export async function readNetworkPage(vault:Contract,who:string,block:number,bra
  const groupLength=Number(groupCount>groupStart?(groupCount-groupStart<GROUP_PAGE?groupCount-groupStart:GROUP_PAGE):0n);
  const [branches,groups]=await Promise.all([
   Promise.all(Array.from({length:branchLength},async(_,i)=>{const address=await vault.networkBranch(who,branchStart+BigInt(i),options);const [volume,grouped]=await Promise.all([vault.branchVolumeUsd(who,address,options),vault.groupedBranch(who,address,options)]);return {address,volume,grouped};})),
-  Promise.all(Array.from({length:groupLength},async(_,i)=>{const id=groupStart+BigInt(i),g=await vault.rewardProgress(who,id,options);return {id,stage:Number(g.stage),prepared:g.preparedUsd,cursor:g.cursor,branches:g.branches};}))
+  Promise.all(Array.from({length:groupLength},async(_,i)=>{const id=groupStart+BigInt(i),g=await vault.rewardProgress(who,id,options);let claimAmount:bigint|null=null,quoteError='';if(Number(g.stage)<14){try{claimAmount=await vault.quoteAsset(token,stages[Number(g.stage)].reward,options);}catch(e){if((e as {code?:string}).code!=='CALL_EXCEPTION')throw e;quoteError='The contract cannot quote this reward. Its price feed may be invalid or stale.';}}return {id,stage:Number(g.stage),prepared:g.preparedUsd,cursor:g.cursor,branches:g.branches,claimAmount,quoteError};}))
  ]);
- return {block,qualified,branchCount,groupCount,paused,registered:user.registered,tiers,stages,branches,groups};
+ return {rewardBudget:ledger.rewards,treasuryCash,tokenDecimals:Number(tokenDecimals),salesModel,block,qualified,branchCount,groupCount,paused,registered:user.registered,tiers,stages,branches,groups};
 }
 export async function loadNetwork(who:string,branchStart:bigint,groupStart:bigint){
  const {vault,provider}=await session(who);const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');
