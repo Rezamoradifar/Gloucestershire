@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {createCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
 import {Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress} from 'ethers';
 
@@ -55,10 +56,11 @@ export function createTradeFeed(config,{provider,metadata,now=Date.now,ttlMs=150
  let response;
  return {configured,async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
+  if(community&&await community(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/api/health')return send(200,{status:'ok',configured:feed.configured,source});
@@ -72,6 +74,11 @@ export function createApiServer(feed,{responseTimeoutMs=10000}={}){
   finally{clearTimeout(timer);}
  });
 }
+async function configuredCommunity(config){
+ const provider=config.rpcUrl&&config.address?new JsonRpcProvider(config.rpcUrl,undefined,{batchMaxCount:1}):null;
+ const vault=provider?new Contract(config.address,['function owner() view returns(address)'],provider):null;
+ return createCommunity({file:process.env.COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-api/community.json',chainId:config.chainId,contract:config.address,owner:async()=>{if(!vault)throw Error('Contract not configured');if(Number((await provider.getNetwork()).chainId)!==config.chainId)throw Error('Wrong chain');return vault.owner();}});
+}
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- try{const config=readConfig();const feed=createTradeFeed(config);const server=createApiServer(feed);server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();process.exit(0);});});}catch{console.error('Invalid settlement API configuration. Check the server environment file.');process.exitCode=1;}
+ try{const config=readConfig();const feed=createTradeFeed(config);const community=configuredCommunity(config);const server=createApiServer(feed,{community:await community});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();process.exit(0);});});}catch{console.error('Invalid settlement API configuration. Check the server environment file.');process.exitCode=1;}
 }

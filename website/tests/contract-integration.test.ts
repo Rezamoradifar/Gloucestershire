@@ -24,6 +24,19 @@ beforeAll(async()=>{
 beforeEach(async()=>{await rpc.request({method:'evm_revert',params:[saved]});saved=await rpc.request({method:'evm_snapshot',params:[]});selected=addresses[3];await wallet.wallets.connect('injected');});
 afterAll(async()=>{await wallet?.wallets.disconnect();vi.unstubAllGlobals();vi.unstubAllEnvs();await provider?.destroy();await rpc?.disconnect();});
 describe('Actual wallet client against a local contract',()=>{
+ it('blocks a first deposit with no referrer until the reviewed warning is acknowledged',async()=>{
+  selected=addresses[6];const snapshot=await chain.readSnapshot(selected,'USDT',20);
+  await expect(chain.execute({kind:'deposit',value:'10',expectedFee:0n},snapshot,vi.fn())).rejects.toThrow('Confirm that you want to register without a referrer');
+  expect((await vault.users(selected)).registered).toBe(false);
+  await send(token.mint(selected,E('10')));
+  await chain.execute({kind:'deposit',value:'10',expectedFee:0n,expectedLock:snapshot.lock,expectedPenalty:snapshot.penalty,noReferrerAcknowledged:true},snapshot,vi.fn());
+  expect((await vault.users(selected)).registered).toBe(true);expect((await vault.users(selected)).referrer).toBe(ZeroAddress);
+ },20000);
+ it('reads exact level totals from the real network volume ledger',async()=>{
+  const {readLevelVolumes}=await import('../src/levels');const block=await provider.getBlockNumber();
+  const result=await readLevelVolumes(vault,addresses[3],block);
+  expect(result.map(x=>x.volume)).toEqual([E('500'),0n,0n]);
+ });
  it('allows reinvesting one dollar of funded profit while keeping the deposit minimum',async()=>{
   const s=await chain.readSnapshot(addresses[3],'USDT',20),status=vi.fn();
   expect(s.reinvested).toBe(0n);
@@ -41,8 +54,8 @@ describe('Actual wallet client against a local contract',()=>{
   const status=vi.fn();
   await network.executeNetwork({kind:'create',branches:[addresses[4]]},addresses[3],status);
   await network.executeNetwork({kind:'append',group:0n,branches:[addresses[5]]},addresses[3],status);
-  await network.executeNetwork({kind:'prepare',group:0n,stage:0},addresses[3],status);
-  expect((await vault.rewardProgress(addresses[3],0)).preparedUsd).toBe(E('500'));
+  const unprepared=await network.loadNetwork(addresses[3],0n,0n);expect(unprepared.groups[0].prepared).toBe(0n);expect(unprepared.groups[0].eligibleUsd).toBe(E('500'));
+  expect(network.rewardBlockers(unprepared,unprepared.groups[0],E('500'))).toEqual([]);
   await network.executeNetwork({kind:'claim',group:0n,stage:0},addresses[3],status);
   expect((await vault.accounts(addresses[3],token.target)).profit).toBe(E('36'));
   expect((await vault.rewardProgress(addresses[3],0)).stage).toBe(1n);

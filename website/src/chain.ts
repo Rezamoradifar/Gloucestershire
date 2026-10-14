@@ -3,11 +3,12 @@ import abi from './vault-abi.json';
 import {chainId,configured,vaultAddress,feeWallets} from './config';
 import {parseAmount,feeOf} from './money';
 import {getWalletProvider} from './wallet';
+import {needsReferrerWarning} from './referrer';
 export const erc20Abi=['function decimals() view returns(uint8)','function balanceOf(address) view returns(uint256)','function allowance(address,address) view returns(uint256)','function approve(address,uint256) returns(bool)'];
 export type Asset='BNB'|'USDT';
 export type Position={id:number;asset:string;principal:bigint;capitalUsd:bigint;unlockAt:bigint;penaltyBps:bigint};
 export type Snapshot={partners:string[];partnerQuorum:number;who:string;asset:string;decimals:number;walletBalance:bigint;principal:bigint;profit:bigint;externalDeposited:bigint;reinvested:bigint;withdrawalLimit:bigint;nextWithdrawal:bigint;reserve:bigint;totalPrincipal:bigint;totalProfit:bigint;rewards:bigint;paused:boolean;owner:boolean;reporter:boolean;registered:boolean;referrer:string;active:boolean;kyc:boolean;direct:bigint;salesUsd:bigint;capitalUsd:bigint;liquidBalance:bigint;shortfall:bigint;ownerOutstanding:bigint;tier:number;target:bigint;fee:bigint;penalty:bigint;lock:bigint;cooldown:bigint;minDeposit:bigint;positions:Position[];positionCount:number;blockTime:number;blockNumber:number};
-export type Action={kind:'deposit'|'profit'|'principal'|'reinvest'|'transfer'|'reserve'|'rewards'|'settle'|'ownerWithdraw'|'returnCapital';value:string;recipient?:string;referrer?:string;position?:Position;settlementId?:string;evidence?:string;salesUsd?:string;expectedFee:bigint;expectedLock?:bigint;expectedPenalty?:bigint;expectedClaim?:bigint};
+export type Action={kind:'deposit'|'profit'|'principal'|'reinvest'|'transfer'|'reserve'|'rewards'|'settle'|'ownerWithdraw'|'returnCapital';value:string;recipient?:string;referrer?:string;position?:Position;settlementId?:string;evidence?:string;salesUsd?:string;expectedFee:bigint;expectedLock?:bigint;expectedPenalty?:bigint;expectedClaim?:bigint;noReferrerAcknowledged?:boolean};
 export const actionNames={deposit:'Deposit capital',profit:'Withdraw profit',principal:'Withdraw principal',reinvest:'Reinvest',transfer:'Transfer profit',reserve:'Fund fee reserve',rewards:'Fund rewards',settle:'Settle sales profit',ownerWithdraw:'Deploy treasury capital',returnCapital:'Return treasury capital'};
 export async function session(expected?:string){
  const wallet=getWalletProvider();if(!wallet)throw Error('Connect your wallet to continue.');
@@ -33,6 +34,7 @@ export async function readSnapshot(who:string,asset:Asset,positionLimit:number):
 async function receipt(tx:any){try{const r=await tx.wait();if(!r||r.status!==1)throw Error('The transaction failed.');return r.hash as string;}catch(e:any){if(e.code==='TRANSACTION_REPLACED'&&!e.cancelled&&e.receipt?.status===1)return e.receipt.hash as string;throw e;}}
 export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string,hash?:string)=>void){
  const {vault,signer,who,provider}=await session(snapshot.who);const a=snapshot.asset;
+ if(action.kind==='deposit'){const user=await vault.users(who);if(needsReferrerWarning(action.kind,user.registered,action.referrer)&&!action.noReferrerAcknowledged)throw Error('Confirm that you want to register without a referrer.');}
  const current=await vault.accounts(who,a);const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');
  const amount=parseAmount(action.value,snapshot.decimals);
  if(['profit','transfer'].includes(action.kind)&&((amount>current.profit)||(amount>await vault.profitWithdrawalCap(who,a))))throw Error('The amount exceeds your funded profit or withdrawal cap.');

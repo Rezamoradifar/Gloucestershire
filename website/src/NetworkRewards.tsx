@@ -5,6 +5,8 @@ import {errorText} from './chain';
 import {chainName,vaultAddress} from './config';
 import {BRANCH_PAGE,GROUP_PAGE,rewardBlockers,loadNetwork,parseBranches,type NetworkAction,type NetworkPage} from './network';
 import './network.css';
+import {session} from './chain';
+import {suggestRewardBranches} from './auto-reward';
 const dollars=(n:bigint)=>displayAmount(n,18,2);
 const labels={create:'Create reward group',append:'Add direct branches',prepare:'Prepare next batch',claim:'Claim stage reward'};
 type Props={who:string;connected:boolean;busy:boolean;block:number;onExecute:(action:NetworkAction)=>Promise<void>};
@@ -13,13 +15,17 @@ export default function NetworkRewards({who,connected,busy,block,onExecute}:Prop
  const [branchStart,setBranchStart]=useState(0n),[groupStart,setGroupStart]=useState(0n),[reload,setReload]=useState(0);
  const [addresses,setAddresses]=useState(''),[destination,setDestination]=useState('new'),[draft,setDraft]=useState<NetworkAction|null>(null);
  const dialog=useRef<HTMLDialogElement>(null);
+ const autoController=useRef<AbortController|null>(null);
+ const [autoBusy,setAutoBusy]=useState(false),[autoNote,setAutoNote]=useState(''),[autoRemaining,setAutoRemaining]=useState<string[]>([]);
+ useEffect(()=>{autoController.current?.abort();setAutoBusy(false);setAutoNote('');setAutoRemaining([]);return()=>autoController.current?.abort();},[who,connected]);
+ async function calculate(){autoController.current?.abort();const c=new AbortController();autoController.current=c;setAutoBusy(true);setError('');setAutoNote('');try{const {vault}=await session(who);const result=await suggestRewardBranches(vault,who,page!.block,c.signal);if(!c.signal.aborted){setDestination('new');setAddresses(result.branches.slice(0,64).join('\n'));setAutoRemaining(result.branches.slice(64));setAutoNote(`${dollars(result.eligible)} / ${dollars(result.goal)} USD eligible; ${dollars(result.missing)} USD missing. ${result.branches.length>64?'First 64 branches filled; add the remaining branches in another batch. ':''}Review before signing. Assignments are permanent; no transaction has been sent.`);}}catch(e){if(!c.signal.aborted)setError(errorText(e));}finally{if(!c.signal.aborted)setAutoBusy(false);}}
  useEffect(()=>{setBranchStart(0n);setGroupStart(0n);setDestination('new');setAddresses('');setDraft(null);},[who,connected]);
  useEffect(()=>{let stopped=false;setPage(null);setError('');if(!connected){setLoading(false);return;}
   setLoading(true);loadNetwork(who,branchStart,groupStart).then(p=>{if(!stopped)setPage(p);}).catch(e=>{if(!stopped)setError(errorText(e));}).finally(()=>{if(!stopped)setLoading(false);});
   return()=>{stopped=true;};
  },[who,connected,branchStart,groupStart,reload,block]);
  useEffect(()=>{if(draft)dialog.current?.showModal();else dialog.current?.close();},[draft]);
- const editable=!!page&&page.registered&&!busy&&!loading;
+ const editable=!!page&&page.registered&&!busy&&!loading&&!autoBusy;
  function reviewBranches(){try{const branches=parseBranches(addresses);setDraft(destination==='new'?{kind:'create',branches}:{kind:'append',group:BigInt(destination),branches});setError('');}catch(e){setError(errorText(e));}}
  async function confirm(){if(!draft||busy)return;const action=draft;setDraft(null);await onExecute(action);setReload(n=>n+1);}
  const reviewedStage=draft&&(draft.kind==='claim'||draft.kind==='prepare')?page?.stages[draft.stage]:undefined;
@@ -38,7 +44,7 @@ export default function NetworkRewards({who,connected,busy,block,onExecute}:Prop
     <div className="network-pagination"><button className="small-button" disabled={busy||branchStart===0n} onClick={()=>setBranchStart(n=>n-BRANCH_PAGE)}><ArrowLeft size={15}/>Previous branches</button><span>Page {(branchStart/BRANCH_PAGE+1n).toString()}</span><button className="small-button" disabled={busy||branchStart+BRANCH_PAGE>=page.branchCount} onClick={()=>setBranchStart(n=>n+BRANCH_PAGE)}>Next branches<ArrowRight size={15}/></button></div>
    </section>
    <section className="panel"><h3>Build your reward group</h3><p>Use any total number of direct branches. Submit up to 64 addresses at a time; add another batch to the same group when needed.</p>
-    <form className="network-group-form" onSubmit={e=>{e.preventDefault();reviewBranches();}}>
+    <button className="small-button" disabled={!editable} onClick={()=>void calculate()}>{autoBusy?'Calculating lines…':'Calculate reward lines automatically'}</button>{autoNote&&<p role="status">{autoNote}</p>}{autoRemaining.length>0&&<><p>After confirming the first batch, select the same existing group, then fill the next suggested batch.</p><button type="button" className="small-button" disabled={!editable||destination==='new'} onClick={()=>{setAddresses(autoRemaining.slice(0,64).join('\n'));setAutoRemaining(autoRemaining.slice(64));}}>Fill next suggested batch ({autoRemaining.length} left)</button></>}<form className="network-group-form" onSubmit={e=>{e.preventDefault();reviewBranches();}}>
      <label className="field">Destination<select value={destination} disabled={!editable} onChange={e=>setDestination(e.target.value)}><option value="new">Create a new group</option>{page.groups.filter(g=>g.stage<14).map(g=><option key={g.id.toString()} value={g.id.toString()}>Group {(g.id+1n).toString()}</option>)}</select></label>
      <label className="field">Direct branch addresses<textarea rows={4} dir="ltr" value={addresses} disabled={!editable} onChange={e=>setAddresses(e.target.value)} placeholder="One 0x address per line"/></label>
      <button className="small-button" type="button" disabled={!editable||!page.branches.some(b=>!b.grouped)} onClick={()=>setAddresses(page.branches.filter(b=>!b.grouped).map(b=>b.address).join('\n'))}>Use available branches on this page</button><p className="muted">Group assignments are permanent. Assigned branches cannot be moved to another group.</p><button className="primary-button" disabled={!editable||!addresses.trim()}>Review branches</button>
@@ -46,7 +52,7 @@ export default function NetworkRewards({who,connected,busy,block,onExecute}:Prop
    </section>
    <div className="network-group-grid">{page.groups.map(g=>{const stage=page.stages[g.stage],blockers=stage?rewardBlockers(page,g,stage.goal):[];return <article className="panel" key={g.id.toString()}><div className="panel-title"><h3>Group {(g.id+1n).toString()}</h3><span className="tag">{g.stage>=14?'Completed':`Stage ${g.stage+1} / 14`}</span></div><p>{g.branches.toString()} branches · Next scan index {g.cursor.toString()}</p>{stage?<>
     <div className="plan-detail"><span>Stage volume target</span><b>{dollars(stage.goal)} USD</b></div><div className="plan-detail"><span>Maximum per branch</span><b>{Number(stage.cap)/100}% · {dollars(stage.goal*stage.cap/10000n)} USD</b></div><div className="plan-detail"><span>Prepared volume</span><b>{dollars(g.prepared)} / {dollars(stage.goal)} USD</b></div><div className="plan-detail"><span>Stage reward</span><b>{dollars(stage.reward)} USD</b></div>
-    <progress aria-label={`Prepared volume for group ${g.id+1n}`} max={10000} value={Number(g.prepared*10000n/stage.goal)}/>
+    <div className="plan-detail"><span>Automatically calculated eligible volume</span><b>{g.eligibleUsd===undefined?'Prepare this large group in batches':dollars(g.eligibleUsd)+' / '+dollars(stage.goal)+' USD'}</b></div><p className="muted">For up to 64 branches, claiming automatically prepares eligible volume in the same transaction. Larger groups need batch preparation.</p><progress aria-label={`Prepared volume for group ${g.id+1n}`} max={10000} value={Number(g.prepared*10000n/stage.goal)}/>
     <div className="network-group-actions"><button className="small-button" disabled={!editable||page.paused||g.prepared>=stage.goal} onClick={()=>setDraft({kind:'prepare',group:g.id,stage:g.stage})}>Prepare up to 64 branches</button><button className="primary-button" disabled={!editable||blockers.length>0} onClick={()=>setDraft({kind:'claim',group:g.id,stage:g.stage})}>Review reward claim</button></div>{blockers.length>0&&<ul>{blockers.map(reason=><li key={reason}>{reason}</li>)}</ul>}
    </>:<p>All fourteen stages have been claimed.</p>}</article>;})}</div>
    {!page.groups.length&&<p>No reward groups on this page. Create a group using your direct branch addresses.</p>}
