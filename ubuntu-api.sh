@@ -11,7 +11,7 @@ unit=/etc/systemd/system/globaldroptrade-api.service
 backup_dir=$(mktemp -d)
 trap 'rm -rf -- "$backup_dir"' EXIT
 install -d -m 755 "$release/server" /etc/globaldroptrade
-cp server/trades-api.mjs "$release/server/"
+cp server/trades-api.mjs server/community.mjs "$release/server/"
 cp package.json package-lock.json "$release/"
 (cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
 if [ ! -f "$envfile" ]; then install -m 600 server/trades.env.example "$envfile"; fi
@@ -26,7 +26,7 @@ existed=0
 if [ -f "$unit" ]; then cp -p "$unit" "$backup_dir/original.service"; existed=1; fi
 cat > "$backup_dir/new.service" <<EOF
 [Unit]
-Description=Global Drop Trade read-only settlement API
+Description=Global Drop Trade settlement and support API
 After=network-online.target
 Wants=network-online.target
 [Service]
@@ -41,6 +41,8 @@ RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+StateDirectory=globaldroptrade-api
+StateDirectoryMode=0700
 ProtectHome=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 UMask=0077
@@ -63,4 +65,4 @@ for attempt in 1 2 3 4 5; do
 done
 if [ "$ready" -ne 1 ]; then rollback; echo 'API health check failed; previous service restored.'; exit 1; fi
 echo 'Settlement API installed. Configure /etc/globaldroptrade/trades.env with the verified RPC, chain and contract; restart globaldroptrade-api after editing.'
-echo 'No wallet or transaction signing is used. An unconfigured feed displays no trades.'
+echo 'No blockchain transaction is sent. Support login uses a wallet message signature; administrator access follows the configured contract owner.'

@@ -6,7 +6,7 @@ with tempfile.TemporaryDirectory() as directory:
     p=Path(directory);(p/'bin').mkdir();(p/'server').mkdir();(p/'etc/systemd/system').mkdir(parents=True)
     source=(root/'ubuntu-api.sh').read_text().replace('/opt/globaldroptrade-api',str(p/'opt/api')).replace('/etc/globaldroptrade',str(p/'etc/globaldroptrade')).replace('/etc/systemd/system',str(p/'etc/systemd/system'))
     (p/'ubuntu-api.sh').write_text(source)
-    for name in ['trades-api.mjs','trades.env.example']:(p/'server'/name).write_bytes((root/'server'/name).read_bytes())
+    for name in ['trades-api.mjs','community.mjs','trades.env.example']:(p/'server'/name).write_bytes((root/'server'/name).read_bytes())
     for name in ['package.json','package-lock.json']:(p/name).write_bytes((root/name).read_bytes())
     for name,body in {
         'node':'exit 0', 'npm':'exit 0', 'id':'if [ "$1" = "-u" ]; then echo 0; fi; exit 0', 'useradd':'exit 0', 'sleep':'exit 0',
