@@ -1,6 +1,6 @@
 import {BrowserProvider,Contract,ZeroAddress,isAddress,keccak256,toUtf8Bytes} from 'ethers';
 import abi from './vault-abi.json';
-import {chainId,configured,vaultAddress,feeWallets} from './config';
+import {chainId,configured,vaultAddress,feeWallets,usingLegacy} from './config';
 import {parseAmount,feeOf} from './money';
 import {getWalletProvider} from './wallet';
 import {needsReferrerWarning} from './referrer';
@@ -33,6 +33,7 @@ export async function readSnapshot(who:string,asset:Asset,positionLimit:number):
 }
 async function receipt(tx:any){try{const r=await tx.wait();if(!r||r.status!==1)throw Error('The transaction failed.');return r.hash as string;}catch(e:any){if(e.code==='TRANSACTION_REPLACED'&&!e.cancelled&&e.receipt?.status===1)return e.receipt.hash as string;throw e;}}
 export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string,hash?:string)=>void){
+ if(usingLegacy&&action.kind==='deposit')throw Error('Open the new contract for new deposits. Previous positions and withdrawals remain available here.');
  const {vault,signer,who,provider}=await session(snapshot.who);const a=snapshot.asset;
  if(action.kind==='deposit'){const user=await vault.users(who);if(needsReferrerWarning(action.kind,user.registered,action.referrer)&&!action.noReferrerAcknowledged)throw Error('Confirm that you want to register without a referrer.');}
  const current=await vault.accounts(who,a);const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');

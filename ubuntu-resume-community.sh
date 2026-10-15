@@ -17,8 +17,26 @@ cp -R website/dist/. "$stage/site/"
 cp -R deployment-console "$stage/site/deploy"
 cp scripts/install-website.sh "$stage/install.sh"
 env -u GLOBAL_SITE_IP -u GLOBAL_SITE_PORT bash "$stage/install.sh"
-curl -fsS --max-time 20 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$stage/https.html"
-cmp -s website/dist/index.html "$stage/https.html"
+https_ready=0
+for attempt in 1 2 3 4 5; do
+ if curl -fsS --noproxy '*' --max-time 10 --resolve globaldroptrade.com:443:127.0.0.1 \
+   -H 'Cache-Control: no-cache' "https://globaldroptrade.com/?verify_release=$$" -o "$stage/https.html" \
+   && cmp -s website/dist/index.html "$stage/https.html"; then https_ready=1; break; fi
+ sleep 1
+done
+[ "$https_ready" -eq 1 ] || { echo 'HTTPS release does not match the build; connection not confirmed'; exit 1; }
 curl -fsS --max-time 10 http://127.0.0.1:3115/api/health
 curl -fsS --max-time 10 http://127.0.0.1:3115/api/community/announcements
+curl -fsS --max-time 10 http://127.0.0.1:3115/api/config -o "$stage/local-config.json"
+curl -fsS --noproxy '*' --max-time 10 --resolve globaldroptrade.com:443:127.0.0.1 \
+  -H 'Cache-Control: no-cache' "https://globaldroptrade.com/api/config?verify_release=$" -o "$stage/public-config.json"
+node --input-type=module - "$stage/local-config.json" "$stage/public-config.json" "${GLOBAL_NEW_VAULT:-}" <<'NODE'
+import fs from 'node:fs';
+const [localFile,publicFile,expected]=process.argv.slice(2);
+const local=JSON.parse(fs.readFileSync(localFile));
+const published=JSON.parse(fs.readFileSync(publicFile));
+const norm=v=>(v||'').toLowerCase();
+if(local.chainId!==published.chainId||norm(local.contract)!==norm(published.contract))throw Error('Public API config does not match local API config');
+if(expected&&(local.chainId!==97||norm(local.contract)!==norm(expected)))throw Error('API config does not match the newly deployed testnet vault');
+NODE
 printf '\nGLOBAL_SUPPORT_AND_HTTPS_READY\n'
