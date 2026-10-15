@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {realpathSync} from 'node:fs';
 import {createCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
 import {Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress} from 'ethers';
@@ -79,6 +80,6 @@ async function configuredCommunity(config){
  const vault=provider?new Contract(config.address,['function owner() view returns(address)'],provider):null;
  return createCommunity({file:process.env.COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-api/community.json',chainId:config.chainId,contract:config.address,owner:async()=>{if(!vault)throw Error('Contract not configured');if(Number((await provider.getNetwork()).chainId)!==config.chainId)throw Error('Wrong chain');return vault.owner();}});
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- try{const config=readConfig();const feed=createTradeFeed(config);const community=configuredCommunity(config);const server=createApiServer(feed,{community:await community});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();process.exit(0);});});}catch{console.error('Invalid settlement API configuration. Check the server environment file.');process.exitCode=1;}
+if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href){
+ try{const config=readConfig();const feed=createTradeFeed(config);const community=configuredCommunity(config);const server=createApiServer(feed,{community:await community});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }
