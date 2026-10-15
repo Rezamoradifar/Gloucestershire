@@ -17,8 +17,14 @@ cp -R website/dist/. "$stage/site/"
 cp -R deployment-console "$stage/site/deploy"
 cp scripts/install-website.sh "$stage/install.sh"
 env -u GLOBAL_SITE_IP -u GLOBAL_SITE_PORT bash "$stage/install.sh"
-curl -fsS --max-time 20 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$stage/https.html"
-cmp -s website/dist/index.html "$stage/https.html"
+https_ready=0
+for attempt in 1 2 3 4 5; do
+ if curl -fsS --noproxy '*' --max-time 10 --resolve globaldroptrade.com:443:127.0.0.1 \
+   -H 'Cache-Control: no-cache' "https://globaldroptrade.com/?verify_release=$$" -o "$stage/https.html" \
+   && cmp -s website/dist/index.html "$stage/https.html"; then https_ready=1; break; fi
+ sleep 1
+done
+[ "$https_ready" -eq 1 ] || { echo 'HTTPS release does not match the build; connection not confirmed'; exit 1; }
 curl -fsS --max-time 10 http://127.0.0.1:3115/api/health
 curl -fsS --max-time 10 http://127.0.0.1:3115/api/community/announcements
 printf '\nGLOBAL_SUPPORT_AND_HTTPS_READY\n'

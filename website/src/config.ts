@@ -1,6 +1,10 @@
 import {isAddress,ZeroAddress} from 'ethers';
 export const chainId=Number(import.meta.env.VITE_CHAIN_ID||97);
-export const vaultAddress=String(import.meta.env.VITE_VAULT_ADDRESS||'').trim();
+export const primaryVaultAddress=String(import.meta.env.VITE_VAULT_ADDRESS||'').trim();
+const previous=String(import.meta.env.VITE_LEGACY_VAULT_ADDRESS||'').trim();
+export const legacyVaultAddress=isAddress(previous)&&previous!==ZeroAddress&&previous.toLowerCase()!==primaryVaultAddress.toLowerCase()?previous:'';
+export const usingLegacy=!!legacyVaultAddress&&typeof window!=='undefined'&&!!window.location&&new URLSearchParams(window.location.search).get('vault')==='previous';
+export const vaultAddress=usingLegacy?legacyVaultAddress:primaryVaultAddress;
 export const configured=[56,97].includes(chainId)&&isAddress(vaultAddress)&&vaultAddress!==ZeroAddress;
 export const chainName=chainId===56?'BNB Smart Chain':'BNB Testnet';
 export const explorer=chainId===56?'https://bscscan.com':'https://testnet.bscscan.com';
