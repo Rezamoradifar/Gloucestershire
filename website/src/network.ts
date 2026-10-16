@@ -1,13 +1,14 @@
 import {getAddress,isAddress,ZeroAddress,type Contract} from 'ethers';
 import {session} from './chain';
+import {hasDeferredRewards} from './reward-mode';
 
 export const BRANCH_PAGE=12n,GROUP_PAGE=4n;
 export type NetworkAction=
  | {kind:'create';branches:string[]}
  | {kind:'append';group:bigint;branches:string[]}
- | {kind:'prepare'|'claim';group:bigint;stage:number};
+ | {kind:'prepare'|'claim';group:bigint;stage:number;count?:number};
 export type NetworkGroup={id:bigint;stage:number;prepared:bigint;cursor:bigint;branches:bigint;eligibleUsd?:bigint;claimAmount:bigint|null;quoteError:string};
-export type NetworkPage={rewardBudget:bigint;treasuryCash:bigint;tokenDecimals:number;salesModel:bigint;block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
+export type NetworkPage={deferredRewards?:boolean;rewardBudget:bigint;treasuryCash:bigint;tokenDecimals:number;salesModel:bigint;block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
 
 export function parseBranches(value:string):string[]{
  const branches=value.trim().split(/[\s,،;]+/).filter(Boolean);
@@ -25,16 +26,16 @@ async function requireVersion(vault:Contract,options:Record<string,unknown>={}){
 export async function readSalesModel(vault:Contract,options:Record<string,unknown>):Promise<bigint>{
  try{return await vault.SALES_REFERRAL_MODEL_VERSION(options);}catch(e){if((e as {code?:string}).code==='CALL_EXCEPTION')return 1n;throw e;}
 }
-export function rewardBlockers(page:Pick<NetworkPage,'paused'|'rewardBudget'|'treasuryCash'>,group:NetworkGroup,goal:bigint):string[]{
+export function rewardBlockers(page:Pick<NetworkPage,'paused'|'rewardBudget'|'treasuryCash'|'deferredRewards'>,group:NetworkGroup,goal:bigint):string[]{
  const reasons:string[]=[];
  if(page.paused)reasons.push('Reward claims are paused.');
  if((group.eligibleUsd??group.prepared)<goal)reasons.push('More eligible branch volume or batch preparation is needed for this stage.');
  if(group.claimAmount===null)reasons.push(group.quoteError||'Reward conversion is unavailable.');
- else {if(group.claimAmount===0n)reasons.push('The converted reward is too small.');if(page.rewardBudget<group.claimAmount)reasons.push('The system reward budget needs funding.');if(page.treasuryCash<group.claimAmount)reasons.push('The treasury needs additional USDT cash.');}
+ else {if(group.claimAmount===0n)reasons.push('The converted reward is too small.');if(!page.deferredRewards&&page.rewardBudget<group.claimAmount)reasons.push('The system reward budget needs funding.');if(!page.deferredRewards&&page.treasuryCash<group.claimAmount)reasons.push('The treasury needs additional USDT cash.');}
  return reasons;
 }
 export async function readNetworkPage(vault:Contract,who:string,block:number,branchStart=0n,groupStart=0n):Promise<NetworkPage>{
- const options={blockTag:block};await requireVersion(vault,options);
+ const options={blockTag:block};await requireVersion(vault,options);const deferredRewards=await hasDeferredRewards(vault,options);
  const token=await vault.usdt(options);
  const [ledger,treasuryCash,tokenDecimals,salesModel]=await Promise.all([vault.ledgers(token,options),vault.assetBalance(token,options),vault.tokenDecimals(options),readSalesModel(vault,options)]);
  const [qualified,branchCount,groupCount,paused,user,tiers,stages]=await Promise.all([
@@ -48,7 +49,7 @@ export async function readNetworkPage(vault:Contract,who:string,block:number,bra
   Promise.all(Array.from({length:branchLength},async(_,i)=>{const address=await vault.networkBranch(who,branchStart+BigInt(i),options);const [volume,grouped]=await Promise.all([vault.branchVolumeUsd(who,address,options),vault.groupedBranch(who,address,options)]);return {address,volume,grouped};})),
   Promise.all(Array.from({length:groupLength},async(_,i)=>{const id=groupStart+BigInt(i),g=await vault.rewardProgress(who,id,options);let claimAmount:bigint|null=null,quoteError='';if(Number(g.stage)<14){try{claimAmount=await vault.quoteAsset(token,stages[Number(g.stage)].reward,options);}catch(e){if((e as {code?:string}).code!=='CALL_EXCEPTION')throw e;quoteError='The contract cannot quote this reward. Its price feed may be invalid or stale.';}}let eligibleUsd:bigint|undefined;if(Number(g.stage)<14&&g.branches<=64n){const preview=await vault.rewardPreview(who,id,options);eligibleUsd=Array.from(preview.consume as bigint[]).reduce((n,v)=>n+v,0n);}return {id,stage:Number(g.stage),prepared:g.preparedUsd,cursor:g.cursor,branches:g.branches,eligibleUsd,claimAmount,quoteError};}))
  ]);
- return {rewardBudget:ledger.rewards,treasuryCash,tokenDecimals:Number(tokenDecimals),salesModel,block,qualified,branchCount,groupCount,paused,registered:user.registered,tiers,stages,branches,groups};
+ return {deferredRewards,rewardBudget:ledger.rewards,treasuryCash,tokenDecimals:Number(tokenDecimals),salesModel,block,qualified,branchCount,groupCount,paused,registered:user.registered,tiers,stages,branches,groups};
 }
 export async function loadNetwork(who:string,branchStart:bigint,groupStart:bigint){
  const {vault,provider}=await session(who);const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');
@@ -59,6 +60,7 @@ export function networkCall(action:NetworkAction):{method:string;args:unknown[]}
  if(action.group<0n)throw Error('Invalid reward group.');
  if(action.kind==='append')return {method:'addRewardBranches',args:[action.group,parseBranches(action.branches.join(' '))]};
  if(!Number.isInteger(action.stage)||action.stage<0||action.stage>=14)throw Error('This reward stage has finished or is invalid.');
+ if(action.kind==='claim'&&action.count!==undefined){if(!Number.isInteger(action.count)||action.count<1||action.stage+action.count>14)throw Error('Invalid reward stage count.');if(action.count>1)return {method:'claimNetworkRewards',args:[action.group,action.stage,action.count]};}
  return action.kind==='prepare'?{method:'prepareNetworkRewardAtStage',args:[action.group,action.stage,64]}:{method:'claimNetworkRewardAtStage',args:[action.group,action.stage]};
 }
 export async function executeNetwork(action:NetworkAction,who:string,onStatus:(message:string,hash?:string)=>void){

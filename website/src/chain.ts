@@ -1,5 +1,6 @@
 import {BrowserProvider,Contract,ZeroAddress,isAddress,keccak256,toUtf8Bytes} from 'ethers';
 import abi from './vault-abi.json';
+import {deferredAbi,queueAbi,hasDeferredRewards} from './reward-mode';
 import {chainId,configured,vaultAddress,feeWallets} from './config';
 import {parseAmount,feeOf} from './money';
 import {getWalletProvider} from './wallet';
@@ -7,7 +8,7 @@ import {needsReferrerWarning} from './referrer';
 export const erc20Abi=['function decimals() view returns(uint8)','function balanceOf(address) view returns(uint256)','function allowance(address,address) view returns(uint256)','function approve(address,uint256) returns(bool)'];
 export type Asset='BNB'|'USDT';
 export type Position={id:number;asset:string;principal:bigint;capitalUsd:bigint;unlockAt:bigint;penaltyBps:bigint};
-export type Snapshot={partners:string[];partnerQuorum:number;who:string;asset:string;decimals:number;walletBalance:bigint;principal:bigint;profit:bigint;externalDeposited:bigint;reinvested:bigint;withdrawalLimit:bigint;nextWithdrawal:bigint;reserve:bigint;totalPrincipal:bigint;totalProfit:bigint;rewards:bigint;paused:boolean;owner:boolean;reporter:boolean;registered:boolean;referrer:string;active:boolean;kyc:boolean;direct:bigint;salesUsd:bigint;capitalUsd:bigint;liquidBalance:bigint;shortfall:bigint;ownerOutstanding:bigint;tier:number;target:bigint;fee:bigint;penalty:bigint;lock:bigint;cooldown:bigint;minDeposit:bigint;positions:Position[];positionCount:number;blockTime:number;blockNumber:number};
+export type Snapshot={deferredRewards?:boolean;pendingWithdrawal?:boolean;partners:string[];partnerQuorum:number;who:string;asset:string;decimals:number;walletBalance:bigint;principal:bigint;profit:bigint;externalDeposited:bigint;reinvested:bigint;withdrawalLimit:bigint;nextWithdrawal:bigint;reserve:bigint;totalPrincipal:bigint;totalProfit:bigint;rewards:bigint;paused:boolean;owner:boolean;reporter:boolean;registered:boolean;referrer:string;active:boolean;kyc:boolean;direct:bigint;salesUsd:bigint;capitalUsd:bigint;liquidBalance:bigint;shortfall:bigint;ownerOutstanding:bigint;tier:number;target:bigint;fee:bigint;penalty:bigint;lock:bigint;cooldown:bigint;minDeposit:bigint;positions:Position[];positionCount:number;blockTime:number;blockNumber:number};
 export type Action={kind:'deposit'|'profit'|'principal'|'reinvest'|'transfer'|'reserve'|'rewards'|'settle'|'ownerWithdraw'|'returnCapital';value:string;recipient?:string;referrer?:string;position?:Position;settlementId?:string;evidence?:string;salesUsd?:string;expectedFee:bigint;expectedLock?:bigint;expectedPenalty?:bigint;expectedClaim?:bigint;noReferrerAcknowledged?:boolean};
 export const actionNames={deposit:'Deposit capital',profit:'Withdraw profit',principal:'Withdraw principal',reinvest:'Reinvest',transfer:'Transfer profit',reserve:'Fund fee reserve',rewards:'Fund rewards',settle:'Settle sales profit',ownerWithdraw:'Deploy treasury capital',returnCapital:'Return treasury capital'};
 export async function session(expected?:string){
@@ -16,7 +17,7 @@ export async function session(expected?:string){
  const raw=await wallet.request({method:'eth_chainId'});if(Number(raw)!==chainId)throw Error('Your wallet is on a different network.');
  const provider=new BrowserProvider(wallet);const signer=await provider.getSigner();const who=await signer.getAddress();
  if(expected&&who.toLowerCase()!==expected.toLowerCase())throw Error('The wallet account changed. Reload your account data.');
- const vault=new Contract(vaultAddress,abi,signer);
+ const vault=new Contract(vaultAddress,[...abi,...deferredAbi],signer);
  if(await provider.getCode(vaultAddress)==='0x')throw Error('No contract exists at this address on the selected network.');
  const destinations=await Promise.all([vault.FEE_WALLET_1(),vault.FEE_WALLET_2(),vault.WITHDRAWAL_FEE_WALLET()]);
  if(destinations.some((x,i)=>x.toLowerCase()!==feeWallets[i]))throw Error('The contract fee destinations do not match the expected version.');
@@ -24,12 +25,14 @@ export async function session(expected?:string){
 }
 export async function readSnapshot(who:string,asset:Asset,positionLimit:number):Promise<Snapshot>{
  const {provider,vault}=await session(who);const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');const options={blockTag:block.number};
+ const deferredRewards=await hasDeferredRewards(vault,options);
  const token=await vault.usdt(options);const a=asset==='BNB'?ZeroAddress:token;
  const [decimals,account,ledger,user,owner,reporter,paused,tier,target,fee,penalty,lock,cooldown,minDeposit,count,balance,liquidBalance,shortfall,ownerOutstanding,withdrawalLimit,reinvested]=await Promise.all([
  asset==='BNB'?18:vault.tokenDecimals(options),vault.accounts(who,a,options),vault.ledgers(a,options),vault.users(who,options),vault.owner(options),vault.reporters(who,options),vault.paused(options),vault.tierOf(who,options),vault.dailyTargetBps(who,options),vault.profitFeeBps(options),vault.principalPenaltyBps(options),vault.lockDuration(options),vault.withdrawalCooldown(options),vault.minDepositUsd(options),vault.positionCount(who,options),asset==='BNB'?provider.getBalance(who,block.number):new Contract(token,erc20Abi,provider).balanceOf(who,options),vault.assetBalance(a,options),vault.liquidityShortfall(a,options),vault.ownerCapitalOutstanding(a,options),vault.profitWithdrawalCap(who,a,options),vault.cumulativeReinvested(who,a,options)]);
  const partners:string[]=await Promise.all(Array.from({length:7},(_,i)=>vault.partnerWallets(i,options)));const partnerQuorum=Number(await vault.partnerVotesRequired(options));
  const total=Number(count);const positions:Position[]=await Promise.all(Array.from({length:Math.min(total,positionLimit)},async(_,id)=>{const p=await vault.positionOf(who,id,options);return {id,asset:p.asset,principal:p.principal,capitalUsd:p.capitalUsd,unlockAt:p.unlockAt,penaltyBps:p.penaltyBps};}));
- return {withdrawalLimit,reinvested,partners,partnerQuorum,who,asset:a,decimals:Number(decimals),walletBalance:balance,principal:account.principal,profit:account.profit,externalDeposited:account.externalDeposited,nextWithdrawal:account.nextWithdrawal,reserve:ledger.feeReserve,totalPrincipal:ledger.principal,totalProfit:ledger.profit,rewards:ledger.rewards,paused,owner:owner.toLowerCase()===who.toLowerCase(),reporter,registered:user.registered,referrer:user.referrer,active:user.active,kyc:user.vipKyc,direct:user.activeDirect,salesUsd:user.salesUsd,capitalUsd:user.capitalUsd,liquidBalance,shortfall,ownerOutstanding,tier:Number(tier),target,fee,penalty,lock,cooldown,minDeposit,positions,positionCount:total,blockTime:block.timestamp,blockNumber:block.number};
+ const pendingWithdrawal=deferredRewards?await new Contract(await vault.withdrawalQueue(options),queueAbi,provider).hasPending(who,a,options):false;
+ return {deferredRewards,pendingWithdrawal,withdrawalLimit,reinvested,partners,partnerQuorum,who,asset:a,decimals:Number(decimals),walletBalance:balance,principal:account.principal,profit:account.profit,externalDeposited:account.externalDeposited,nextWithdrawal:account.nextWithdrawal,reserve:ledger.feeReserve,totalPrincipal:ledger.principal,totalProfit:ledger.profit,rewards:ledger.rewards,paused,owner:owner.toLowerCase()===who.toLowerCase(),reporter,registered:user.registered,referrer:user.referrer,active:user.active,kyc:user.vipKyc,direct:user.activeDirect,salesUsd:user.salesUsd,capitalUsd:user.capitalUsd,liquidBalance,shortfall,ownerOutstanding,tier:Number(tier),target,fee,penalty,lock,cooldown,minDeposit,positions,positionCount:total,blockTime:block.timestamp,blockNumber:block.number};
 }
 async function receipt(tx:any){try{const r=await tx.wait();if(!r||r.status!==1)throw Error('The transaction failed.');return r.hash as string;}catch(e:any){if(e.code==='TRANSACTION_REPLACED'&&!e.cancelled&&e.receipt?.status===1)return e.receipt.hash as string;throw e;}}
 export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string,hash?:string)=>void){
@@ -46,7 +49,7 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
   if(action.kind==='deposit'&&usd<await vault.minDepositUsd())throw Error('The amount is below the minimum deposit value in USD.');
   if(action.kind==='reinvest'&&usd===0n)throw Error('The reinvestment is too small to have a nonzero USD value.');
  }
- if(['profit','principal','ownerWithdraw'].includes(action.kind)&&await vault.assetBalance(a)<amount)throw Error('Insufficient liquid treasury balance. The owner must restore funds before this withdrawal can succeed.');
+ if((['principal','ownerWithdraw'].includes(action.kind)||(action.kind==='profit'&&!await hasDeferredRewards(vault)))&&await vault.assetBalance(a)<amount)throw Error('Insufficient liquid treasury balance. The owner must restore funds before this withdrawal can succeed.');
  const funded=['deposit','reserve','rewards','settle','returnCapital'].includes(action.kind);
  const payable=funded&&a===ZeroAddress?{value:amount}:{};
  if(funded){

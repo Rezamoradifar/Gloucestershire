@@ -175,7 +175,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     function quoteUsd(address asset,uint256 amount) public view returns(uint256) { return Math.mulDiv(amount,_price(asset),10**(asset==address(0)?18:tokenDecimals)); }
     function quoteAsset(address asset,uint256 usd) public view returns(uint256) { return Math.mulDiv(usd,10**(asset==address(0)?18:tokenDecimals),_price(asset)); }
     function assetBalance(address asset) public view returns(uint256) { _asset(asset); return asset==address(0)?address(this).balance:IERC20(asset).balanceOf(address(this)); }
-    function accounted(address asset) public view returns(uint256) { Ledger storage l=ledgers[asset]; return l.principal+l.profit+l.feeReserve+l.rewards; }
+    function accounted(address asset) public view virtual returns(uint256) { Ledger storage l=ledgers[asset]; return l.principal+l.profit+l.feeReserve+l.rewards; }
     function surplus(address asset) public view returns(uint256) { uint256 balance=assetBalance(asset); uint256 debt=accounted(asset); return balance>debt?balance-debt:0; }
     /// @notice Owner can use ALL liquid BNB/USDT, including amounts assigned to user claims and reserves.
     /// @dev No partner approval, delay, strategy restriction or on-chain profitability guarantee.
@@ -276,7 +276,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         if(cooldown) { if(block.timestamp<a.nextWithdrawal) revert Locked(); if(amount>profitWithdrawalCap(who,asset)) revert Insufficient(); a.nextWithdrawal=block.timestamp+withdrawalCooldown; }
         a.profit-=amount; ledgers[asset].profit-=amount;
     }
-    function withdrawProfit(address asset,uint256 amount) external nonReentrant {
+    function withdrawProfit(address asset,uint256 amount) external virtual nonReentrant {
         _requireLiquidity(asset,amount); _takeProfit(msg.sender,asset,amount,true); uint256 fee=Math.mulDiv(amount,profitFeeBps,BPS);
         _pay(asset,WITHDRAWAL_FEE_WALLET,fee); _pay(asset,msg.sender,amount-fee); emit Withdrawal(msg.sender,asset,amount,fee,false);
     }
@@ -314,7 +314,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         _checkRewardStage(msg.sender,group,expectedStage);
         _claimNetworkReward(group);
     }
-    function _claimNetworkReward(uint256 group) private {
+    function _claimNetworkReward(uint256 group) internal virtual {
         uint256 usd=_consumeReward(msg.sender,group);
         uint256 amount=quoteAsset(usdt,usd);
         if(amount==0 || ledgers[usdt].rewards<amount) revert Insufficient();
