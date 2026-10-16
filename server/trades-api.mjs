@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {createMarketplace} from './marketplace.mjs';
 import {realpathSync} from 'node:fs';
 import {createCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
@@ -57,13 +58,14 @@ export function createTradeFeed(config,{provider,metadata,now=Date.now,ttlMs=150
  let response;
  return {configured,async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace()}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
   if(community&&await community(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
   const url=new URL(req.url,'http://localhost');
+  if(await marketplace(req,res,url))return;
   if(url.pathname==='/api/health')return send(200,{status:'ok',configured:feed.configured,source});
   if(url.pathname!=='/api/trades')return send(404,{error:'Not found'});
   let limit;try{limit=integer(url.searchParams.get('limit')??20,20,1,100);}catch{return send(400,{error:'limit must be an integer from 1 to 100'});}
