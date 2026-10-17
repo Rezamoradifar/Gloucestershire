@@ -47,10 +47,10 @@ function App(){
   return()=>{stopped=true;request++;unsubscribe();};
  },[]);
  useEffect(()=>{
-  const update=()=>{if(document.visibilityState==='visible'&&!txLock.current)void refresh();};
+  const update=()=>{if(page!=='network'&&document.visibilityState==='visible'&&!txLock.current)void refresh();};
   const timer=setInterval(update,30000);document.addEventListener('visibilitychange',update);
   return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',update);};
- },[refresh]);
+ },[refresh,page]);
  useEffect(()=>{
   const query=window.matchMedia('(max-width: 960px)');
   const resize=()=>{setSmallScreen(query.matches);if(!query.matches)setMobile(false);};

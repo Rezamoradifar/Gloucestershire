@@ -10,7 +10,8 @@ type Row={address:string;historical:bigint;claimed:bigint;reserved:bigint;remain
 const usd=(n:bigint)=>displayAmount(n,18,2);
 export default function RewardBranchBalances({who,group,count,block}:{who:string;group:bigint;count:bigint;block:number}){
  const [start,setStart]=useState(0n),[rows,setRows]=useState<Row[]|null>(null),[error,setError]=useState('');
- useEffect(()=>{let stopped=false;setRows(null);setError('');
+ useEffect(()=>{setRows(null);},[who,group,start]);
+ useEffect(()=>{let stopped=false;setError('');
   async function read(){try{const {vault}=await session(who),options={blockTag:block},result:Row[]=[];
    const end=start+12n<count?start+12n:count;
    for(let i=start;i<end;i++){if(stopped)return;const b=await vault.rewardBranch(who,group,i,options);const historical:bigint=await vault.branchVolumeUsd(who,b.branch,options);result.push({address:b.branch,historical,...branchBalances(historical,b.consumedUsd,b.reservedForStageUsd)});}

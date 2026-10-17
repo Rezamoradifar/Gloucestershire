@@ -21,7 +21,8 @@ export default function NetworkRewards({who,connected,busy,block,onExecute}:Prop
  useEffect(()=>{autoController.current?.abort();setAutoBusy(false);setAutoNote('');setAutoRemaining([]);return()=>autoController.current?.abort();},[who,connected]);
  async function calculate(){autoController.current?.abort();const c=new AbortController();autoController.current=c;setAutoBusy(true);setError('');setAutoNote('');try{const {vault}=await session(who);const result=await suggestRewardBranches(vault,who,page!.block,c.signal);if(!c.signal.aborted){setDestination('new');setAddresses(result.branches.slice(0,64).join('\n'));setAutoRemaining(result.branches.slice(64));setAutoNote(`${dollars(result.eligible)} / ${dollars(result.goal)} USD eligible; ${dollars(result.missing)} USD missing. ${result.branches.length>64?'First 64 branches filled; add the remaining branches in another batch. ':''}Review before signing. Assignments are permanent; no transaction has been sent.`);}}catch(e){if(!c.signal.aborted)setError(errorText(e));}finally{if(!c.signal.aborted)setAutoBusy(false);}}
  useEffect(()=>{setBranchStart(0n);setGroupStart(0n);setDestination('new');setAddresses('');setDraft(null);},[who,connected]);
- useEffect(()=>{let stopped=false;setPage(null);setError('');if(!connected){setLoading(false);return;}
+ useEffect(()=>{setPage(null);},[who,connected,branchStart,groupStart]);
+ useEffect(()=>{let stopped=false;setError('');if(!connected){setLoading(false);return;}
   setLoading(true);loadNetwork(who,branchStart,groupStart).then(p=>{if(!stopped)setPage(p);}).catch(e=>{if(!stopped)setError(errorText(e));}).finally(()=>{if(!stopped)setLoading(false);});
   return()=>{stopped=true;};
  },[who,connected,branchStart,groupStart,reload,block]);
@@ -33,7 +34,7 @@ export default function NetworkRewards({who,connected,busy,block,onExecute}:Prop
  return <section className="network-rewards" aria-labelledby="network-rewards-title">
   <div className="section-toolbar"><h2 id="network-rewards-title">Network volume & rewards</h2><button className="small-button" disabled={!connected||busy||loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={15}/> Refresh network</button></div>
   {!connected&&<div className="notice neutral">Connect your wallet to the configured contract to manage reward groups.</div>}
-  {loading&&<p role="status">Loading confirmed network data…</p>}
+  {loading&&!page&&<p role="status">Loading confirmed network data…</p>}
   {error&&<div className="notice error" role="alert">{error}</div>}
   {page&&<>
    <div className="network-summary"><span>Capital-qualified directs <strong>{page.qualified.toString()}</strong></span><span>Independent branches <strong>{page.branchCount.toString()}</strong></span><span>Reward groups <strong>{page.groupCount.toString()}</strong></span></div>
