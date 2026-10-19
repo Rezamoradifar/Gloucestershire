@@ -1,3 +1,4 @@
+import {deployFreshRewards} from '../scripts/deploy-fresh-rewards.mjs';
 import {test,before,beforeEach,after} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -98,4 +99,21 @@ test('signer selection keeps wrong owner keys separate and requires an explicit 
  result=loadMigrationSigners({...options,read:file=>file==='deployer'||file==='owner'?deployerKey:null});
  assert.equal(result.ownerWallet,null);
  assert.throws(()=>loadMigrationSigners({...options,read:file=>file==='owner'?ownerKey:null}),/DEPLOYER_KEY_NOT_FOUND/);
+});
+
+test('fresh deployment by a separate signer stays empty, active and owned by the configured owner; resume is idempotent',async()=>{
+ const wallet=new Wallet(rpc.getInitialAccounts()[a[8].toLowerCase()].secretKey,p);
+ const artifact=art('DeferredRewardsVault');artifact.bytecode='0x'+artifact.evm.bytecode.object;
+ const state={transactions:{}};
+ const options={provider:p,wallet,source:v,owner:a[0],artifact,state,save:()=>{},confirmations:1};
+ const oldAccount=Array.from(await v.accounts(a[1],t.target));
+ const report=await deployFreshRewards(options);
+ const n=new (v.constructor)(report.contractAddress,artifact.abi,s[8]);
+ assert.equal(await n.owner(),a[0]);assert.equal(await n.paused(),false);
+ assert.equal((await n.users(a[1])).registered,false);
+ assert.equal((await n.accounts(a[1],t.target)).principal,0n);
+ assert.deepEqual(Array.from(await v.accounts(a[1],t.target)),oldAccount);
+ assert.equal(await v.paused(),true);
+ assert.equal((await deployFreshRewards(options)).contractAddress,report.contractAddress);
+ await assert.rejects(n.setPaused.staticCall(true));
 });
