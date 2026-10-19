@@ -6,6 +6,7 @@ import {readConfig} from '../server/trades-api.mjs';
 import {renderSettings,verifyConnection} from './connect-settlement-feed.mjs';
 const TARGET='0x731Ba0644e8f44BbBd48124F945724ba534431eb';
 const OWNER='0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632';
+async function attempt(rpcOverride){
 let provider;
 try{
  const out=process.argv[2];if(!out)throw Error('OUTPUT_REQUIRED');
@@ -13,6 +14,7 @@ try{
  if(report.chainId!==97||report.kind!=='fresh-empty-deferred-rewards'||report.contractAddress!==TARGET||report.owner!==OWNER||!report.verified||report.accountsMigrated!==false)throw Error('REPORT_MISMATCH');
  const original=fs.readFileSync('/etc/globaldroptrade/trades.env','utf8'),settings=parseEnv(original);
  if(settings.TRADES_CHAIN_ID!=='97'||!settings.TRADES_RPC_URL)throw Error('TESTNET_RPC_REQUIRED');
+ if(rpcOverride)settings.TRADES_RPC_URL=rpcOverride;
  const request=new FetchRequest(settings.TRADES_RPC_URL);request.timeout=15000;
  provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
  if(Number(await provider.send('eth_chainId',[]))!==97)throw Error('CHAIN_MISMATCH');
@@ -31,5 +33,12 @@ try{
  if(!connection.requestedPlanChecksMatch||!connection.networkControlsSupported)throw Error('PLAN_MISMATCH');
  fs.writeFileSync(out+'/trades.env',renderSettings(original,settings),{flag:'wx',mode:0o600});
  fs.writeFileSync(out+'/connection-public.json',JSON.stringify({...connection,rewardAccrualVersion:1,queue:report.queue},null,2),{flag:'wx',mode:0o600});
- console.log('FRESH_CONNECTION_PREFLIGHT_OK '+TARGET);
-}catch(e){console.error('CUTOVER_PREFLIGHT_FAILED '+(/^[A-Z][A-Z0-9_]+$/.test(e.message||'')?e.message:'RPC_OR_REPORT_CHECK_FAILED'));process.exitCode=1;}finally{provider?.destroy();}
+ console.log('FRESH_CONNECTION_PREFLIGHT_OK '+TARGET);return true;
+}catch(e){console.error('CUTOVER_PREFLIGHT_FAILED '+(/^[A-Z][A-Z0-9_]+$/.test(e.message||'')?e.message:'RPC_OR_REPORT_CHECK_FAILED'));return false;}finally{provider?.destroy();}
+}
+let connected=false;
+for(const [index,rpc] of [undefined,'https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet.bnbchain.org','https://bsc-prebsc-dataseed.bnbchain.org'].entries()){
+ console.log('RPC_CANDIDATE_CHECK '+(index+1));
+ if(await attempt(rpc)){connected=true;break;}
+}
+if(!connected)process.exitCode=1;
