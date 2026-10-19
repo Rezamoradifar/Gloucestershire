@@ -2,7 +2,9 @@ import {test,before,beforeEach,after} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ganache from 'ganache';
-import {BrowserProvider,ContractFactory,parseEther as E,ZeroAddress} from 'ethers';
+import {BrowserProvider,ContractFactory,Wallet,parseEther as E,ZeroAddress} from 'ethers';
+import {scanInventory,verifyCopy} from '../scripts/migration-core.mjs';
+import {journalTransaction} from '../scripts/migration-journal.mjs';
 const art=n=>JSON.parse(fs.readFileSync(`artifacts/${n}.json`));
 let rpc,p,s,a,t,v,feed,members,snapshot;
 const tx=async x=>(await x).wait();
@@ -58,4 +60,26 @@ test('source withdrawal remains possible after copy: state copy is explicitly no
  await tx(v.connect(s[1]).withdrawProfit(t.target,E('35')));
  assert.equal((await v.accounts(a[1],t.target)).profit,0n);
  assert.equal((await n.accounts(a[1],t.target)).profit,E('35'),'legacy withdrawal does not extinguish new ledger; testnet-only limitation');
+});
+test('server scan, signed deployment, lost response recovery and resume preserve one deployment',async()=>{
+ const inventory=await scanInventory(p,v);
+ assert.deepEqual(inventory.members,members);
+ const wallet=new Wallet(rpc.getInitialAccounts()[a[0].toLowerCase()].secretKey,p);
+ const artifact=art('TestnetMigratedRewardsVault');
+ const request=await new ContractFactory(artifact.abi,artifact.evm.bytecode.object).getDeployTransaction(v.target,inventory.members,inventory.settlements,inventory.batches);
+ const state={transactions:{}};let saved=false,broadcasts=0;
+ const proxy=new Proxy(p,{get(target,name){if(name==='broadcastTransaction')return async raw=>{
+  assert.equal(saved,true,'signed payload must be durable before broadcast');broadcasts++;
+  await target.broadcastTransaction(raw);throw Error('simulated lost response');
+ };const value=Reflect.get(target,name);return typeof value==='function'?value.bind(target):value;}});
+ const args={provider:proxy,wallet,state,save:()=>{saved=true;},label:'deploy',request,guard:async()=>assert.equal(Number(await p.send('eth_chainId',[])),97),confirmations:1};
+ const receipt=await journalTransaction(args);
+ const again=await journalTransaction(args);
+ assert.equal(again.hash,receipt.hash);assert.equal(broadcasts,1);
+ const result=await verifyCopy(p,v,artifact,receipt,inventory);
+ assert.equal(result.verified,true);assert.equal(result.target,receipt.contractAddress);
+ const empty={transactions:{}};
+ await assert.rejects(journalTransaction({...args,state:empty,maxTotalFee:0n}),/TOTAL_TEST_BNB_FEE_LIMIT/);
+ assert.deepEqual(empty.transactions,{});
+ await assert.rejects(journalTransaction({...args,request:{...request,data:'0x'}}),/JOURNAL_TRANSACTION_MISMATCH/);
 });
