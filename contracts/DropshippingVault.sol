@@ -52,9 +52,9 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     struct User { address referrer; bool registered; bool active; bool vipKyc; uint32 activeDirect; uint256 capitalUsd; uint256 salesUsd; }
     mapping(address => User) public users;
     struct Position { address asset; uint256 principal; uint256 capitalUsd; uint256 unlockAt; uint16 penaltyBps; }
-    mapping(address => Position[]) private positions;
+    mapping(address => Position[]) internal positions;
     struct Tier { uint256 minUsd; uint16 baseDailyBps; uint16 maxDailyBps; uint32 requiredDirect; uint256 requiredSalesUsd; uint16[4] referrals; }
-    Tier[5] private tiers;
+    Tier[5] internal tiers;
     mapping(bytes32 => bool) public usedSettlement;
     mapping(bytes32 => bool) public usedRewardBatch;
     mapping(address => bool) public isPartner;

@@ -11,12 +11,12 @@ abstract contract ThreeLinePlan {
     uint256 public constant NETWORK_PLAN_VERSION = 2;
     mapping(address => uint256) public qualifiedDirects;
     mapping(address => mapping(address => uint256)) public branchVolumeUsd;
-    mapping(address => address[]) private networkBranches;
+    mapping(address => address[]) internal networkBranches;
     struct VolumeJob { address child; address ancestor; uint256 usd; }
     VolumeJob[] public volumeJobs;
     struct RewardGroup { address[] branches; uint256[] consumedUsd; uint8 stage; uint256 preparedUsd; uint256 cursor; }
-    mapping(address => RewardGroup[]) private rewardGroups;
-    mapping(address => mapping(uint256 => mapping(uint8 => mapping(uint256 => uint256)))) private reservedUsd;
+    mapping(address => RewardGroup[]) internal rewardGroups;
+    mapping(address => mapping(uint256 => mapping(uint8 => mapping(uint256 => uint256)))) internal reservedUsd;
     mapping(address => mapping(address => bool)) public groupedBranch;
     event NetworkVolumeQueued(uint256 indexed job,address indexed source,uint256 usd);
     event NetworkVolumeProgress(uint256 indexed job,address nextAncestor);
