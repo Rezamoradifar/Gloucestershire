@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {Contract,ContractFactory,FetchRequest,JsonRpcProvider,Wallet,ZeroAddress,getAddress} from 'ethers';
+import {Contract,ContractFactory,FetchRequest,JsonRpcProvider,ZeroAddress,getAddress,Transaction} from 'ethers';
+import {loadMigrationSigners} from './migration-signers.mjs';
 import {scanInventory,verifyCopy} from './migration-core.mjs';
 import {journalTransaction,writePrivateJson} from './migration-journal.mjs';
 
@@ -15,15 +16,11 @@ const log=x=>console.log(new Date().toISOString(),x);
 try {
  if(process.getuid?.()!==0)throw Error('ROOT_REQUIRED');
  if(process.env.TRADES_CHAIN_ID!=='97'||getAddress(process.env.TRADES_VAULT_ADDRESS||'')!==SOURCE)throw Error('SOURCE_CONFIGURATION_MISMATCH');
- const stat=fs.lstatSync(keyfile);
- if(!stat.isFile()||stat.uid!==0||(stat.mode&0o077)!==0)throw Error('KEY_FILE_MUST_BE_ROOT_ONLY_MODE_600');
- const secret=fs.readFileSync(keyfile,'utf8').trim();
- if(!/^(0x)?[0-9a-fA-F]{64}$/.test(secret))throw Error('INVALID_KEY_FILE');
  const rpc=process.env.TRADES_RPC_URL;if(!rpc)throw Error('RPC_REQUIRED');
  const transport=new FetchRequest(rpc);transport.timeout=20000;
  provider=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
- const wallet=new Wallet(secret.startsWith('0x')?secret:'0x'+secret,provider);
- if(wallet.address!==OWNER)throw Error('WRONG_OWNER_KEY');
+ const {deployer,ownerWallet}=loadMigrationSigners({provider,owner:OWNER,ownerFile:keyfile,deployerFile:process.env.MIGRATION_DEPLOYER_KEY_FILE||'/etc/globaldroptrade/migration-deployer.key'});
+ log('DEPLOYER='+deployer.address+' OWNER='+OWNER);
  const load=name=>JSON.parse(fs.readFileSync(new URL('../deployment-console/'+name+'.json',import.meta.url),'utf8'));
  const old=load('DropshippingVault'),artifact=load('TestnetMigratedRewardsVault');
  const source=new Contract(SOURCE,old.abi,provider);
@@ -39,7 +36,21 @@ try {
  const state=fs.existsSync(statefile)?JSON.parse(fs.readFileSync(statefile,'utf8')):{chainId:97,source:SOURCE,owner:OWNER,transactions:{}};
  if(state.chainId!==97||state.source!==SOURCE||state.owner!==OWNER)throw Error('STATE_SOURCE_MISMATCH');
  const save=()=>writePrivateJson(statefile,state);
- const send=(label,request)=>journalTransaction({provider,wallet,state,save,label,request,guard,log});
+ const send=(label,request)=>{
+  let wallet=label==='deploy'?deployer:ownerWallet;
+  if(state.transactions[label]){
+   const expected=Transaction.from(state.transactions[label].raw).from;
+   wallet=[deployer,ownerWallet].find(w=>w?.address===expected);
+   if(!wallet)throw Error('JOURNAL_SIGNER_KEY_REQUIRED');
+  }
+  if(!wallet){
+   writePrivateJson(path.join(folder,'owner-action.json'),{chainId:97,owner:OWNER,action:label,to:request.to,data:request.data,value:'0',report:label==='activate'?reportfile:null});
+   log('OWNER_ACTION_REQUIRED='+label+' FILE='+path.join(folder,'owner-action.json'));
+   throw Error('OWNER_SIGNATURE_REQUIRED');
+  }
+  if(label!=='deploy'&&wallet.address!==OWNER)throw Error('OWNER_SIGNATURE_REQUIRED');
+  return journalTransaction({provider,wallet,state,save,label,request,guard,log});
+ };
  const treasury=async()=>{
   for(const asset of [ZeroAddress,await source.usdt()]){
    const ledger=await source.ledgers(asset);
@@ -49,6 +60,7 @@ try {
  if(!state.transactions.deploy){
   await treasury();
   if(await source.pendingOwner()!==ZeroAddress)throw Error('PENDING_OWNER');
+  if(!await source.paused()&&!ownerWallet){phase='pause';await send('pause',await source.setPaused.populateTransaction(true));}
   // Complete a read-only log scan before pausing, so unsupported RPCs don't interrupt the site.
   phase='scan-before-pause';await scanInventory(provider,source,log);
   phase='pause';
@@ -65,7 +77,7 @@ try {
  phase='deploy';const receipt=await send('deploy',request);
  phase='verify';
  const result=await verifyCopy(provider,source,artifact,receipt,inventory,log);
- const report={chainId:97,source:SOURCE,owner:OWNER,hash:state.transactions.deploy.hash,inventory,...result,activated:false,legacyClaimsExtinguished:false,siteConnected:false};
+ const report={chainId:97,source:SOURCE,owner:OWNER,deployer:Transaction.from(state.transactions.deploy.raw).from,hash:state.transactions.deploy.hash,inventory,...result,activated:false,legacyClaimsExtinguished:false,siteConnected:false};
  writePrivateJson(reportfile,report);
  phase='activate';await guard();
  if(!await source.paused())throw Error('SOURCE_REACTIVATED');

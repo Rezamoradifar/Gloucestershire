@@ -18,14 +18,9 @@ install -d -m 700 /var/lib/globaldroptrade/migration-v1
 exec 9>/var/lib/globaldroptrade/migration-v1/setup.lock
 flock -n 9 || { echo 'Another setup is running'; exit 1; }
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund
-keyfile=/etc/globaldroptrade/migration-owner.key
-if [ ! -e "$keyfile" ]; then
- printf '%s\n' 'Paste ONLY the testnet owner private key at the hidden prompt. It is not sent to chat.'
- IFS= read -r -s -p 'Owner private key (hidden): ' migration_secret </dev/tty
- printf '\n'
- if [[ ! "$migration_secret" =~ ^(0x)?[0-9a-fA-F]{64}$ ]]; then unset migration_secret; echo 'Invalid key format'; exit 1; fi
- (set -o noclobber; printf '%s\n' "$migration_secret" > "$keyfile")
- unset migration_secret
+# Use a distinct existing test deployer. Never reinterpret a wrong owner key.
+if [ ! -f /etc/globaldroptrade/migration-deployer.key ] && [ ! -f /root/global-testnet-v071/.testnet-server/deployer.key ]; then
+ echo 'DEPLOYER_KEY_NOT_FOUND: put the existing deployer key in /etc/globaldroptrade/migration-deployer.key (root-only mode 600).'; exit 1
 fi
 # Node checks the existing file's owner, permissions and wallet address before signing.
 systemctl reset-failed globaldroptrade-migration.service 2>/dev/null || true

@@ -43,10 +43,10 @@ legacy liabilities remain independently callable after the copy.
 ## Automatic server signing (testnet only)
 
 Run `bash ubuntu-auto-migrate.sh` as root. It uses the existing Node 22 runtime
-and `/etc/globaldroptrade/trades.env`. Paste the owner's private key only at the
-hidden server terminal prompt, never in chat or a command argument. It is stored
-root-only at `/etc/globaldroptrade/migration-owner.key`. A different wallet is
-rejected before any transaction. The combined reserved transaction fee limit is
+and `/etc/globaldroptrade/trades.env`. Existing root-only key files are used as described below; no key is sent to chat
+or passed in a command argument. The optional owner key is stored at
+`/etc/globaldroptrade/migration-owner.key`. A different wallet cannot perform
+owner actions. The combined reserved transaction fee limit is
 0.1 test BNB; exceeding it stops execution rather than silently increasing it.
 
 The `globaldroptrade-migration` systemd job scans, pauses, scans again, deploys,
@@ -68,3 +68,20 @@ risk. No legacy claim is extinguished. Successful completion does not switch the
 website/API: retain the verified report for the subsequent configuration cutover.
 Remove the server key after migration if it is no longer needed, keeping the
 report and journal. Do not use this tool for a wallet holding real assets.
+
+## Separate deployer and owner
+
+The server now uses `/etc/globaldroptrade/migration-deployer.key`, falling back
+to the existing `/root/global-testnet-v071/.testnet-server/deployer.key`. It never
+treats a mismatched owner key as a deployer key. The source owner is preserved
+by the constructor regardless of the deployment signer. Only the actual owner
+can pause the source or activate the destination. The optional owner key remains
+`/etc/globaldroptrade/migration-owner.key`; it is used only when its address matches.
+No interactive key prompt is needed for existing files.
+
+If an owner action is required and no matching owner key is available, the script
+stops with `OWNER_SIGNATURE_REQUIRED`, recording the exact unsigned call in
+`/var/lib/globaldroptrade/migration-v1/owner-action.json`. It does not bypass access
+control. Resume the same journal after the owner signs the action or a matching
+owner key is installed. Before activation, a verified report is already saved.
+Existing transactions remain bound to their original signer when resuming.

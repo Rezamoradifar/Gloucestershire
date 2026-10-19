@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ganache from 'ganache';
 import {BrowserProvider,ContractFactory,Wallet,parseEther as E,ZeroAddress} from 'ethers';
+import {loadMigrationSigners} from '../scripts/migration-signers.mjs';
 import {scanInventory,verifyCopy} from '../scripts/migration-core.mjs';
 import {journalTransaction} from '../scripts/migration-journal.mjs';
 const art=n=>JSON.parse(fs.readFileSync(`artifacts/${n}.json`));
@@ -64,7 +65,7 @@ test('source withdrawal remains possible after copy: state copy is explicitly no
 test('server scan, signed deployment, lost response recovery and resume preserve one deployment',async()=>{
  const inventory=await scanInventory(p,v);
  assert.deepEqual(inventory.members,members);
- const wallet=new Wallet(rpc.getInitialAccounts()[a[0].toLowerCase()].secretKey,p);
+ const wallet=new Wallet(rpc.getInitialAccounts()[a[8].toLowerCase()].secretKey,p);
  const artifact=art('TestnetMigratedRewardsVault');
  const request=await new ContractFactory(artifact.abi,artifact.evm.bytecode.object).getDeployTransaction(v.target,inventory.members,inventory.settlements,inventory.batches);
  const state={transactions:{}};let saved=false,broadcasts=0;
@@ -78,8 +79,23 @@ test('server scan, signed deployment, lost response recovery and resume preserve
  assert.equal(again.hash,receipt.hash);assert.equal(broadcasts,1);
  const result=await verifyCopy(p,v,artifact,receipt,inventory);
  assert.equal(result.verified,true);assert.equal(result.target,receipt.contractAddress);
+ const migrated=new (v.constructor)(receipt.contractAddress,artifact.abi,s[8]);
+ assert.equal(await migrated.owner(),a[0],'deployer must not become owner');
+ await assert.rejects(migrated.setPaused.staticCall(false));
+ await tx(migrated.connect(s[0]).setPaused(false));
+ assert.equal(await migrated.paused(),false);
  const empty={transactions:{}};
  await assert.rejects(journalTransaction({...args,state:empty,maxTotalFee:0n}),/TOTAL_TEST_BNB_FEE_LIMIT/);
  assert.deepEqual(empty.transactions,{});
  await assert.rejects(journalTransaction({...args,request:{...request,data:'0x'}}),/JOURNAL_TRANSACTION_MISMATCH/);
+});
+
+test('signer selection keeps wrong owner keys separate and requires an explicit deployer',()=>{
+ const keys=rpc.getInitialAccounts(),ownerKey=keys[a[0].toLowerCase()].secretKey,deployerKey=keys[a[8].toLowerCase()].secretKey;
+ const options={provider:p,owner:a[0],ownerFile:'owner',deployerFile:'deployer'};
+ let result=loadMigrationSigners({...options,read:file=>file==='deployer'?deployerKey:file==='owner'?ownerKey:null});
+ assert.equal(result.deployer.address,a[8]);assert.equal(result.ownerWallet.address,a[0]);
+ result=loadMigrationSigners({...options,read:file=>file==='deployer'||file==='owner'?deployerKey:null});
+ assert.equal(result.ownerWallet,null);
+ assert.throws(()=>loadMigrationSigners({...options,read:file=>file==='owner'?ownerKey:null}),/DEPLOYER_KEY_NOT_FOUND/);
 });
