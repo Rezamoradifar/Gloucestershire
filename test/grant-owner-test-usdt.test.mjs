@@ -1,0 +1,51 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ganache from 'ganache';
+import {BrowserProvider,Wallet,ContractFactory,parseEther} from 'ethers';
+import {grantOwnerTestUsdt} from '../scripts/grant-owner-test-usdt.mjs';
+import {journalTransaction} from '../scripts/migration-journal.mjs';
+
+test('10m wallet grant preserves existing balances, resumes after mining, and never repeats',async()=>{
+ const rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97},wallet:{totalAccounts:8}});
+ const provider=new BrowserProvider(rpc,undefined,{cacheTimeout:-1});provider.pollingInterval=10;
+ const accounts=Object.entries(rpc.getInitialAccounts());
+ const wallet=new Wallet(accounts[0][1].secretKey,provider),recipient=new Wallet(accounts[1][1].secretKey).address;
+ const artifact=n=>JSON.parse(fs.readFileSync(`artifacts/${n}.json`));
+ const deploy=async(n,args)=>{const a=artifact(n),c=await new ContractFactory(a.abi,a.evm.bytecode.object,wallet).deploy(...args);await c.waitForDeployment();return c;};
+ try{
+  const token=await deploy('MockToken',[18]),bnb=await deploy('MockFeed',[60000000000n]),usd=await deploy('MockFeed',[100000000n]);
+  const vault=await deploy('DropshippingVault',[recipient,token.target,bnb.target,usd.target,86400,accounts.slice(0,7).map(([a])=>a),accounts[7][0]]);
+  await(await token.mint(recipient,parseEther('123'))).wait();
+  await(await token.mint(wallet.address,parseEther('7'))).wait();
+  const target={vault:vault.target,token:token.target,recipient,deployer:wallet.address};
+  const state={};let saved;
+  const options={provider,wallet,artifact:artifact('MockToken'),state,target,save:()=>{saved=structuredClone(state);},confirmations:1};
+  const nonce=await provider.getTransactionCount(wallet.address);
+  await assert.rejects(grantOwnerTestUsdt({...options,provider:{send:async()=> '0x38'}}),/TESTNET_ONLY/);
+  await assert.rejects(grantOwnerTestUsdt({...options,target:{...target,token:usd.target}}),/REVIEWED_TEST_TOKEN_REQUIRED/);
+  await assert.rejects(grantOwnerTestUsdt({...options,target:{...target,recipient:wallet.address}}),/ACTIVE_VAULT_TOKEN_MISMATCH/);
+  const otherToken=await deploy('MockToken',[6]);
+  await assert.rejects(grantOwnerTestUsdt({...options,target:{...target,token:otherToken.target}}),/REVIEWED_TEST_TOKEN_REQUIRED/);
+  assert.equal(await provider.getTransactionCount(wallet.address),nonce+1);
+  await assert.rejects(grantOwnerTestUsdt({...options,transact:async args=>{await journalTransaction(args);throw Error('SIMULATED_RESTART_AFTER_MINING');}}),/SIMULATED_RESTART/);
+  assert.equal(saved.completed,undefined);assert.equal(Object.keys(saved.transactions).length,1);
+  const resumedState=structuredClone(saved);
+  const resumed={...options,state:resumedState,save:()=>{saved=structuredClone(resumedState);}};
+  const result=await grantOwnerTestUsdt(resumed);
+  assert.equal(result.status,'TEST_USDT_GRANT_CONFIRMED');assert.equal(result.amountTestUsdt,'10000000');
+  assert.equal(await token.balanceOf(recipient),parseEther('10000123'));
+  assert.equal(await token.balanceOf(wallet.address),parseEther('7'));
+  assert.equal(await token.balanceOf(vault.target),0n);
+  assert.equal((await vault.accounts(recipient,token.target)).principal,0n);
+  assert.equal(await provider.getTransactionCount(wallet.address),nonce+2);
+  const repeated=await grantOwnerTestUsdt(resumed);
+  assert.equal(repeated.transaction,result.transaction);
+  assert.equal(await provider.getTransactionCount(wallet.address),nonce+2);
+  assert.equal(await token.balanceOf(recipient),parseEther('10000123'));
+  await assert.rejects(grantOwnerTestUsdt({...resumed,state:{...resumedState,identity:{...resumedState.identity,amount:'1'}}}),/GRANT_JOURNAL_TARGET_MISMATCH/);
+  const expensive=new Proxy(provider,{get:(obj,key)=>key==='getFeeData'?async()=>({gasPrice:parseEther('1')}):typeof obj[key]==='function'?obj[key].bind(obj):obj[key]});
+  await assert.rejects(grantOwnerTestUsdt({...options,state:{},provider:expensive,save:()=>{}}),/TOTAL_TEST_BNB_FEE_LIMIT/);
+  assert.equal(await provider.getTransactionCount(wallet.address),nonce+2);
+ }finally{provider.destroy();await rpc.disconnect();}
+});
