@@ -16,7 +16,7 @@ if not root.is_dir() or root.parent!=pathlib.Path('/var/www/globaldroptrade/rele
     raise SystemExit('Unexpected web root; nothing changed')
 dest=root/'deploy'
 if dest.is_symlink(): raise SystemExit('Unexpected deploy symlink; nothing changed')
-names=['migrate.html','migrate.js','TestnetMigratedRewardsVault.json','DropshippingVault.json','ethers.js','style.css']
+names=['wallet-provider.js','migration-loader.js','migrate.html','migrate.js','TestnetMigratedRewardsVault.json','DropshippingVault.json','ethers.js','style.css']
 src=pathlib.Path('deployment-console')
 for name in names:
     if not (src/name).is_file(): raise SystemExit('Missing file: '+name)

@@ -1,3 +1,4 @@
+import {selectWalletProvider} from './wallet-provider.js?v=3';
 import {BrowserProvider,Contract,ContractFactory,formatEther,getAddress} from './ethers.js';
 const SOURCE='0x4f65014A86Af841bF7a72F49E9AEB4432a72Db8F';
 const OWNER='0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632';
@@ -13,9 +14,19 @@ function controls(){const connected=!!source;for(const id of ['connect','pause',
 function action(id,fn){$(id).onclick=async()=>{if(busy)return;busy=true;controls();try{await fn();}catch(e){out(e.shortMessage||e.message);}finally{busy=false;controls();}};}
 $('source').textContent=SOURCE;$('accept').onchange=controls;
 action('connect',async()=>{
- if(!window.ethereum)throw Error('این صفحه را در مرورگر کیف پول باز کنید.');
- provider=new BrowserProvider(window.ethereum);await provider.send('eth_requestAccounts',[]);signer=await provider.getSigner();
- const [old,next]=await Promise.all(['DropshippingVault','TestnetMigratedRewardsVault'].map(async name=>{const r=await fetch(name+'.json');if(!r.ok)throw Error('Artifact missing');return r.json();}));artifact=next;source=new Contract(SOURCE,old.abi,signer);await guard();
+ source=undefined;request=undefined;
+ const injected=selectWalletProvider(window);
+ if(!injected)throw Error('کیف پول شناسایی نشد؛ لینک را داخل بخش DApp سیف‌پل باز کنید.');
+ out('در انتظار اجازه اتصال در سیف‌پل؛ پنجره کیف پول را تأیید کنید.');
+ await injected.request({method:'eth_requestAccounts'});
+ if(Number(await injected.request({method:'eth_chainId'}))!==97){
+  out('تغییر شبکه به BNB Testnet را در کیف پول تأیید کنید.');
+  try{await injected.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x61'}]});}
+  catch{throw Error('شبکه کیف پول را روی BNB Testnet (97) بگذارید و دوباره اتصال را بزنید.');}
+ }
+ provider=new BrowserProvider(injected);signer=await provider.getSigner();
+ out('در حال بررسی مالک و بارگیری اطلاعات قرارداد…');
+ const [old,next]=await Promise.all(['DropshippingVault','TestnetMigratedRewardsVault'].map(async name=>{const r=await fetch(name+'.json');if(!r.ok)throw Error('Artifact missing');return r.json();}));artifact=next;source=new Contract(SOURCE,old.abi,signer);try{await guard();}catch(e){source=undefined;throw e;}
  try{const saved=JSON.parse(localStorage.getItem(key)||'{}');inventory=saved.inventory;report=saved.report;}catch{}
  $('wallet').textContent=OWNER;out('مالک و شبکه تأیید شدند.'+(report?.hash?' تراکنش قبلی پیدا شد؛ تطبیق حساب‌ها را بزنید.':''));
 });
@@ -87,3 +98,5 @@ action('activate',async()=>{
 });
 action('download',async()=>{const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='global-testnet-migration.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 controls();
+
+out('صفحه آماده است؛ اتصال کیف پول مالک را بزنید.');
