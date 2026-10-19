@@ -37,7 +37,7 @@ test('public plan scenario credits 35, withdraws 9.5 net, reinvests 5 and cannot
  for(const secret of [wallet.privateKey,...privateState.children,...privateState.steps.map(s=>s.raw)]){
   assert.ok(!html.includes(secret));assert.ok(!publicData.includes(secret));
  }
- assert.ok(html.includes('testnet.bscscan.com/tx/'));assert.ok(html.includes('تست تکمیل شد'));
+ assert.ok(html.includes('testnet.bscscan.com/tx/'));assert.ok(html.includes('Test completed'));
 });
 test('resume after broadcast reuses signed transaction and consumes exactly one stage',async()=>{
  const a=args('resume');

@@ -4,7 +4,7 @@ const address=(n:number)=>'0x'+n.toString(16).padStart(40,'0');
 describe('Network wallet requests',()=>{
  it('rejects zero, invalid, duplicate and over-size branch batches',()=>{
   for(const s of ['',address(0),'oops',`${address(1)} ${address(1)}`,Array.from({length:65},(_,i)=>address(i+1)).join(' ')])expect(()=>parseBranches(s)).toThrow();
-  expect(parseBranches(`${address(1)}،\n${address(2)}`)).toHaveLength(2);
+  expect(parseBranches(`${address(1)}\u060c\n${address(2)}`)).toHaveLength(2);
  });
  it('binds both reservation and claim requests to the reviewed group and stage',()=>{
   expect(networkCall({kind:'prepare',group:4n,stage:7})).toEqual({method:'prepareNetworkRewardAtStage',args:[4n,7,64]});

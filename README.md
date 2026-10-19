@@ -4,7 +4,7 @@ The seller receives 100% of the funded gross settlement. Eligible upline commiss
 
 ## Current release: v0.7.0 — 2026-10-11
 
-Updated seller rates, capped aggregation across any number of lines, new reward schedule, image upgrades, FAQ and a read-only settlement API. [Release and installation guide](UPGRADE-2026-10-11.md) · [Current Persian network rules](NETWORK-PLAN.fa.md). The older notes below describe release history and may be superseded by these current rules. No production deployment is implied.
+Updated seller rates, capped aggregation across any number of lines, new reward schedule, image upgrades, FAQ and a read-only settlement API. [Release and installation guide](UPGRADE-2026-10-11.md) · [Network rules](NETWORK-PLAN.en.md). The older notes below describe release history and may be superseded by these current rules. No production deployment is implied.
 
 ## v0.5.3 — reinvestment increases the profit withdrawal cap
 
@@ -18,15 +18,15 @@ Initial profit withdrawal fee is 5%. Owner configuration permits 0–10% with th
 
 Removed `transferProfit` and `InternalTransfer`. Legacy calldata reverts for both BNB and USDT. Withdrawals to the caller and reinvestment remain available. See `no-transfer-test-results.txt`. Existing deployments are immutable and require a new deployment to adopt this change.
 
-> **نسخه ۰٫۵٫۰ — تغییر نقش شرکا:** هفت شریک فقط حق رأی برای تنظیمات دارند. مسیر برداشت مازاد حذف شد. دو رأی و دو روز تأخیر لازم است. قرارداد تستی قبلی نسخه ۰٫۴٫۰ است؛ قابل ارتقا نیست.
+> **v0.5.0 — partner role change:** Seven partners vote on configuration only. Surplus withdrawals were removed. Changes require two votes and a two-day delay. The earlier v0.4.0 testnet contract is immutable.
 
 # GLOBAL — BNB Testnet contract
 
-قرارداد، تست‌ها و نصب اوبونتو برای پروژه GLOBAL. [راهنمای کامل فارسی](README.fa.md)
+Contracts, tests and Ubuntu setup for GLOBAL. [Detailed release notes and setup](README.en.md)
 
 ## Ubuntu
 
-پس از clone مخزن و ورود به پوشه پروژه:
+After cloning the repository and entering the project directory:
 
 ```bash
 sudo apt-get update
@@ -34,29 +34,29 @@ sudo apt-get install -y curl ca-certificates xz-utils
 bash ubuntu-setup.sh
 ```
 
-آدرس `TEST-ONLY DEPLOYER` را فقط با tBNB آزمایشی تأمین کنید و سپس:
+Fund the `TEST-ONLY DEPLOYER` address with testnet tBNB only, then run:
 
 ```bash
 bash ubuntu-testnet.sh deploy
 ```
 
-این مسیر توکن و منابع قیمت ساختگی برای BNB Testnet ایجاد می‌کند و برای پول واقعی نیست. مالک، هفت شریک و مقصد عملیاتی در `config.example.json` ثبت شده‌اند. کیف پول پرداخت‌کننده فقط روی سرور ساخته می‌شود. فایل‌های کلید، تنظیمات محرمانه، journal و runtime با `.gitignore` از Git کنار گذاشته شده‌اند. فقط گزارش `deployment-public.json` را به اشتراک بگذارید.
+This route creates a mock token and mock price feeds on BNB Testnet; it is unsuitable for real funds. The owner, seven partners and operations destination are in `config.example.json`. The payer wallet is created only on the server. Keys, private settings, journals and runtimes are excluded by `.gitignore`. Share only `deployment-public.json`.
 
 ## Validation
 
 See governance-test-results.txt for the v0.5.0 local test run. Server and health-check integration tests use local EVM simulations. Public-chain deployment has not been performed by this package's author. No independent audit has been completed.
 
-## نصب مستقیم از گیت‌هاب
+## Install directly from GitHub
 
 ```bash
 git clone https://github.com/Rezamoradifar/Gloucestershire.git ~/global-bnb
 cd ~/global-bnb
 bash ubuntu-setup.sh
-# پس از تأمین tBNB کیف پول تست:
+# After funding the test wallet with tBNB:
 bash ubuntu-testnet.sh deploy
 ```
 
-به‌روزرسانی نسخه، پس از بررسی تغییرات:
+After reviewing the changes, update with:
 
 ```bash
 cd ~/global-bnb
@@ -64,11 +64,11 @@ git pull --ff-only
 bash ubuntu-setup.sh
 ```
 
-اجرای مجدد setup کلید موجود کیف پول تست را عوض نمی‌کند. با اجرای deploy رسیدهای قبلی بررسی می‌شوند؛ با تغییر تنظیمات سازنده، ادامه استقرار متوقف می‌شود.
+Rerunning setup preserves the test-wallet key. Deployment checks previous receipts and stops if constructor settings changed.
 
-`deployment-console/` صفحه استقرار مرورگری SafePal است؛ روی HTTPS میزبانی کنید. این صفحه با کیف پول مالک چهار تراکنش تستی می‌سازد و جایگزین روش سرور است. در روش سرور، کیف پول تست مستقل کارمزد را می‌پردازد. قرارداد فرانت تجاری و اجرای API دراپ‌شیپینگ را شامل نمی‌شود.
+`deployment-console/` is a SafePal browser deployment page; serve it over HTTPS. It creates four owner-signed test transactions as an alternative to the server flow, which uses an independent test payer. The contract does not include a commerce frontend or retailer API execution.
 
-## تست عملی قرارداد مستقرشده
+## Live testing of the deployed contract
 
 ```bash
 cd ~/global-bnb
@@ -76,42 +76,42 @@ git pull --ff-only
 bash ubuntu-health.sh
 ```
 
-این فرمان فقط به قرارداد `0x8C77C442F6CB8C2462a12bB395186be944259504` روی شبکه 97 وصل می‌شود. کلید مستقل تست روی همان سرور استفاده می‌شود. حداقل موجودی لازم: ۰٫۰۳ tBNB (۰٫۰۲ واریز آزمایشی و حاشیه کارمزد). ۱۰۰ توکن تست ساخته و واریز می‌شود؛ ۰٫۰۲ BNB آزمایشی هم واریز می‌شود. مقصدها واقعیِ همین قرارداد روی شبکه تست هستند. همه مبالغ آزمایشی‌اند.
+This command targets only `0x8C77C442F6CB8C2462a12bB395186be944259504` on chain 97, using the separate server test key. Required balance: 0.03 tBNB, including a 0.02 test deposit and fee margin. It mints and deposits 100 test tokens and deposits 0.02 test BNB. Destinations are actual addresses of that testnet contract. All amounts are for testing.
 
-اسکریپت پیش از تعامل، ورودی تراکنش‌های استقرار را با سورس کامپایل‌شده و آدرس‌های مالک/شرکا/عملیات تطبیق می‌دهد. منابع قیمت ساختگی در صورت نیاز تازه می‌شوند. تقسیم ۸۰/۱۰/۱۰، ثبت اصل، رد حداقل نامعتبر، قفل اصل و رد دسترسی‌های غیرمجاز بررسی می‌شوند. بررسی درخواست‌های مردود با شبیه‌سازی `eth_call` است و فقط خطای مشخص قرارداد به‌عنوان موفقیت پذیرفته می‌شود. امضای مالک، تسویه سود واقعی، پورسانت VIP و برداشت اصل پس از ۹۰ روز در این تست زنده انجام نمی‌شوند.
+Before interaction, the script compares creation input against compiled source and the intended owner/partner/operations addresses. It refreshes mock feeds if needed. Checks cover 80/10/10 splits, principal accounting, invalid minimums, principal locks and unauthorized calls. Rejection checks use eth_call and accept only the expected contract error. Owner signing, real-profit settlement, VIP commission and principal withdrawal after 90 days are outside this live test.
 
-گزارش قابل ارسال:
+Shareable report:
 
 ```bash
 cat .testnet-server/health-public.json
 ```
 
-اجرای دوباره پس از موفقیت فقط نتیجه قبلی را نشان می‌دهد و واریز جدید نمی‌کند. اگر اجرا نیمه‌تمام یا ناموفق شد، فایل `health-run.json` را حذف نکنید؛ گزارش خطا را برای بررسی بفرستید. قطع اجرا ممکن است بعد از ارسال تراکنش رخ دهد. گزارش «completed» فقط پایان این مجموعه محدود تست است، نه تأیید امنیت کامل یا تضمین نقدینگی.
+After success, rerunning returns the saved result without new deposits. If interrupted or failed, preserve `health-run.json` and report the error; interruption can occur after broadcast. A completed report marks only this limited test suite, not full security or guaranteed liquidity.
 
-## استقرار شبکه اصلی — هزینه واقعی BNB
+## Mainnet deployment — real BNB fees
 
-نسخه شبکه اصلی از `config.mainnet.json` استفاده می‌کند: USDT بایننس‌پگ با ۱۸ رقم اعشار، دو منبع قیمت Chainlink (BNB/USD و USDT/USD)، حداکثر عمر قیمت ۳۶۰۰ ثانیه و همان مالک و شرکای اعلام‌شده. مرجع آدرس‌ها: https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json و https://explorer.bnbchain.org/asset/USDT-6D8 .
+The mainnet configuration uses `config.mainnet.json`: 18-decimal Binance-Peg USDT, Chainlink BNB/USD and USDT/USD feeds, a 3,600-second price-age limit and the configured owner/partners. Address references: https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json and https://explorer.bnbchain.org/asset/USDT-6D8 .
 
 ```bash
 git pull --ff-only
 bash ubuntu-mainnet.sh prepare
 ```
 
-این دستور کیف پول مستقل شبکه اصلی را در `.mainnet-server` با کلید دارای مجوز 600 می‌سازد، شبکه و توکن و منابع قیمت را بررسی می‌کند، تراکنش بدون امضا و برآورد گس را تهیه می‌کند. فایل `deployment-preview.json` مشخصات قابل بررسی را دارد. هیچ پول یا تراکنشی در مرحله prepare ارسال نمی‌شود. در صورت خطای RPC یا قیمت کهنه، کار متوقف می‌شود.
+Prepare creates a separate wallet under `.mainnet-server` with a mode-600 key, checks the network/token/feeds and produces an unsigned transaction and gas estimate. Review `deployment-preview.json`. No funds or transactions are sent during prepare. RPC or stale-price failures stop the process.
 
-پس از بررسی آدرس `MAINNET DEPLOYER` و تأمین همان آدرس با BNB واقعی برای کارمزد:
+After reviewing the `MAINNET DEPLOYER` address and funding that exact address with real BNB for gas:
 
 ```bash
 bash ubuntu-mainnet.sh deploy
 ```
 
-این دستور فقط یک قرارداد GLOBAL روی شبکه 56 مستقر می‌کند. USDT یا منبع قیمت ساختگی نمی‌سازد. مبلغ انتقالی تراکنش صفر است؛ تنها گس واقعی پرداخت می‌شود. سقف هزینه گس امضاشده ۰٫۰۲ BNB است؛ هزینه برآوردشده می‌تواند بسیار کمتر باشد. کلید مالک لازم نیست؛ مالک نهایی همان آدرس تنظیم‌شده است. تراکنش امضاشده قبل از ارسال برای ادامه امن ذخیره می‌شود. با قطع ارتباط، فایل‌ها را حذف نکنید؛ همان فرمان را دوباره اجرا کنید. نتیجه نهایی در `.mainnet-server/deployment-public.json` است. فقط این گزارش را ارسال کنید، نه پوشه یا کلید خصوصی را.
+Deploy publishes one GLOBAL contract on chain 56, without mock tokens or feeds. Transaction value is zero; only actual gas is paid. The signed maximum gas cost is capped at 0.02 BNB; the estimate may be much lower. No owner key is needed; ownership is assigned to the configured address. The signed transaction is saved before broadcast for safe resumption. After interruption, preserve files and repeat the same command. Share only `.mainnet-server/deployment-public.json`, never the directory or private key.
 
-محدودیت: قرارداد ممیزی مستقل نشده است؛ تست زنده چرخه سود/برداشت و VIP کامل نیست. کل واریزها خارج می‌شود ولی کل اصل بدهی باقی می‌ماند و مالک به همه نقدینگی دسترسی دارد. قرارداد هنگام استقرار متوقف نیست؛ استقرار شبکه اصلی به معنای تأیید امنیت، سودآوری یا آماده بودن فرانت نیست.
+Limitations: no independent audit; complete live profit/withdrawal and VIP testing remains outstanding. All deposits leave the vault while full principal claims remain, and the owner can access all cash. Deployment starts unpaused. Mainnet deployment does not certify security, profitability or frontend readiness.
 
-تست خودکار prepare شامل شبکه اشتباه، آدرس نامعتبر، قیمت کهنه و سقف گس است. تلاش بررسی زنده از محیط توسعه با timeout مواجه شد؛ بررسی‌های زنده باید هنگام اجرای prepare روی سرور موفق شوند.
+Automated prepare tests cover wrong networks, invalid addresses, stale prices and the gas ceiling. The recorded development-environment live check timed out; server-side prepare must pass live verification.
 
-## اجرای نسخه جدید
+## Run the updated release
 
 ```bash
 cd ~/global-bnb
@@ -119,12 +119,12 @@ git pull --ff-only
 bash ubuntu-setup.sh
 ```
 
-این دستور کامپایل و تست را انجام می‌دهد؛ دیپلوی نمی‌کند. تا زمان استقرار تازه از صفحه وب استقرار نسخه ۰٫۴٫۰ یا گزارش وریفای قرارداد قبلی برای نسخه جدید استفاده نکنید. ابزار تست زنده موجود به قرارداد قدیمی پین شده و با artifact جدید عمداً بررسی تطابق را رد می‌کند؛ این اسکریپت باید هنگام تعیین آدرس تست جدید به‌روز شود. اگر قبلاً تراکنش اصلی امضا کرده‌اید، journal را حذف نکنید و برای بررسی توقف کنید.
+This compiles and tests without deploying. Do not use the v0.4.0 deployment page or old verification report for a new version. Historical live-test tooling is pinned to its old contract and intentionally rejects changed artifacts; update its pins only after identifying the intended new test deployment. If a mainnet transaction was already signed, preserve the journal and stop for review.
 
 ## v0.6.0 — Three-line ranks and funded sequential rewards
-See `NETWORK-PLAN.fa.md` for the complete rules. Deposits, consumed-profit reinvestments and reporter-attested sales create cumulative USD branch volume. Rank targets use the three largest independent branches (70/20/10) and 4/6/8/10/12 directs with current principal >= $100. Daily targets do not accrue automatic yield.
+See `NETWORK-PLAN.en.md` for the complete rules. Deposits, consumed-profit reinvestments and reporter-attested sales create cumulative USD branch volume. Rank targets use the three largest independent branches (70/20/10) and 4/6/8/10/12 directs with current principal >= $100. Daily targets do not accrue automatic yield.
 Users explicitly create permanent, disjoint triplets. Each triplet has fourteen sequential rewards and independent consumed volume; excess carries forward and cannot be reused in another group for that user. Reward claims credit USDT profit from `fundRewards`, using the existing oracle, withdrawal fee, per-asset cap and cooldown. BNB deposits do not create USDT withdrawal capacity. Stage 14 terminates the group. Rank historical volume is independent of reward consumption.
 Volume propagates eight ancestors automatically; operators or any caller must finish deeper jobs through `processNetworkVolume(job, steps)` (1–64 steps). Monitor queued jobs before displaying qualification as complete. Sales are reporter assertions, and cumulative business volume is not cash or profit. Existing owner access to all cash remains. No mainnet deployment or independent audit is claimed.
 
 ## Health review
-See `HEALTH-REVIEW.fa.md` and `health-test-results.txt` for the expanded local review and remaining trust/liquidity risks. `npm test` now compiles first; a regression gate verifies deployment-console bytecode and verification-source consistency. Use `npm ci --include=dev --ignore-scripts` for tests, or `npm ci --omit=dev --ignore-scripts` in a separate execution environment using the committed artifacts. Ganache remains test-only and has known bundled dependency advisories; never expose it publicly or use real keys/funds. The sanitized lock excludes Ganache's extraneous entries that otherwise break clean Linux installation with macOS-only fsevents. Solidity source and compiler version were not changed by this review.
+See `HEALTH-REVIEW.en.md` and `health-test-results.txt` for the expanded local review and remaining trust/liquidity risks. `npm test` now compiles first; a regression gate verifies deployment-console bytecode and verification-source consistency. Use `npm ci --include=dev --ignore-scripts` for tests, or `npm ci --omit=dev --ignore-scripts` in a separate execution environment using the committed artifacts. Ganache remains test-only and has known bundled dependency advisories; never expose it publicly or use real keys/funds. The sanitized lock excludes Ganache's extraneous entries that otherwise break clean Linux installation with macOS-only fsevents. Solidity source and compiler version were not changed by this review.

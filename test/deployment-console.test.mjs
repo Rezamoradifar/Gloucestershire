@@ -24,7 +24,7 @@ test('browser console guards signing and verifies four current-version deploymen
   const signer=await provider.getSigner(),owner=await signer.getAddress();
   const c={...config,initialOwner:owner};
   await guard(rpc,owner);
-  await assert.rejects(guard(rpc,config.initialOwner),/مالک/);
+  await assert.rejects(guard(rpc,config.initialOwner),/owner/);
   await assert.rejects(guard({request:async()=> '0x38'},owner),/97/);
   const done=[];
   for(let i=0;i<4;i++){
@@ -35,7 +35,7 @@ test('browser console guards signing and verifies four current-version deploymen
   }
   assert.equal(new Set(done.map(r=>r.address)).size,4);
   assert.ok(done.every(r=>r.blockNumber>0&&BigInt(r.gasUsed)>0n));
-  await assert.rejects(verify(3,done[3].hash,provider,{...c,dropshippingWallet:owner},done,artifacts),/مطابقت/);
-  await assert.rejects(verify(1,done[0].hash,provider,c,done,artifacts),/مطابقت/);
+  await assert.rejects(verify(3,done[3].hash,provider,{...c,dropshippingWallet:owner},done,artifacts),/match/);
+  await assert.rejects(verify(1,done[0].hash,provider,c,done,artifacts),/match/);
  }finally{await provider.destroy();await rpc.disconnect();}
 });

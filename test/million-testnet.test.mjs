@@ -47,7 +47,7 @@ test('exact million is deposited across 20 unique accounts, routes correctly and
  assert.equal(fs.statSync(path.join(a.dir,'million-private.json')).mode&0o777,0o600);
  const publicText=fs.readFileSync(path.join(a.dir,'million-public.json'),'utf8')+millionHtml(report);
  for(const secret of [wallet.privateKey,...state.keys,...state.steps.map(x=>x.raw)])assert.ok(!publicText.includes(secret));
- assert.ok(millionHtml(report).includes('۲۰ حساب'));assert.ok(millionHtml(report).includes(report.accounts[19].address));
+ assert.ok(millionHtml(report).includes('20 accounts'));assert.ok(millionHtml(report).includes(report.accounts[19].address));
 });
 test('interrupted seventh deposit resumes to exactly one million using the same wallets and hash',async()=>{
  const a=args('resume');

@@ -36,7 +36,7 @@ export async function runMillion({provider,wallet,config,deployment,artifacts,di
  }
  const wallets=state.keys.map(k=>new Wallet(k,provider));
  check(new Set(wallets.map(w=>w.address)).size===COUNT&&!wallets.some(w=>w.address===root.address),'Test accounts must be unique');
- const report={title:'گزارش یک میلیون توکن آزمایشی',environment:'BNB TESTNET ONLY — 1,000,000 TEST USDT; no real-dollar deposits or real sales',chainId:97,contract:v.target,tester:root.address,
+ const report={title:'One million test tokens report',environment:'BNB TESTNET ONLY — 1,000,000 TEST USDT; no real-dollar deposits or real sales',chainId:97,contract:v.target,tester:root.address,
   startedAt:state.startedAt,status:'running',accountCount:COUNT,perAccountTestUsdt:'50000',totalDepositedTestUsdt:'0',accounts:[],transactions:[],checks:[],
   notTested:['Real capital inflow or commerce','Seller commission settlement and reward-stage claims','Withdrawals, VIP approval, and mobile-wallet connection','Independent financial or security audit']};
  const record=()=>{report.transactions=state.steps.map(({name,hash,blockNumber})=>({name,hash,blockNumber:blockNumber??null,url:`https://testnet.bscscan.com/tx/${hash}`}));save(publicFile,report);};
@@ -79,8 +79,8 @@ export async function runMillion({provider,wallet,config,deployment,artifacts,di
 }
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function millionHtml(r){
- const table=`<section><h2>۲۰ حساب · هر حساب ۵۰٬۰۰۰ توکن تست</h2><p>مجموع تأییدشده: ${esc(r.totalDepositedTestUsdt)} TEST USDT</p><p>مبالغ کاملاً آزمایشی‌اند؛ ثبت اصل سرمایه به معنی موجودی نقد داخل خزانه نیست.</p><ol class="en">${r.accounts.map(a=>`<li>Account ${a.index} · 50,000 TEST USDT<br><a href="https://testnet.bscscan.com/address/${esc(a.address)}">${esc(a.address)}</a><br><a href="https://testnet.bscscan.com/tx/${esc(a.transaction)}">Deposit transaction</a></li>`).join('')}</ol></section>`;
- return reportHtml(r).replace('<h1>گزارش تست عملی پلن</h1>','<h1>یک میلیون توکن آزمایشی در ۲۰ حساب</h1>').replace('<section><h2>محاسبات تأییدشده</h2>',table+'<section><h2>محاسبات تأییدشده</h2>');
+ const table=`<section><h2>20 accounts · 50,000 test tokens each</h2><p>Verified total: ${esc(r.totalDepositedTestUsdt)} TEST USDT</p><p>All amounts are for testing. Recorded principal does not imply cash held in the treasury.</p><ol class="en">${r.accounts.map(a=>`<li>Account ${a.index} · 50,000 TEST USDT<br><a href="https://testnet.bscscan.com/address/${esc(a.address)}">${esc(a.address)}</a><br><a href="https://testnet.bscscan.com/tx/${esc(a.transaction)}">Deposit transaction</a></li>`).join('')}</ol></section>`;
+ return reportHtml(r).replace('<h1>Live plan test report</h1>','<h1>One million test tokens across 20 accounts</h1>').replace('<section><h2>Verified calculations</h2>',table+'<section><h2>Verified calculations</h2>');
 }
 async function main(){
  const dir=path.resolve(process.argv[2]||'/root/global-testnet-v071/.testnet-server'),key=path.join(dir,'deployer.key');

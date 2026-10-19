@@ -11,7 +11,7 @@ export type NetworkGroup={id:bigint;stage:number;prepared:bigint;cursor:bigint;b
 export type NetworkPage={deferredRewards?:boolean;rewardBudget:bigint;treasuryCash:bigint;tokenDecimals:number;salesModel:bigint;block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
 
 export function parseBranches(value:string):string[]{
- const branches=value.trim().split(/[\s,،;]+/).filter(Boolean);
+ const branches=value.trim().split(/[\s,\u060c;]+/).filter(Boolean);
  if(!branches.length||branches.length>64)throw Error('Enter between 1 and 64 direct branch addresses per transaction. More branches can be added later.');
  if(branches.some(b=>!isAddress(b)||b===ZeroAddress))throw Error('Every branch must be a valid nonzero wallet address.');
  const normalized=branches.map(getAddress);
