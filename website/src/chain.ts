@@ -39,7 +39,7 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
  if(action.kind==='profit'&&await vault.profitFeeBps()!==action.expectedFee)throw Error('The fee changed. Refresh and review the transaction again.');
  if(['deposit','reinvest'].includes(action.kind)){
   if(await vault.lockDuration()!==action.expectedLock||await vault.principalPenaltyBps()!==action.expectedPenalty)throw Error('Lock or penalty terms changed. Review the updated terms.');
-  if(await vault.quoteUsd(a,amount)<await vault.minDepositUsd())throw Error('The amount is below the minimum deposit value in USD.');
+  if(action.kind==='deposit' && await vault.quoteUsd(a,amount)<await vault.minDepositUsd())throw Error('The amount is below the minimum deposit value in USD.');
  }
  if(['profit','principal','ownerWithdraw'].includes(action.kind)&&await vault.assetBalance(a)<amount)throw Error('Insufficient liquid treasury balance. The owner must restore funds before this withdrawal can succeed.');
  const funded=['deposit','reserve','rewards','settle','returnCapital'].includes(action.kind);
