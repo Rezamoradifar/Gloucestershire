@@ -1,0 +1,4 @@
+:root[data-theme='dark']{color-scheme:dark;--ink:#e8edf4;--muted:#acb8c8;--line:#344357;background:#0c1420;color:#e8edf4}
+:root[data-theme='dark'] body,:root[data-theme='dark'] .shell{background:#0c1420;color:#e8edf4}
+:root[data-theme='dark'] .topbar,:root[data-theme='dark'] .panel,:root[data-theme='dark'] .stat:not(.primary){background:#172536;color:#e8edf4;border-color:#344357}
+:root[data-theme='dark'] input{background:#172536;color:#e8edf4;border-color:#526177}
