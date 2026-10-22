@@ -58,3 +58,21 @@
 :root[data-theme='light'] .global-theme-toggle{background:#ffffffeb;color:#244560;border-color:#bed0dc;box-shadow:0 8px 24px #284b651f;backdrop-filter:blur(16px)}
 @supports not (backdrop-filter:blur(1px)){:root[data-theme='light'] .gdt-header,:root[data-theme='light'] .topbar,:root[data-theme='light'] .panel,:root[data-theme='light'] .stat:not(.primary){background:#f8fbff}}
 @media(prefers-reduced-transparency:reduce){:root[data-theme='light'] .gdt-header,:root[data-theme='light'] .topbar,:root[data-theme='light'] .panel,:root[data-theme='light'] .stat:not(.primary){background:#f8fbff;backdrop-filter:none}}
+
+/* Mobile menu contrast and premium daylight glass layer */
+:root[data-theme='light'] .gdt-links.open{background:#f7fbfff5!important;color:#1b344b!important;border:1px solid #ffffffd9;box-shadow:0 24px 55px #17395332;backdrop-filter:blur(24px) saturate(155%);-webkit-backdrop-filter:blur(24px) saturate(155%)}
+:root[data-theme='light'] .gdt-links.open a{color:#183249!important;font-weight:600}
+:root[data-theme='light'] .gdt-links.open a:hover,:root[data-theme='light'] .gdt-links.open a:focus-visible{color:#93671f!important}
+:root[data-theme='light'] .gdt-menu-button{color:#182c40}
+:root[data-theme='light'] .gdt-hero{background:#eaf3fb}
+:root[data-theme='light'] .gdt-hero-image{opacity:.28;filter:saturate(.6) brightness(1.3)}
+:root[data-theme='light'] .gdt-hero-shade{background:linear-gradient(90deg,#f7fbfff0,#eaf5fbd6 55%,#edf5fa77)}
+:root[data-theme='light'] .gdt-hero-content{position:relative;z-index:1}
+:root[data-theme='light'] .gdt-hero-content h1{color:#122c44;text-shadow:0 2px 20px #ffffff9c}
+:root[data-theme='light'] .gdt-hero-content>p{color:#40576b}
+:root[data-theme='light'] .gdt-preview{color:#3f566b}
+:root[data-theme='light'] .gdt-hero-label{color:#344b62}
+:root[data-theme='light'] .gdt-stats,:root[data-theme='light'] .gdt-challenges article,:root[data-theme='light'] .gdt-demo-panel{border-radius:20px;box-shadow:0 14px 40px #294f7214}
+:root[data-theme='light'] .gdt-stats{background:#ffffffa8;border:1px solid #fff;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:28px}
+:root[data-theme='light'] .gdt-page .gdt-button{background:linear-gradient(125deg,#b58b40,#e1bf77);border-color:#c29c52;color:#172c40!important;border-radius:12px;box-shadow:0 8px 22px #ad83352e}
+@media(max-width:768px){:root[data-theme='light'] .gdt-links.open{position:absolute;top:100%;left:12px;right:12px;z-index:50;border-radius:20px;padding:20px 24px}:root[data-theme='light'] .gdt-links.open a{display:block;padding:13px 4px;border-bottom:1px solid #d8e3ed}:root[data-theme='light'] .gdt-links.open a:last-child{border-bottom:0}}
