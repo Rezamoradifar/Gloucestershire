@@ -26,12 +26,20 @@ contract DeferredRewardsVault is DropshippingVault {
     /// @notice Reserve profit now; payment may occur at any time within 72 hours, or later if funding is late.
     function withdrawProfit(address asset,uint256 amount) external override nonReentrant {
         _takeProfit(msg.sender,asset,amount,true);
-        withdrawalQueue.record(msg.sender,asset,amount,amount*profitFeeBps/BPS);
+        withdrawalQueue.record(msg.sender,asset,amount,amount*profitFeeBps/BPS,0,false);
     }
-    function settleQueuedProfit(address user,address asset,uint256 gross,uint256 fee,bool cancel) external nonReentrant {
+    /// @notice Capital remains invested until the approved principal request is paid.
+    function withdrawPrincipal(uint256 id,uint256 amount) external override nonReentrant {
+        (address asset,uint256 fee)=_principalTerms(msg.sender,id,amount);
+        withdrawalQueue.record(msg.sender,asset,amount,fee,id,true);
+    }
+    function settleQueuedWithdrawal(address user,address asset,uint256 gross,uint256 fee,uint256 id,bool principal,bool cancel) external nonReentrant {
         if(msg.sender!=address(withdrawalQueue))revert Unauthorized();
-        if(cancel){_credit(user,asset,gross,keccak256(abi.encode("CANCEL",user,asset,accrualNonce++)));return;}
-        _requireLiquidity(asset,gross);
-        _pay(asset,WITHDRAWAL_FEE_WALLET,fee);_pay(asset,user,gross-fee);emit Withdrawal(user,asset,gross,fee,false);
+        if(principal){if(!cancel)_withdrawPrincipal(user,id,gross);}
+        else if(cancel)_credit(user,asset,gross,keccak256(abi.encode("CANCEL",user,asset,accrualNonce++)));
+        else{
+            _requireLiquidity(asset,gross);
+            _pay(asset,WITHDRAWAL_FEE_WALLET,fee);_pay(asset,user,gross-fee);emit Withdrawal(user,asset,gross,fee,false);
+        }
     }
 }

@@ -55,3 +55,11 @@ test('HTTP feed deadline returns JSON and stays healthy after a stalled RPC',asy
   stalled=false;assert.equal((await fetch(url+'/api/trades')).status,200);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('public browser configuration exposes only the active chain and address, never RPC credentials',async()=>{
+ const feed=createTradeFeed(config(),fixture()),server=createApiServer(feed);
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{const response=await fetch(`http://127.0.0.1:${server.address().port}/api/config`),data=await response.json();
+  assert.equal(response.status,200);assert.deepEqual(data,{version:1,chainId:97,vaultAddress:address});assert.ok(!JSON.stringify(data).includes('private-token'));
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});

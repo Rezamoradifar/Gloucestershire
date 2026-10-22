@@ -1,6 +1,6 @@
 import {BrowserProvider,Contract,ZeroAddress,isAddress,keccak256,toUtf8Bytes} from 'ethers';
 import abi from './vault-abi.json';
-import {deferredAbi,queueAbi,hasDeferredRewards} from './reward-mode';
+import {deferredAbi,queueAbi,hasDeferredRewards,hasApprovalQueue} from './reward-mode';
 import {chainId,configured,vaultAddress,feeWallets} from './config';
 import {parseAmount,feeOf} from './money';
 import {getWalletProvider} from './wallet';
@@ -49,7 +49,8 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
   if(action.kind==='deposit'&&usd<await vault.minDepositUsd())throw Error('The amount is below the minimum deposit value in USD.');
   if(action.kind==='reinvest'&&usd===0n)throw Error('The reinvestment is too small to have a nonzero USD value.');
  }
- if((['principal','ownerWithdraw'].includes(action.kind)||(action.kind==='profit'&&!await hasDeferredRewards(vault)))&&await vault.assetBalance(a)<amount)throw Error('Insufficient liquid treasury balance. The owner must restore funds before this withdrawal can succeed.');
+ const principalQueue=action.kind==='principal'&&await hasDeferredRewards(vault)&&await hasApprovalQueue(new Contract(await vault.withdrawalQueue(),queueAbi,provider));
+ if(((action.kind==='principal'&&!principalQueue)||action.kind==='ownerWithdraw'||(action.kind==='profit'&&!await hasDeferredRewards(vault)))&&await vault.assetBalance(a)<amount)throw Error('Insufficient liquid treasury balance. The owner must restore funds before this withdrawal can succeed.');
  const funded=['deposit','reserve','rewards','settle','returnCapital'].includes(action.kind);
  const payable=funded&&a===ZeroAddress?{value:amount}:{};
  if(funded){
@@ -81,5 +82,5 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
  onStatus('Confirm the transaction in your wallet');const sent=await vault[method!](...args!);onStatus('Transaction submitted. Waiting for confirmation.',sent.hash);
  return receipt(sent);
 }
-export function errorText(error:unknown){const e=error as any;if(e?.code===4001||e?.code==='ACTION_REJECTED')return 'The request was rejected in your wallet.';const name=e?.revert?.name;const errors:Record<string,string>={NetworkStageChanged:'This reward stage has changed. Refresh and review it again.',NetworkPreparationRequired:'Prepare the group in batches before claiming.',NetworkInsufficient:'The current reward stage needs more eligible branch volume.',NetworkInvalid:'Check the group, direct branch addresses and batch size.',InsufficientLiquidity:'The treasury lacks liquid funds. Withdrawal depends on capital being returned.',Insufficient:'Insufficient balance, reserve or allowed withdrawal amount.',Locked:'This operation is locked. Check the withdrawal time or pause status.',Unauthorized:'This account does not have the required permission.',Invalid:'The request parameters are invalid.',StalePrice:'The oracle price is invalid or stale.',Unsupported:'This asset or operation is unsupported.'};return errors[name]||e?.shortMessage||e?.message||'Network request failed. Please try again.';}
+export function errorText(error:unknown){const e=error as any;if(e?.code===4001||e?.code==='ACTION_REJECTED')return 'The request was rejected in your wallet.';const name=e?.revert?.name;const errors:Record<string,string>={InvalidRequest:'This request is unavailable, already handled, or still needs administrator approval.',NetworkStageChanged:'This reward stage has changed. Refresh and review it again.',NetworkPreparationRequired:'Prepare the group in batches before claiming.',NetworkInsufficient:'The current reward stage needs more eligible branch volume.',NetworkInvalid:'Check the group, direct branch addresses and batch size.',InsufficientLiquidity:'The treasury lacks liquid funds. Withdrawal depends on capital being returned.',Insufficient:'Insufficient balance, reserve or allowed withdrawal amount.',Locked:'This operation is locked. Check the withdrawal time or pause status.',Unauthorized:'This account does not have the required permission.',Invalid:'The request parameters are invalid.',StalePrice:'The oracle price is invalid or stale.',Unsupported:'This asset or operation is unsupported.'};return errors[name]||e?.shortMessage||e?.message||'Network request failed. Please try again.';}
 export function actionFee(action:Action,amount:bigint){return ['profit','principal'].includes(action.kind)?feeOf(amount,action.expectedFee):0n;}

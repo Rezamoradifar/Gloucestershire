@@ -40,7 +40,10 @@ test('request reserves profit without cash; funded payment is exact and cannot r
  await tx(v.connect(s[1]).withdrawProfit(t.target,E('100')));const r=await q.requests(0);
  const block=await p.getBlock('latest');assert.equal(r.dueAt,BigInt(block.timestamp)+259200n);assert.equal(r.fee,E('5'));
  assert.equal(await q.pending(t.target),E('100'));assert.equal((await v.accounts(a[1],t.target)).profit,E('5'));assert.equal(await v.accounted(t.target),debt);
- await rejected(q.pay.staticCall(0),'InsufficientLiquidity');assert.equal((await q.requests(0)).status,0n);
+ await rejected(q.connect(s[4]).pay.staticCall(0),'InvalidRequest');
+ await rejected(q.connect(s[4]).approve.staticCall(0),'InvalidRequest');
+ await tx(q.approve(0));
+ await rejected(q.pay.staticCall(0),'InsufficientLiquidity');assert.equal((await q.requests(0)).status,3n);
  await rejected(v.connect(s[1]).reinvest.staticCall(t.target,E('6')),'Insufficient');
  await tx(v.returnCapital(t.target,E('100')));const before=await t.balanceOf(a[1]);
  await tx(q.connect(s[4]).pay(0));assert.equal(await t.balanceOf(a[1])-before,E('95'));assert.equal(await q.pending(t.target),0n);assert.equal(await v.accounted(t.target),debt-E('100'));
@@ -60,6 +63,36 @@ test('partial funded budget is consumed once; shortfall becomes a recorded liabi
 });
 test('unqualified batch is atomic and queue settlement cannot be forged',async()=>{
  await rejected(v.connect(s[1]).claimNetworkRewards.staticCall(0,0,4),'NetworkInsufficient');assert.equal((await v.rewardGroup(a[1],0)).stage,0n);
- await rejected(v.settleQueuedProfit.staticCall(a[1],t.target,E('100'),0,true),'Unauthorized');
- await rejected(q.record.staticCall(a[1],t.target,E('100'),0),'InvalidRequest');
+ await rejected(v.settleQueuedWithdrawal.staticCall(a[1],t.target,E('100'),0,0,false,true),'Unauthorized');
+ await rejected(q.record.staticCall(a[1],t.target,E('100'),0,0,false),'InvalidRequest');
+});
+
+test('principal requests reserve the original position and cannot bypass administrator approval',async()=>{
+ await rpc.request({method:'evm_increaseTime',params:[90*86400]});await rpc.request({method:'evm_mine',params:[]});
+ const original=await v.positionOf(a[1],0),debt=await v.accounted(t.target);
+ await tx(v.connect(s[1]).withdrawPrincipal(0,E('200')));
+ assert.equal((await v.accounts(a[1],t.target)).principal,E('1000'));
+ assert.equal((await q.principalRequests(0)).exists,true);assert.equal(await v.accounted(t.target),debt);
+ await rejected(q.connect(s[1]).pay.staticCall(0),'InvalidRequest');
+ await tx(q.approve(0));await rejected(q.pay.staticCall(0),'InsufficientLiquidity');
+ await rpc.request({method:'evm_increaseTime',params:[259200]});await rpc.request({method:'evm_mine',params:[]});
+ await tx(q.connect(s[1]).cancel(0));
+ const restored=await v.positionOf(a[1],0);
+ assert.equal(restored.principal,original.principal);assert.equal(restored.capitalUsd,original.capitalUsd);assert.equal(restored.unlockAt,original.unlockAt);
+ assert.equal((await v.accounts(a[1],t.target)).principal,E('1000'));assert.equal(await v.accounted(t.target),debt);
+ assert.equal(await v.retainedPrincipalPenalties(t.target),0n);
+});
+test('principal payment retains the snapshotted penalty and only pays the recorded user once',async()=>{
+ await rpc.request({method:'evm_increaseTime',params:[90*86400]});await rpc.request({method:'evm_mine',params:[]});
+ await tx(v.connect(s[1]).withdrawPrincipal(0,E('200')));await tx(v.returnCapital(t.target,E('200')));
+ const before=await t.balanceOf(a[1]),debt=await v.accounted(t.target);
+ await tx(q.approveAndPay(0));assert.equal(await t.balanceOf(a[1])-before,E('140'));
+ assert.equal(await v.assetBalance(t.target),E('60'));assert.equal(await v.retainedPrincipalPenalties(t.target),E('60'));
+ assert.equal(await v.accounted(t.target),debt-E('200'));await rejected(q.pay.staticCall(0),'InvalidRequest');
+});
+test('withdrawal approval follows two-step ownership changes and preserves the request fee',async()=>{
+ await tx(v.connect(s[1]).claimNetworkRewards(0,0,2));await tx(v.connect(s[1]).withdrawProfit(t.target,E('100')));
+ await tx(v.transferOwnership(a[4]));await tx(v.connect(s[4]).acceptOwnership());
+ await rejected(q.approve.staticCall(0),'InvalidRequest');await tx(q.connect(s[4]).approve(0));
+ assert.equal((await q.requests(0)).fee,E('5'));await rejected(q.connect(s[4]).approve.staticCall(0),'InvalidRequest');
 });

@@ -1,5 +1,7 @@
 ## Sales referral model 2
 
+The unified 0.8.0 release combines the current financial frontend, API-derived contract connection, glass day/night theme, funded daily plan worker and administrator-approved withdrawals. See [UNIFIED-RELEASE.md](UNIFIED-RELEASE.md) for exact behavior, verified installation and the immutable-contract activation boundary. Run `bash ubuntu-unified.sh` on the existing server to update frontend/API while preserving the active contract.
+
 The seller receives 100% of the funded gross settlement. Eligible upline commissions are additive, debited from the separately funded reward budget of the same asset. Ineligible shares remain in that budget. A Starter settlement of 100 plus 14 of funded referral budget credits 100 to the seller and 8/4/2 to eligible uplines. No tokens are minted. Insufficient budget or gross cash rolls back the entire settlement. The immutable existing testnet contract is unchanged; redeployment is required. Connection preflight now checks SALES_REFERRAL_MODEL_VERSION=2 as well as the rate and stage tables.
 
 ## Current release: v0.7.0 — 2026-10-11

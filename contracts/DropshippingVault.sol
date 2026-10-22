@@ -280,17 +280,23 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         _requireLiquidity(asset,amount); _takeProfit(msg.sender,asset,amount,true); uint256 fee=Math.mulDiv(amount,profitFeeBps,BPS);
         _pay(asset,WITHDRAWAL_FEE_WALLET,fee); _pay(asset,msg.sender,amount-fee); emit Withdrawal(msg.sender,asset,amount,fee,false);
     }
-    function withdrawPrincipal(uint256 id,uint256 amount) external nonReentrant {
-        Position storage p=positions[msg.sender][id]; Account storage a=accounts[msg.sender][p.asset];
-        if(amount==0||amount>p.principal) revert Insufficient(); if(block.timestamp<p.unlockAt||block.timestamp<a.nextWithdrawal) revert Locked();
-        uint256 fee=Math.mulDiv(amount,p.penaltyBps,BPS);
+    function withdrawPrincipal(uint256 id,uint256 amount) external virtual nonReentrant {_withdrawPrincipal(msg.sender,id,amount);}
+    function _principalTerms(address who,uint256 id,uint256 amount) internal view returns(address asset,uint256 fee) {
+        Position storage p=positions[who][id];asset=p.asset;
+        if(amount==0||amount>p.principal)revert Insufficient();
+        if(block.timestamp<p.unlockAt||block.timestamp<accounts[who][asset].nextWithdrawal)revert Locked();
+        fee=Math.mulDiv(amount,p.penaltyBps,BPS);
+    }
+    function _withdrawPrincipal(address who,uint256 id,uint256 amount) internal {
+        (address asset,uint256 fee)=_principalTerms(who,id,amount);
+        Position storage p=positions[who][id]; Account storage a=accounts[who][asset];
         _requireLiquidity(p.asset,amount); // require gross cash so the penalty remains physically in the vault
         uint256 usd=amount==p.principal?p.capitalUsd:Math.mulDiv(p.capitalUsd,amount,p.principal);
-        _capitalChanged(msg.sender,users[msg.sender].capitalUsd,users[msg.sender].capitalUsd-usd);
-        p.principal-=amount; p.capitalUsd-=usd; users[msg.sender].capitalUsd-=usd; a.principal-=amount; ledgers[p.asset].principal-=amount;
+        _capitalChanged(who,users[who].capitalUsd,users[who].capitalUsd-usd);
+        p.principal-=amount; p.capitalUsd-=usd; users[who].capitalUsd-=usd; a.principal-=amount; ledgers[p.asset].principal-=amount;
         a.nextWithdrawal=block.timestamp+withdrawalCooldown;
         retainedPrincipalPenalties[p.asset]+=fee;
-        emit PrincipalPenaltyRetained(msg.sender,p.asset,fee); _pay(p.asset,msg.sender,amount-fee); emit Withdrawal(msg.sender,p.asset,amount,fee,true);
+        emit PrincipalPenaltyRetained(who,p.asset,fee); _pay(p.asset,who,amount-fee); emit Withdrawal(who,p.asset,amount,fee,true);
     }
     function reinvest(address asset,uint256 amount) external nonReentrant live {
         // Reinvest earned profit independently of the external-deposit minimum.
