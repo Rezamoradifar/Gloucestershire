@@ -19,3 +19,22 @@
 :root[data-theme='dark'] .network-label,:root[data-theme='dark'] .tag{background:#2a374a;color:#f0d899;border-color:#63563b}
 :root[data-theme='dark'] .sidebar nav button:hover{background:#2a3b50}
 @media(prefers-reduced-motion:reduce){.global-theme-toggle{transition:none}}
+
+/* Actual public landing uses .gdt-page, not .landing */
+:root[data-theme='light'] .gdt-page{--gold:#956a20;--text:#182434;--dim:#4c5c6c;--border:#23344b24;background:#f7f8fa;color:var(--text)}
+:root[data-theme='light'] .gdt-header{background:#fffefcf2;color:#182434;border-bottom:1px solid #d8dde4}
+:root[data-theme='light'] .gdt-links{color:#33465b}
+:root[data-theme='light'] .gdt-model-band,:root[data-theme='light'] .gdt-ai-band{background:#edf1f5}
+:root[data-theme='light'] .gdt-challenges article{background:#fff;border-color:#d5dce5}
+:root[data-theme='light'] .gdt-demo-panel{background:#fff;color:#182434;border-color:#c9d3de}
+:root[data-theme='light'] .gdt-orbit-label{background:#fff;color:#534b39}
+:root[data-theme='light'] .gdt-hero-shade{background:linear-gradient(90deg,#f8f8f6ed 0%,#f8f8f6ba 45%,#11192320 100%)}
+:root[data-theme='light'] .gdt-hero h1,:root[data-theme='light'] .gdt-hero-content>p,:root[data-theme='light'] .gdt-preview,:root[data-theme='light'] .gdt-text-link{color:#152333}
+:root[data-theme='light'] .gdt-page .gdt-section-end,:root[data-theme='light'] .gdt-page .gdt-model-caption{color:#34465b}
+:root[data-theme='light'] .gdt-step-list button{color:#536172}
+:root[data-theme='light'] .gdt-step-list button[aria-selected=true]{color:#182434;background:#d7b87928}
+:root[data-theme='light'] .gdt-product strong,:root[data-theme='light'] .gdt-validation span{color:#182434}
+:root[data-theme='light'] .gdt-button{color:#fff!important;background:#795719;border-color:#795719}
+:root[data-theme='light'] .gdt-page p{color:var(--dim)}
+:root[data-theme='dark'] .gdt-page{--gold:#d4b87a;--text:#eeeae3;--dim:#a3a39f;--border:#ffffff16;background:#0b0d0e;color:var(--text)}
+@media(max-width:600px){.global-theme-toggle{left:12px;bottom:max(14px,env(safe-area-inset-bottom));min-height:46px;touch-action:manipulation}}
