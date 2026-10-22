@@ -25,6 +25,8 @@ with tempfile.TemporaryDirectory() as directory:
     folder = module.install_console(repo/'deployment-console', root)
     assert (deploy/folder/'wallet-bundle/wallet-client.js').is_file()
     assert (deploy/folder/'TestnetDeferredMigrationVault.json').is_file()
+    assert (deploy/folder/'deferred-migration-core.js').is_file() and (deploy/folder/'deferred-wallet-journal.js').is_file()
+    assert '.mjs' not in (deploy/folder/'deferred-migration.js').read_text()
     assert (deploy/'index.html').read_text() == 'existing-deployment-console'
     assert folder in (deploy/'deferred-migration.html').read_text()
     assert module.install_console(repo/'deployment-console', root) == folder

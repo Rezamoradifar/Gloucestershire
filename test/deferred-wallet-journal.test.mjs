@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {bindMigrationTransaction,migrationFeeCommitted,migrationHasUnresolvedRequest,archiveConfirmedControl} from '../deployment-console/deferred-wallet-journal.mjs';
+import {bindMigrationTransaction,migrationFeeCommitted,migrationHasUnresolvedRequest,archiveConfirmedControl} from '../deployment-console/deferred-wallet-journal.js';
 
 test('wallet recovery binds the exact sender, chain, nonce and zero value before identifying replacements',()=>{
  const record={from:'0x1111111111111111111111111111111111111111',nonce:7,to:null,data:'0x1234'};

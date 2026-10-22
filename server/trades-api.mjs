@@ -84,6 +84,9 @@ async function configuredCommunity(config){
  const vault=provider?new Contract(config.address,['function owner() view returns(address)'],provider):null;
  return createCommunity({file:process.env.COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-api/community.json',chainId:config.chainId,contract:config.address,owner:async()=>{if(!vault)throw Error('Contract not configured');if(Number((await provider.getNetwork()).chainId)!==config.chainId)throw Error('Wrong chain');return vault.owner();}});
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href){
+// Stdin and eval callers may have no filesystem entrypoint. Imports must stay inert.
+let entrypoint;
+try{if(process.argv[1]&&process.argv[1]!=='-')entrypoint=pathToFileURL(realpathSync(process.argv[1])).href;}catch{}
+if(import.meta.url===entrypoint){
  try{const config=readConfig();const feed=createTradeFeed(config);const community=configuredCommunity(config);const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config);const server=createApiServer(feed,{community:await community,migration});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }

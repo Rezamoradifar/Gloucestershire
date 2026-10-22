@@ -1,7 +1,7 @@
 import {BrowserProvider,ContractFactory,Interface,formatUnits,formatEther,getAddress,keccak256,parseEther} from './ethers.js';
 import {connectMigrationWallet} from './wallet-bundle/wallet-client.js';
-import {deferredPolicy as policy,deferredSourceAbi} from './deferred-migration-core.mjs';
-import {bindMigrationTransaction,migrationFeeCommitted,migrationHasUnresolvedRequest,archiveConfirmedControl} from './deferred-wallet-journal.mjs';
+import {deferredPolicy as policy,deferredSourceAbi} from './deferred-migration-core.js';
+import {bindMigrationTransaction,migrationFeeCommitted,migrationHasUnresolvedRequest,archiveConfirmedControl} from './deferred-wallet-journal.js';
 
 const $=id=>document.getElementById(id),sourceInterface=new Interface(deferredSourceAbi);
 const output=message=>{$('status').textContent=message;};

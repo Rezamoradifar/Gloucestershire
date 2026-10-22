@@ -22,8 +22,8 @@ def install_console(source=Path('deployment-console'), prefix=Path('/')):
     deploy = root/'deploy'
     if deploy.is_symlink():
         raise ValueError('UNEXPECTED_DEPLOY_SYMLINK')
-    names = ['deferred-migration.html', 'deferred-migration.js', 'deferred-migration-core.mjs',
-             'deferred-wallet-journal.mjs', 'TestnetDeferredMigrationVault.json', 'ethers.js', 'style.css']
+    names = ['deferred-migration.html', 'deferred-migration.js', 'deferred-migration-core.js',
+             'deferred-wallet-journal.js', 'TestnetDeferredMigrationVault.json', 'ethers.js', 'style.css']
     names += [str(p.relative_to(source)) for p in sorted((source/'wallet-bundle').rglob('*')) if p.is_file()]
     if not any(n.endswith('/wallet-client.js') for n in names):
         raise ValueError('WALLET_BUNDLE_MISSING')
