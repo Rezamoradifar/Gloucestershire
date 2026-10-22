@@ -11,7 +11,10 @@ unit=/etc/systemd/system/globaldroptrade-api.service
 backup_dir=$(mktemp -d)
 trap 'rm -rf -- "$backup_dir"' EXIT
 install -d -m 755 "$release/server" /etc/globaldroptrade
-cp server/trades-api.mjs server/community.mjs server/marketplace.mjs "$release/server/"
+install -d -m 755 "$release/scripts" "$release/artifacts"
+cp server/trades-api.mjs server/community.mjs server/marketplace.mjs server/migration-service.mjs "$release/server/"
+cp scripts/deferred-migration-core.mjs "$release/scripts/"
+cp artifacts/TestnetDeferredMigrationVault.json "$release/artifacts/"
 cp package.json package-lock.json "$release/"
 (cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
 if [ ! -f "$envfile" ]; then install -m 600 server/trades.env.example "$envfile"; fi

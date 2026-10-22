@@ -20,7 +20,11 @@ try{
   if(p.vaultAddress.toLowerCase()!==config.address.toLowerCase()||p.runtimeHash!==keccak256(code))throw Error('EXISTING_POLICY_TARGET_MISMATCH');
  }else{
   let low=0,high=await provider.getBlockNumber();const latest=await provider.getBlock(high);
-  while(low<high){const mid=Math.floor((low+high)/2);if(await provider.getCode(config.address,mid)==='0x')low=mid+1;else high=mid;}
+  // Migration deployments expose their immutable creation block; no genesis-state binary search is needed.
+  let copiedBlock;
+  try{copiedBlock=Number(await new Contract(config.address,['function migrationBlock() view returns(uint256)'],provider).migrationBlock());}catch{}
+  if(copiedBlock!==undefined){if(!Number.isSafeInteger(copiedBlock)||copiedBlock<1||copiedBlock>high)throw Error('INVALID_MIGRATION_BLOCK');low=copiedBlock;}
+  else while(low<high){const mid=Math.floor((low+high)/2);if(await provider.getCode(config.address,mid)==='0x')low=mid+1;else high=mid;}
   const policy=validateDailyPolicy({version:1,chainId:97,vaultAddress:config.address,runtimeHash:keccak256(code),deploymentBlock:low,startTimestamp:latest.timestamp,basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true});
   writePrivateJson(file,policy);
  }

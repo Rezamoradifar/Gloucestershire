@@ -1,0 +1,2 @@
+import {build} from '../website/node_modules/vite/dist/node/index.js';
+await build({configFile:false,root:'website',publicDir:false,base:'./',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{target:'es2022',outDir:'../deployment-console/wallet-bundle',emptyOutDir:true,minify:'esbuild',lib:{entry:'console-wallet.ts',formats:['es'],fileName:()=> 'wallet-client.js'},rollupOptions:{output:{entryFileNames:'wallet-client.js',chunkFileNames:'[name]-[hash].js'}}}});

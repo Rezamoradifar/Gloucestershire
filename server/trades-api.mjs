@@ -58,13 +58,14 @@ export function createTradeFeed(config,{provider,metadata,now=Date.now,ttlMs=150
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace()}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace(),migration}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
   if(community&&await community(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
   const url=new URL(req.url,'http://localhost');
+  if(migration&&await migration(req,res,url))return;
   if(await marketplace(req,res,url))return;
   if(url.pathname==='/api/config')return send(feed.configured&&feed.publicConfig?200:503,feed.configured&&feed.publicConfig?feed.publicConfig:{error:'Contract not configured'});
   if(url.pathname==='/api/health')return send(200,{status:'ok',configured:feed.configured,source});
@@ -84,5 +85,5 @@ async function configuredCommunity(config){
  return createCommunity({file:process.env.COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-api/community.json',chainId:config.chainId,contract:config.address,owner:async()=>{if(!vault)throw Error('Contract not configured');if(Number((await provider.getNetwork()).chainId)!==config.chainId)throw Error('Wrong chain');return vault.owner();}});
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href){
- try{const config=readConfig();const feed=createTradeFeed(config);const community=configuredCommunity(config);const server=createApiServer(feed,{community:await community});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
+ try{const config=readConfig();const feed=createTradeFeed(config);const community=configuredCommunity(config);const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config);const server=createApiServer(feed,{community:await community,migration});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }

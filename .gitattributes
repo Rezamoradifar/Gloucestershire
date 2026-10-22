@@ -1,0 +1,2 @@
+# Third-party generated bundles contain intentional whitespace in template literals.
+deployment-console/wallet-bundle/** linguist-generated=true -whitespace

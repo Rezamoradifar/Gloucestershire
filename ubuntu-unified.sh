@@ -53,6 +53,7 @@ if(active.version!==1||active.chainId!==expected.chainId||active.vaultAddress.to
 JS
 trap - ERR
 echo "UNIFIED_FRONTEND_API_READY backup=$backup"
+if [ "${GLOBAL_SKIP_AUTOMATION:-}" = 1 ]; then echo 'AUTOMATION_NOT_ACTIVE: separate verified activation requested'; exit 0; fi
 if node --input-type=module - "$stage/connection-public.json" <<'JS'
 import fs from 'node:fs';const c=JSON.parse(fs.readFileSync(process.argv[2]));process.exit(c.approvalRequired&&c.chainId===97?0:1);
 JS
