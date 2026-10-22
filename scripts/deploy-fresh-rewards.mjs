@@ -6,8 +6,8 @@ import {readPrivateKey} from './migration-signers.mjs';
 import {journalTransaction,writePrivateJson} from './migration-journal.mjs';
 
 // Reads constructor settings only. Never pauses or writes to the old contract.
-export async function deployFreshRewards({provider,wallet,source,owner,artifact,state,save,confirmations=3,log=()=>{}}) {
- const guard=async()=>{if(Number(await provider.send('eth_chainId',[]))!==97)throw Error('TESTNET_ONLY');};
+export async function deployFreshRewards({provider,wallet,source,owner,artifact,state,save,confirmations=3,log=()=>{},verifySource=async()=>{}}) {
+ const guard=async()=>{if(Number(await provider.send('eth_chainId',[]))!==97)throw Error('TESTNET_ONLY');await verifySource();};
  await guard();
  if(!state.config){
   const block=await provider.getBlock('latest'),o={blockTag:block.number};
