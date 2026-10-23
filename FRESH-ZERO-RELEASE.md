@@ -410,6 +410,10 @@ used.
 The repair stops the current timer before its service, refuses other active
 signers and unresolved non-selected journals, then refreshes under the current
 worker's lock. It installs the updated persistent worker after verification.
+The worker resolves its command path before checking direct execution so the
+installed `current` directory symlink runs the CLI instead of silently exiting.
+Validation invokes the actual installed symlink entrypoint as well as importing
+its modules. Installation alone does not prove that readiness or credits passed.
 Failure recovery resumes prior workers only after exact unchanged configuration,
 units/releases and healthy API checks with no unresolved journal. Confirmed
 transactions and financial journals are preserved for retry.

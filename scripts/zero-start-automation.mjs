@@ -325,4 +325,9 @@ async function main(){
   console.error('ZERO_START_AUTOMATION_STOPPED '+code(e));process.exitCode=1;
  }finally{provider?.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)await main();
+let invokedUrl;
+try{
+ // Node resolves the module URL through the current release symlink.
+ if(process.argv[1])invokedUrl=pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href;
+}catch{}
+if(import.meta.url===invokedUrl)await main();

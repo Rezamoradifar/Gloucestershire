@@ -260,6 +260,20 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     assert '--hourly-test' not in installed
     assert '--fund-test-million' not in installed
     assert (current.resolve()/'scripts/fund-million-test-rewards.mjs').read_bytes() == (repo/'scripts/fund-million-test-rewards.mjs').read_bytes()
+    # systemd invokes the script through the current symlink. Imports alone do
+    # not prove that the command-line entry point actually enters main().
+    before_entrypoint_status = (public/'activation.json').read_bytes()
+    entrypoint = current/'scripts/zero-start-automation.mjs'
+    assert current.is_symlink() and '/current/scripts/' in str(entrypoint)
+    entrypoint_result = subprocess.run([node, str(entrypoint), '--invalid-installed-entrypoint-check'],
+                                      cwd=current, env=environment, capture_output=True, text=True, timeout=10)
+    assert entrypoint_result.returncode != 0, entrypoint_result.stdout+entrypoint_result.stderr
+    assert 'ROOT_EXPLICIT_CHECK_OR_EXECUTE_REQUIRED' in entrypoint_result.stderr
+    assert (public/'activation.json').read_bytes() == before_entrypoint_status
+    assert fixture_key not in entrypoint_result.stdout+entrypoint_result.stderr
+    assert 'private.invalid' not in entrypoint_result.stdout+entrypoint_result.stderr
+    for file, value in preserved.items():
+        assert file.read_text() == value, file
     assert 'ReadWritePaths='+str(host/'state/fresh-zero-automation-v1') not in installed
     states = json.loads(worker_file.read_text())
     assert states[timer]['enabled'] == 'enabled' and states[timer]['active'] == 'active'
