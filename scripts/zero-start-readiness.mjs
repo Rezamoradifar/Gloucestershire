@@ -5,7 +5,7 @@ import {parseEnv} from 'node:util';
 import {pathToFileURL} from 'node:url';
 import {Contract,FetchRequest,JsonRpcProvider,ZeroAddress,keccak256} from 'ethers';
 import {readConfig} from '../server/trades-api.mjs';
-import {prepareZeroStartConnection} from './connect-zero-start.mjs';
+import {createZeroStartProofProviders,prepareZeroStartConnection} from './connect-zero-start.mjs';
 import {zeroStartRelease,validateZeroStartRelease} from './deploy-zero-start.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {blockAtTime,validateDailyPolicy} from './daily-profit.mjs';
@@ -56,11 +56,11 @@ async function archiveReadiness({provider,vault,report,token,checkpoint,policy,p
 // Establish the current non-upgradeable target without requiring reward funding,
 // a daily policy or historical principal snapshots. Oracle maintenance uses this
 // proof so a separate daily-readiness failure cannot prevent feed recovery.
-export async function verifyZeroStartTarget({provider,artifact,deploymentReport,connectionReport,original,release=zeroStartRelease,confirmations=3,inspectSettlementLogs=true}){
+export async function verifyZeroStartTarget({provider,artifact,deploymentReport,connectionReport,original,release=zeroStartRelease,confirmations=3,inspectSettlementLogs=true,proofProviders=[]}){
  const settings=parseEnv(original),c=validateZeroStartRelease(release);
  if(settings.GLOBAL_MIGRATION_ENABLED!=='false')throw Error('ZERO_START_LEGACY_MIGRATION_MUST_BE_DISABLED');
  const config=readConfig(settings);
- const {report}=await prepareZeroStartConnection({provider,artifact,deploymentReport,original,release:c,confirmations,inspectSettlementLogs});
+ const {report}=await prepareZeroStartConnection({provider,artifact,deploymentReport,original,release:c,confirmations,inspectSettlementLogs,proofProviders});
  verifyMarker(connectionReport,report);
  const fast=c.releaseId==='global-fresh-fast-test-v1'&&c.testMode===true&&c.initialServerReporter===true;
  if(fast&&(report.testMode!==true||report.initialServerReporter!==true||report.fastTestnetVersion!==1))throw Error('ZERO_START_FAST_DEPLOYMENT_MARKER_REQUIRED');
@@ -68,8 +68,8 @@ export async function verifyZeroStartTarget({provider,artifact,deploymentReport,
  return {version:1,kind:'fresh-zero-verified-target',releaseId:c.releaseId,chainId:97,target:report.target,contractAddress:report.target,owner:c.owner,operator:c.deployer,token:c.token,queue:report.queue,hash:report.hash,block:report.block,blockHash:report.blockHash,artifactHash:report.artifactHash,initcodeHash:report.initcodeHash,runtimeHash:report.runtimeHash,approvalVersion:1,automaticGroupVersion:1,...(fast?{testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{}),currentState:report.currentState,siteConnected:true,transactionsSent:0};
 }
 
-export async function verifyZeroStartReadiness({provider,artifact,deploymentReport,connectionReport,original,release=zeroStartRelease,policy,periodStartTimestamp,confirmations=3,hourlyTest=false}){
- const c=validateZeroStartRelease(release),report=await verifyZeroStartTarget({provider,artifact,deploymentReport,connectionReport,original,release:c,confirmations});
+export async function verifyZeroStartReadiness({provider,artifact,deploymentReport,connectionReport,original,release=zeroStartRelease,policy,periodStartTimestamp,confirmations=3,hourlyTest=false,proofProviders=[]}){
+ const c=validateZeroStartRelease(release),report=await verifyZeroStartTarget({provider,artifact,deploymentReport,connectionReport,original,release:c,confirmations,proofProviders});
  const fast=c.releaseId==='global-fresh-fast-test-v1'&&c.testMode===true&&c.initialServerReporter===true;
  if(typeof hourlyTest!=='boolean'||(hourlyTest&&!fast))throw Error('HOURLY_TEST_FAST_PROFILE_REQUIRED');
  const checkpoint=await provider.getBlock(Math.max(report.block,report.currentState.block-confirmations));
@@ -147,8 +147,9 @@ async function main(){
  const artifact=JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8'));
  const transport=new FetchRequest(config.rpcUrl);transport.timeout=15000;
  const provider=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+ const proofProviders=createZeroStartProofProviders();
  try{
-  const report=await verifyZeroStartReadiness({provider,artifact,deploymentReport,connectionReport,original,release:profile.release,policy,confirmations:Math.max(3,config.confirmations)});
+  const report=await verifyZeroStartReadiness({provider,artifact,deploymentReport,connectionReport,original,release:profile.release,policy,confirmations:Math.max(3,config.confirmations),proofProviders});
   if(readPrivate(envFile)!==original)throw Error('ZERO_START_ORIGINAL_ENV_CHANGED');
   const statusFile=path.join(directory,'readiness.json');if(fs.existsSync(statusFile))readPrivate(statusFile);writePrivateJson(statusFile,report);
   if(outputArg){
@@ -158,7 +159,7 @@ async function main(){
   console.log('ZERO_START_DAILY_READINESS target='+report.target+' ready='+report.ready);
   console.log('BLOCKERS='+(report.blockers.join(',')||'none'));console.log('REPORT='+statusFile);
   if(mode==='preflight'&&!report.ready)process.exitCode=1;
- }finally{provider.destroy();}
+ }finally{provider.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)main().catch(e=>{
  console.error('ZERO_START_READINESS_STOPPED '+(/^[A-Z][A-Z0-9_]{2,100}$/.test(e.message||'')?e.message:'RPC_OR_VERIFICATION_FAILED'));process.exitCode=1;

@@ -12,6 +12,10 @@ inspects live test oracle rounds without signing. Use
 feeds and install explicit one-hour test allocations on the fast testnet profile.
 This preserves the contract, accounts and journals; see the oracle recovery and
 hourly testing section in [FRESH-ZERO-RELEASE.md](FRESH-ZERO-RELEASE.md).
+Add `--fund-test-million` to that execute command for the separately authorized,
+one-time addition of 1,000,000 Test USDT to the connected fast vault's reward
+ledger. This is a test token, not real USD or mainnet USDT. Retrying the same
+command resumes the saved grant and never refills it after spending.
 
 ## Fresh zero-state contract
 

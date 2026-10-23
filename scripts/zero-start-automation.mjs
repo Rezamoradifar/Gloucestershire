@@ -8,6 +8,7 @@ import {Contract,FetchRequest,Interface,JsonRpcProvider,Transaction,Wallet,ZeroA
 import {readConfig} from '../server/trades-api.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {verifyZeroStartReadiness,verifyZeroStartTarget} from './zero-start-readiness.mjs';
+import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests} from './daily-profit.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 import {maintainOracles} from './maintain-testnet-oracles.mjs';
@@ -176,14 +177,16 @@ export function partitionZeroStartDailyReadErrors(errors,readiness){
 }
 
 async function main(){
- let provider,readiness,completedOracles,completedOracleInspection,executeRequested=false;
+ let provider,readiness,completedOracles,completedOracleInspection,executeRequested=false,fundOnlyRequested=false,proofProviders=[];
  try{
   const {profile,args}=parseZeroStartProfileArgs();
-  const seedFlags=args.filter(value=>value==='--seed-test-rewards'),oracleFlags=args.filter(value=>value==='--oracles-only'),hourlyFlags=args.filter(value=>value==='--hourly-test');
-  const commands=args.filter(value=>!['--seed-test-rewards','--oracles-only','--hourly-test'].includes(value));
-  if(process.getuid?.()!==0||commands.length!==1||!['--check','--execute'].includes(commands[0])||seedFlags.length>1||oracleFlags.length>1||hourlyFlags.length>1)throw Error('ROOT_EXPLICIT_CHECK_OR_EXECUTE_REQUIRED');
-  const execute=commands[0]==='--execute',oraclesOnly=oracleFlags.length===1,hourlyTest=hourlyFlags.length===1;
+  const seedFlags=args.filter(value=>value==='--seed-test-rewards'),oracleFlags=args.filter(value=>value==='--oracles-only'),hourlyFlags=args.filter(value=>value==='--hourly-test'),millionFlags=args.filter(value=>value==='--fund-test-million');
+  const commands=args.filter(value=>!['--seed-test-rewards','--oracles-only','--hourly-test','--fund-test-million'].includes(value));
+  if(process.getuid?.()!==0||commands.length!==1||!['--check','--execute'].includes(commands[0])||seedFlags.length>1||oracleFlags.length>1||hourlyFlags.length>1||millionFlags.length>1)throw Error('ROOT_EXPLICIT_CHECK_OR_EXECUTE_REQUIRED');
+  const execute=commands[0]==='--execute',oraclesOnly=oracleFlags.length===1,hourlyTest=hourlyFlags.length===1,fundOnly=millionFlags.length===1;
   executeRequested=execute;
+  fundOnlyRequested=fundOnly;
+  if(fundOnly&&(!profile.fast||!execute||seedFlags.length||oraclesOnly||hourlyTest))throw Error('MILLION_TEST_REWARDS_EXPLICIT_FAST_EXECUTION_REQUIRED');
   if(seedFlags.length&&(!profile.fast||!execute||oraclesOnly))throw Error('FAST_TEST_EXPLICIT_SEED_EXECUTION_REQUIRED');
   if(hourlyTest&&(!profile.fast||oraclesOnly))throw Error('HOURLY_TEST_FAST_PROFILE_REQUIRED');
   const privateRoot=profile.automationDir,release=profile.release;
@@ -195,7 +198,8 @@ async function main(){
   const policyFile=privateRoot+'/daily-policy.json',stateFile=privateRoot+'/journal.json';
   const transport=new FetchRequest(config.rpcUrl);transport.timeout=15000;
   provider=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});provider.pollingInterval=2000;
-  const targetOptions={provider,artifact,deploymentReport,connectionReport,original,release,confirmations:Math.max(3,config.confirmations)};
+  proofProviders=createZeroStartProofProviders();
+  const targetOptions={provider,artifact,deploymentReport,connectionReport,original,release,confirmations:Math.max(3,config.confirmations),proofProviders};
   // Verify immutable identity first. Reward funding, archives, seed state and the
   // current daily policy cannot prevent recovery of this target's price feeds.
   readiness=await verifyZeroStartTarget({...targetOptions,inspectSettlementLogs:false});
@@ -237,14 +241,24 @@ async function main(){
   if(!state.identity&&Object.keys(state.transactions||{}).length)throw Error('ZERO_START_UNBOUND_AUTOMATION_JOURNAL');
   if(oraclesOnly)assertZeroStartOraclePending({state,release,artifact:mockArtifact});
   state.identity=identity;state.transactions??={};save();
-  const seedModule=!oraclesOnly&&profile.fast?await import('./fund-fast-test-rewards.mjs'):null;
+  const seedModule=!oraclesOnly&&!fundOnly&&profile.fast?await import('./fund-fast-test-rewards.mjs'):null;
+  const millionModule=!oraclesOnly&&profile.fast?await import('./fund-million-test-rewards.mjs'):null;
   const tokenArtifact=!oraclesOnly&&profile.fast?JSON.parse(fs.readFileSync(new URL('../artifacts/MockToken.json',import.meta.url),'utf8')):null;
+  const millionOptions={provider,wallet,artifact:tokenArtifact,release,readiness,vault,state,save,transact};
+  if(fundOnly){
+   const report=await millionModule.fundMillionTestRewards(millionOptions);
+   const file=privateRoot+'/million-test-rewards.json';writePrivateJson(file,report);
+   console.log('MILLION_TEST_REWARDS_CONFIRMED target='+readiness.target);
+   console.log('AMOUNT_TEST_USDT='+report.amountTestUsdt);console.log('TX_HASH='+report.transaction);
+   console.log('REWARDS_AFTER_UNITS='+report.ledgerProof.rewardsAfterUnits);console.log('REPORT='+file);return;
+  }
   if(!oraclesOnly){
    const allowed=new Map([[readiness.target,new Interface(dailyAbi.concat(['function processNetworkVolume(uint256,uint256)']))],[readiness.queue,new Interface(approvedQueueAbi)],[release.bnbFeed,new Interface(mockArtifact.abi)],[release.tokenFeed,new Interface(mockArtifact.abi)]]);
    // Resume the same previously signed nonce before any new oracle transaction.
    for(const[label,entry]of Object.entries(state.transactions))if(!entry.block){
     const tx=Transaction.from(entry.raw);
     if(seedModule?.isFastTestSeedLabel(label))await seedModule.verifyFastTestSeedPending({provider,wallet,artifact:tokenArtifact,release,readiness,vault,state,label,request:{to:tx.to,data:tx.data,value:tx.value}});
+    else if(millionModule?.isMillionTestRewardLabel(label))await millionModule.verifyMillionTestRewardPending({...millionOptions,label,request:{to:tx.to,data:tx.data,value:tx.value}});
     else{
      const abi=allowed.get(tx.to),action=abi?.parseTransaction({data:tx.data,value:tx.value});
      if(!action||!['batchProfit','pay','processNetworkVolume','set'].includes(action.name))throw Error('ZERO_START_PENDING_TRANSACTION_TARGET_MISMATCH');
@@ -307,8 +321,8 @@ async function main(){
   if(result.status!=='scheduled')console.log('BLOCKERS='+[...(result.blockers||[]),...result.errors].join(','));
  }catch(e){
   const failure={version:1,kind:'fresh-zero-automation-error',ready:false,dailyAutomationActive:false,automationStatus:'blocked',blockers:[code(e)],checkedAt:new Date().toISOString(),walletPrompts:0,...(completedOracles?{oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,oracleTarget:readiness?.target}:{} )};
-  if(executeRequested)try{publishZeroStartStatus(failure);}catch{}
+  if(executeRequested&&!fundOnlyRequested)try{publishZeroStartStatus(failure);}catch{}
   console.error('ZERO_START_AUTOMATION_STOPPED '+code(e));process.exitCode=1;
- }finally{provider?.destroy();}
+ }finally{provider?.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)await main();

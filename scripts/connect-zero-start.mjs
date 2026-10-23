@@ -45,29 +45,109 @@ function identityOf(report,queueRuntimeHash){
 
 const fastReportFields=report=>report.initialServerReporter?{testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{};
 
-export async function verifyZeroStartCreation({provider,artifact,release=zeroStartRelease,hash,confirmations=3}){
+// These providers may supply only creation transaction/receipt data. The active
+// provider still anchors the canonical header and supplies every current read.
+export function createZeroStartProofProviders(){
+ const request=new FetchRequest('https://bsc-testnet-dataseed.bnbchain.org');request.timeout=12000;
+ return [new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1})];
+}
+
+function unavailableProofRead(error){
+ if(error?.message==='ZERO_START_PROOF_READ_TIMEOUT'||['TIMEOUT','NETWORK_ERROR','UNSUPPORTED_OPERATION'].includes(error?.code))return true;
+ const rpc=error?.info?.error||error?.error||error;
+ if([-32601,-32004].includes(Number(rpc?.code)))return true;
+ const message=String(rpc?.message||'');
+ return Number(rpc?.code)===-32000&&/method (?:not found|not supported)|unsupported method|historical (?:transaction|receipt|data).*(?:unavailable|not available)|(?:transaction|receipt|header) not found|missing trie node|pruned/i.test(message);
+}
+
+async function readCreationRows(provider,hash){
+ const rows=await Promise.allSettled([provider.getTransactionReceipt(hash),provider.getTransaction(hash)]);
+ for(const row of rows)if(row.status==='rejected'&&!unavailableProofRead(row.reason))throw row.reason;
+ return {receipt:rows[0].status==='fulfilled'?rows[0].value:null,transaction:rows[1].status==='fulfilled'?rows[1].value:null};
+}
+
+function validateCreationReceipt(receipt,hash,deployer){
+ if(receipt===null||receipt===undefined)return;
+ if(typeof receipt!=='object'||receipt.status!==1||!receipt.contractAddress||typeof receipt.hash!=='string'||receipt.hash.toLowerCase()!==hash.toLowerCase()||!Number.isSafeInteger(receipt.blockNumber)||receipt.blockNumber<1||!/^0x[0-9a-f]{64}$/i.test(receipt.blockHash||''))throw Error('ZERO_START_RECEIPT_REQUIRED');
+ try{if(getAddress(receipt.contractAddress)==='0x0000000000000000000000000000000000000000'||(receipt.from!==undefined&&getAddress(receipt.from)!==deployer)||(receipt.to!==undefined&&receipt.to!==null))throw Error();}catch{throw Error('ZERO_START_RECEIPT_REQUIRED');}
+}
+
+function validateCreationTransaction(transaction,{hash,release,expected}){
+ if(transaction===null||transaction===undefined)return;
+ let valid=false;
+ try{valid=typeof transaction.hash==='string'&&transaction.hash.toLowerCase()===hash.toLowerCase()&&transaction.to===null&&getAddress(transaction.from)===release.deployer&&transaction.chainId===97n&&transaction.value===0n&&Number.isSafeInteger(transaction.nonce)&&transaction.nonce>=0&&typeof transaction.data==='string'&&transaction.data.toLowerCase()===expected.data.toLowerCase();}catch{}
+ if(!valid)throw Error('ZERO_START_TRANSACTION_MISMATCH');
+ if(transaction.blockNumber!==undefined&&transaction.blockNumber!==null&&(!Number.isSafeInteger(transaction.blockNumber)||transaction.blockNumber<1||!/^0x[0-9a-f]{64}$/i.test(transaction.blockHash||'')))throw Error('ZERO_START_TRANSACTION_MISMATCH');
+}
+
+async function assertPrimaryCreationAnchor(provider,row,confirmations){
+ const [block,head]=await Promise.all([provider.getBlock(row.blockNumber),provider.getBlockNumber()]);
+ if(block?.number!==row.blockNumber||block.hash!==row.blockHash||!Number.isSafeInteger(head)||head-row.blockNumber+1<confirmations)throw Error('ZERO_START_RECEIPT_NOT_FINAL');
+}
+
+function assertCreationPair(receipt,transaction,release){
+ if(getAddress(receipt.contractAddress)!==getCreateAddress({from:release.deployer,nonce:transaction.nonce}))throw Error('ZERO_START_CREATE_ADDRESS_MISMATCH');
+ if((transaction.blockNumber!==undefined&&transaction.blockNumber!==null&&transaction.blockNumber!==receipt.blockNumber)||(transaction.blockHash!==undefined&&transaction.blockHash!==null&&transaction.blockHash.toLowerCase()!==receipt.blockHash.toLowerCase()))throw Error('ZERO_START_TRANSACTION_MISMATCH');
+}
+
+async function boundedPublicProof(provider,hash,deployer){
+ let timer;
+ try{return await Promise.race([(async()=>{
+  if(Number(await provider.send('eth_chainId',[]))!==97)throw Error('ZERO_START_PROOF_FALLBACK_WRONG_CHAIN');
+  const rows=await readCreationRows(provider,hash);
+  validateCreationReceipt(rows.receipt,hash,deployer);
+  if(rows.receipt){
+   const block=await provider.getBlock(rows.receipt.blockNumber);
+   if(!block||block.number!==rows.receipt.blockNumber||block.hash!==rows.receipt.blockHash)throw Error('ZERO_START_PROOF_FALLBACK_HEADER_MISMATCH');
+  }
+  return rows;
+ })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('ZERO_START_PROOF_READ_TIMEOUT')),15000);})]);}
+ finally{clearTimeout(timer);}
+}
+
+export async function verifyZeroStartCreation({provider,artifact,release=zeroStartRelease,hash,confirmations=3,proofProviders=[]}){
  const c=validateZeroStartRelease(release),bytecode=artifact.bytecode||'0x'+artifact.evm?.bytecode?.object;
  if(!/^0x(?:[0-9a-f]{2})+$/i.test(bytecode)||keccak256(bytecode)!==c.artifactHash)throw Error('ZERO_START_ARTIFACT_MISMATCH');
  if(!Number.isSafeInteger(confirmations)||confirmations<1)throw Error('ZERO_START_CONFIRMATIONS_REQUIRED');
  if(Number(await provider.send('eth_chainId',[]))!==97)throw Error('TESTNET_ONLY');
  if(!/^0x[0-9a-f]{64}$/i.test(hash||''))throw Error('ZERO_START_TRANSACTION_REQUIRED');
+ if(!Array.isArray(proofProviders)||proofProviders.length>2||proofProviders.some(value=>!value||value===provider))throw Error('ZERO_START_PROOF_PROVIDERS_REQUIRED');
  const expected=await new ContractFactory(artifact.abi,bytecode).getDeployTransaction(c.owner,c.token,c.bnbFeed,c.tokenFeed,c.age,c.partners,c.operations);
- const [receipt,transaction]=await Promise.all([provider.getTransactionReceipt(hash),provider.getTransaction(hash)]);
+ let {receipt,transaction}=await readCreationRows(provider,hash);
+ validateCreationReceipt(receipt,hash,c.deployer);validateCreationTransaction(transaction,{hash,release:c,expected});
+ if(receipt)await assertPrimaryCreationAnchor(provider,receipt,confirmations);
+ else if(transaction?.blockNumber!==undefined&&transaction.blockNumber!==null)await assertPrimaryCreationAnchor(provider,transaction,confirmations);
+ // A conflicting or malformed primary result is never replaced by a fallback.
+ // A missing row may be supplemented only with the exact reviewed transaction.
+ if(!receipt||!transaction){
+  for(const fallback of proofProviders){
+   let rows;
+   try{rows=await boundedPublicProof(fallback,hash,c.deployer);}catch(error){if(unavailableProofRead(error))continue;throw error;}
+   validateCreationReceipt(rows.receipt,hash,c.deployer);validateCreationTransaction(rows.transaction,{hash,release:c,expected});
+   if(!rows.receipt||!rows.transaction)continue;
+   assertCreationPair(rows.receipt,rows.transaction,c);
+   if(receipt&&(getAddress(receipt.contractAddress)!==getAddress(rows.receipt.contractAddress)||receipt.blockNumber!==rows.receipt.blockNumber||receipt.blockHash!==rows.receipt.blockHash))throw Error('ZERO_START_PROOF_PRIMARY_CONFLICT');
+   if(transaction&&(transaction.nonce!==rows.transaction.nonce||transaction.hash.toLowerCase()!==rows.transaction.hash.toLowerCase()||transaction.data.toLowerCase()!==rows.transaction.data.toLowerCase()))throw Error('ZERO_START_PROOF_PRIMARY_CONFLICT');
+   receipt??=rows.receipt;transaction??=rows.transaction;
+   break;
+  }
+  if((!receipt||!transaction)&&proofProviders.length)throw Error('ZERO_START_CREATION_PROOF_UNAVAILABLE');
+ }
  if(!receipt||receipt.status!==1||!receipt.contractAddress)throw Error('ZERO_START_RECEIPT_REQUIRED');
  if(!transaction||transaction.hash.toLowerCase()!==hash.toLowerCase()||transaction.to!==null||getAddress(transaction.from)!==c.deployer||transaction.chainId!==97n||transaction.value!==0n||transaction.data.toLowerCase()!==expected.data.toLowerCase())throw Error('ZERO_START_TRANSACTION_MISMATCH');
+ assertCreationPair(receipt,transaction,c);
  const target=getAddress(receipt.contractAddress);
  if(target!==getCreateAddress({from:c.deployer,nonce:transaction.nonce}))throw Error('ZERO_START_CREATE_ADDRESS_MISMATCH');
- const block=await provider.getBlock(receipt.blockNumber);
- if(block?.hash!==receipt.blockHash||(await provider.getBlockNumber())-receipt.blockNumber+1<confirmations)throw Error('ZERO_START_RECEIPT_NOT_FINAL');
+ await assertPrimaryCreationAnchor(provider,receipt,confirmations);
  // This pinned, non-upgradeable constructor creates empty user mappings and a new queue. It
  // contains no import path. This proves initialization without requiring retained archive state.
  return {version:1,releaseId:c.releaseId,chainId:97,contractAddress:target,owner:c.owner,deployer:c.deployer,hash,block:receipt.blockNumber,blockHash:receipt.blockHash,queue:getCreateAddress({from:target,nonce:1}),artifactHash:c.artifactHash,initcodeHash:keccak256(expected.data),approvalVersion:1,automaticGroupVersion:1,...fastReportFields(c),proofMethod:'canonical-creation-and-current-state',emptyAtInitialization:true,initialStateProof:{method:'verified-constructor-initialization',transactionHash:hash,block:receipt.blockNumber,blockHash:receipt.blockHash,importsUserData:false},historicalStateVerified:false,accountsMigrated:false,siteConnected:false,automationActive:false,dailyAutomationActive:false};
 }
 
-async function verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations,inspectSettlementLogs=true}){
+async function verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations,inspectSettlementLogs=true,proofProviders=[]}){
  if(typeof inspectSettlementLogs!=='boolean')throw Error('ZERO_START_SETTLEMENT_INSPECTION_FLAG_REQUIRED');
  // The saved report supplies only a transaction hash. Derive every trusted field independently.
- const report=await verifyZeroStartCreation({provider,artifact,release,hash:deploymentReport?.hash,confirmations});
+ const report=await verifyZeroStartCreation({provider,artifact,release,hash:deploymentReport?.hash,confirmations,proofProviders});
  const c=validateZeroStartRelease(release),block=await provider.getBlock('latest');
  if(!block)throw Error('ZERO_START_CURRENT_BLOCK_REQUIRED');
  const o={blockTag:block.number},vault=new Contract(report.contractAddress,artifact.abi,provider),queue=new Contract(report.queue,queueAbi,provider);
@@ -100,9 +180,9 @@ async function verifyConnectionTarget({provider,artifact,deploymentReport,config
  return {report,identity:identityOf(report,keccak256(queueCode)),currentState:{block:block.number,blockHash:block.hash,paused,partnerVotesRequired,settlementLogProbe}};
 }
 
-export async function prepareZeroStartConnection({provider,artifact,deploymentReport,original,release=zeroStartRelease,confirmations=3,inspectSettlementLogs=true}){
+export async function prepareZeroStartConnection({provider,artifact,deploymentReport,original,release=zeroStartRelease,confirmations=3,inspectSettlementLogs=true,proofProviders=[]}){
  const {config}=existingSettings(original);
- const verified=await verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations,inspectSettlementLogs});
+ const verified=await verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations,inspectSettlementLogs,proofProviders});
  const env=renderConnectionSettings(original,verified.report);
  const report={...verified.report,kind:'fresh-zero-site-connection',target:verified.report.contractAddress,identity:verified.identity,originalEnvHash:digest(original),stagedEnvHash:digest(env),currentState:verified.currentState,communityDataPreserved:true,verified:true,siteConnected:false,transactionsSent:0};
  return {env,report};
@@ -119,10 +199,10 @@ function assertStagedIdentity(stage,verified){
  if(stage.target!==verified.report.contractAddress)throw Error('ZERO_START_STAGED_IDENTITY_CHANGED');
 }
 
-export async function checkZeroStartConnection({provider,artifact,deploymentReport,original,stagedEnv,stage,release=zeroStartRelease,confirmations=3}){
+export async function checkZeroStartConnection({provider,artifact,deploymentReport,original,stagedEnv,stage,release=zeroStartRelease,confirmations=3,proofProviders=[]}){
  assertStagedConnection(stage,stagedEnv);
  if(digest(original)!==stage.originalEnvHash)throw Error('ZERO_START_ORIGINAL_ENV_CHANGED');
- const prepared=await prepareZeroStartConnection({provider,artifact,deploymentReport,original,release,confirmations});
+ const prepared=await prepareZeroStartConnection({provider,artifact,deploymentReport,original,release,confirmations,proofProviders});
  assertStagedIdentity(stage,{identity:prepared.report.identity,report:prepared.report});
  if(prepared.env!==stagedEnv)throw Error('ZERO_START_STAGED_ENV_MISMATCH');
  return prepared.report;
@@ -138,14 +218,14 @@ function verifySiteEvidence(active,frontend,target){
  return hashes[0];
 }
 
-export async function publishZeroStartConnection({provider,artifact,deploymentReport,current,stagedEnv,stage,active,frontend,release=zeroStartRelease,confirmations=3}){
+export async function publishZeroStartConnection({provider,artifact,deploymentReport,current,stagedEnv,stage,active,frontend,release=zeroStartRelease,confirmations=3,proofProviders=[]}){
  assertStagedConnection(stage,stagedEnv);
  if(current!==stagedEnv)throw Error('ZERO_START_INSTALLED_ENV_MISMATCH');
  const {config,settings}=existingSettings(current);
  if(settings.GLOBAL_MIGRATION_ENABLED!=='false')throw Error('ZERO_START_LEGACY_MIGRATION_MUST_BE_DISABLED');
  const selected=validateZeroStartRelease(release);
  if((selected.initialServerReporter||Object.hasOwn(settings,'TRADES_ZERO_START_PROFILE'))&&settings.TRADES_ZERO_START_PROFILE!==selected.releaseId)throw Error('ZERO_START_INSTALLED_PROFILE_MISMATCH');
- const verified=await verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations});
+ const verified=await verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations,proofProviders});
  assertStagedIdentity(stage,verified);
  if(config.address!==verified.report.contractAddress||config.startBlock!==verified.report.block||config.port!==3115)throw Error('ZERO_START_SITE_TARGET_NOT_INSTALLED');
  const frontendIndexSha256=verifySiteEvidence(active,frontend,verified.report.contractAddress);
@@ -181,7 +261,8 @@ async function main(){
  const artifact=JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8'));
  const request=new FetchRequest(config.rpcUrl);request.timeout=15000;
  const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
- const args={provider,artifact,deploymentReport,release:profile.release,confirmations:Math.max(3,config.confirmations)};
+ const proofProviders=createZeroStartProofProviders();
+ const args={provider,artifact,deploymentReport,release:profile.release,confirmations:Math.max(3,config.confirmations),proofProviders};
  try{
   if(mode==='prepare'){
    const prepared=await prepareZeroStartConnection({...args,original});
@@ -204,7 +285,7 @@ async function main(){
     console.log('ZERO_START_SITE_CONNECTION_PUBLISHED '+report.target);console.log('REPORT='+file);
    }
   }
- }finally{provider.destroy();}
+ }finally{provider.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)main().catch(e=>{
  console.error('ZERO_START_CONNECTION_STOPPED '+(/^[A-Z][A-Z0-9_]{2,100}$/.test(e.message||'')?e.message:'RPC_OR_VERIFICATION_FAILED'));process.exitCode=1;

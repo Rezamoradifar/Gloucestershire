@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory() as directory:
     (source/'ubuntu-enable-zero-daily.sh').write_text(installer)
     for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs', 'zero-start-hourly-test.mjs',
                  'maintain-testnet-oracles.mjs', 'refresh-testnet-oracles.mjs', 'migration-journal.mjs',
-                 'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs']:
+                 'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs', 'fund-million-test-rewards.mjs']:
         shutil.copyfile(repo/'scripts'/name, source/'scripts'/name)
     for name in ['trades-api.mjs', 'community.mjs', 'marketplace.mjs']:
         shutil.copyfile(repo/'server'/name, source/'server'/name)
@@ -236,6 +236,8 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     assert 'ProtectHome=true' in installed and 'ReadWritePaths='+str(state)+' '+str(public) in installed
     assert '/usr/bin/flock -n '+str(state)+'/run.lock' in installed
     assert 'zero-start-automation.mjs --execute' in installed
+    assert '--fund-test-million' not in installed
+    assert not (current.resolve()/'scripts/fund-million-test-rewards.mjs').exists()
     states = json.loads(worker_file.read_text())
     assert states[timer]['enabled'] == 'enabled' and states[timer]['active'] == 'active'
     assert all(states[name]['active'] == 'inactive' for name in old_workers if name not in [timer])

@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory() as directory:
     (source/'ubuntu-enable-zero-daily.sh').write_text(installer)
     for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs', 'zero-start-hourly-test.mjs',
                  'maintain-testnet-oracles.mjs', 'refresh-testnet-oracles.mjs', 'migration-journal.mjs',
-                 'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs', 'fund-fast-test-rewards.mjs']:
+                 'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs', 'fund-fast-test-rewards.mjs', 'fund-million-test-rewards.mjs']:
         shutil.copyfile(repo/'scripts'/name, source/'scripts'/name)
     for name in ['trades-api.mjs', 'community.mjs', 'marketplace.mjs']:
         shutil.copyfile(repo/'server'/name, source/'server'/name)
@@ -150,8 +150,9 @@ if command in ['disable','enable','start','stop']:
    installed=(p/'etc/systemd/system'/unit).read_text()
    assert '/usr/bin/flock -n ' in installed
    assert 'zero-start-automation.mjs --execute --fast-testnet --seed-test-rewards' in installed
+   assert '--fund-test-million' not in installed
    assert 'fresh-fast-testnet-automation-v1/run.lock' in installed
-   for name in ['zero-start-profile.mjs','fund-fast-test-rewards.mjs','zero-start-hourly-test.mjs']:
+   for name in ['zero-start-profile.mjs','fund-fast-test-rewards.mjs','fund-million-test-rewards.mjs','zero-start-hourly-test.mjs']:
     assert (current/'scripts'/name).is_file()
    for name in ['FastTestnetVault.json','MockToken.json']:
     assert (current/'artifacts'/name).is_file()
@@ -257,6 +258,8 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     assert '/usr/bin/flock -n '+str(state)+'/run.lock' in installed
     assert 'zero-start-automation.mjs --execute --fast-testnet --seed-test-rewards' in installed
     assert '--hourly-test' not in installed
+    assert '--fund-test-million' not in installed
+    assert (current.resolve()/'scripts/fund-million-test-rewards.mjs').read_bytes() == (repo/'scripts/fund-million-test-rewards.mjs').read_bytes()
     assert 'ReadWritePaths='+str(host/'state/fresh-zero-automation-v1') not in installed
     states = json.loads(worker_file.read_text())
     assert states[timer]['enabled'] == 'enabled' and states[timer]['active'] == 'active'
@@ -274,7 +277,7 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
         assert installed_helper.read_bytes() == (repo/'scripts/zero-start-hourly-test.mjs').read_bytes()
         # Exercise the actual copied module rather than merely checking its path.
         subprocess.run([node, '--input-type=module', '-e',
-                        "await import('./scripts/zero-start-hourly-test.mjs');await import('./scripts/zero-start-automation.mjs')"],
+                        "await import('./scripts/zero-start-hourly-test.mjs');await import('./scripts/fund-million-test-rewards.mjs');await import('./scripts/zero-start-automation.mjs')"],
                        cwd=current.resolve(), check=True, env=environment, capture_output=True, text=True)
     reset()
     (host/'fail-service').touch()
@@ -317,7 +320,8 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     for flags in [['--fast-testnet', '--fast-testnet'], ['--unknown'], ['--seed-test-rewards'],
                   ['--hourly-test'], ['--hourly-test', '--hourly-test', '--fast-testnet'],
                   ['--fast-testnet', '--hourly-test', '--fast-testnet'],
-                  ['--fast-testnet', '--oracle-recovery', '--oracle-recovery']]:
+                  ['--fast-testnet', '--oracle-recovery', '--oracle-recovery'],
+                  ['--fast-testnet', '--fund-test-million']]:
         result = subprocess.run(['bash', str(source/'ubuntu-enable-zero-daily.sh'), *flags], cwd=source, env=environment, capture_output=True, text=True, timeout=30)
         assert result.returncode != 0 and 'Usage:' in result.stdout
         assert current.resolve() == host/'runtime/releases/old' and not calls.read_text()

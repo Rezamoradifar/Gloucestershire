@@ -387,6 +387,16 @@ for the fast BNB Testnet profile. The ordinary release keeps 86,400-second
 periods. An oracle repair without an explicit interval change preserves an
 already installed hourly test mode.
 
+If the configured RPC cannot return the saved historical creation transaction or
+receipt, the CLI may retrieve only that missing proof from the fixed official
+BNB Testnet public RPC. Any available primary proof must already be valid;
+conflicting, malformed or failed primary records remain blocking. The fallback
+must prove chain 97, the exact saved creation input and its receipt/header pair.
+The configured primary RPC still verifies the canonical deployment block,
+confirmations and all current state, and remains the only signing/broadcast
+provider. The saved deployment report is required; this does not bypass a missing
+report or substitute a different deployment.
+
 Oracle-only execution uses the existing server key, automation run lock, private
 journal and cumulative 0.1 test BNB fee reservation. It accepts only the two
 reviewed mock feeds and preserves their price values while renewing timestamps
@@ -437,3 +447,30 @@ for the intended test-token amount and call `fundRewards(token, amount)`. A plai
 token transfer does not increment the reward ledger. For a BNB budget, call
 `fundRewards(address(0), amount)` with the same native value. This is BNB Testnet
 97. Funding belongs to the vault, rather than the withdrawal queue or operator.
+
+For the separately authorized addition of exactly 1,000,000 Test USDT on this
+verified fast target, run the combined repair from the pinned checkout:
+
+```bash
+bash ubuntu-zero-oracle.sh --execute --hourly-test --fund-test-million
+```
+
+This is a test-token reward grant, not real USD, mainnet USDT, an investment or a
+new deployment. The grant verifies the pinned token runtime, metadata, chain,
+vault, owner and operator. It saves its fixed plan before minting only the
+operator's initial shortfall, approving exactly 1,000,000 tokens when necessary,
+and calling `fundRewards` for exactly that amount. The grant is separate from the
+existing 10-token setup seed, so the resulting total reward balance may include
+that seed or other funding and may decrease as rewards are credited.
+
+The grant uses the existing private automation journal, run lock, nonce checks,
+zero native transaction value and cumulative 0.1 test BNB automation fee cap.
+Canonical transaction and exact `Funded` event verification prove the grant;
+before/after reward-ledger balances also record any other changes in the same
+block. Retries reuse saved transactions and never grant again after completion,
+even if the budget has since been spent. Preserve the journal. The flag is
+one-shot and never appears in the persistent service command. Interrupted grant
+transactions resume before a new oracle nonce is used; mixed or unknown pending
+transaction scopes block before sending. Ordinary repair without this explicit
+flag never creates a million-token grant. The ordinary release and read-only
+mode reject it.

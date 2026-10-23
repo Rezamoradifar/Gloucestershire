@@ -76,7 +76,7 @@ cp server/trades-api.mjs server/community.mjs server/marketplace.mjs "$release/s
 cp artifacts/AutomaticGroupVault.json artifacts/MockFeed.json "$release/artifacts/"
 cp config/fresh-zero-testnet.json "$release/config/"
 if [ "${#profile_args[@]}" -ne 0 ]; then
- cp scripts/fund-fast-test-rewards.mjs "$release/scripts/"
+ cp scripts/fund-fast-test-rewards.mjs scripts/fund-million-test-rewards.mjs "$release/scripts/"
  cp artifacts/FastTestnetVault.json artifacts/MockToken.json "$release/artifacts/"
  cp config/fresh-fast-testnet.json "$release/config/"
 fi

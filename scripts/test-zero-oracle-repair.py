@@ -54,9 +54,12 @@ states=json.loads((p/'workers.json').read_text());env=(p/'etc/globaldroptrade/tr
 fast='TRADES_ZERO_START_PROFILE=global-fresh-fast-test-v1' in env
 root=p/'state'/('fresh-fast-testnet-automation-v1' if fast else 'fresh-zero-automation-v1')
 if stage=='worker':
- assert args[:2] in [['--oracles-only','--check'],['--oracles-only','--execute']]
- assert args[2:]==(['--fast-testnet'] if fast else [])
- if args[1]=='--check':
+ fund=args==['--execute','--fast-testnet','--fund-test-million']
+ if fund:assert fast,'Test top-up requires selected fast profile'
+ else:
+  assert args[:2] in [['--oracles-only','--check'],['--oracles-only','--execute']]
+  assert args[2:]==(['--fast-testnet'] if fast else [])
+ if not fund and args[1]=='--check':
   if mode=='proof-fail':raise SystemExit(1)
   print('ZERO_START_ORACLES_CHECKED ready=false');raise SystemExit(0)
  assert all(states.get(n,{{'active':'inactive'}})['active']=='inactive' for n in [{timer!r},{service!r}]),'Worker not stopped'
@@ -68,6 +71,23 @@ if stage=='worker':
  if mode=='execute-env-change':
   (p/'etc/globaldroptrade/trades.env').write_text(env+'CHANGED=1\\n');raise SystemExit(1)
  file=root/'journal.json';j=json.loads(file.read_text()) if file.exists() else {{'transactions':{{}}}}
+ if fund:
+  labels={{'fast-test-reward-topup-1000000-v1-'+step for step in ['mint','approve','fund']}}
+  if j.get('oracle',{{}}).get('pending') or any(not e.get('block') and name not in labels for name,e in j.get('transactions',{{}}).items()):
+   print('NON_GRANT_PENDING_TRANSACTION');raise SystemExit(1)
+  if mode=='fund-pending':
+   j['transactions']['fast-test-reward-topup-1000000-v1-mint']={{'hash':'fixed-million-pending-hash'}}
+   file.write_text(json.dumps(j));file.chmod(0o600);raise SystemExit(1)
+  marker=p/'million-confirmed'
+  if not marker.exists():
+   marker.write_text('1000000')
+   (p/'test-reward-budget').write_text('1000000')
+   with (p/'calls').open('a') as f:f.write('million-confirmed amount=1000000\\n')
+  for label in labels:
+   if label in j['transactions']:j['transactions'][label]['block']=42
+  j['transactions']['fast-test-reward-topup-1000000-v1-fund']={{'block':43,'hash':'fixed-million-fund-hash'}}
+  file.write_text(json.dumps(j));file.chmod(0o600)
+  print('ONE_MILLION_TEST_REWARD_TOPUP_CONFIRMED');raise SystemExit(0)
  if any(not e.get('block') and not name.startswith('oracle-') for name,e in j.get('transactions',{{}}).items()):
   print('NON_ORACLE_PENDING_TRANSACTION');raise SystemExit(1)
  if mode=='oracle-pending':
@@ -76,6 +96,9 @@ if stage=='worker':
  if not (p/'oracle-confirmed').exists():
   (p/'oracle-confirmed').write_text('one target refresh')
   with (p/'calls').open('a') as f:f.write('oracle-confirmed\\n')
+ for label,entry in j['transactions'].items():
+  if label.startswith('oracle-') and not entry.get('block'):entry['block']=42
+ j.get('oracle',{{}}).pop('pending',None)
  j['transactions']['oracle-repair']={{'block':42,'hash':'fixed-pending-hash'}}
  file.write_text(json.dumps(j));file.chmod(0o600)
  print('ZERO_START_ORACLES_VALID')
@@ -156,7 +179,7 @@ else:Path(out).write_text('{{"version":1,"chainId":97,"vaultAddress":"{target}"}
                    'TRADES_ZERO_START_PROFILE': 'untrusted-shell-override'}
 
     def reset(mode='success', fast=True, hourly=False):
-        for name in ['bad-health', 'oracle-confirmed', 'expect-hourly']:
+        for name in ['bad-health', 'oracle-confirmed', 'expect-hourly', 'million-confirmed', 'test-reward-budget']:
             (host/name).unlink(missing_ok=True)
         for name in ['zero-oracle-repair-v1', 'fresh-zero-automation-v1', 'fresh-fast-testnet-automation-v1',
                      'automation-v1', 'oracle-maintenance-v1', 'fresh-fast-testnet-v1']:
@@ -230,10 +253,44 @@ else:Path(out).write_text('{{"version":1,"chainId":97,"vaultAddress":"{target}"}
     (host/'expect-hourly').touch()
     result=run(('--execute','--hourly-test'))
     assert result.returncode==0 and 'install --fast-testnet --oracle-recovery --hourly-test\n' in calls.read_text(), result.stdout+result.stderr
-    for args in [(),('--execute','--fast-testnet'),('--check','--hourly-test'),('--execute','--execute'),('--hourly-test','--hourly-test','--execute')]:
+    reset(hourly=True)
+    result=run(('--execute','--fund-test-million'))
+    assert result.returncode==0, result.stdout+result.stderr
+    log=calls.read_text()
+    assert log.index('worker --oracles-only --execute --fast-testnet')<log.index('worker --execute --fast-testnet --fund-test-million')<log.index('install --fast-testnet --oracle-recovery --hourly-test')
+    assert (host/'million-confirmed').read_text()=='1000000'
+    (host/'test-reward-budget').write_text('0')
+    # A completed grant can be checked again without refilling a spent test budget.
+    result=run(('--execute','--fund-test-million'))
+    assert result.returncode==0 and (host/'test-reward-budget').read_text()=='0', result.stdout+result.stderr
+    assert calls.read_text().count('million-confirmed amount=1000000\n')==1
+    reset('fund-pending')
+    stopped(run(('--execute','--fund-test-million')))
+    assert 'fixed-million-pending-hash' in (selected/'journal.json').read_text()
+    (host/'mode').write_text('success');calls.write_text('')
+    result=run(('--execute','--fund-test-million'))
+    assert result.returncode==0, result.stdout+result.stderr
+    log=calls.read_text()
+    assert log.index('worker --execute --fast-testnet --fund-test-million')<log.index('worker --oracles-only --execute --fast-testnet')<log.index('install --fast-testnet --oracle-recovery')
+    assert (host/'million-confirmed').read_text()=='1000000'
+    reset('oracle-pending')
+    stopped(run(('--execute','--fund-test-million')))
+    # Simulate the persisted real oracle pending label and its saved request.
+    (selected/'journal.json').write_text('{"transactions":{"oracle-refresh-1":{"hash":"saved-oracle-hash"}},"oracle":{"pending":{"label":"oracle-refresh-1","request":{"to":"reviewed-feed","data":"saved-set"}}}}')
+    (host/'mode').write_text('success');calls.write_text('')
+    result=run(('--execute','--fund-test-million'))
+    assert result.returncode==0, result.stdout+result.stderr
+    log=calls.read_text();assert log.index('worker --oracles-only --execute --fast-testnet')<log.index('worker --execute --fast-testnet --fund-test-million')
+    reset()
+    (selected/'journal.json').write_text('{"transactions":{"fast-test-reward-topup-1000000-v1-mint":{"hash":"saved-grant"},"oracle-refresh-1":{"hash":"saved-oracle"}},"oracle":{"pending":{"label":"oracle-refresh-1","request":{}}}}')
+    stopped(run(('--execute','--fund-test-million')))
+    assert 'worker --oracles-only --execute' not in calls.read_text() and 'worker --execute --fast-testnet --fund-test-million' not in calls.read_text()
+    for args in [(),('--execute','--fast-testnet'),('--check','--hourly-test'),('--check','--fund-test-million'),('--execute','--execute'),('--hourly-test','--hourly-test','--execute'),('--execute','--fund-test-million','--fund-test-million')]:
         reset();result=run(args);assert result.returncode!=0 and calls.read_text()==''
     reset(fast=False)
     result=run(('--execute','--hourly-test'));assert result.returncode!=0 and calls.read_text()==''
+    reset(fast=False)
+    result=run(('--execute','--fund-test-million'));assert result.returncode!=0 and calls.read_text()==''
     reset('proof-fail')
     result=run();assert result.returncode!=0 and json.loads(workers.read_text())==prior
     assert 'systemctl stop' not in calls.read_text()
@@ -270,4 +327,4 @@ else:Path(out).write_text('{{"version":1,"chainId":97,"vaultAddress":"{target}"}
     reset();envfile.chmod(0o644);result=run();assert result.returncode!=0 and calls.read_text()==''
     reset();realenv=envfile.with_suffix('.private');envfile.rename(realenv);envfile.symlink_to(realenv)
     result=run();assert result.returncode!=0 and calls.read_text()==''
-    print('ZERO_ORACLE_REPAIR_HOST_CHECKS_PASSED: read-only diagnostics, selected target, shared locks, pending journals, persistent repair, hourly preservation and verified recovery')
+    print('ZERO_ORACLE_REPAIR_HOST_CHECKS_PASSED: read-only diagnostics, selected target, shared locks, pending ordering, one-time million-test-token grant, persistent repair, hourly preservation and verified recovery')

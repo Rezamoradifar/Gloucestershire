@@ -5,11 +5,13 @@ set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 mode=''
 hourly=0
+fund_million=0
 for argument in "$@"; do
  case "$argument" in
   --check|--execute) [ -z "$mode" ] || { echo 'Choose one repair mode'; exit 1; };mode=$argument;;
   --hourly-test) [ "$hourly" -eq 0 ] || { echo 'Duplicate hourly flag'; exit 1; };hourly=1;;
-  *) echo 'Usage: bash ubuntu-zero-oracle.sh --check|--execute [--hourly-test]'; exit 1;;
+  --fund-test-million) [ "$fund_million" -eq 0 ] || { echo 'Duplicate test funding flag'; exit 1; };fund_million=1;;
+  *) echo 'Usage: bash ubuntu-zero-oracle.sh --check|--execute [--hourly-test] [--fund-test-million]'; exit 1;;
  esac
 done
 [ -n "$mode" ] || { echo 'Choose --check or --execute'; exit 1; }
@@ -41,6 +43,7 @@ if [ "$profile" = fast ]; then
  other_state=/var/lib/globaldroptrade/fresh-zero-automation-v1
 fi
 if [ "$hourly" -eq 1 ] && { [ "$profile" != fast ] || [ "$mode" != --execute ]; }; then echo 'EXPLICIT_FAST_HOURLY_EXECUTION_REQUIRED'; exit 1;fi
+if [ "$fund_million" -eq 1 ] && { [ "$profile" != fast ] || [ "$mode" != --execute ]; }; then echo 'EXPLICIT_FAST_TEST_TOPUP_EXECUTION_REQUIRED'; exit 1;fi
 if [ "$mode" = --check ]; then
  node scripts/zero-start-automation.mjs --oracles-only --check "${profile_args[@]}"
  exit 0
@@ -224,7 +227,45 @@ exec 8>"$state/run.lock"
 run_lock_conflict=0
 if ! flock -n 8; then run_lock_conflict=1;echo 'ZERO_AUTOMATION_JOURNAL_IN_USE';false;fi
 cmp -s "$backup/trades.env" "$envfile"
+order=oracle-first
+if [ "$fund_million" -eq 1 ]; then
+ # Choose only the recovery order here. Each worker mode validates the exact
+ # saved target, signer, transaction payload and fee journal before sending.
+ order=$(python3 - "$state/journal.json" <<'PY'
+import json,os,re,stat,sys
+p=sys.argv[1]
+try:fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
+except FileNotFoundError:print('oracle-first');raise SystemExit(0)
+with os.fdopen(fd) as f:
+ s=os.fstat(f.fileno())
+ if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_mode&0o077 or s.st_size>16*1024*1024:raise SystemExit('PRIVATE_SIGNER_JOURNAL_REQUIRED')
+ try:j=json.load(f)
+ except (ValueError,UnicodeError):raise SystemExit('SIGNER_JOURNAL_REVIEW_REQUIRED')
+if not isinstance(j,dict) or not isinstance(j.get('transactions',{}),dict):raise SystemExit('SIGNER_JOURNAL_REVIEW_REQUIRED')
+grant={'fast-test-reward-topup-1000000-v1-'+step for step in ['mint','approve','fund']}
+groups=set();pending=[]
+def categorize(label):
+ if isinstance(label,str) and label in grant:return 'grant'
+ if isinstance(label,str) and re.fullmatch(r'oracle-refresh-[1-9][0-9]*',label):return 'oracle'
+ raise SystemExit('NON_ORACLE_OR_TEST_TOPUP_PENDING_REQUIRES_FULL_WORKER')
+for label,entry in j.get('transactions',{}).items():
+ if not isinstance(entry,dict):raise SystemExit('SIGNER_JOURNAL_REVIEW_REQUIRED')
+ if not entry.get('block'):pending.append(label);groups.add(categorize(label))
+oracle=j.get('oracle',{})
+if not isinstance(oracle,dict):raise SystemExit('SIGNER_JOURNAL_REVIEW_REQUIRED')
+if oracle.get('pending'):
+ if not isinstance(oracle['pending'],dict):raise SystemExit('SIGNER_JOURNAL_REVIEW_REQUIRED')
+ if categorize(oracle['pending'].get('label'))!='oracle':raise SystemExit('ORACLE_PENDING_SCOPE_MISMATCH')
+ groups.add('oracle')
+if len(pending)>1 or len(groups)>1:raise SystemExit('MIXED_PENDING_ORACLE_TOPUP_REQUIRES_RECONCILIATION')
+print('fund-first' if groups=={'grant'} else 'oracle-first')
+PY
+ )
+ echo 'ONE_TIME_TEST_REWARD_TOPUP amount=1000000 Test_USDT chain=97; no automatic refill.'
+fi
+if [ "$order" = fund-first ]; then node scripts/zero-start-automation.mjs --execute --fast-testnet --fund-test-million;fi
 node scripts/zero-start-automation.mjs --oracles-only --execute "${profile_args[@]}"
+if [ "$fund_million" -eq 1 ] && [ "$order" = oracle-first ]; then node scripts/zero-start-automation.mjs --execute --fast-testnet --fund-test-million;fi
 flock -u 8
 exec 8>&-
 cmp -s "$backup/trades.env" "$envfile"
