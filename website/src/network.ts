@@ -1,6 +1,6 @@
 import {getAddress,isAddress,ZeroAddress,type Contract} from 'ethers';
 import {session} from './chain';
-import {hasDeferredRewards} from './reward-mode';
+import {hasAutomaticGroup,hasDeferredRewards} from './reward-mode';
 
 export const BRANCH_PAGE=12n,GROUP_PAGE=4n;
 export type NetworkAction=
@@ -8,7 +8,7 @@ export type NetworkAction=
  | {kind:'append';group:bigint;branches:string[]}
  | {kind:'prepare'|'claim';group:bigint;stage:number;count?:number};
 export type NetworkGroup={id:bigint;stage:number;prepared:bigint;cursor:bigint;branches:bigint;eligibleUsd?:bigint;claimAmount:bigint|null;quoteError:string};
-export type NetworkPage={deferredRewards?:boolean;rewardBudget:bigint;treasuryCash:bigint;tokenDecimals:number;salesModel:bigint;block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
+export type NetworkPage={automaticGroup?:boolean;deferredRewards?:boolean;rewardBudget:bigint;treasuryCash:bigint;tokenDecimals:number;salesModel:bigint;block:number;qualified:bigint;branchCount:bigint;groupCount:bigint;paused:boolean;registered:boolean;tiers:bigint[][];stages:{goal:bigint;reward:bigint;cap:bigint}[];branches:{address:string;volume:bigint;grouped:boolean}[];groups:NetworkGroup[]};
 
 export function parseBranches(value:string):string[]{
  const branches=value.trim().split(/[\s,\u060c;]+/).filter(Boolean);
@@ -35,7 +35,7 @@ export function rewardBlockers(page:Pick<NetworkPage,'paused'|'rewardBudget'|'tr
  return reasons;
 }
 export async function readNetworkPage(vault:Contract,who:string,block:number,branchStart=0n,groupStart=0n):Promise<NetworkPage>{
- const options={blockTag:block};await requireVersion(vault,options);const deferredRewards=await hasDeferredRewards(vault,options);
+ const options={blockTag:block};await requireVersion(vault,options);const [deferredRewards,automaticGroup]=await Promise.all([hasDeferredRewards(vault,options),hasAutomaticGroup(vault,options)]);
  const token=await vault.usdt(options);
  const [ledger,treasuryCash,tokenDecimals,salesModel]=await Promise.all([vault.ledgers(token,options),vault.assetBalance(token,options),vault.tokenDecimals(options),readSalesModel(vault,options)]);
  const [qualified,branchCount,groupCount,paused,user,tiers,stages]=await Promise.all([
@@ -49,7 +49,7 @@ export async function readNetworkPage(vault:Contract,who:string,block:number,bra
   Promise.all(Array.from({length:branchLength},async(_,i)=>{const address=await vault.networkBranch(who,branchStart+BigInt(i),options);const [volume,grouped]=await Promise.all([vault.branchVolumeUsd(who,address,options),vault.groupedBranch(who,address,options)]);return {address,volume,grouped};})),
   Promise.all(Array.from({length:groupLength},async(_,i)=>{const id=groupStart+BigInt(i),g=await vault.rewardProgress(who,id,options);let claimAmount:bigint|null=null,quoteError='';if(Number(g.stage)<14){try{claimAmount=await vault.quoteAsset(token,stages[Number(g.stage)].reward,options);}catch(e){if((e as {code?:string}).code!=='CALL_EXCEPTION')throw e;quoteError='The contract cannot quote this reward. Its price feed may be invalid or stale.';}}let eligibleUsd:bigint|undefined;if(Number(g.stage)<14&&g.branches<=64n){const preview=await vault.rewardPreview(who,id,options);eligibleUsd=Array.from(preview.consume as bigint[]).reduce((n,v)=>n+v,0n);}return {id,stage:Number(g.stage),prepared:g.preparedUsd,cursor:g.cursor,branches:g.branches,eligibleUsd,claimAmount,quoteError};}))
  ]);
- return {deferredRewards,rewardBudget:ledger.rewards,treasuryCash,tokenDecimals:Number(tokenDecimals),salesModel,block,qualified,branchCount,groupCount,paused,registered:user.registered,tiers,stages,branches,groups};
+ return {deferredRewards,automaticGroup,rewardBudget:ledger.rewards,treasuryCash,tokenDecimals:Number(tokenDecimals),salesModel,block,qualified,branchCount,groupCount,paused,registered:user.registered,tiers,stages,branches,groups};
 }
 export async function loadNetwork(who:string,branchStart:bigint,groupStart:bigint){
  const {vault,provider}=await session(who);const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');
@@ -66,6 +66,7 @@ export function networkCall(action:NetworkAction):{method:string;args:unknown[]}
 export async function executeNetwork(action:NetworkAction,who:string,onStatus:(message:string,hash?:string)=>void){
  const {method,args}=networkCall(action);
  const {vault}=await session(who);await requireVersion(vault);
+ if((action.kind==='create'||action.kind==='append')&&await hasAutomaticGroup(vault))throw Error('This contract assigns every new branch to Group 1 automatically. Manual group changes are unavailable.');
  onStatus('Checking the selected network action');await vault[method].staticCall(...args);await session(who);
  onStatus('Confirm the network action in your wallet');const sent=await vault[method](...args);onStatus('Waiting for network confirmation',sent.hash);
  try{const receipt=await sent.wait();if(!receipt||receipt.status!==1)throw Error('The network action failed.');return receipt.hash as string;}

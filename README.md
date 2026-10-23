@@ -1,6 +1,6 @@
 ## Fresh zero-state contract
 
-For a new independent contract with empty accounts, automatic first-group branch assignment and administrator-approved withdrawals, use [FRESH-ZERO-RELEASE.md](FRESH-ZERO-RELEASE.md) and `bash ubuntu-deploy-zero-start.sh --execute`. This separate chain-97 deployment does not import previous vault data or switch the live website.
+For a new independent contract with empty accounts, automatic first-group branch assignment and administrator-approved withdrawals, use [FRESH-ZERO-RELEASE.md](FRESH-ZERO-RELEASE.md) and `bash ubuntu-deploy-zero-start.sh --execute`. Then run `bash ubuntu-connect-zero-start.sh` to verify the fresh deployment and connect its compatible frontend/API with backup and rollback. This chain-97 flow does not import previous vault data. Daily worker activation remains separate.
 
 ## Sales referral model 2
 

@@ -9,6 +9,7 @@ import PlanEligibility from './PlanEligibility';
 import LevelVolumes from './LevelVolumes';
 import Community from './Community';
 import {needsReferrerWarning} from './referrer';
+import {TransactionSession,requireContractTarget,type SessionTransaction} from './transaction-session';
 import './account.css';
 import './responsive.css';
 import {wallets,getWalletProvider,switchWalletNetwork,walletConnectionError,type WalletKind} from './wallet';
@@ -26,25 +27,25 @@ const date=(v:bigint)=>new Date(Number(v)*1000).toLocaleString('en-US',{dateStyl
 const actionLabel=(kind:Action['kind'])=>actionNames[kind];
 function App(){
  const [walletOpen,setWalletOpen]=useState(false),[connecting,setConnecting]=useState(false),[connectionKind,setConnectionKind]=useState<WalletKind>('walletconnect');
- const [page,setPage]=useState('overview'),[asset,setAsset]=useState<Asset>('BNB'),[who,setWho]=useState(''),[network,setNetwork]=useState<number|null>(null),[data,setData]=useState<Snapshot|null>(null),[limit,setLimit]=useState(20),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[status,setStatus]=useState(''),[txHash,setTxHash]=useState(''),[history,setHistory]=useState<{hash:string;label:string}[]>([]),[mobile,setMobile]=useState(false);
+ const [page,setPage]=useState('overview'),[asset,setAsset]=useState<Asset>('BNB'),[who,setWho]=useState(''),[network,setNetwork]=useState<number|null>(null),[data,setData]=useState<Snapshot|null>(null),[limit,setLimit]=useState(20),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[status,setStatus]=useState(''),[txHash,setTxHash]=useState(''),[history,setHistory]=useState<SessionTransaction[]>([]),[mobile,setMobile]=useState(false);
  const [kind,setKind]=useState<Action['kind']>('deposit'),[value,setValue]=useState(''),[recipient,setRecipient]=useState(''),[referrer,setReferrer]=useState(''),[saleId,setSaleId]=useState(''),[salesUsd,setSalesUsd]=useState(''),[evidence,setEvidence]=useState(''),[draft,setDraft]=useState<Action|null>(null),[quote,setQuote]=useState<bigint|null>(null),[quoteError,setQuoteError]=useState('');
  const [smallScreen,setSmallScreen]=useState(()=>window.matchMedia('(max-width: 960px)').matches);
  const menuTrigger=useRef<HTMLButtonElement>(null);
- const generation=useRef(0);const txLock=useRef(false);const dialog=useRef<HTMLDialogElement>(null);
+ const generation=useRef(0);const transactionSession=useRef(new TransactionSession());const txLock=useRef(false);const dialog=useRef<HTMLDialogElement>(null);
  const ready=configured&&!!who&&network===chainId&&!!data&&!loading&&!busy&&!connecting;
  const refresh=useCallback(async()=>{const id=++generation.current;if(!who||!configured||network!==chainId){setData(null);return;}setLoading(true);setError('');try{const d=await readSnapshot(who,asset,limit);if(generation.current===id)setData(d);}catch(e){if(generation.current===id){setData(null);setDraft(null);setError(errorText(e));}}finally{if(generation.current===id)setLoading(false);}},[who,asset,network,limit]);
  useEffect(()=>{setData(null);void refresh();},[refresh]);
  useEffect(()=>{
   let stopped=false,request=0;
   const sync=async()=>{
-   const id=++request;generation.current++;setData(null);setDraft(null);setHistory([]);setTxHash('');setLimit(20);setWho('');setNetwork(null);setLoading(false);
+   const id=++request;generation.current++;transactionSession.current.invalidate();setStatus('');setNotice('');setError('');setData(null);setDraft(null);setHistory([]);setTxHash('');setLimit(20);setWho('');setNetwork(null);setLoading(false);
    const provider=getWalletProvider();if(!provider)return;
    try{const [accounts,chain]=await Promise.all([provider.request({method:'eth_accounts'}),provider.request({method:'eth_chainId'})]);
     if(!stopped&&id===request&&provider===getWalletProvider()){setWho((accounts as string[])[0]||'');setNetwork(Number(chain));}
    }catch{if(!stopped&&id===request)setWho('');}
   };
   const unsubscribe=wallets.subscribe(()=>{void sync();});void sync();
-  return()=>{stopped=true;request++;unsubscribe();};
+  return()=>{stopped=true;request++;transactionSession.current.invalidate();unsubscribe();};
  },[]);
  useEffect(()=>{
   const update=()=>{if(page!=='network'&&document.visibilityState==='visible'&&!txLock.current)void refresh();};
@@ -74,9 +75,35 @@ function App(){
  async function disconnectWallet(){setWalletOpen(false);try{await wallets.disconnect();}catch(error){setError(errorText(error));}}
  async function switchNetwork(){setError('');try{await switchWalletNetwork();}catch(e){setError(errorText(e));}}
  function newAction(){setError('');if(!ready||!data)return;try{const amount=parseAmount(value,data.decimals);if(['transfer','ownerWithdraw'].includes(kind)&&!isAddress(recipient))throw Error('Enter a valid recipient address.');if(kind==='deposit'&&!data.registered&&referrer.trim()&&!isAddress(referrer.trim()))throw Error('Enter a valid referrer address.');if(kind==='settle'&&(!isAddress(recipient)||!saleId.trim()||!evidence.trim()||!salesUsd))throw Error('Complete the sales information and seller address.');setDraft({kind,value,recipient,referrer:referrer.trim(),settlementId:saleId,evidence,salesUsd,expectedFee:kind==='profit'?data.fee:0n,expectedLock:data.lock,expectedPenalty:data.penalty});}catch(e){setError(errorText(e));}}
- async function sendQueue(action:QueueAction){if(!data||txLock.current||connecting)return;txLock.current=true;setBusy(true);setError('');setNotice('');setTxHash('');setStatus('Confirm the withdrawal action in your wallet');try{const hash=await executeQueue(data.who,action);setTxHash(hash);setNotice(action.kind==='approve'?'Request approved. Payment can now be processed when funded.':action.kind==='cancel'?'Overdue request cancelled; its original balance is available.':'Withdrawal paid to the recorded recipient.');await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);txLock.current=false;}}
- async function sendNetwork(action:NetworkAction){if(!data||txLock.current||connecting)return;const captured=data;txLock.current=true;setBusy(true);setError('');setNotice('');setTxHash('');try{const hash=await executeNetwork(action,captured.who,(message,h)=>{setStatus(message);if(h)setTxHash(h);});setTxHash(hash);const accounts=await getWalletProvider()?.request({method:'eth_accounts'}) as string[];if(accounts?.[0]?.toLowerCase()===captured.who.toLowerCase())setHistory(old=>[{hash,label:'Network reward: '+action.kind},...old].slice(0,10));setNotice('Network action confirmed.');await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);txLock.current=false;setStatus('');}}
- async function send(){if(!draft||!data||txLock.current||connecting)return;if(needsReferrerWarning(draft.kind,data.registered,draft.referrer)&&!draft.noReferrerAcknowledged){setError('Confirm that you want to register without a referrer.');return;}const requested=draft,captured=data;txLock.current=true;setBusy(true);setError('');setNotice('');setTxHash('');setDraft(null);try{const hash=await execute(requested,captured,(message,h)=>{setStatus(message);if(h)setTxHash(h);});setTxHash(hash);const currentAccounts=await getWalletProvider()?.request({method:'eth_accounts'}) as string[];if(currentAccounts?.[0]?.toLowerCase()===captured.who.toLowerCase())setHistory(old=>[{hash,label:actionLabel(requested.kind)},...old].slice(0,10));setNotice(requested.kind==='profit'&&captured.deferredRewards?'Withdrawal request recorded. Payment deadline: 72 hours. Funds have not been paid yet.':'Transaction confirmed on the network.');setValue('');await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);txLock.current=false;setStatus('');}}
+ function captureTransaction(captured:Snapshot){
+  try{
+  requireContractTarget(captured,{chainId,vaultAddress});
+  const identity={who:captured.who,chainId:captured.chainId,vaultAddress:captured.vaultAddress,provider:getWalletProvider()};
+  const pending=transactionSession.current.capture(identity);
+  const receiptTarget={who:identity.who,chainId:identity.chainId,vaultAddress:identity.vaultAddress};
+  return {receiptTarget,current:()=>pending.current({who:captured.who,chainId,vaultAddress,provider:getWalletProvider()}),confirmed:()=>pending.verify(async()=>{
+   const provider=getWalletProvider();if(!provider)throw Error('Wallet disconnected.');
+   const [accounts,chain]=await Promise.all([provider.request({method:'eth_accounts'}),provider.request({method:'eth_chainId'})]);
+   return {who:(accounts as string[])[0]||'',chainId:Number(chain),vaultAddress,provider:provider===getWalletProvider()?provider:null};
+  })};
+  }catch(e){setError(errorText(e));return null;}
+ }
+ async function sendQueue(action:QueueAction){
+  if(!data||txLock.current||connecting)return;const captured=data,pending=captureTransaction(captured);if(!pending)return;txLock.current=true;setBusy(true);setError('');setNotice('');setTxHash('');setStatus('Confirm the withdrawal action in your wallet');
+  try{const hash=await executeQueue(captured.who,action);if(await pending.confirmed()){setTxHash(hash);setHistory(old=>[{...pending.receiptTarget,hash,label:'Withdrawal request: '+action.kind},...old].slice(0,10));setNotice(action.kind==='approve'?'Request approved. Payment can now be processed when funded.':action.kind==='cancel'?'Overdue request cancelled; its original balance is available.':'Withdrawal paid to the recorded recipient.');await refresh();}}
+  catch(e){if(pending.current())setError(errorText(e));}finally{setBusy(false);txLock.current=false;setStatus('');}
+ }
+ async function sendNetwork(action:NetworkAction){
+  if(!data||txLock.current||connecting)return;const captured=data,pending=captureTransaction(captured);if(!pending)return;txLock.current=true;setBusy(true);setError('');setNotice('');setTxHash('');
+  try{const hash=await executeNetwork(action,captured.who,(message,h)=>{if(pending.current()){setStatus(message);if(h)setTxHash(h);}});if(await pending.confirmed()){setTxHash(hash);setHistory(old=>[{...pending.receiptTarget,hash,label:'Network reward: '+action.kind},...old].slice(0,10));setNotice('Network action confirmed.');await refresh();}}
+  catch(e){if(pending.current())setError(errorText(e));}finally{setBusy(false);txLock.current=false;setStatus('');}
+ }
+ async function send(){
+  if(!draft||!data||txLock.current||connecting)return;if(needsReferrerWarning(draft.kind,data.registered,draft.referrer)&&!draft.noReferrerAcknowledged){setError('Confirm that you want to register without a referrer.');return;}
+  const requested=draft,captured=data,pending=captureTransaction(captured);if(!pending)return;txLock.current=true;setBusy(true);setError('');setNotice('');setTxHash('');setDraft(null);
+  try{const hash=await execute(requested,captured,(message,h)=>{if(pending.current()){setStatus(message);if(h)setTxHash(h);}});if(await pending.confirmed()){setTxHash(hash);setHistory(old=>[{...pending.receiptTarget,hash,label:actionLabel(requested.kind)},...old].slice(0,10));setNotice(requested.kind==='profit'&&captured.deferredRewards?'Withdrawal request recorded. Payment deadline: 72 hours. Funds have not been paid yet.':'Transaction confirmed on the network.');setValue('');await refresh();}}
+  catch(e){if(pending.current())setError(errorText(e));}finally{setBusy(false);txLock.current=false;setStatus('');}
+ }
  const amount=(()=>{try{return data?parseAmount(value,data.decimals):0n;}catch{return 0n;}})();
  const maxProfit=data?(data.profit<data.withdrawalLimit?data.profit:data.withdrawalLimit):0n;
  const toChain=(address:string)=>`${explorer}/address/${address}`;

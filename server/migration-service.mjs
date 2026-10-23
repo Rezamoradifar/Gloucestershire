@@ -3,8 +3,8 @@ import {Contract,FetchRequest,JsonRpcProvider,ZeroAddress,keccak256} from 'ether
 import {deferredPolicy,guardDeferredSource,scanDeferredInventory,verifyDeferredImport,assertDeferredSnapshotStable,discoverDeferredCopies} from '../scripts/deferred-migration-core.mjs';
 
 // Public read-only verification. No key loading, signing, configuration writes or arbitrary RPC proxy.
-export function createMigrationService(config,{provider,artifact,seedReader=()=>JSON.parse(fs.readFileSync('/var/www/globaldroptrade/migration-data/deferred-seed.json','utf8')),connectionReader=()=>JSON.parse(fs.readFileSync('/var/www/globaldroptrade/migration-data/deferred-connection.json','utf8')),policy=deferredPolicy,now=Date.now}={}){
- const enabled=config.chainId===97&&Boolean(config.rpcUrl&&config.address);let owned=false;
+export function createMigrationService(config,{provider,artifact,seedReader=()=>JSON.parse(fs.readFileSync('/var/www/globaldroptrade/migration-data/deferred-seed.json','utf8')),connectionReader=()=>JSON.parse(fs.readFileSync('/var/www/globaldroptrade/migration-data/deferred-connection.json','utf8')),policy=deferredPolicy,now=Date.now,allowLegacy=true}={}){
+ const enabled=allowLegacy&&config.chainId===97&&Boolean(config.rpcUrl&&config.address);let owned=false;
  if(enabled&&!provider){const request=new FetchRequest(config.rpcUrl);request.timeout=12000;provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});owned=true;}
  artifact??=enabled?JSON.parse(fs.readFileSync(new URL('../artifacts/TestnetDeferredMigrationVault.json',import.meta.url))):null;
  let metadata=null,metadataTime=0,metadataJob=null,inventory=null,indexState={},indexJob=null,indexError=null,indexTime=0;

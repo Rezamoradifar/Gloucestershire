@@ -1,12 +1,11 @@
 import {useEffect,useRef,useState} from 'react';
 import {ArrowUpRight,RefreshCw} from 'lucide-react';
-type Trade={id:string;asset:string;grossProfit:string;salesUsd:string;transactionHash:string;timestamp:string;confirmations:number;explorerUrl:string};
-type Feed={status:'live'|'stale'|'unavailable'|'not_configured';testnet?:boolean;chainId?:number;updatedAt:string|null;message?:string;trades:Trade[]};
+import {chainId,configured,loadRuntimeConfig,vaultAddress} from './config';
+import {failedTradeFeed,parseTradeFeed,TradeTargetMismatchError,type TradeFeed} from './trades-feed';
 const messages={live:'Confirmed contract settlements',stale:'Connection interrupted · Last confirmed snapshot',unavailable:'The live feed is temporarily unavailable.',not_configured:'The live contract feed has not been connected yet.'};
 const amount=(value:string)=>{const [whole,fraction='']=value.split('.');return BigInt(whole).toLocaleString('en-US')+(fraction?'.'+fraction:'');};
-const validTrade=(trade:Trade)=>trade&&typeof trade.id==='string'&&typeof trade.asset==='string'&&/^\d+(\.\d+)?$/.test(trade.grossProfit)&&/^\d+(\.\d+)?$/.test(trade.salesUsd)&&/^0x[\da-fA-F]{64}$/.test(trade.transactionHash)&&typeof trade.explorerUrl==='string'&&Number.isFinite(Date.parse(trade.timestamp));
 export default function LiveTrades(){
- const [feed,setFeed]=useState<Feed|null>(null),[busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0);
+ const [feed,setFeed]=useState<TradeFeed|null>(null),[busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0);
  const section=useRef<HTMLElement>(null),failures=useRef(0);
  const [visible,setVisible]=useState(false),[foreground,setForeground]=useState(document.visibilityState==='visible');
  useEffect(()=>{
@@ -22,12 +21,14 @@ export default function LiveTrades(){
   async function load(){
    setBusy(true);const timeout=setTimeout(()=>controller.abort(),12000);
    try{
+    if(!configured)await loadRuntimeConfig();
+    if(stopped)return;
     const response=await fetch('/api/trades?limit=12',{signal:controller.signal,cache:'no-store'});
     if(!response.headers.get('content-type')?.includes('application/json'))throw Error('Invalid content type');
-    const data=await response.json();
-    if(!data||!Array.isArray(data.trades)||data.trades.length>100||!data.trades.every(validTrade)||!Object.hasOwn(messages,data.status)||(!response.ok&&response.status!==503))throw Error('Invalid feed');
+    if(!response.ok&&response.status!==503)throw Error('Invalid feed response');
+    const data=parseTradeFeed(await response.json(),{chainId,vaultAddress});
     if(!stopped){setFeed(data);failures.current=['unavailable','stale'].includes(data.status)?Math.min(failures.current+1,3):0;}
-   }catch{if(!stopped){failures.current=Math.min(failures.current+1,3);setFeed(previous=>previous?.updatedAt?{...previous,status:'stale'}:{status:'unavailable',updatedAt:null,trades:[]});}}
+   }catch(error){if(!stopped){failures.current=Math.min(failures.current+1,3);setFeed(previous=>failedTradeFeed(previous,configured?{chainId,vaultAddress}:null,!(error instanceof TradeTargetMismatchError)));}}
    finally{clearTimeout(timeout);if(!stopped){setBusy(false);timer=setTimeout(()=>setRefresh(n=>n+1),Math.min(120000,30000*2**failures.current));}}
   }
   void load();return()=>{stopped=true;controller.abort();clearTimeout(timer);};

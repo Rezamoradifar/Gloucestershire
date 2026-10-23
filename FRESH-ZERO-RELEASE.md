@@ -118,3 +118,59 @@ must verify this new deployment and start fresh target-specific state; the older
 migration and `connect-fresh` installers are not the connection route for this
 release. Test mock oracle freshness and reward funding must also be checked before
 user operations.
+
+## Connect the fresh deployment to the site
+
+After deployment, run from this release checkout on the existing server:
+
+```bash
+bash ubuntu-connect-zero-start.sh
+```
+
+The connection command reads the transaction hash from the private fresh-zero
+deployment report. It independently verifies the exact canonical creation input,
+chain 97, expected deployer and owner, deterministic approval queue, current
+constructor settings and automatic-group capability. It does not accept an old
+vault address, import data, read an old vault or sign a transaction.
+
+The connection proof is explicitly `canonical-creation-and-current-state`.
+Verified constructor initialization proves that this implementation begins with
+empty user storage. Current state is verified separately. Historical storage
+queries are not required, and legitimate accounts created on the fresh contract
+before connection are preserved.
+
+Existing RPC, marketplace credentials, community tickets and announcements, keys,
+old policies and transaction journals remain intact. The command checks the
+staged configuration again before writing. It preserves multiline secrets by
+appending the verified contract/chain/start-block/port assignments and disabling
+the cancelled legacy migration API.
+
+The previously diagnosed Global Nginx entries are normalized with the pinned
+repair helper before taking the connection snapshot. Unknown Nginx layouts are
+rejected. The installer snapshots the current API release, environment, managed
+Nginx entries and connection marker; stops the previous automation/oracle timers
+and workers; installs the compatible prebuilt frontend and API; then checks HTTPS
+health, the API contract address and the exact served frontend index hash.
+`FRESH_ZERO_SITE_CONNECTED` is printed only after these checks and an independent
+final target check. The filtered result is saved to
+`/var/lib/globaldroptrade/fresh-zero-v1/connection-public.json`.
+
+On failure, the previous configuration and API release are restored. Previous
+workers resume only after the restored site and API are healthy; a failed recovery
+reports `RECOVERY_REQUIRED` and quiesces workers for review. Connection does not
+activate a daily worker or new oracle maintenance policy. Fresh reporter
+authorization and reward funding remain required for daily credits. Reload the
+site after connection: already open tabs retain the contract configuration they
+loaded before the change.
+
+The frontend recognizes automatic Group 1 and removes manual group-building
+actions for this contract, while retaining the legacy interface when connected
+to a legacy contract. Account snapshots, pending receipts and trade-feed records
+are checked against their contract and chain identity.
+
+Connection validation passed locally: 63 frontend tests, 6 chain/configuration
+connection tests, 12 API tests and 13 mock-host installation/recovery scenarios.
+The production build passed, and the unpacked frontend package matches the built
+files and embedded installer byte for byte. These are preparation checks; no
+live server cutover is claimed until the server command prints its verified
+connection result.

@@ -1,6 +1,7 @@
 import type {Contract} from 'ethers';
 export const deferredAbi=[
  'function REWARD_ACCRUAL_VERSION() view returns(uint256)',
+ 'function AUTO_REWARD_GROUP_VERSION() view returns(uint256)',
  'function withdrawalQueue() view returns(address)',
  'function claimNetworkRewards(uint256 group,uint8 expectedStage,uint8 count)'
 ];
@@ -24,5 +25,10 @@ export async function hasApprovalQueue(queue:Contract,options:Record<string,unkn
 export async function hasDeferredRewards(vault:Contract,options:Record<string,unknown>={}):Promise<boolean>{
  if(typeof vault.REWARD_ACCRUAL_VERSION!=='function')return false;
  try{const version=await vault.REWARD_ACCRUAL_VERSION(options);if(version!==1n)throw Error('Unsupported reward accounting version.');return true;}
+ catch(e){if((e as {code?:string}).code==='CALL_EXCEPTION')return false;throw e;}
+}
+export async function hasAutomaticGroup(vault:Contract,options:Record<string,unknown>={}):Promise<boolean>{
+ if(typeof vault.AUTO_REWARD_GROUP_VERSION!=='function')return false;
+ try{const version=await vault.AUTO_REWARD_GROUP_VERSION(options);if(version!==1n)throw Error('Unsupported automatic reward group version.');return true;}
  catch(e){if((e as {code?:string}).code==='CALL_EXCEPTION')return false;throw e;}
 }
