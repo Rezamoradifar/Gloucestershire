@@ -175,6 +175,15 @@ files and embedded installer byte for byte. These are preparation checks; no
 live server cutover is claimed until the server command prints its verified
 connection result.
 
+The API installer makes its new immutable runtime release readable by the
+unprivileged `globaldroptrade-api` service, even when connection was launched with
+`umask 077` or source files have private modes. This normalization is limited to
+the newly copied runtime code and dependencies. The environment file, community
+data, operator keys, connection reports and backups retain private permissions.
+If an earlier attempt reported `API health check failed` and restored the previous
+site, rerun connection from the corrected pinned release using the existing fresh
+deployment report. No second contract deployment is needed for this repair.
+
 ## Enable the existing-server-key worker
 
 After deployment and connection, run from this release checkout:

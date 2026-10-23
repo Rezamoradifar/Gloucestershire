@@ -2,7 +2,7 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 [ "$(id -u)" -eq 0 ] || { echo 'Run: sudo bash ubuntu-api.sh'; exit 1; }
-for tool in node npm systemctl curl install; do command -v "$tool" >/dev/null || { echo "Missing required command: $tool (Node.js 20+ required)"; exit 1; }; done
+for tool in node npm systemctl curl install find chmod; do command -v "$tool" >/dev/null || { echo "Missing required command: $tool (Node.js 20+ required)"; exit 1; }; done
 node -e 'if(Number(process.versions.node.split(".")[0])<20)process.exit(1)'
 api_root=/opt/globaldroptrade-api
 release="$api_root/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
@@ -10,13 +10,21 @@ envfile=/etc/globaldroptrade/trades.env
 unit=/etc/systemd/system/globaldroptrade-api.service
 backup_dir=$(mktemp -d)
 trap 'rm -rf -- "$backup_dir"' EXIT
-install -d -m 755 "$release/server" /etc/globaldroptrade
+install -d -m 755 "$api_root" "$api_root/releases" "$release/server" /etc/globaldroptrade
 install -d -m 755 "$release/scripts" "$release/artifacts"
-cp server/trades-api.mjs server/community.mjs server/marketplace.mjs server/migration-service.mjs "$release/server/"
-cp scripts/deferred-migration-core.mjs "$release/scripts/"
-cp artifacts/TestnetDeferredMigrationVault.json "$release/artifacts/"
-cp package.json package-lock.json "$release/"
-(cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+(
+ umask 022
+ cp server/trades-api.mjs server/community.mjs server/marketplace.mjs server/migration-service.mjs "$release/server/"
+ cp scripts/deferred-migration-core.mjs "$release/scripts/"
+ cp artifacts/TestnetDeferredMigrationVault.json "$release/artifacts/"
+ cp package.json package-lock.json "$release/"
+ cd "$release"
+ npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+)
+# Only this immutable public-code release is made readable by the API service user.
+# Explicit modes also cover source or dependency files copied with private permissions.
+find "$release" -type d -exec chmod 755 {} +
+find "$release" -type f -exec chmod u=rwX,go=rX {} +
 if [ ! -f "$envfile" ]; then install -m 600 server/trades.env.example "$envfile"; fi
 chmod 600 "$envfile"
 id globaldroptrade-api >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin globaldroptrade-api
