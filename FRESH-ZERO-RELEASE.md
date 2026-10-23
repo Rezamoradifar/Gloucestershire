@@ -242,3 +242,43 @@ It has no wallet connection or transaction actions, marks stale reports, and
 distinguishes scheduled automation from actual credited transaction evidence.
 Local tests validate these states and installation recovery; they do not prove
 that the user's VPS has run this release.
+
+## Initial reporter permission in the SafePal browser
+
+For the connected fresh deployment
+`0x23C32Bb326DB63f89532f80e757B8463c75655b8`, install the small permission page
+from the pinned release on the existing server:
+
+```bash
+bash ubuntu-zero-permission.sh
+```
+
+Open `https://globaldroptrade.com/deploy/zero-start-permission.html` inside
+SafePal's DApp browser. Select **Select BNB Testnet** (chain 97), connect the
+existing owner wallet, and select **Review owner proposal**. After reviewing the target and
+fee, **Confirm in wallet** opens the wallet for the exact `queueConfiguration`
+call. This starts the existing
+48-hour delay. Two distinct configured partner wallets must each review and
+confirm **Review partner vote**. After the delay and votes, the owner can
+select **Review owner execution** and confirm it. Each step is a separate wallet
+transaction; connecting, refreshing and installing do not send transactions.
+
+This is the existing reporter role, covering sales reporting, customer status and
+daily credit batches. It does not grant withdrawal approval. Every permission
+transaction sends zero native value and has a maximum reviewed fee of 0.01 test
+BNB. The page accepts only the pinned fresh target and operator, verifies live
+chain identity and governance state again before submitting, and retains pending
+transaction intent so a refresh does not resend a request automatically. Missing
+or ambiguous wallet responses remain blocked for reconciliation.
+
+The static installer verifies the existing fresh connection, copies only the
+permission page and its local dependencies with public read permissions, and
+checks the served HTTPS assets. It preserves the current API, status console,
+workers, keys, environment and financial journals. Publishing failure restores
+only the previous permission-page entry point. It does not deploy a contract or
+grant permission from the server.
+
+The existing daily worker observes completed permission changes automatically.
+Reward funding through `fundRewards` and verified historical state remain
+necessary before a new daily policy starts; this permission-only page does not
+fund rewards. The first daily credit follows a complete 24-hour policy period.
