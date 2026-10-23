@@ -64,7 +64,8 @@ export async function verifyZeroStartCreation({provider,artifact,release=zeroSta
  return {version:1,releaseId:c.releaseId,chainId:97,contractAddress:target,owner:c.owner,deployer:c.deployer,hash,block:receipt.blockNumber,blockHash:receipt.blockHash,queue:getCreateAddress({from:target,nonce:1}),artifactHash:c.artifactHash,initcodeHash:keccak256(expected.data),approvalVersion:1,automaticGroupVersion:1,...fastReportFields(c),proofMethod:'canonical-creation-and-current-state',emptyAtInitialization:true,initialStateProof:{method:'verified-constructor-initialization',transactionHash:hash,block:receipt.blockNumber,blockHash:receipt.blockHash,importsUserData:false},historicalStateVerified:false,accountsMigrated:false,siteConnected:false,automationActive:false,dailyAutomationActive:false};
 }
 
-async function verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations}){
+async function verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations,inspectSettlementLogs=true}){
+ if(typeof inspectSettlementLogs!=='boolean')throw Error('ZERO_START_SETTLEMENT_INSPECTION_FLAG_REQUIRED');
  // The saved report supplies only a transaction hash. Derive every trusted field independently.
  const report=await verifyZeroStartCreation({provider,artifact,release,hash:deploymentReport?.hash,confirmations});
  const c=validateZeroStartRelease(release),block=await provider.getBlock('latest');
@@ -87,8 +88,8 @@ async function verifyConnectionTarget({provider,artifact,deploymentReport,config
  const paused=await vault.paused(o),partnerVotesRequired=Number(await vault.partnerVotesRequired(o));
  // Probe one configured settlement-log page; never read a previous contract or import its history.
  const toBlock=block.number-config.confirmations;
- let settlementLogProbe={status:'awaiting-confirmations',fromBlock:null,toBlock};
- if(toBlock>=report.block){
+ let settlementLogProbe={status:inspectSettlementLogs?'awaiting-confirmations':'not-inspected-for-oracle-maintenance',fromBlock:null,toBlock};
+ if(inspectSettlementLogs&&toBlock>=report.block){
   const fromBlock=Math.max(report.block,toBlock-config.pageSize+1);
   try{await provider.getLogs({address:report.contractAddress,topics:[vault.interface.getEvent('SaleSettled').topicHash],fromBlock,toBlock});}
   catch{throw Error('ZERO_START_SETTLEMENT_LOG_RPC_REQUIRED');}
@@ -99,9 +100,9 @@ async function verifyConnectionTarget({provider,artifact,deploymentReport,config
  return {report,identity:identityOf(report,keccak256(queueCode)),currentState:{block:block.number,blockHash:block.hash,paused,partnerVotesRequired,settlementLogProbe}};
 }
 
-export async function prepareZeroStartConnection({provider,artifact,deploymentReport,original,release=zeroStartRelease,confirmations=3}){
+export async function prepareZeroStartConnection({provider,artifact,deploymentReport,original,release=zeroStartRelease,confirmations=3,inspectSettlementLogs=true}){
  const {config}=existingSettings(original);
- const verified=await verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations});
+ const verified=await verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations,inspectSettlementLogs});
  const env=renderConnectionSettings(original,verified.report);
  const report={...verified.report,kind:'fresh-zero-site-connection',target:verified.report.contractAddress,identity:verified.identity,originalEnvHash:digest(original),stagedEnvHash:digest(env),currentState:verified.currentState,communityDataPreserved:true,verified:true,siteConnected:false,transactionsSent:0};
  return {env,report};

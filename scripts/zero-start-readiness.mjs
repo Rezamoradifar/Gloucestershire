@@ -20,7 +20,7 @@ function verifyMarker(marker,report){
  if(report.releaseId==='global-fresh-fast-test-v1'&&(marker.releaseId!==report.releaseId||marker.testMode!==true||marker.initialServerReporter!==true||marker.fastTestnetVersion!==1))throw Error('ZERO_START_FAST_CONNECTED_MARKER_REQUIRED');
 }
 
-async function archiveReadiness({provider,vault,report,token,checkpoint,policy,periodStartTimestamp}){
+async function archiveReadiness({provider,vault,report,token,checkpoint,policy,periodStartTimestamp,requiredRetentionSeconds=day}){
  const created=await provider.getBlock(report.block);
  if(!created||created.hash!==report.blockHash)throw Error('ZERO_START_RECEIPT_NOT_FINAL');
  let requestedPeriod=periodStartTimestamp;
@@ -30,8 +30,8 @@ async function archiveReadiness({provider,vault,report,token,checkpoint,policy,p
   requestedPeriod??=policy.startTimestamp;
  }
  if(requestedPeriod!==undefined&&(!Number.isSafeInteger(requestedPeriod)||requestedPeriod<created.timestamp||requestedPeriod>checkpoint.timestamp))throw Error('ZERO_START_DAILY_PERIOD_START_INVALID');
- const mature=checkpoint.timestamp-created.timestamp>=day;
- const requests=[{purpose:mature?'previous-day-retention':'deployment-state',timestamp:mature?checkpoint.timestamp-day:created.timestamp}];
+ const mature=checkpoint.timestamp-created.timestamp>=requiredRetentionSeconds;
+ const requests=[{purpose:mature?(requiredRetentionSeconds===day?'previous-day-retention':'previous-hour-retention'):'deployment-state',timestamp:mature?checkpoint.timestamp-requiredRetentionSeconds:created.timestamp}];
  if(requestedPeriod!==undefined&&!requests.some(row=>row.timestamp===requestedPeriod))requests.push({purpose:'requested-period-start',timestamp:requestedPeriod});
  const probes=[];
  for(const request of requests){
@@ -50,18 +50,28 @@ async function archiveReadiness({provider,vault,report,token,checkpoint,policy,p
   }
  }
  const supported=probes.every(probe=>probe.supported);
- return {status:!supported?'unavailable':mature?'supported':'provisional',requiredRetentionSeconds:day,targetAgeSeconds:checkpoint.timestamp-created.timestamp,probes,fullyVerified:supported&&mature};
+ return {status:!supported?'unavailable':mature?'supported':'provisional',requiredRetentionSeconds,targetAgeSeconds:checkpoint.timestamp-created.timestamp,probes,fullyVerified:supported&&mature};
 }
 
-export async function verifyZeroStartReadiness({provider,artifact,deploymentReport,connectionReport,original,release=zeroStartRelease,policy,periodStartTimestamp,confirmations=3}){
+// Establish the current non-upgradeable target without requiring reward funding,
+// a daily policy or historical principal snapshots. Oracle maintenance uses this
+// proof so a separate daily-readiness failure cannot prevent feed recovery.
+export async function verifyZeroStartTarget({provider,artifact,deploymentReport,connectionReport,original,release=zeroStartRelease,confirmations=3,inspectSettlementLogs=true}){
  const settings=parseEnv(original),c=validateZeroStartRelease(release);
  if(settings.GLOBAL_MIGRATION_ENABLED!=='false')throw Error('ZERO_START_LEGACY_MIGRATION_MUST_BE_DISABLED');
  const config=readConfig(settings);
- const {report}=await prepareZeroStartConnection({provider,artifact,deploymentReport,original,release:c,confirmations});
+ const {report}=await prepareZeroStartConnection({provider,artifact,deploymentReport,original,release:c,confirmations,inspectSettlementLogs});
  verifyMarker(connectionReport,report);
  const fast=c.releaseId==='global-fresh-fast-test-v1'&&c.testMode===true&&c.initialServerReporter===true;
  if(fast&&(report.testMode!==true||report.initialServerReporter!==true||report.fastTestnetVersion!==1))throw Error('ZERO_START_FAST_DEPLOYMENT_MARKER_REQUIRED');
  if(config.chainId!==97||config.address!==report.target||config.startBlock!==report.block||config.port!==3115)throw Error('ZERO_START_ACTIVE_API_TARGET_MISMATCH');
+ return {version:1,kind:'fresh-zero-verified-target',releaseId:c.releaseId,chainId:97,target:report.target,contractAddress:report.target,owner:c.owner,operator:c.deployer,token:c.token,queue:report.queue,hash:report.hash,block:report.block,blockHash:report.blockHash,artifactHash:report.artifactHash,initcodeHash:report.initcodeHash,runtimeHash:report.runtimeHash,approvalVersion:1,automaticGroupVersion:1,...(fast?{testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{}),currentState:report.currentState,siteConnected:true,transactionsSent:0};
+}
+
+export async function verifyZeroStartReadiness({provider,artifact,deploymentReport,connectionReport,original,release=zeroStartRelease,policy,periodStartTimestamp,confirmations=3,hourlyTest=false}){
+ const c=validateZeroStartRelease(release),report=await verifyZeroStartTarget({provider,artifact,deploymentReport,connectionReport,original,release:c,confirmations});
+ const fast=c.releaseId==='global-fresh-fast-test-v1'&&c.testMode===true&&c.initialServerReporter===true;
+ if(typeof hourlyTest!=='boolean'||(hourlyTest&&!fast))throw Error('HOURLY_TEST_FAST_PROFILE_REQUIRED');
  const checkpoint=await provider.getBlock(Math.max(report.block,report.currentState.block-confirmations));
  if(!checkpoint)throw Error('ZERO_START_READINESS_CHECKPOINT_REORG');
  const vault=new Contract(report.target,artifact.abi,provider),o={blockTag:checkpoint.number};
@@ -89,7 +99,7 @@ export async function verifyZeroStartReadiness({provider,artifact,deploymentRepo
  const requiredAssets=assets.filter(asset=>asset.requiredForExistingPrincipal);
  const funding={maxDailyBps:Number(maxDailyBps),estimateBasis:'current-principal-times-highest-current-plan-rate-rounded-up',emptyPrincipalMinimumBasis:'one-smallest-asset-unit-positive-budget-only',assets,ready:requiredAssets.length?requiredAssets.every(asset=>asset.ready):assets.some(asset=>asset.ready)};
  const gas=await provider.getBalance(c.deployer,checkpoint.number),operatorGas={balance:gas.toString(),positive:gas>0n};
- const archive=await archiveReadiness({provider,vault,report,token:c.token,checkpoint,policy,periodStartTimestamp});
+ const archive=await archiveReadiness({provider,vault,report,token:c.token,checkpoint,policy,periodStartTimestamp,requiredRetentionSeconds:hourlyTest?3600:day});
  // The separate test profile can establish its first policy while young, after
  // every currently required snapshot succeeds. Retention remains unverified.
  if(fast&&archive.status==='provisional'&&archive.probes.every(probe=>probe.supported))archive.provisionalAccepted=true;
@@ -113,7 +123,7 @@ export async function verifyZeroStartReadiness({provider,artifact,deploymentRepo
  if(archive.status==='provisional'&&!archive.provisionalAccepted)blockers.push('ARCHIVE_RETENTION_NOT_YET_VERIFIABLE');
  if((await provider.getBlock(checkpoint.number))?.hash!==checkpoint.hash)throw Error('ZERO_START_READINESS_CHECKPOINT_REORG');
  // Explicit public allowlist: no RPC URL, environment strings, credentials or signer material.
- return {version:1,kind:'fresh-zero-daily-readiness',releaseId:c.releaseId,chainId:97,target:report.target,contractAddress:report.target,owner:c.owner,operator:c.deployer,token:c.token,tokenDecimals:Number(tokenDecimalsValue),queue:report.queue,hash:report.hash,block:report.block,blockHash:report.blockHash,artifactHash:report.artifactHash,initcodeHash:report.initcodeHash,runtimeHash:report.runtimeHash,approvalVersion:1,automaticGroupVersion:1,...(fast?{testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{}),checkpoint:{block:checkpoint.number,blockHash:checkpoint.hash,timestamp:checkpoint.timestamp,observedHead:report.currentState.block,confirmations:report.currentState.block-checkpoint.number},paused,pausedConfirmed,reporterAuthorized,reporterProposal,funding,operatorGas,archive,ready:blockers.length===0,blockers,siteConnected:true,automationStatus:'not-inspected',transactionsSent:0};
+ return {version:1,kind:'fresh-zero-daily-readiness',releaseId:c.releaseId,chainId:97,target:report.target,contractAddress:report.target,owner:c.owner,operator:c.deployer,token:c.token,tokenDecimals:Number(tokenDecimalsValue),queue:report.queue,hash:report.hash,block:report.block,blockHash:report.blockHash,artifactHash:report.artifactHash,initcodeHash:report.initcodeHash,runtimeHash:report.runtimeHash,approvalVersion:1,automaticGroupVersion:1,...(fast?{testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{}),...(hourlyTest?{testInterval:'hourly',allocationPeriodSeconds:3600}:{}),checkpoint:{block:checkpoint.number,blockHash:checkpoint.hash,timestamp:checkpoint.timestamp,observedHead:report.currentState.block,confirmations:report.currentState.block-checkpoint.number},paused,pausedConfirmed,reporterAuthorized,reporterProposal,funding,operatorGas,archive,ready:blockers.length===0,blockers,siteConnected:true,automationStatus:'not-inspected',transactionsSent:0};
 }
 
 function privateDirectory(directory){

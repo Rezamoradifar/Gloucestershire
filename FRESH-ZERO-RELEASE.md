@@ -369,3 +369,71 @@ and artifacts are preserved. Local checks cover actual Ganache contract,
 deployment, connection, fixed funding, historical readiness and daily-credit
 behavior, status validation, and isolated host installation/recovery. They do
 not prove deployment on the user's VPS or native SafePal behavior.
+
+## Oracle recovery and hourly testing
+
+For a fresh vault that is already connected, these commands inspect or repair
+the currently selected release without deploying another contract:
+
+```bash
+bash ubuntu-zero-oracle.sh --check
+bash ubuntu-zero-oracle.sh --execute --hourly-test
+```
+
+The private API configuration selects the connected standard or fast release;
+the repair then independently proves its exact creation transaction, current
+runtime/settings and saved connection marker. Hourly testing is accepted only
+for the fast BNB Testnet profile. The ordinary release keeps 86,400-second
+periods. An oracle repair without an explicit interval change preserves an
+already installed hourly test mode.
+
+Oracle-only execution uses the existing server key, automation run lock, private
+journal and cumulative 0.1 test BNB fee reservation. It accepts only the two
+reviewed mock feeds and preserves their price values while renewing timestamps
+and rounds. It reconciles its saved oracle update before sending another;
+pending non-oracle transactions require the corresponding normal worker to
+reconcile them first. It never seeds rewards, credits profit, pays withdrawals
+or changes a policy. Chain, canonical block, target, environment, runtime and
+nonce checks remain in place. Mainnet and unrelated legacy oracle CLIs are not
+used.
+
+The repair stops the current timer before its service, refuses other active
+signers and unresolved non-selected journals, then refreshes under the current
+worker's lock. It installs the updated persistent worker after verification.
+Failure recovery resumes prior workers only after exact unchanged configuration,
+units/releases and healthy API checks with no unresolved journal. Confirmed
+transactions and financial journals are preserved for retry.
+
+Normal worker execution now maintains verified price feeds before optional new
+test-token seeding, daily historical readiness, policy loading or approved
+withdrawal scanning. A retryable daily read or seed-inspection failure after
+successful maintenance is reported as waiting; it cannot claim active credits.
+Identity, pending transaction, reorganization, fee and other financial safety
+failures remain blocking. Read-only status exposes the separate oracle result.
+
+With explicit `--hourly-test`, a verified fast vault uses 3,600-second test
+periods. Each test period applies the full deployed daily plan percentage to its
+period-start active principal, including completed reinvestment. This accelerates
+test allocations by 24 times; it does not change the on-chain plan percentages
+or enable this interval on mainnet. Hourly batch identifiers have a separate
+domain; existing 24-hour batch identifiers remain unchanged. Actual period-start
+historical reads, funded reward cash, server authority and canonical checkpoints
+remain required. Re-running a completed interval cannot credit it twice.
+Explicit hourly readiness requires one-hour retention and each actual unpaid
+period-start snapshot; ordinary readiness retains its 24-hour requirement.
+
+A new hourly policy begins at a fresh confirmed checkpoint. An unused 24-hour
+policy can transition only with no prior daily credits, pending transaction or
+fully due unpaid period. Its original policy, activation and daily state are
+archived before replacement, with a persisted recovery intent. Existing account
+balances, contract addresses, transaction fee reservations and journals are not
+reset. A policy with prior credits requires review instead of silently changing
+its timeline or replaying old periods at hourly frequency.
+
+The reward budget is held by the connected vault. On the verified fast deployment
+`0x04E26FcaA198d21cEf6d04e1e54f9C5f6399e522`, its test reward token is
+`0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89` with 18 decimals. Approve the vault
+for the intended test-token amount and call `fundRewards(token, amount)`. A plain
+token transfer does not increment the reward ledger. For a BNB budget, call
+`fundRewards(address(0), amount)` with the same native value. This is BNB Testnet
+97. Funding belongs to the vault, rather than the withdrawal queue or operator.

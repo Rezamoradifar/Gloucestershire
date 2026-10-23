@@ -7,8 +7,12 @@ import {writePrivateJson,journalTransaction} from './migration-journal.mjs';
 import {readPrivateKey} from './migration-signers.mjs';
 
 const registry=new Interface(['event Registered(address indexed user,address indexed referrer)']);
+export const hourlyTestPolicyFields=Object.freeze({testMode:true,releaseId:'global-fresh-fast-test-v1',testInterval:'hourly',fastTestnetVersion:1});
+const hourlyTestOwner='0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632';
+const hourlyTestOperator='0xf2ad0FB5288785E58943070De6CF6A1f7a68FBB2';
 export const dailyAbi=[
  'function owner() view returns(address)','function reporters(address) view returns(bool)',
+ 'function FAST_TESTNET_VERSION() view returns(uint256)',
  'function usdt() view returns(address)','function dailyTargetBps(address) view returns(uint16)',
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 nextWithdrawal)',
  'function ledgers(address) view returns(uint256 principal,uint256 profit,uint256 feeReserve,uint256 rewards)',
@@ -23,10 +27,27 @@ export const approvedQueueAbi=[
 ];
 export function validateDailyPolicy(p){
  if(p?.version!==1||p.chainId!==97||!isAddress(p.vaultAddress)||getAddress(p.vaultAddress)===ZeroAddress)throw Error('INVALID_DAILY_POLICY');
- if(p.basis!=='period-start-active-principal'||p.periodSeconds!==86400||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
+ if(p.basis!=='period-start-active-principal'||![86400,3600].includes(p.periodSeconds)||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
+ if((p.periodSeconds===3600&&!isHourlyTestPolicy(p))||(p.periodSeconds!==3600&&p.testInterval==='hourly'))throw Error('HOURLY_TEST_POLICY_MARKERS_REQUIRED');
  if(!Number.isSafeInteger(p.startTimestamp)||p.startTimestamp<=0||!Number.isSafeInteger(p.deploymentBlock)||p.deploymentBlock<1)throw Error('INVALID_DAILY_START');
  if(!/^0x[0-9a-f]{64}$/i.test(p.runtimeHash||''))throw Error('DAILY_RUNTIME_HASH_REQUIRED');
  return {...p,vaultAddress:getAddress(p.vaultAddress)};
+}
+export function isHourlyTestPolicy(p){
+ return p?.periodSeconds===3600&&Object.entries(hourlyTestPolicyFields).every(([key,value])=>p[key]===value);
+}
+// A short interval is available only for the explicit, deployed fast test profile.
+export async function assertHourlyTestTarget({provider,vault,policy}){
+ policy=validateDailyPolicy(policy);
+ if(!isHourlyTestPolicy(policy))throw Error('HOURLY_TEST_POLICY_REQUIRED');
+ if(Number(await provider.send('eth_chainId',[]))!==97)throw Error('TESTNET_ONLY');
+ const address=getAddress(await vault.getAddress());
+ if(address!==policy.vaultAddress||keccak256(await provider.getCode(address))!==policy.runtimeHash)throw Error('HOURLY_TEST_TARGET_MISMATCH');
+ const target=new Contract(address,['function FAST_TESTNET_VERSION() view returns(uint256)','function owner() view returns(address)','function reporters(address) view returns(bool)'],provider);
+ let version,owner,reporter;
+ try{[version,owner,reporter]=await Promise.all([target.FAST_TESTNET_VERSION(),target.owner(),target.reporters(hourlyTestOperator)]);}catch{throw Error('HOURLY_TEST_FAST_TARGET_REQUIRED');}
+ if(version!==1n||getAddress(owner)!==hourlyTestOwner||reporter!==true)throw Error('HOURLY_TEST_FAST_TARGET_REQUIRED');
+ return true;
 }
 export async function blockAtTime(provider,timestamp,first,last){
  const initial=await provider.getBlock(first);if(!initial||initial.timestamp>timestamp)throw Error('PERIOD_PRECEDES_DEPLOYMENT');
@@ -54,9 +75,10 @@ export async function indexMembers({provider,policy,state,through,save,maxPages=
 }
 export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3}){
  policy=validateDailyPolicy(policy);
+ if(isHourlyTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
  if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_DAILY_EPOCH');
  const head=await provider.getBlockNumber(),final=await provider.getBlock(Math.max(0,head-confirmations));
- const start=policy.startTimestamp+epoch*86400,end=start+86400;
+ const start=policy.startTimestamp+epoch*policy.periodSeconds,end=start+policy.periodSeconds;
  if(!final||final.timestamp<end)return {status:'not_due',epoch};
  const snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number);
  if(!await indexMembers({provider,policy,state,through:snapshot.number,save}))return {status:'indexing',epoch};
@@ -76,7 +98,8 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
   if((await vault.ledgers(assets[i],options)).principal!==principal[i])throw Error('INCOMPLETE_DAILY_MEMBER_INDEX');
   for(let offset=0;offset<entries[i].length;offset+=100){
    const rows=entries[i].slice(offset,offset+100);
-   const id=keccak256(toUtf8Bytes(['GLOBAL_DAILY_V1',policy.chainId,policy.vaultAddress.toLowerCase(),policy.startTimestamp,epoch,assets[i].toLowerCase(),offset/100].join(':')));
+   const domain=isHourlyTestPolicy(policy)?'GLOBAL_HOURLY_TEST_V1':'GLOBAL_DAILY_V1';
+   const id=keccak256(toUtf8Bytes([domain,policy.chainId,policy.vaultAddress.toLowerCase(),policy.startTimestamp,epoch,assets[i].toLowerCase(),offset/100].join(':')));
    batches.push({id,asset:assets[i],recipients:rows.map(r=>r.recipient),amounts:rows.map(r=>r.amount),rows});
   }
  }
@@ -129,6 +152,7 @@ async function main(){
   if(fs.existsSync(lockPath)){const pid=Number(fs.readFileSync(lockPath,'utf8'));if(!Number.isSafeInteger(pid)||pid<1)throw Error('INVALID_AUTOMATION_LOCK');try{process.kill(pid,0);throw Error('AUTOMATION_ALREADY_RUNNING');}catch(e){if(e.code!=='ESRCH')throw e;fs.unlinkSync(lockPath);}}
   const fd=fs.openSync(lockPath,'wx',0o600);lock=lockPath;fs.writeFileSync(fd,String(process.pid));fs.closeSync(fd);
   const policy=validateDailyPolicy(JSON.parse(fs.readFileSync(process.env.GLOBAL_DAILY_POLICY||'/etc/globaldroptrade/daily-policy.json','utf8')));
+  if(isHourlyTestPolicy(policy))throw Error('HOURLY_TEST_REQUIRES_ZERO_START_WORKER');
   if(process.env.TRADES_CHAIN_ID!=='97'||process.env.TRADES_VAULT_ADDRESS?.toLowerCase()!==policy.vaultAddress.toLowerCase()||!process.env.TRADES_RPC_URL)throw Error('AUTOMATION_TARGET_MISMATCH');
   const request=new FetchRequest(process.env.TRADES_RPC_URL);request.timeout=15000;
   provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});provider.pollingInterval=2000;

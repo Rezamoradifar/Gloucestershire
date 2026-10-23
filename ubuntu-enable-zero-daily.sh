@@ -7,13 +7,25 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 profile_args=()
 worker_args=''
 state=/var/lib/globaldroptrade/fresh-zero-automation-v1
-if [ "$#" -eq 1 ] && [ "$1" = --fast-testnet ]; then
+fast=0
+hourly=0
+oracle_recovery=0
+usage(){ echo 'Usage: bash ubuntu-enable-zero-daily.sh [--fast-testnet [--hourly-test]] [--oracle-recovery]'; exit 1; }
+for argument in "$@"; do
+ case "$argument" in
+  --fast-testnet) [ "$fast" -eq 0 ] || usage; fast=1;;
+  --hourly-test) [ "$hourly" -eq 0 ] || usage; hourly=1;;
+  --oracle-recovery) [ "$oracle_recovery" -eq 0 ] || usage; oracle_recovery=1;;
+  *) usage;;
+ esac
+done
+[ "$hourly" -eq 0 ] || [ "$fast" -eq 1 ] || usage
+if [ "$fast" -eq 1 ]; then
  profile_args=(--fast-testnet)
  worker_args=' --fast-testnet --seed-test-rewards'
  state=/var/lib/globaldroptrade/fresh-fast-testnet-automation-v1
-elif [ "$#" -ne 0 ]; then
- echo 'Usage: bash ubuntu-enable-zero-daily.sh [--fast-testnet]'; exit 1
 fi
+if [ "$hourly" -eq 1 ]; then worker_args+=' --hourly-test'; fi
 case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) exit 1;; esac
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
 if [ -x "$runtime/node" ]; then export PATH="$runtime:$PATH"; fi
@@ -37,8 +49,18 @@ unset GLOBAL_DAILY_POLICY GLOBAL_AUTOMATION_STATE
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
-# Readiness failure blocks installation; ordinary missing authority/funding is a reported WAIT.
-node scripts/zero-start-readiness.mjs status "$stage" "${profile_args[@]}"
+# Recovery can install the verified oracle worker while daily history is unavailable.
+if [ "$oracle_recovery" -eq 1 ]; then
+ node scripts/zero-start-automation.mjs --oracles-only --check "${profile_args[@]}"
+ node --input-type=module - "$stage/activation.json" <<'JS'
+import fs from 'node:fs';
+const value={version:1,kind:'fresh-zero-automation-error',chainId:97,ready:false,dailyAutomationActive:false,automationStatus:'not-inspected',blockers:['DAILY_READINESS_NOT_YET_INSPECTED'],checkedAt:new Date().toISOString()};
+fs.writeFileSync(process.argv[2],JSON.stringify(value,null,2)+'\n',{mode:0o600,flag:'wx'});
+JS
+else
+ # Ordinary readiness failure blocks installation; missing authority/funding is a WAIT.
+ node scripts/zero-start-readiness.mjs status "$stage" "${profile_args[@]}"
+fi
 node --input-type=module - <<'JS'
 import fs from 'node:fs';import{Wallet}from'ethers';import{readPrivateKey}from'./scripts/migration-signers.mjs';import{zeroStartRelease}from'./scripts/deploy-zero-start.mjs';
 const file='/etc/globaldroptrade/fresh-zero-automation.key';
@@ -49,7 +71,7 @@ JS
 base=/opt/globaldroptrade-zero-daily
 release="$base/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 755 "$release/scripts" "$release/server" "$release/artifacts" "$release/config"
-for file in zero-start-automation.mjs zero-start-readiness.mjs zero-start-volume.mjs daily-profit.mjs maintain-testnet-oracles.mjs refresh-testnet-oracles.mjs migration-journal.mjs migration-signers.mjs connect-zero-start.mjs deploy-zero-start.mjs zero-start-profile.mjs; do cp "scripts/$file" "$release/scripts/"; done
+for file in zero-start-automation.mjs zero-start-readiness.mjs zero-start-volume.mjs daily-profit.mjs zero-start-hourly-test.mjs maintain-testnet-oracles.mjs refresh-testnet-oracles.mjs migration-journal.mjs migration-signers.mjs connect-zero-start.mjs deploy-zero-start.mjs zero-start-profile.mjs; do cp "scripts/$file" "$release/scripts/"; done
 cp server/trades-api.mjs server/community.mjs server/marketplace.mjs "$release/server/"
 cp artifacts/AutomaticGroupVault.json artifacts/MockFeed.json "$release/artifacts/"
 cp config/fresh-zero-testnet.json "$release/config/"

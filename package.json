@@ -8,6 +8,7 @@
     "compile:fresh": "node scripts/compile-fresh-start.mjs",
     "compile:fast-testnet": "node scripts/compile-fast-testnet.mjs",
     "test:fast-testnet": "node --test --test-concurrency=1 test/fast-testnet-*.test.mjs test/zero-start-fast-status.test.mjs",
+    "test:oracle-hourly": "node --test --test-concurrency=1 test/refresh-testnet-oracles.test.mjs test/maintain-testnet-oracles.test.mjs test/hourly-test-profit.test.mjs test/zero-start-oracle-recovery.test.mjs test/zero-start-oracle-hourly-status.test.mjs",
     "test:fresh": "npm run compile:fresh && node --test --test-concurrency=1 test/fresh-start-contract.test.mjs test/zero-start-deployment.test.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "pretest": "npm run compile",

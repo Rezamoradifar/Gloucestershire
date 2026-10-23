@@ -4,18 +4,21 @@ import path from 'node:path';
 import {parseEnv} from 'node:util';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {Contract,FetchRequest,Interface,JsonRpcProvider,Transaction,Wallet,getAddress,keccak256,parseEther} from 'ethers';
+import {Contract,FetchRequest,Interface,JsonRpcProvider,Transaction,Wallet,ZeroAddress,getAddress,keccak256,parseEther} from 'ethers';
 import {readConfig} from '../server/trades-api.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
-import {verifyZeroStartReadiness} from './zero-start-readiness.mjs';
+import {verifyZeroStartReadiness,verifyZeroStartTarget} from './zero-start-readiness.mjs';
 import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests} from './daily-profit.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 import {maintainOracles} from './maintain-testnet-oracles.mjs';
+import {inspectMockFeeds} from './refresh-testnet-oracles.mjs';
 import {readPrivateKey} from './migration-signers.mjs';
 import {journalTransaction,writePrivateJson} from './migration-journal.mjs';
+import {makeHourlyTestPolicy,transitionHourlyTestPolicy} from './zero-start-hourly-test.mjs';
 
 const publicRoot='/var/www/globaldroptrade/automation-data';
 const code=e=>/^[A-Z][A-Z0-9_]{2,100}$/.test(e?.message||'')?e.message:'AUTOMATION_RPC_OR_EXECUTION_FAILED';
+const identityOf=readiness=>({version:1,chainId:97,target:readiness.target,owner:readiness.owner,operator:readiness.operator,queue:readiness.queue,hash:readiness.hash,runtimeHash:readiness.runtimeHash});
 
 export async function assertZeroStartJournalCanonical(provider,state){
  const blocks=new Map();
@@ -31,7 +34,56 @@ export async function assertZeroStartJournalCanonical(provider,state){
  }
 }
 
-export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3}){
+// An oracle-only repair must never resume a financial transaction as a side effect.
+// Validate the entire pending set before the first request can be broadcast.
+export function assertZeroStartOraclePending({state,release,artifact}){
+ const abi=new Interface(artifact.abi),feeds=[release.bnbFeed,release.tokenFeed].map(getAddress);
+ const allowed=(label,request)=>{
+  let action;
+  try{action=abi.parseTransaction(request);}catch{}
+  if(!/^oracle-refresh-[1-9][0-9]*$/.test(label||'')||!request?.to||!feeds.includes(getAddress(request.to))||BigInt(request.value??0)!==0n||action?.name!=='set'||action.args[0]<=0n||action.args[1]<=0n||action.args[2]<=0n||action.args[3]!==action.args[2])throw Error('ZERO_START_ORACLE_PENDING_SCOPE_MISMATCH');
+ };
+ const planned=state.oracle?.pending;
+ if(planned)allowed(planned.label,planned.request);
+ const pending=Object.entries(state.transactions||{}).filter(([,entry])=>!entry.block);
+ if(pending.length>1)throw Error('ZERO_START_NON_ORACLE_PENDING_REQUIRES_FULL_WORKER');
+ for(const[label,entry]of pending){
+  if(!planned||planned.label!==label)throw Error('ZERO_START_NON_ORACLE_PENDING_REQUIRES_FULL_WORKER');
+  const tx=Transaction.from(entry.raw),request={to:tx.to,data:tx.data,value:tx.value};
+  allowed(label,request);
+  if(getAddress(planned.request.to)!==request.to||planned.request.data!==request.data)throw Error('ZERO_START_ORACLE_PENDING_SCOPE_MISMATCH');
+ }
+}
+
+export async function inspectZeroStartOracles({provider,artifact,release,readiness}){
+ const {vault,actual,maxAge}=await inspectMockFeeds({provider,artifact,vaultAddress:readiness.target,feedAddresses:[release.bnbFeed,release.tokenFeed]});
+ const block=await provider.getBlock('latest'),feeds=[];
+ for(const address of actual){
+  const feed=new Contract(address,artifact.abi,provider),[round,answer,,updated,answered]=await feed.latestRoundData({blockTag:block.number});
+  const ready=round>0n&&answer>0n&&updated>0n&&updated<=BigInt(block.timestamp)&&BigInt(block.timestamp)-updated<=maxAge&&answered>=round;
+  feeds.push({address,round:round.toString(),answer:answer.toString(),updatedAt:updated.toString(),answeredInRound:answered.toString(),ageSeconds:(BigInt(block.timestamp)-updated).toString(),ready});
+ }
+ const ready=feeds.every(feed=>feed.ready);
+ if(ready){await vault.quoteUsd(ZeroAddress,parseEther('1'));await vault.quoteUsd(release.token,parseEther('1'));}
+ return {version:1,chainId:97,target:readiness.target,status:ready?'TESTNET_ORACLES_VALID':'ORACLE_REFRESH_REQUIRED',ready,block:block.number,blockHash:block.hash,timestamp:block.timestamp,maxOracleAge:maxAge.toString(),feeds,transactionsSent:0};
+}
+
+export async function runZeroStartOracleMaintenance({provider,wallet,artifact,release,readiness,state,save,transact,confirmations=3,oraclesOnly=false}){
+ const identity=identityOf(readiness);
+ if(state.identity&&JSON.stringify(state.identity)!==JSON.stringify(identity))throw Error('ZERO_START_AUTOMATION_IDENTITY_CHANGED');
+ if(!state.identity&&Object.keys(state.transactions||{}).length)throw Error('ZERO_START_UNBOUND_AUTOMATION_JOURNAL');
+ await assertZeroStartJournalCanonical(provider,state);
+ if(oraclesOnly)assertZeroStartOraclePending({state,release,artifact});
+ state.identity=identity;state.transactions??={};save();
+ if(oraclesOnly)for(const[label,entry]of Object.entries(state.transactions))if(!entry.block){
+  const tx=Transaction.from(entry.raw);await transact(label,{to:tx.to,data:tx.data});
+ }
+ state.oracle??={};
+ Object.defineProperty(state.oracle,'transactions',{get:()=>state.transactions,configurable:true,enumerable:false});
+ return maintainOracles({provider,wallet,artifact,vaultAddress:readiness.target,feedAddresses:[release.bnbFeed,release.tokenFeed],state:state.oracle,save,confirmations,transact:options=>transact(options.label,options.request)});
+}
+
+export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false}){
  const target=getAddress(await vault.getAddress());
  if(readiness?.version!==1||readiness.chainId!==97||getAddress(readiness.target)!==target||getAddress(await queue.vault())!==target)throw Error('ZERO_START_AUTOMATION_TARGET_MISMATCH');
  const identity={version:1,chainId:97,target,owner:readiness.owner,operator:readiness.operator,queue:readiness.queue,hash:readiness.hash,runtimeHash:readiness.runtimeHash};
@@ -47,6 +99,7 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
  let policy=await loadPolicy();
  if(policy){
   policy=validateDailyPolicy(policy);if(policy.vaultAddress!==target||policy.runtimeHash!==readiness.runtimeHash||policy.deploymentBlock!==readiness.block)throw Error('ZERO_START_AUTOMATION_POLICY_CHANGED');
+  if(policy.periodSeconds===3600&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
   const activation=state.activation||(policy.activationBlockHash?{block:policy.activationBlock,blockHash:policy.activationBlockHash}:null);
   if(activation&&(await provider.getBlock(activation.block))?.hash!==activation.blockHash)throw Error('ZERO_START_ACTIVATION_CHECKPOINT_REORG');
  }
@@ -60,11 +113,11 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   if(!readiness.ready||!report.volume.complete||report.errors.length){report.blockers=[...readiness.blockers,...(!report.volume.complete?['NETWORK_VOLUME_BACKLOG']:[]),...report.errors];return report;}
   const checkpoint=await provider.getBlock(readiness.checkpoint.block);
   if(!checkpoint||checkpoint.hash!==readiness.checkpoint.blockHash)throw Error('ZERO_START_ACTIVATION_CHECKPOINT_REORG');
-  policy=validateDailyPolicy({version:1,chainId:97,vaultAddress:target,runtimeHash:readiness.runtimeHash,deploymentBlock:readiness.block,startTimestamp:checkpoint.timestamp,activationBlock:checkpoint.number,activationBlockHash:checkpoint.hash,basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true});
+  policy=hourlyTest?makeHourlyTestPolicy(readiness):validateDailyPolicy({version:1,chainId:97,vaultAddress:target,runtimeHash:readiness.runtimeHash,deploymentBlock:readiness.block,startTimestamp:checkpoint.timestamp,activationBlock:checkpoint.number,activationBlockHash:checkpoint.hash,basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true});
   await savePolicy(policy);report.policyCreated=true;
   state.activation={block:checkpoint.number,blockHash:checkpoint.hash,startTimestamp:checkpoint.timestamp};save();
  }
- report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=policy.startTimestamp+86400;
+ report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=policy.startTimestamp+policy.periodSeconds;
  const plan=await planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations});
  report.dailyStatus=plan.status;
  if(plan.status==='ready'){
@@ -98,78 +151,163 @@ export function publishZeroStartStatus(value,file=publicRoot+'/activation.json')
  fs.renameSync(temporary,file);
 }
 
-async function main(){
- let provider;
+function publishOracleOnlyStatus({readiness,oracles,inspection,file}){
+ let previous;
  try{
-  const {profile,args}=parseZeroStartProfileArgs(),seedFlags=args.filter(value=>value==='--seed-test-rewards');
-  const commands=args.filter(value=>value!=='--seed-test-rewards');
-  if(process.getuid?.()!==0||commands.length!==1||!['--check','--execute'].includes(commands[0])||seedFlags.length>1)throw Error('ROOT_EXPLICIT_CHECK_OR_EXECUTE_REQUIRED');
-  const execute=commands[0]==='--execute';
-  if(seedFlags.length&&(!profile.fast||!execute))throw Error('FAST_TEST_EXPLICIT_SEED_EXECUTION_REQUIRED');
+  const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+  try{const st=fs.fstatSync(fd);if(st.isFile()&&st.uid===0&&(st.mode&0o022)===0)previous=JSON.parse(fs.readFileSync(fd,'utf8'));}finally{fs.closeSync(fd);}
+ }catch{}
+ const same=previous?.kind==='fresh-zero-daily-readiness'&&['chainId','target','owner','operator','queue','hash','runtimeHash','artifactHash'].every(key=>previous[key]===readiness[key]);
+ const base=same?{...previous}:{...readiness,kind:'fresh-zero-oracle-maintenance'};
+ delete base.automation;
+ const previousBlockers=(same?base.blockers||[]:[]).filter(item=>!inspection.ready||!/^(ORACLE_|ZERO_START_ORACLE)/.test(item));
+ publishZeroStartStatus({...base,ready:false,dailyAutomationActive:false,automationStatus:'not-inspected',blockers:[...new Set([...previousBlockers,'DAILY_AUTOMATION_NOT_INSPECTED_BY_ORACLE_REPAIR'])],oracleMaintenance:oracles,oracleInspection:inspection,oracleCheckedAt:new Date().toISOString(),walletPrompts:0},file);
+}
+
+export function retryableDailyReadFailure(error,state){
+ if(Object.values(state.transactions||{}).some(entry=>!entry.block))return false;
+ if(['REVIEWED_TEST_TOKEN_REQUIRED','TEST_TOKEN_METADATA_MISMATCH','ZERO_START_SETTLEMENT_LOG_RPC_REQUIRED'].includes(error?.message))return true;
+ return ['CALL_EXCEPTION','NETWORK_ERROR','SERVER_ERROR','TIMEOUT','BAD_DATA','UNKNOWN_ERROR','UNSUPPORTED_OPERATION'].includes(error?.code);
+}
+
+export function partitionZeroStartDailyReadErrors(errors,readiness){
+ const warnings=readiness.kind==='fresh-zero-daily-readiness'&&readiness.ready===true&&readiness.funding?.ready===true?errors.filter(item=>item==='TEST_REWARD_SEED_READ_UNAVAILABLE'):[];
+ return {warnings,blocking:errors.filter(item=>!warnings.includes(item))};
+}
+
+async function main(){
+ let provider,readiness,completedOracles,completedOracleInspection,executeRequested=false;
+ try{
+  const {profile,args}=parseZeroStartProfileArgs();
+  const seedFlags=args.filter(value=>value==='--seed-test-rewards'),oracleFlags=args.filter(value=>value==='--oracles-only'),hourlyFlags=args.filter(value=>value==='--hourly-test');
+  const commands=args.filter(value=>!['--seed-test-rewards','--oracles-only','--hourly-test'].includes(value));
+  if(process.getuid?.()!==0||commands.length!==1||!['--check','--execute'].includes(commands[0])||seedFlags.length>1||oracleFlags.length>1||hourlyFlags.length>1)throw Error('ROOT_EXPLICIT_CHECK_OR_EXECUTE_REQUIRED');
+  const execute=commands[0]==='--execute',oraclesOnly=oracleFlags.length===1,hourlyTest=hourlyFlags.length===1;
+  executeRequested=execute;
+  if(seedFlags.length&&(!profile.fast||!execute||oraclesOnly))throw Error('FAST_TEST_EXPLICIT_SEED_EXECUTION_REQUIRED');
+  if(hourlyTest&&(!profile.fast||oraclesOnly))throw Error('HOURLY_TEST_FAST_PROFILE_REQUIRED');
   const privateRoot=profile.automationDir,release=profile.release;
-  privateDirectory(privateRoot,{create:execute});
   const envFile='/etc/globaldroptrade/trades.env',original=readPrivate(envFile),settings=parseEnv(original),config=readConfig(settings);
   const directory=profile.stateDir;privateDirectory(directory);
   const deploymentReport=JSON.parse(readPrivate(directory+'/deployment-public.json')),connectionReport=JSON.parse(readPrivate(directory+'/connection-public.json'));
   const artifact=JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8'));
   const mockArtifact=JSON.parse(fs.readFileSync(new URL('../artifacts/MockFeed.json',import.meta.url),'utf8'));
   const policyFile=privateRoot+'/daily-policy.json',stateFile=privateRoot+'/journal.json';
-  const policy=fs.existsSync(policyFile)?JSON.parse(readPrivate(policyFile)):undefined;
-  const state=fs.existsSync(stateFile)?JSON.parse(readPrivate(stateFile)):{transactions:{}};
   const transport=new FetchRequest(config.rpcUrl);transport.timeout=15000;
   provider=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});provider.pollingInterval=2000;
-  const checkReadiness=()=>verifyZeroStartReadiness({provider,artifact,deploymentReport,connectionReport,original,release,policy,periodStartTimestamp:policy?policy.startTimestamp+(state.daily?.epoch||0)*86400:undefined,confirmations:Math.max(3,config.confirmations)});
-  let readiness=await checkReadiness();
-  if(!execute){console.log('ZERO_START_AUTOMATION_CHECKED ready='+readiness.ready);console.log('BLOCKERS='+(readiness.blockers.join(',')||'none'));return;}
+  const targetOptions={provider,artifact,deploymentReport,connectionReport,original,release,confirmations:Math.max(3,config.confirmations)};
+  // Verify immutable identity first. Reward funding, archives, seed state and the
+  // current daily policy cannot prevent recovery of this target's price feeds.
+  readiness=await verifyZeroStartTarget({...targetOptions,inspectSettlementLogs:false});
+  if(oraclesOnly&&!execute){
+   const observed=await inspectZeroStartOracles({provider,artifact:mockArtifact,release,readiness});
+   console.log('ZERO_START_ORACLES_CHECKED ready='+observed.ready+' target='+readiness.target);
+   console.log(JSON.stringify(observed));return;
+  }
+  privateDirectory(privateRoot,{create:execute});
+  const state=fs.existsSync(stateFile)?JSON.parse(readPrivate(stateFile)):{transactions:{}};
+  let policy;
+  const checkReadiness=()=>{
+   const current=hourlyTest&&policy?.periodSeconds!==3600?undefined:policy;
+   return verifyZeroStartReadiness({...targetOptions,hourlyTest,policy:current,periodStartTimestamp:current?current.startTimestamp+(state.daily?.epoch||0)*current.periodSeconds:undefined});
+  };
+  const loadCurrentPolicy=()=>{
+   const current=fs.existsSync(policyFile)?validateDailyPolicy(JSON.parse(readPrivate(policyFile))):undefined;
+   if(current?.periodSeconds===3600&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
+   return current;
+  };
+  if(!execute){
+   policy=loadCurrentPolicy();readiness=await checkReadiness();
+   console.log('ZERO_START_AUTOMATION_CHECKED ready='+readiness.ready);console.log('BLOCKERS='+(readiness.blockers.join(',')||'none'));return;
+  }
   const key=readPrivateKey('/etc/globaldroptrade/fresh-zero-automation.key');if(!key)throw Error('EXISTING_SERVER_OPERATOR_KEY_REQUIRED');
   const wallet=new Wallet(key,provider);if(wallet.address!==release.deployer)throw Error('EXPECTED_SERVER_OPERATOR_KEY_REQUIRED');
   const guard=async()=>{
    if(readPrivate(envFile)!==original||Number(await provider.send('eth_chainId',[]))!==97||keccak256(await provider.getCode(readiness.target))!==readiness.runtimeHash)throw Error('ZERO_START_AUTOMATION_TARGET_CHANGED');
    await assertZeroStartJournalCanonical(provider,state);
   };
-  // Readiness uses head-confirmations; one extra inclusion confirmation ensures its
-  // refreshed checkpoint contains every transaction completed earlier in this run.
   const save=()=>writePrivateJson(stateFile,state),transact=async(label,request)=>{
    const receipt=await journalTransaction({provider,wallet,state,save,label,request,guard,confirmations:Math.max(3,config.confirmations)+1,timeout:45000,maxTotalFee:parseEther('0.1')});
    await assertZeroStartJournalCanonical(provider,state);return receipt;
   };
   const vault=new Contract(readiness.target,artifact.abi,wallet),queue=new Contract(readiness.queue,approvedQueueAbi,wallet);
   await guard();
-  const identity={version:1,chainId:97,target:readiness.target,owner:readiness.owner,operator:readiness.operator,queue:readiness.queue,hash:readiness.hash,runtimeHash:readiness.runtimeHash};
+  const identity=identityOf(readiness);
   if(state.identity&&JSON.stringify(state.identity)!==JSON.stringify(identity))throw Error('ZERO_START_AUTOMATION_IDENTITY_CHANGED');
   if(!state.identity&&Object.keys(state.transactions||{}).length)throw Error('ZERO_START_UNBOUND_AUTOMATION_JOURNAL');
+  if(oraclesOnly)assertZeroStartOraclePending({state,release,artifact:mockArtifact});
   state.identity=identity;state.transactions??={};save();
-  const allowed=new Map([[readiness.target,new Interface(dailyAbi.concat(['function processNetworkVolume(uint256,uint256)']))],[readiness.queue,new Interface(approvedQueueAbi)],[release.bnbFeed,new Interface(mockArtifact.abi)],[release.tokenFeed,new Interface(mockArtifact.abi)]]);
-  const seedModule=profile.fast?await import('./fund-fast-test-rewards.mjs'):null;
-  const tokenArtifact=profile.fast?JSON.parse(fs.readFileSync(new URL('../artifacts/MockToken.json',import.meta.url),'utf8')):null;
-  let seedResumed=false;
-  for(const [label,entry]of Object.entries(state.transactions))if(!entry.block){
-   const tx=Transaction.from(entry.raw);
-   if(seedModule?.isFastTestSeedLabel(label)){
-    await seedModule.verifyFastTestSeedPending({provider,wallet,artifact:tokenArtifact,release,readiness,vault,state,label,request:{to:tx.to,data:tx.data,value:tx.value}});seedResumed=true;
-   }else{
-    const abi=allowed.get(tx.to),action=abi?.parseTransaction({data:tx.data,value:tx.value});
-    if(!action||!['batchProfit','pay','processNetworkVolume','set'].includes(action.name))throw Error('ZERO_START_PENDING_TRANSACTION_TARGET_MISMATCH');
+  const seedModule=!oraclesOnly&&profile.fast?await import('./fund-fast-test-rewards.mjs'):null;
+  const tokenArtifact=!oraclesOnly&&profile.fast?JSON.parse(fs.readFileSync(new URL('../artifacts/MockToken.json',import.meta.url),'utf8')):null;
+  if(!oraclesOnly){
+   const allowed=new Map([[readiness.target,new Interface(dailyAbi.concat(['function processNetworkVolume(uint256,uint256)']))],[readiness.queue,new Interface(approvedQueueAbi)],[release.bnbFeed,new Interface(mockArtifact.abi)],[release.tokenFeed,new Interface(mockArtifact.abi)]]);
+   // Resume the same previously signed nonce before any new oracle transaction.
+   for(const[label,entry]of Object.entries(state.transactions))if(!entry.block){
+    const tx=Transaction.from(entry.raw);
+    if(seedModule?.isFastTestSeedLabel(label))await seedModule.verifyFastTestSeedPending({provider,wallet,artifact:tokenArtifact,release,readiness,vault,state,label,request:{to:tx.to,data:tx.data,value:tx.value}});
+    else{
+     const abi=allowed.get(tx.to),action=abi?.parseTransaction({data:tx.data,value:tx.value});
+     if(!action||!['batchProfit','pay','processNetworkVolume','set'].includes(action.name))throw Error('ZERO_START_PENDING_TRANSACTION_TARGET_MISMATCH');
+    }
+    await transact(label,{to:tx.to,data:tx.data});
    }
-   await transact(label,{to:tx.to,data:tx.data});
   }
-  if(seedFlags.length){
-   await seedModule.seedFastTestRewards({provider,wallet,artifact:tokenArtifact,release,readiness,vault,state,save,transact});
-   readiness=await checkReadiness();
-  }else if(seedResumed)readiness=await checkReadiness();
-  state.oracle??={};
-  Object.defineProperty(state.oracle,'transactions',{get:()=>state.transactions,configurable:true,enumerable:false});
-  const result=await runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy:()=>policy,savePolicy:value=>{if(fs.existsSync(policyFile))throw Error('ZERO_START_POLICY_ALREADY_EXISTS');writePrivateJson(policyFile,value);},transact,confirmations:Math.max(3,config.confirmations),refreshReadiness:checkReadiness,maintainOracles:()=>maintainOracles({provider,wallet,artifact:mockArtifact,vaultAddress:readiness.target,feedAddresses:[release.bnbFeed,release.tokenFeed],state:state.oracle,save,confirmations:Math.max(3,config.confirmations),transact:options=>transact(options.label,options.request)})});
+  completedOracles=await runZeroStartOracleMaintenance({provider,wallet,artifact:mockArtifact,release,readiness,state,save,transact,confirmations:Math.max(3,config.confirmations),oraclesOnly});
+  completedOracleInspection=await inspectZeroStartOracles({provider,artifact:mockArtifact,release,readiness});
+  if(!completedOracleInspection.ready)throw Error('ZERO_START_ORACLES_NOT_VALID_AFTER_REFRESH');
+  if(oraclesOnly){
+   const inspection=completedOracleInspection;
+   const report={version:1,kind:'fresh-zero-oracle-maintenance',chainId:97,target:readiness.target,checkedAt:new Date().toISOString(),oracles:completedOracles,inspection,dailyAutomationActive:false,walletPrompts:0};
+   writePrivateJson(privateRoot+'/oracle-status.json',report);
+   publishOracleOnlyStatus({readiness,oracles:completedOracles,inspection,file:profile.publicRoot+'/activation.json'});
+   console.log('ZERO_START_ORACLES_VALID target='+readiness.target);console.log('BLOCKERS=none');return;
+  }
+  const dailyReadErrors=[];
+  if(seedFlags.length)try{await seedModule.seedFastTestRewards({provider,wallet,artifact:tokenArtifact,release,readiness,vault,state,save,transact});}
+  catch(error){
+   if(!retryableDailyReadFailure(error,state))throw error;
+   await assertZeroStartJournalCanonical(provider,state);
+   dailyReadErrors.push('TEST_REWARD_SEED_READ_UNAVAILABLE');
+  }
+  policy=loadCurrentPolicy();
+  try{readiness=await checkReadiness();}
+  catch(error){
+   if(!retryableDailyReadFailure(error,state))throw error;
+   await assertZeroStartJournalCanonical(provider,state);
+   dailyReadErrors.push('DAILY_READINESS_RPC_UNAVAILABLE');
+  }
+  // A verified, manually funded reward ledger is sufficient even when the
+  // optional test faucet cannot be inspected. Missing full readiness still waits.
+  const {warnings:optionalSeedWarnings,blocking:blockingDailyReadErrors}=partitionZeroStartDailyReadErrors(dailyReadErrors,readiness);
+  if(blockingDailyReadErrors.length){
+   const report={version:1,kind:'fresh-zero-server-automation',chainId:97,target:readiness.target,checkedAt:new Date().toISOString(),status:'waiting',policyCreated:false,dailyCredits:[],oracles:completedOracles,errors:blockingDailyReadErrors,blockers:[...new Set([...(readiness.blockers||[]),...blockingDailyReadErrors])],walletPrompts:0};
+   writePrivateJson(privateRoot+'/status.json',report);
+   const publicReport={...readiness,ready:false,dailyAutomationActive:false,automationStatus:'waiting',blockers:report.blockers,oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,automation:report};
+   if(readiness.kind!=='fresh-zero-daily-readiness'){publicReport.kind='fresh-zero-automation-error';delete publicReport.automation;}
+   publishZeroStartStatus(publicReport,profile.publicRoot+'/activation.json');
+   console.log('ZERO_START_AUTOMATION_WAITING target='+readiness.target);console.log('BLOCKERS='+report.blockers.join(','));return;
+  }
+  if(hourlyTest&&policy){
+   const oldPolicy=policy;
+   const transition=await transitionHourlyTestPolicy({provider,vault,readiness,state,policy,save,
+    saveArchive:async value=>{const file=privateRoot+'/pre-hourly-policy-v1.json';if(fs.existsSync(file)){if(JSON.stringify(JSON.parse(readPrivate(file)))!==JSON.stringify(value))throw Error('HOURLY_TEST_ARCHIVE_CHANGED');}else writePrivateJson(file,value);},
+    savePolicy:async value=>{const current=JSON.parse(readPrivate(policyFile));if(JSON.stringify(current)!==JSON.stringify(oldPolicy)&&JSON.stringify(current)!==JSON.stringify(value))throw Error('HOURLY_TEST_POLICY_CHANGED');writePrivateJson(policyFile,value);}
+   });
+   policy=transition.policy;readiness=await checkReadiness();
+  }
+  const result=await runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy:()=>policy,savePolicy:value=>{if(fs.existsSync(policyFile))throw Error('ZERO_START_POLICY_ALREADY_EXISTS');writePrivateJson(policyFile,value);policy=value;},transact,confirmations:Math.max(3,config.confirmations),hourlyTest,refreshReadiness:checkReadiness,maintainOracles:async()=>completedOracles});
+  if(optionalSeedWarnings.length){result.warnings=optionalSeedWarnings;result.testRewardSeedStatus='OPTIONAL_TEST_FAUCET_UNAVAILABLE_VERIFIED_REWARD_BUDGET_USED';}
   if(state.seedTest?.report)result.testRewardSeed=state.seedTest.report;
   result.maxFeesReservedWei=Object.values(state.transactions).reduce((sum,t)=>sum+BigInt(t.maxFee),0n).toString();
   writePrivateJson(privateRoot+'/status.json',result);
   let timerActive=false;try{execFileSync('systemctl',['is-active','--quiet',profile.timer],{stdio:'ignore',timeout:5000});timerActive=true;}catch{}
-  publishZeroStartStatus({...result.readiness,automationStatus:result.status,dailyAutomationActive:timerActive&&result.status==='scheduled',timerActive,automation:result},profile.publicRoot+'/activation.json');
+  publishZeroStartStatus({...result.readiness,automationStatus:result.status,dailyAutomationActive:timerActive&&result.status==='scheduled',timerActive,oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,automation:result},profile.publicRoot+'/activation.json');
   console.log('ZERO_START_AUTOMATION_'+result.status.toUpperCase()+' target='+readiness.target);
+  if(optionalSeedWarnings.length)console.log('WARNINGS='+optionalSeedWarnings.join(','));
   if(result.status!=='scheduled')console.log('BLOCKERS='+[...(result.blockers||[]),...result.errors].join(','));
  }catch(e){
-  const failure={version:1,kind:'fresh-zero-automation-error',ready:false,automationStatus:'blocked',blockers:[code(e)],checkedAt:new Date().toISOString(),walletPrompts:0};
-  try{publishZeroStartStatus(failure);}catch{}
+  const failure={version:1,kind:'fresh-zero-automation-error',ready:false,dailyAutomationActive:false,automationStatus:'blocked',blockers:[code(e)],checkedAt:new Date().toISOString(),walletPrompts:0,...(completedOracles?{oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,oracleTarget:readiness?.target}:{} )};
+  if(executeRequested)try{publishZeroStartStatus(failure);}catch{}
   console.error('ZERO_START_AUTOMATION_STOPPED '+code(e));process.exitCode=1;
  }finally{provider?.destroy();}
 }

@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as directory:
     for original, replacement in replacements.items():
         installer = installer.replace(original, str(replacement))
     (source/'ubuntu-enable-zero-daily.sh').write_text(installer)
-    for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs',
+    for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs', 'zero-start-hourly-test.mjs',
                  'maintain-testnet-oracles.mjs', 'refresh-testnet-oracles.mjs', 'migration-journal.mjs',
                  'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs', 'fund-fast-test-rewards.mjs']:
         shutil.copyfile(repo/'scripts'/name, source/'scripts'/name)
@@ -90,7 +90,14 @@ if args and args[0]=='--backup-dir':
 entry.write_text('new-console-entrypoint')
 if (p/'fail-status').exists():raise SystemExit(1)
 ''')
-    node_body = f'''if [ "$1" = scripts/zero-start-readiness.mjs ]; then
+    node_body = f'''if [ "$1" = scripts/zero-start-automation.mjs ]; then
+ printf '%s\\n' 'oracle-check' >> '{calls}'
+ [ "$#" -eq 4 ] && [ "$2" = --oracles-only ] && [ "$3" = --check ] && [ "$4" = --fast-testnet ] || exit 1
+ [ ! -f '{host}/fail-oracle-check' ] || exit 1
+ printf '%s\\n' 'ZERO_START_ORACLES_CHECKED ready=true'
+ exit 0
+fi
+if [ "$1" = scripts/zero-start-readiness.mjs ]; then
  printf '%s\\n' 'readiness-check' >> '{calls}'
  [ "$4" = --fast-testnet ] || exit 1
  [ ! -f '{host}/fail-readiness' ] || exit 1
@@ -130,6 +137,12 @@ if command in ['disable','enable','start','stop']:
  elif command=='start':
   current=(p/'runtime/current').resolve()
   if unit=={service!r} and current!=p/'runtime/releases/old':
+   if (p/'expect-oracle-recovery').exists():
+    staged=json.loads((p/'www/automation-data/activation.json').read_text())
+    assert staged['kind']=='fresh-zero-automation-error' and staged['automationStatus']=='not-inspected'
+    assert staged['dailyAutomationActive'] is False and staged['ready'] is False
+    assert staged['blockers']==['DAILY_READINESS_NOT_YET_INSPECTED']
+    assert 'funding' not in staged and 'reporterAuthorized' not in staged and 'archive' not in staged
    for old in ['globaldroptrade-automation.timer','globaldroptrade-oracles.timer','globaldroptrade-automation.service','globaldroptrade-oracles.service']:
     assert states[old]['active']=='inactive','Old signer still running: '+old
    assert (p/'etc/globaldroptrade/fresh-zero-automation.key').read_text().strip()=={fixture_key!r}
@@ -138,7 +151,7 @@ if command in ['disable','enable','start','stop']:
    assert '/usr/bin/flock -n ' in installed
    assert 'zero-start-automation.mjs --execute --fast-testnet --seed-test-rewards' in installed
    assert 'fresh-fast-testnet-automation-v1/run.lock' in installed
-   for name in ['zero-start-profile.mjs','fund-fast-test-rewards.mjs']:
+   for name in ['zero-start-profile.mjs','fund-fast-test-rewards.mjs','zero-start-hourly-test.mjs']:
     assert (current/'scripts'/name).is_file()
    for name in ['FastTestnetVault.json','MockToken.json']:
     assert (current/'artifacts'/name).is_file()
@@ -163,7 +176,10 @@ if [ -f '{host}/fail-https' ]; then printf '%s' '{{"version":1,"chainId":56}}' >
 else cp '{public}/activation.json' "$out"; fi'''
     commands = {'node': '#!/bin/bash\n'+node_body, 'systemctl': systemctl_body, 'id': '#!/bin/bash\necho 0',
                 'npm': f'''#!/bin/bash
-if [[ "$PWD" = '{host}/runtime/releases/'* ]] && [ -f '{host}/fail-dependencies' ];then exit 1;fi
+if [[ "$PWD" = '{host}/runtime/releases/'* ]]; then
+ [ ! -f '{host}/fail-dependencies' ] || exit 1
+ ln -s '{repo}/node_modules' "$PWD/node_modules"
+fi
 exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     for name, body in commands.items():
         file = bin_dir/name
@@ -174,6 +190,7 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     def reset(existing=True):
         for flag in host.glob('fail-*'):
             flag.unlink()
+        (host/'expect-oracle-recovery').unlink(missing_ok=True)
         envfile.write_text(env_original)
         envfile.chmod(0o600)
         signer_source.write_text(fixture_key+'\n')
@@ -197,8 +214,8 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
         worker_file.write_text(json.dumps(old_workers if existing else {k:v for k,v in old_workers.items() if k not in [service,timer]}))
         calls.write_text('')
 
-    def run():
-        result = subprocess.run(['bash', str(source/'ubuntu-enable-zero-daily.sh'), '--fast-testnet'], cwd=source,
+    def run(flags=('--fast-testnet',)):
+        result = subprocess.run(['bash', str(source/'ubuntu-enable-zero-daily.sh'), *flags], cwd=source,
                                 env=environment, capture_output=True, text=True, timeout=30)
         assert envfile.read_text() == env_original
         assert signer_source.read_text().strip() == fixture_key
@@ -239,10 +256,44 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     assert 'ProtectHome=true' in installed and 'ReadWritePaths='+str(state)+' '+str(public) in installed
     assert '/usr/bin/flock -n '+str(state)+'/run.lock' in installed
     assert 'zero-start-automation.mjs --execute --fast-testnet --seed-test-rewards' in installed
+    assert '--hourly-test' not in installed
     assert 'ReadWritePaths='+str(host/'state/fresh-zero-automation-v1') not in installed
     states = json.loads(worker_file.read_text())
     assert states[timer]['enabled'] == 'enabled' and states[timer]['active'] == 'active'
     assert all(states[name]['active'] == 'inactive' for name in old_workers if name not in [timer])
+    # Hourly mode is a reviewed fast-only worker selection. It neither edits the
+    # existing policy/journal at installation time nor changes the connected site.
+    for flags in [('--fast-testnet', '--hourly-test'), ('--hourly-test', '--fast-testnet')]:
+        reset()
+        result = run(flags)
+        assert result.returncode == 0, result.stdout+result.stderr
+        installed = (unit_dir/service).read_text()
+        assert 'zero-start-automation.mjs --execute --fast-testnet --seed-test-rewards --hourly-test' in installed
+        assert installed.count('--hourly-test') == 1
+        installed_helper = current.resolve()/'scripts/zero-start-hourly-test.mjs'
+        assert installed_helper.read_bytes() == (repo/'scripts/zero-start-hourly-test.mjs').read_bytes()
+        # Exercise the actual copied module rather than merely checking its path.
+        subprocess.run([node, '--input-type=module', '-e',
+                        "await import('./scripts/zero-start-hourly-test.mjs');await import('./scripts/zero-start-automation.mjs')"],
+                       cwd=current.resolve(), check=True, env=environment, capture_output=True, text=True)
+    reset()
+    (host/'fail-service').touch()
+    restored(run(('--fast-testnet', '--hourly-test')))
+    reset()
+    (host/'expect-oracle-recovery').touch()
+    (host/'fail-readiness').touch()
+    result = run(('--fast-testnet', '--oracle-recovery', '--hourly-test'))
+    assert result.returncode == 0, result.stdout+result.stderr
+    assert 'oracle-check' in calls.read_text() and 'readiness-check' not in calls.read_text()
+    installed = (unit_dir/service).read_text()
+    assert '--hourly-test' in installed and '--oracle-recovery' not in installed
+    reset()
+    (host/'fail-oracle-check').touch()
+    result = run(('--fast-testnet', '--oracle-recovery'))
+    assert result.returncode != 0 and not signer.exists()
+    assert json.loads(worker_file.read_text()) == old_workers
+    assert current.resolve() == host/'runtime/releases/old'
+    assert calls.read_text() == 'oracle-check\n', calls.read_text()
     for failure in ['readiness','dependencies','status','service','https']:
         reset()
         (host/('fail-'+failure)).touch()
@@ -263,9 +314,12 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     restored(run(), existing=False, status_exists=False)
     assert public.stat().st_mode&0o777 == 0o755, 'Public status directory inherited the private umask'
     reset()
-    for flags in [['--fast-testnet', '--fast-testnet'], ['--unknown'], ['--seed-test-rewards']]:
+    for flags in [['--fast-testnet', '--fast-testnet'], ['--unknown'], ['--seed-test-rewards'],
+                  ['--hourly-test'], ['--hourly-test', '--hourly-test', '--fast-testnet'],
+                  ['--fast-testnet', '--hourly-test', '--fast-testnet'],
+                  ['--fast-testnet', '--oracle-recovery', '--oracle-recovery']]:
         result = subprocess.run(['bash', str(source/'ubuntu-enable-zero-daily.sh'), *flags], cwd=source, env=environment, capture_output=True, text=True, timeout=30)
         assert result.returncode != 0 and 'Usage:' in result.stdout
         assert current.resolve() == host/'runtime/releases/old' and not calls.read_text()
         assert json.loads(worker_file.read_text()) == old_workers
-    print('PASS: explicit fast profile and seed flag; isolated fast policy/journal and shared serialized operator; WAIT readiness can advance after first worker; existing credentials and prior journals preserved; five failure rollbacks and first-install absence restored; wrong operator and unsupported flags rejected; public directory readable under private umask.')
+    print('PASS: explicit fast profile, seed and fast-only hourly flags; copied hourly module imports; minimal oracle-recovery preflight with hourly selection and honest staged status; unsafe recovery proof rejected before signer or worker changes; isolated fast policy/journal and shared serialized operator; WAIT readiness can advance after first worker; existing credentials and prior journals preserved; hourly/default failure rollbacks and first-install absence restored; wrong operator and unsupported flags rejected; public directory readable under private umask.')

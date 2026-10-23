@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as directory:
     for original, replacement in replacements.items():
         installer = installer.replace(original, str(replacement))
     (source/'ubuntu-enable-zero-daily.sh').write_text(installer)
-    for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs',
+    for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs', 'zero-start-hourly-test.mjs',
                  'maintain-testnet-oracles.mjs', 'refresh-testnet-oracles.mjs', 'migration-journal.mjs',
                  'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs']:
         shutil.copyfile(repo/'scripts'/name, source/'scripts'/name)
@@ -83,7 +83,14 @@ if args and args[0]=='--backup-dir':
 entry.write_text('new-console-entrypoint')
 if (p/'fail-status').exists():raise SystemExit(1)
 ''')
-    node_body = f'''if [ "$1" = scripts/zero-start-readiness.mjs ]; then
+    node_body = f'''if [ "$1" = scripts/zero-start-automation.mjs ]; then
+ printf '%s\\n' 'oracle-check' >> '{calls}'
+ [ "$#" -eq 3 ] && [ "$2" = --oracles-only ] && [ "$3" = --check ] || exit 1
+ [ ! -f '{host}/fail-oracle-check' ] || exit 1
+ printf '%s\\n' 'ZERO_START_ORACLES_CHECKED ready=true'
+ exit 0
+fi
+if [ "$1" = scripts/zero-start-readiness.mjs ]; then
  printf '%s\\n' 'readiness-check' >> '{calls}'
  [ ! -f '{host}/fail-readiness' ] || exit 1
  printf '%s' '{json.dumps(status)}' > "$3/activation.json"
@@ -122,6 +129,12 @@ if command in ['disable','enable','start','stop']:
  elif command=='start':
   current=(p/'runtime/current').resolve()
   if unit=={service!r} and current!=p/'runtime/releases/old':
+   if (p/'expect-oracle-recovery').exists():
+    staged=json.loads((p/'www/automation-data/activation.json').read_text())
+    assert staged['kind']=='fresh-zero-automation-error' and staged['automationStatus']=='not-inspected'
+    assert staged['dailyAutomationActive'] is False and staged['ready'] is False
+    assert staged['blockers']==['DAILY_READINESS_NOT_YET_INSPECTED']
+    assert 'funding' not in staged and 'reporterAuthorized' not in staged and 'archive' not in staged
    for old in ['globaldroptrade-automation.timer','globaldroptrade-oracles.timer','globaldroptrade-automation.service','globaldroptrade-oracles.service']:
     assert states[old]['active']=='inactive','Old signer still running: '+old
    assert (p/'etc/globaldroptrade/fresh-zero-automation.key').read_text().strip()=={fixture_key!r}
@@ -157,6 +170,7 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     def reset(existing=True):
         for flag in host.glob('fail-*'):
             flag.unlink()
+        (host/'expect-oracle-recovery').unlink(missing_ok=True)
         envfile.write_text(env_original)
         envfile.chmod(0o600)
         signer_source.write_text(fixture_key+'\n')
@@ -180,8 +194,8 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
         worker_file.write_text(json.dumps(old_workers if existing else {k:v for k,v in old_workers.items() if k not in [service,timer]}))
         calls.write_text('')
 
-    def run():
-        result = subprocess.run(['bash', str(source/'ubuntu-enable-zero-daily.sh')], cwd=source,
+    def run(flags=()):
+        result = subprocess.run(['bash', str(source/'ubuntu-enable-zero-daily.sh'), *flags], cwd=source,
                                 env=environment, capture_output=True, text=True, timeout=30)
         assert envfile.read_text() == env_original
         assert signer_source.read_text().strip() == fixture_key
@@ -225,6 +239,23 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     states = json.loads(worker_file.read_text())
     assert states[timer]['enabled'] == 'enabled' and states[timer]['active'] == 'active'
     assert all(states[name]['active'] == 'inactive' for name in old_workers if name not in [timer])
+    reset()
+    (host/'expect-oracle-recovery').touch()
+    (host/'fail-readiness').touch()
+    result = run(('--oracle-recovery',))
+    assert result.returncode == 0, result.stdout+result.stderr
+    assert 'oracle-check' in calls.read_text() and 'readiness-check' not in calls.read_text()
+    assert '--oracle-recovery' not in (unit_dir/service).read_text()
+    reset()
+    (host/'fail-oracle-check').touch()
+    result = run(('--oracle-recovery',))
+    assert result.returncode != 0 and not signer.exists()
+    assert json.loads(worker_file.read_text()) == old_workers
+    assert current.resolve() == host/'runtime/releases/old'
+    assert calls.read_text() == 'oracle-check\n', calls.read_text()
+    reset()
+    result = run(('--oracle-recovery', '--oracle-recovery'))
+    assert result.returncode != 0 and 'Usage:' in result.stdout and not calls.read_text()
     for failure in ['readiness','dependencies','status','service','https']:
         reset()
         (host/('fail-'+failure)).touch()
@@ -244,4 +275,4 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
     (host/'fail-service').touch()
     restored(run(), existing=False, status_exists=False)
     assert public.stat().st_mode&0o777 == 0o755, 'Public status directory inherited the private umask'
-    print('PASS: fixed existing operator key; new locked service namespace; explicit WAIT without daily-active claim; old policies/journals/credentials preserved; five failure rollbacks and first-install absence restored; wrong operator rejected; new public directory is readable.')
+    print('PASS: fixed existing operator key; new locked service namespace; explicit WAIT without daily-active claim; minimal oracle-recovery preflight and honest staged status; unsafe recovery proof rejected before signer or worker changes; old policies/journals/credentials preserved; five failure rollbacks and first-install absence restored; wrong operator rejected; new public directory is readable.')
