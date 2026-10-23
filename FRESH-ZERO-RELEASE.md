@@ -174,3 +174,62 @@ The production build passed, and the unpacked frontend package matches the built
 files and embedded installer byte for byte. These are preparation checks; no
 live server cutover is claimed until the server command prints its verified
 connection result.
+
+## Enable the existing-server-key worker
+
+After deployment and connection, run from this release checkout:
+
+```bash
+bash ubuntu-enable-zero-daily.sh
+```
+
+This command installs `globaldroptrade-zero-daily.timer` and its serialized
+oneshot service. It uses the existing server operator key for
+`0xf2ad0FB5288785E58943070De6CF6A1f7a68FBB2`; it does not load the owner's key or
+open a wallet approval window. Blockchain transactions still require signatures,
+which the server supplies automatically. This does not bypass the contract's
+existing reporter governance, withdrawal approvals or spending rules.
+
+The current contract initially authorizes only the owner as a reporter. If the
+server operator has not already received reporter authority through the existing
+two partner votes, two-day delay and configuration execution, daily scheduling
+remains waiting. The installer does not propose, vote, execute governance or
+silently deploy another contract. It also requires usable reward cash, operator
+gas and historical state for the fresh target. The status page displays these
+blockers; a running timer alone is not reported as active daily credits.
+
+Once ready, the worker creates a new policy beginning at a verified confirmed
+checkpoint. The first period ends 24 hours after that boundary. It processes only
+the fresh target's registered accounts, uses active principal and plan rates at
+each period's start, includes completed reinvestment, and retains a target-bound
+epoch journal. It never imports old accounts or back-credits old periods. A later
+funding shortfall preserves the existing policy and unpaid epoch. Contract batch
+identifiers and the journal prevent duplicate credits. Persisted activation,
+transaction and network-volume checkpoints are checked for chain reorganizations
+before reuse; conflicting history stops processing for review.
+
+The service checks every five minutes. It also finishes bounded deep network
+volume jobs, maintains the pinned testnet mock feeds when authorized, and pays
+withdrawals that the current owner has already approved. It never approves a
+withdrawal itself. Approved payments are processed independently of daily reporter
+or reward-funding readiness. All its transaction types share a single signed
+transaction journal and a cumulative maximum fee reservation of 0.1 test BNB.
+Exhausting that budget stops new spending; it does not reset the journal.
+
+Private state is stored in
+`/var/lib/globaldroptrade/fresh-zero-automation-v1/`; the operator key is copied
+with private permissions to `/etc/globaldroptrade/fresh-zero-automation.key`.
+Existing keys, policies and financial journals are preserved. Installation stops
+previous signing workers before switching releases. It snapshots worker state,
+the prior release, units and two managed status-page entries, and restores them
+on installation failure. A failed recovery leaves recorded workers stopped and
+reports `recoveryVerified=0`. Financial transactions already confirmed on-chain
+are never rolled back by the installer.
+
+Successful installation prints `ZERO_START_AUTOMATION_MONITOR_INSTALLED`, followed
+by either `DAILY_PLAN_AUTOMATION_ACTIVE` or `DAILY_PLAN_WAITING` with blockers. The
+read-only page is `https://globaldroptrade.com/deploy/zero-start-activation.html`.
+It has no wallet connection or transaction actions, marks stale reports, and
+distinguishes scheduled automation from actual credited transaction evidence.
+Local tests validate these states and installation recovery; they do not prove
+that the user's VPS has run this release.

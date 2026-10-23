@@ -1,0 +1,100 @@
+import {Interface,ZeroAddress,getAddress,getCreateAddress,keccak256,formatUnits} from './ethers.js';
+
+const policy={owner:'0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632',operator:'0xf2ad0FB5288785E58943070De6CF6A1f7a68FBB2',token:'0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89',artifactHash:'0x64f24990045d9ef3d268e97657ed6e6af013cb73fc8ec39b9a862929c069e8cf'};
+const proposalInterface=new Interface(['function setReporter(address,bool)']);
+const expectedCalldata=proposalInterface.encodeFunctionData('setReporter',[policy.operator,true]),expectedProposalHash=keccak256(expectedCalldata);
+const same=(a,b)=>typeof a==='string'&&typeof b==='string'&&a.toLowerCase()===b.toLowerCase();
+const hash=value=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value)&&!/^0x0{64}$/i.test(value);
+const integer=value=>Number.isSafeInteger(value)&&value>=0;
+const units=value=>typeof value==='string'&&/^(0|[1-9][0-9]*)$/.test(value);
+const fail=message=>{throw Error(message);};
+function address(value){try{const result=getAddress(value);if(result!==ZeroAddress)return result;}catch{}return fail('The fresh contract identity is invalid.');}
+
+export function parseActivationStatus(value,apiConfig,expectedIdentity){
+ if(value?.version!==1||value.kind!=='fresh-zero-daily-readiness'||value.releaseId!=='global-fresh-zero-v1'||value.chainId!==97||value.siteConnected!==true)fail('The fresh daily-plan status is unavailable.');
+ const target=address(value.target),queue=address(value.queue);
+ if(!same(value.contractAddress,target)||!same(value.owner,policy.owner)||!same(value.operator,policy.operator)||!same(value.token,policy.token)||value.tokenDecimals!==18||!same(value.artifactHash,policy.artifactHash))fail('The daily-plan status does not match the fresh release.');
+ if(!hash(value.hash)||!hash(value.runtimeHash)||!integer(value.block)||value.block<1||queue!==getCreateAddress({from:target,nonce:1}))fail('The fresh deployment identity is invalid.');
+ if(apiConfig?.version!==1||apiConfig.chainId!==97||!same(apiConfig.vaultAddress,target))fail('The website and daily-plan status point to different contracts.');
+ const identity={target,queue,hash:value.hash.toLowerCase(),runtimeHash:value.runtimeHash.toLowerCase(),block:value.block};
+ if(expectedIdentity&&Object.keys(identity).some(key=>String(identity[key]).toLowerCase()!==String(expectedIdentity[key]).toLowerCase()))fail('The fresh contract changed. Reload this page.');
+ if(typeof value.ready!=='boolean'||typeof value.paused!=='boolean'||typeof value.reporterAuthorized!=='boolean'||!Array.isArray(value.blockers)||!value.blockers.every(item=>typeof item==='string')||value.approvalVersion!==1||value.automaticGroupVersion!==1)fail('The daily-plan readiness data is invalid.');
+ const checkpoint=value.checkpoint,a=value.reporterProposal;
+ if(!checkpoint||!integer(checkpoint.timestamp)||!integer(checkpoint.block)||!hash(checkpoint.blockHash)||!a||!same(a.calldata,expectedCalldata)||!same(a.hash,expectedProposalHash)||![a.eta,a.round,a.votes,a.requiredVotes,a.currentQuorum].every(integer)||a.requiredVotes<2||a.requiredVotes>7||a.currentQuorum<2||a.currentQuorum>7||a.votes>7||a.delaySeconds!==172800||typeof a.queued!=='boolean'||a.queued!==(a.eta>0))fail('The reporter permission status is invalid.');
+ const f=value.funding;
+ if(!f||typeof f.ready!=='boolean'||!integer(f.maxDailyBps)||f.maxDailyBps>1000||!Array.isArray(f.assets)||f.assets.length!==2)fail('The daily funding status is invalid.');
+ const assets=f.assets.map(entry=>{
+  if(!entry||![entry.principal,entry.rewards,entry.cash,entry.estimatedDailyRequirement,entry.minimumBudgetRequired].every(units)||entry.decimals!==18||typeof entry.ready!=='boolean'||typeof entry.backed!=='boolean'||typeof entry.requiredForExistingPrincipal!=='boolean')fail('The reward budget data is invalid.');
+  const asset=same(entry.asset,ZeroAddress)?ZeroAddress:address(entry.asset);
+  if(asset!==ZeroAddress&&!same(asset,policy.token))fail('An unexpected reward asset was reported.');
+  const principal=BigInt(entry.principal),rewards=BigInt(entry.rewards),cash=BigInt(entry.cash),estimate=(principal*BigInt(f.maxDailyBps)+9999n)/10000n,minimum=estimate>0n?estimate:1n;
+  const backed=rewards>0n&&cash>=rewards,ready=rewards>=minimum&&cash>=minimum;
+  if(BigInt(entry.estimatedDailyRequirement)!==estimate||BigInt(entry.minimumBudgetRequired)!==minimum||entry.requiredForExistingPrincipal!==(principal>0n)||entry.backed!==backed||entry.ready!==ready)fail('The reward funding estimate is inconsistent.');
+  return {...entry,asset,symbol:asset===ZeroAddress?'tBNB':'Test USDT'};
+ });
+ if(new Set(assets.map(entry=>entry.asset.toLowerCase())).size!==2)fail('The reward assets are inconsistent.');
+ const required=assets.filter(entry=>entry.requiredForExistingPrincipal),fundingReady=required.length?required.every(entry=>entry.ready):assets.some(entry=>entry.ready);
+ if(f.ready!==fundingReady||!value.operatorGas||!units(value.operatorGas.balance)||value.operatorGas.positive!==(BigInt(value.operatorGas.balance)>0n)||!['supported','provisional','unavailable'].includes(value.archive?.status))fail('The daily service requirements are inconsistent.');
+ if(value.ready&&(value.paused||!value.reporterAuthorized||!fundingReady||!value.operatorGas.positive||value.archive.status!=='supported'||value.blockers.length))fail('The daily readiness result is inconsistent.');
+ if(value.dailyAutomationActive!==undefined&&typeof value.dailyAutomationActive!=='boolean')fail('The server scheduling status is invalid.');
+ if(!['not-inspected','waiting','scheduled','blocked'].includes(value.automationStatus))fail('The server scheduling status is invalid.');
+ const automation=value.automation;
+ if(automation){
+  if(automation.version!==1||automation.kind!=='fresh-zero-server-automation'||automation.chainId!==97||!same(automation.target,target)||!['waiting','scheduled'].includes(automation.status)||automation.status!==value.automationStatus||!Array.isArray(automation.dailyCredits))fail('The server activity belongs to an invalid target.');
+  if(automation.policy){
+   const policy=automation.policy;
+   if(policy.version!==1||policy.chainId!==97||!same(policy.vaultAddress,target)||!same(policy.runtimeHash,value.runtimeHash)||policy.deploymentBlock!==value.block||!integer(policy.startTimestamp)||policy.periodSeconds!==86400||!integer(automation.nextEpoch)||automation.firstPeriodEndsAt!==policy.startTimestamp+86400)fail('The daily period does not match the fresh contract.');
+  }else if(automation.firstPeriodEndsAt!==undefined||automation.nextEpoch!==undefined)fail('The daily period has no established start time.');
+  if(!automation.dailyCredits.every(batch=>batch&&hash(batch.id)&&['credited','already_credited'].includes(batch.status)&&(batch.status!=='credited'||hash(batch.transactionHash))))fail('The daily credit evidence is invalid.');
+ }
+ return {...value,...identity,identity,funding:{...f,assets}};
+}
+
+export function activationStatusView(report,nowSeconds=Date.now()/1000){
+ const stale=nowSeconds-report.checkpoint.timestamp>900||report.checkpoint.timestamp-nowSeconds>120;
+ const active=report.dailyAutomationActive===true&&report.automationStatus==='scheduled'&&report.automation?.status==='scheduled'&&!!report.automation.policy&&report.ready&&!stale;
+ const title=stale?'Status needs a fresh check':active?'Daily plan is active':report.ready?'Ready for server activation':'Daily plan is waiting';
+ const summary=stale?'The latest server check is out of date. Current daily activity is unverified.':active?'The server reports that daily allocation processing is active.':!report.reporterAuthorized?'Daily credits are blocked: the server operator is not authorized.':report.ready?'Contract requirements are satisfied. Active server scheduling has not been verified.':'The server is checking the remaining requirements before daily credits can start.';
+ const a=report.reporterProposal;
+ const proposal=report.reporterAuthorized?'The server operator is authorized.':!a.queued?'Reporter authorization has not been proposed.':`Council approval: ${a.votes} of ${a.requiredVotes} votes recorded. ${report.checkpoint.timestamp<a.eta?'Authorization is unavailable before '+new Date(a.eta*1000).toLocaleString('en-US')+'.':'The recorded authorization delay has elapsed.'}`;
+ const checks=[
+  {label:'Daily credits',value:active?'Active':stale?'Unverified':report.ready?'Ready; scheduling unverified':'Waiting for requirements',ok:active},
+  {label:'Server permission',value:report.reporterAuthorized?'Authorized':'Permission missing',ok:report.reporterAuthorized},
+  {label:'Reward funding',value:report.funding.ready?'Ready for the current estimate':'Funding required',ok:report.funding.ready},
+  {label:'Transaction fees',value:report.operatorGas.positive?'Test BNB available':'Server operator needs test BNB',ok:report.operatorGas.positive},
+  {label:'Historical account reads',value:report.archive.status==='supported'?'Verified':report.archive.status==='provisional'?'Waiting for a full daily period':'Unavailable',ok:report.archive.status==='supported'},
+  {label:'Contract operations',value:report.paused?'Paused':'Open',ok:!report.paused}
+ ];
+ const funding=report.funding.assets.map(entry=>({symbol:entry.symbol,principal:formatUnits(entry.principal,entry.decimals),rewards:formatUnits(entry.rewards,entry.decimals),cash:formatUnits(entry.cash,entry.decimals),minimum:formatUnits(entry.minimumBudgetRequired,entry.decimals),required:entry.requiredForExistingPrincipal,ready:entry.ready}));
+ const automation=report.automation,period=automation?.policy,epoch=automation?.nextEpoch;
+ const schedule=period?`Next daily period: ${epoch+1}. Period ends ${new Date((automation.firstPeriodEndsAt+epoch*86400)*1000).toLocaleString('en-US')}.`:'A daily start time has not been established.';
+ const credited=automation?.dailyCredits.filter(batch=>batch.status==='credited')||[];
+ const creditSummary=credited.length?`${credited.length} daily credit ${credited.length===1?'batch was':'batches were'} confirmed in the latest server check.`:'No new daily credit batches were reported in the latest server check.';
+ return {title,summary,active,stale,checks,funding,proposal,schedule,creditSummary};
+}
+
+function startStatusPage(){
+ const $=id=>document.getElementById(id);let identity,controller,timer,loading=false,stopped=false;
+ function clear(message){$('headline').textContent='Daily status unavailable';$('summary').textContent=message;$('checks').replaceChildren();$('funding').replaceChildren();$('proposal').textContent='';$('schedule').textContent='';$('credits').textContent='';$('checked').textContent='';$('identity').hidden=true;}
+ async function json(path,signal){const response=await fetch(path,{cache:'no-store',signal});if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('The server status is temporarily unavailable.');return response.json();}
+ async function refresh(){
+  if(stopped||loading||document.visibilityState==='hidden')return;loading=true;$('refresh').disabled=true;const request=new AbortController();controller=request;const timeout=setTimeout(()=>request.abort(),12000);
+  try{
+   const [data,api]=await Promise.all([json('/deploy/zero-start-activation.json',request.signal),json('/api/config',request.signal)]);
+   if(stopped)return;const report=parseActivationStatus(data,api,identity),view=activationStatusView(report);identity=report.identity;
+   $('headline').textContent=view.title;$('summary').textContent=view.summary;$('checks').replaceChildren();
+   for(const check of view.checks){const row=document.createElement('div'),label=document.createElement('span'),value=document.createElement('strong');row.className='status-row';label.textContent=check.label;value.textContent=check.value;value.className=check.ok?'complete':'waiting';row.append(label,value);$('checks').append(row);}
+   $('proposal').textContent=view.proposal;$('schedule').textContent=view.schedule;$('credits').textContent=view.creditSummary;$('funding').replaceChildren();
+   for(const asset of view.funding){const row=document.createElement('tr');for(const text of [asset.symbol,asset.principal,asset.rewards,asset.cash,asset.required?asset.minimum:'No active principal',asset.ready?'Ready':asset.required?'Funding needed':'No active principal']){const cell=document.createElement('td');cell.textContent=text;row.append(cell);}$('funding').append(row);}
+   $('target').textContent=report.target;$('owner').textContent=report.owner;$('operator').textContent=report.operator;$('creation').textContent=report.hash;$('creation').href='https://testnet.bscscan.com/tx/'+report.hash;$('identity').hidden=false;
+   $('checked').textContent='Server checkpoint: '+new Date(report.checkpoint.timestamp*1000).toLocaleString('en-US')+' · Block '+report.checkpoint.block+(view.stale?' · Out of date':'');
+  }catch(error){request.abort();if(!stopped)clear(error.name==='AbortError'?'The server check timed out. It will be retried automatically.':error.message||'The server status is temporarily unavailable.');}
+  finally{clearTimeout(timeout);loading=false;if(!stopped)$('refresh').disabled=false;}
+ }
+ $('refresh').addEventListener('click',()=>void refresh());
+ const visible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',visible);
+ const stop=()=>{stopped=true;controller?.abort();clearInterval(timer);document.removeEventListener('visibilitychange',visible);};window.addEventListener('pagehide',stop);
+ window.addEventListener('pageshow',()=>{if(stopped){stopped=false;document.addEventListener('visibilitychange',visible);timer=setInterval(()=>void refresh(),20000);void refresh();}});
+ timer=setInterval(()=>void refresh(),20000);void refresh();
+}
+if(typeof document!=='undefined')startStatusPage();

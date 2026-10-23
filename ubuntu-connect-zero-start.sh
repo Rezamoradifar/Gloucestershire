@@ -61,7 +61,7 @@ for name in ['sites-available/globaldroptrade.com','sites-enabled/globaldroptrad
  shutil.copy2(p,target,follow_symlinks=False);records[name]='present'
 (backup/'nginx-files.json').write_text(json.dumps(records))
 PY
-workers=(globaldroptrade-automation.timer globaldroptrade-oracles.timer globaldroptrade-automation.service globaldroptrade-oracles.service globaldroptrade-deferred-index.service)
+workers=(globaldroptrade-automation.timer globaldroptrade-oracles.timer globaldroptrade-zero-daily.timer globaldroptrade-automation.service globaldroptrade-oracles.service globaldroptrade-zero-daily.service globaldroptrade-deferred-index.service)
 : > "$backup/worker-state"
 for worker in "${workers[@]}"; do
  load=$(systemctl show --property=LoadState --value "$worker" 2>/dev/null || true)

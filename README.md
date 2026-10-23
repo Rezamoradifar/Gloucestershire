@@ -1,6 +1,6 @@
 ## Fresh zero-state contract
 
-For a new independent contract with empty accounts, automatic first-group branch assignment and administrator-approved withdrawals, use [FRESH-ZERO-RELEASE.md](FRESH-ZERO-RELEASE.md) and `bash ubuntu-deploy-zero-start.sh --execute`. Then run `bash ubuntu-connect-zero-start.sh` to verify the fresh deployment and connect its compatible frontend/API with backup and rollback. This chain-97 flow does not import previous vault data. Daily worker activation remains separate.
+For a new independent contract with empty accounts, automatic first-group branch assignment and administrator-approved withdrawals, use [FRESH-ZERO-RELEASE.md](FRESH-ZERO-RELEASE.md) and `bash ubuntu-deploy-zero-start.sh --execute`. Then run `bash ubuntu-connect-zero-start.sh` to verify the fresh deployment and connect its compatible frontend/API with backup and rollback. Run `bash ubuntu-enable-zero-daily.sh` to install the existing-server-key worker and read-only activation status page. This chain-97 flow does not import previous vault data. Daily scheduling starts only after reporter authority, funding and historical-state checks pass; missing prerequisites are reported as waiting without wallet prompts.
 
 ## Sales referral model 2
 

@@ -16,8 +16,10 @@ old_target = '0x2222222222222222222222222222222222222222'
 workers = {
     'globaldroptrade-automation.timer': {'enabled': 'enabled', 'active': 'active'},
     'globaldroptrade-oracles.timer': {'enabled': 'enabled-runtime', 'active': 'active'},
+    'globaldroptrade-zero-daily.timer': {'enabled': 'enabled', 'active': 'active'},
     'globaldroptrade-automation.service': {'enabled': 'static', 'active': 'active'},
     'globaldroptrade-oracles.service': {'enabled': 'static', 'active': 'inactive'},
+    'globaldroptrade-zero-daily.service': {'enabled': 'static', 'active': 'active'},
     'globaldroptrade-deferred-index.service': {'enabled': 'disabled', 'active': 'active'},
 }
 
@@ -25,7 +27,7 @@ with tempfile.TemporaryDirectory() as directory:
     host = Path(directory)
     for name in ['source/scripts', 'bin', 'etc/nginx/sites-available', 'etc/nginx/sites-enabled',
                  'etc/nginx/snippets', 'etc/globaldroptrade', 'etc/systemd/system', 'api/old',
-                 'api/new', 'state/fresh-zero-v1', 'backups', 'old-automation']:
+                 'api/new', 'state/fresh-zero-v1', 'state/fresh-zero-automation-v1', 'backups', 'old-automation']:
         (host/name).mkdir(parents=True)
     source, bin_dir = host/'source', host/'bin'
     paths = {'/etc/nginx': host/'etc/nginx', '/etc/globaldroptrade': host/'etc/globaldroptrade',
@@ -57,6 +59,8 @@ with tempfile.TemporaryDirectory() as directory:
     original_journal = '{"transactions":{"saved":"do-not-touch"}}\n'
     (host/'old-automation/daily-policy.json').write_text(original_policy)
     (host/'old-automation/journal.json').write_text(original_journal)
+    (host/'state/fresh-zero-automation-v1/daily-policy.json').write_text(original_policy)
+    (host/'state/fresh-zero-automation-v1/journal.json').write_text(original_journal)
     deployment.write_text('{"verified":true}\n')
     deployment.chmod(0o600)
     (source/'scripts/repair-global-nginx.py').write_text(f'''
@@ -183,6 +187,8 @@ esac'''
         assert 'private.invalid' not in result.stdout+result.stderr, result.stdout+result.stderr
         assert (host/'old-automation/daily-policy.json').read_text() == original_policy
         assert (host/'old-automation/journal.json').read_text() == original_journal
+        assert (host/'state/fresh-zero-automation-v1/daily-policy.json').read_text() == original_policy
+        assert (host/'state/fresh-zero-automation-v1/journal.json').read_text() == original_journal
         return result
 
     def restored(result, marker_exists=True):
