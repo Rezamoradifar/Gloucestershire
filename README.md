@@ -1,3 +1,7 @@
+## Fresh zero-state contract
+
+For a new independent contract with empty accounts, automatic first-group branch assignment and administrator-approved withdrawals, use [FRESH-ZERO-RELEASE.md](FRESH-ZERO-RELEASE.md) and `bash ubuntu-deploy-zero-start.sh --execute`. This separate chain-97 deployment does not import previous vault data or switch the live website.
+
 ## Sales referral model 2
 
 The unified 0.8.0 release combines the current financial frontend, API-derived contract connection, glass day/night theme, funded daily plan worker and administrator-approved withdrawals. See [UNIFIED-RELEASE.md](UNIFIED-RELEASE.md) for exact behavior, verified installation and the immutable-contract activation boundary. Run `bash ubuntu-unified.sh` on the existing server to update frontend/API while preserving the active contract.

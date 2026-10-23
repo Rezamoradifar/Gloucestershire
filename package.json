@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "compile": "node scripts/compile.mjs",
+    "compile:fresh": "node scripts/compile-fresh-start.mjs",
+    "test:fresh": "npm run compile:fresh && node --test --test-concurrency=1 test/fresh-start-contract.test.mjs test/zero-start-deployment.test.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "pretest": "npm run compile",
     "api": "node server/trades-api.mjs",
