@@ -147,3 +147,38 @@ proof without archived storage, existing-copy discovery, read-only API behavior,
 cutover rejection, council delay and archive-RPC enrollment checks. Installer
 tests exercise managed paths, credential preservation and rollback. Local tests
 do not claim a live owner signature, server installation or completed migration.
+
+## Existing Nginx enabled-file repair
+
+The 2026-10-23 server diagnostic identified a regular active
+`sites-enabled/globaldroptrade.com` containing the current theme, an older
+canonical available file, and two loaded backup entries ending in
+`.bak.1792627288` and `.bak.1792627441`. These backups caused duplicate hostname
+warnings, and the regular enabled file prevented the managed installer from
+updating the site.
+
+From the pinned repair checkout on that existing server, run as root:
+
+```bash
+python3 scripts/repair-global-nginx.py --apply
+bash ubuntu-deferred-migration.sh
+```
+
+The repair first matches all four configuration hashes against the verified
+diagnostic, checks that each configuration belongs exclusively to the Global
+domain, and verifies that local HTTPS serves the active release. It snapshots
+the four original entries outside Nginx include directories, preserves the
+active configuration byte-for-byte as the canonical file, replaces the active
+entry with the required symlink, and removes only the two verified backup
+entries from the enabled directory. Certificate files, other sites, API settings
+and blockchain state are not changed.
+
+Nginx syntax, remaining hostname conflicts, HTTPS content and any previously
+healthy API are checked before success is reported. A failed change restores
+the original file and symlink types. The script prints a private backup path
+and a concrete `--restore` command. If the diagnosed files changed or additional
+conflicts remain, it stops instead of selecting another configuration.
+
+`python3 scripts/test-nginx-enabled-repair.py` exercises this repair and rollback
+against isolated filesystem and service fixtures. No live Nginx repair is
+claimed by these tests.
