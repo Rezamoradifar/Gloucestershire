@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "releaseId": "global-fresh-fast-test-v1",
+  "chainId": 97,
+  "artifact": "FastTestnetVault",
+  "artifactHash": "0x008e37042763d39b139ead6cd867ef48a221a2eec1c8e8702a844fa5f269b11e",
+  "owner": "0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632",
+  "deployer": "0xf2ad0FB5288785E58943070De6CF6A1f7a68FBB2",
+  "token": "0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89",
+  "bnbFeed": "0xDA264c16Ec8832748a1A5A31b963deD9E48e337a",
+  "tokenFeed": "0xE7D68dF5e1e9B0F5BeB3201b4Ab1d64aC7761454",
+  "age": "86400",
+  "partners": [
+    "0xA7705F5c98263Caae042626a5d49528Dd982Af5F",
+    "0x2F980aC9ae92DB23cA2AEAd1CE8188A5764a7Bfa",
+    "0x730C4664C58aE506C05b50e06c1CE73f71D82b87",
+    "0xa63AD5EEe7907D76B22eb140cC4009fDc3a6c977",
+    "0xba869ec421be39c5F5410033Cf7Ec203298B151a",
+    "0x4274d411FF49Cfd2FCf1eC97Fb05f51099d5E0A3",
+    "0x63c5B98AEfd69658B652d5F35FFda3C6c06847E3"
+  ],
+  "operations": "0x8c4AC9b009808a0B49Ba77b58e3871e7cDba463c",
+  "testMode": true,
+  "initialServerReporter": true
+}

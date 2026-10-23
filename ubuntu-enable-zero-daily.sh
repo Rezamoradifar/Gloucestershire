@@ -3,14 +3,23 @@
 set +x
 set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
-[ "$(id -u)" -eq 0 ] && [ "$#" -eq 0 ] || { echo 'Run as root without arguments'; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo 'Run as root'; exit 1; }
+profile_args=()
+worker_args=''
+state=/var/lib/globaldroptrade/fresh-zero-automation-v1
+if [ "$#" -eq 1 ] && [ "$1" = --fast-testnet ]; then
+ profile_args=(--fast-testnet)
+ worker_args=' --fast-testnet --seed-test-rewards'
+ state=/var/lib/globaldroptrade/fresh-fast-testnet-automation-v1
+elif [ "$#" -ne 0 ]; then
+ echo 'Usage: bash ubuntu-enable-zero-daily.sh [--fast-testnet]'; exit 1
+fi
 case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) exit 1;; esac
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
 if [ -x "$runtime/node" ]; then export PATH="$runtime:$PATH"; fi
 for command in node npm systemctl flock python3 curl nginx; do command -v "$command" >/dev/null; done
 node -e 'const [a,b]=process.versions.node.split(".").map(Number);if(a<22||(a===22&&b<12))throw Error("Node 22.12+ required")'
 umask 077
-state=/var/lib/globaldroptrade/fresh-zero-automation-v1
 public=/var/www/globaldroptrade/automation-data
 node --input-type=module - "$state" "$public" <<'JS'
 import fs from 'node:fs';
@@ -29,7 +38,7 @@ npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
 # Readiness failure blocks installation; ordinary missing authority/funding is a reported WAIT.
-node scripts/zero-start-readiness.mjs status "$stage"
+node scripts/zero-start-readiness.mjs status "$stage" "${profile_args[@]}"
 node --input-type=module - <<'JS'
 import fs from 'node:fs';import{Wallet}from'ethers';import{readPrivateKey}from'./scripts/migration-signers.mjs';import{zeroStartRelease}from'./scripts/deploy-zero-start.mjs';
 const file='/etc/globaldroptrade/fresh-zero-automation.key';
@@ -40,10 +49,15 @@ JS
 base=/opt/globaldroptrade-zero-daily
 release="$base/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 755 "$release/scripts" "$release/server" "$release/artifacts" "$release/config"
-for file in zero-start-automation.mjs zero-start-readiness.mjs zero-start-volume.mjs daily-profit.mjs maintain-testnet-oracles.mjs refresh-testnet-oracles.mjs migration-journal.mjs migration-signers.mjs connect-zero-start.mjs deploy-zero-start.mjs; do cp "scripts/$file" "$release/scripts/"; done
+for file in zero-start-automation.mjs zero-start-readiness.mjs zero-start-volume.mjs daily-profit.mjs maintain-testnet-oracles.mjs refresh-testnet-oracles.mjs migration-journal.mjs migration-signers.mjs connect-zero-start.mjs deploy-zero-start.mjs zero-start-profile.mjs; do cp "scripts/$file" "$release/scripts/"; done
 cp server/trades-api.mjs server/community.mjs server/marketplace.mjs "$release/server/"
 cp artifacts/AutomaticGroupVault.json artifacts/MockFeed.json "$release/artifacts/"
 cp config/fresh-zero-testnet.json "$release/config/"
+if [ "${#profile_args[@]}" -ne 0 ]; then
+ cp scripts/fund-fast-test-rewards.mjs "$release/scripts/"
+ cp artifacts/FastTestnetVault.json artifacts/MockToken.json "$release/artifacts/"
+ cp config/fresh-fast-testnet.json "$release/config/"
+fi
 cp package.json package-lock.json "$release/"
 (cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
 node_bin=$(command -v node)
@@ -124,7 +138,7 @@ Wants=network-online.target
 Type=oneshot
 User=root
 WorkingDirectory=$base/current
-ExecStart=/usr/bin/flock -n $state/run.lock $node_bin $base/current/scripts/zero-start-automation.mjs --execute
+ExecStart=/usr/bin/flock -n $state/run.lock $node_bin $base/current/scripts/zero-start-automation.mjs --execute$worker_args
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

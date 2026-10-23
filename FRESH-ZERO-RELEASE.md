@@ -282,3 +282,90 @@ The existing daily worker observes completed permission changes automatically.
 Reward funding through `fundRewards` and verified historical state remain
 necessary before a new daily policy starts; this permission-only page does not
 fund rewards. The first daily credit follows a complete 24-hour policy period.
+
+## Separate fast testnet release
+
+The existing contract cannot skip its initial reporter governance delay. This
+separate release uses `FastTestnetVault`, which authorizes the pinned server
+reporter during construction. It creates a new contract and withdrawal queue
+on BNB Testnet 97 with zero accounts. It imports no previous accounts or pending
+withdrawals. Previous contracts, deployment records and private financial journals
+remain available independently.
+
+The constructor accepts only chain 97, the existing deployer
+`0xf2ad0FB5288785E58943070De6CF6A1f7a68FBB2` and owner
+`0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632`. Both are initial reporters. Other
+configuration changes retain the owner proposal, two partner votes and 48-hour
+delay. Withdrawal approval remains owner-only. Plan rates, groups, reinvestment,
+fees and the 86,400-second daily period are inherited unchanged.
+`FAST_TESTNET_VERSION=1` identifies this separate test release.
+
+From the pinned checkout on the existing VPS, run as root:
+
+```bash
+bash ubuntu-fast-testnet.sh --execute
+```
+
+This runs deployment, connection and installation with explicit `--fast-testnet`
+flags. Use the combined command so the shared server signer is quiesced before
+deployment. It stops timers before services and refuses to deploy while a prior
+worker has unresolved signed transactions. Reconcile such transactions with the
+corresponding prior worker against its original target. Nonstandard legacy daily
+state overrides require review before setup. The fast deployment journal has a
+cumulative fee limit of 0.1 test BNB. Its separate automation journal has another
+cumulative 0.1 test BNB limit shared by oracle maintenance, test reward seeding,
+daily batches and approved payments. Transactions send no native BNB value.
+Test gas must be available in the server wallet; no owner key is requested.
+
+The fast service explicitly includes `--seed-test-rewards`. It verifies the exact
+pinned Test USDT runtime and metadata, mints only the operator's initial shortfall,
+approves the new vault for exactly 10 Test USDT when necessary, and calls
+`fundRewards` for those 10 tokens. The saved plan and signed transactions share
+the automation journal. This is one seed per new target: retries resume it, and
+spending the reward budget never triggers a refill. It uses only the reviewed
+public test faucet token. It does not fund native BNB rewards. Saved pending
+seed transactions can resume without the creation flag; completing a saved seed
+plan uses the explicit flag installed in the fast service.
+
+Fast deployment state is `/var/lib/globaldroptrade/fresh-fast-testnet-v1/`;
+automation state is `/var/lib/globaldroptrade/fresh-fast-testnet-automation-v1/`.
+Connection locks and backups use a separate namespace. The environment adds
+`TRADES_ZERO_START_PROFILE=global-fresh-fast-test-v1`. The service/timer names,
+installation base, existing server key and public status URL remain shared, so
+setup switches the installed worker to the selected target. An explicit ordinary
+release selection uses its original artifact and journals. Ambient environment
+variables cannot select the fast profile.
+
+The fast contract may start a policy before it is 24 hours old when all requested
+historical reads succeed. The initial archive status remains `provisional`, with
+`fullyVerified=false` and `provisionalAccepted=true`. Missing historical reads
+still block, and daily credits require actual period-start snapshots. The
+ordinary release still waits for verified 24-hour retention. First credits follow
+a full daily period after the new confirmed policy boundary; the five-minute
+timer is only the checking interval.
+
+`FAST_TESTNET_SETUP_COMPLETE` follows the worker's
+`DAILY_PLAN_AUTOMATION_ACTIVE` or `DAILY_PLAN_WAITING` result. Completion alone
+does not claim readiness passed. The read-only page at
+`https://globaldroptrade.com/deploy/zero-start-activation.html` pins the fast
+artifact and markers and displays test status. The old SafePal permission page
+remains pinned to the previous contract and is not used for this initial role.
+
+On failure each stage retains its verified recovery. The combined setup resumes
+prior workers only when the exact previous environment, API unit/release, daily
+units/release, served frontend and API configuration are restored and health is
+verified, with no pending new signed transaction. Otherwise workers stay stopped
+and setup prints `FAST_TESTNET_SETUP_INCOMPLETE previousWorkersRestored=0`.
+A completed connection followed by failed automation installation leaves the
+new connection for the same command to resume. Confirmed transactions are never
+rolled back. Retry the same pinned command and preserve journals; completed
+deployment is reused instead of creating another contract.
+
+Compiler settings are solc 0.8.30, optimizer runs 1, via IR, Shanghai EVM. Saved
+standard input independently reproduces ABI, creation code and runtime. Creation
+hash is `0x008e37042763d39b139ead6cd867ef48a221a2eec1c8e8702a844fa5f269b11e`;
+runtime is 24,192 bytes and initcode is 30,261 bytes. Existing contract sources
+and artifacts are preserved. Local checks cover actual Ganache contract,
+deployment, connection, fixed funding, historical readiness and daily-credit
+behavior, status validation, and isolated host installation/recovery. They do
+not prove deployment on the user's VPS or native SafePal behavior.

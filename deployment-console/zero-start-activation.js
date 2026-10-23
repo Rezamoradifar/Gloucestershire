@@ -1,6 +1,10 @@
 import {Interface,ZeroAddress,getAddress,getCreateAddress,keccak256,formatUnits} from './ethers.js';
 
-const policy={owner:'0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632',operator:'0xf2ad0FB5288785E58943070De6CF6A1f7a68FBB2',token:'0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89',artifactHash:'0x64f24990045d9ef3d268e97657ed6e6af013cb73fc8ec39b9a862929c069e8cf'};
+const policy={owner:'0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632',operator:'0xf2ad0FB5288785E58943070De6CF6A1f7a68FBB2',token:'0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89'};
+const releases=new Map([
+ ['global-fresh-zero-v1',{artifactHash:'0x64f24990045d9ef3d268e97657ed6e6af013cb73fc8ec39b9a862929c069e8cf',fast:false}],
+ ['global-fresh-fast-test-v1',{artifactHash:'0x008e37042763d39b139ead6cd867ef48a221a2eec1c8e8702a844fa5f269b11e',fast:true}]
+]);
 const proposalInterface=new Interface(['function setReporter(address,bool)']);
 const expectedCalldata=proposalInterface.encodeFunctionData('setReporter',[policy.operator,true]),expectedProposalHash=keccak256(expectedCalldata);
 const same=(a,b)=>typeof a==='string'&&typeof b==='string'&&a.toLowerCase()===b.toLowerCase();
@@ -11,9 +15,12 @@ const fail=message=>{throw Error(message);};
 function address(value){try{const result=getAddress(value);if(result!==ZeroAddress)return result;}catch{}return fail('The fresh contract identity is invalid.');}
 
 export function parseActivationStatus(value,apiConfig,expectedIdentity){
- if(value?.version!==1||value.kind!=='fresh-zero-daily-readiness'||value.releaseId!=='global-fresh-zero-v1'||value.chainId!==97||value.siteConnected!==true)fail('The fresh daily-plan status is unavailable.');
+ const release=releases.get(value?.releaseId);
+ if(value?.version!==1||value.kind!=='fresh-zero-daily-readiness'||!release||value.chainId!==97||value.siteConnected!==true)fail('The fresh daily-plan status is unavailable.');
+ if(release.fast&&(value.testMode!==true||value.initialServerReporter!==true||value.fastTestnetVersion!==1))fail('The fast testnet release markers are invalid.');
+ if(!release.fast&&(value.testMode===true||value.initialServerReporter===true||value.fastTestnetVersion!==undefined||value.archive?.provisionalAccepted===true))fail('The standard release cannot use fast testnet permissions.');
  const target=address(value.target),queue=address(value.queue);
- if(!same(value.contractAddress,target)||!same(value.owner,policy.owner)||!same(value.operator,policy.operator)||!same(value.token,policy.token)||value.tokenDecimals!==18||!same(value.artifactHash,policy.artifactHash))fail('The daily-plan status does not match the fresh release.');
+ if(!same(value.contractAddress,target)||!same(value.owner,policy.owner)||!same(value.operator,policy.operator)||!same(value.token,policy.token)||value.tokenDecimals!==18||!same(value.artifactHash,release.artifactHash))fail('The daily-plan status does not match the fresh release.');
  if(!hash(value.hash)||!hash(value.runtimeHash)||!integer(value.block)||value.block<1||queue!==getCreateAddress({from:target,nonce:1}))fail('The fresh deployment identity is invalid.');
  if(apiConfig?.version!==1||apiConfig.chainId!==97||!same(apiConfig.vaultAddress,target))fail('The website and daily-plan status point to different contracts.');
  const identity={target,queue,hash:value.hash.toLowerCase(),runtimeHash:value.runtimeHash.toLowerCase(),block:value.block};
@@ -35,8 +42,11 @@ export function parseActivationStatus(value,apiConfig,expectedIdentity){
  if(new Set(assets.map(entry=>entry.asset.toLowerCase())).size!==2)fail('The reward assets are inconsistent.');
  const required=assets.filter(entry=>entry.requiredForExistingPrincipal),fundingReady=required.length?required.every(entry=>entry.ready):assets.some(entry=>entry.ready);
  if(f.ready!==fundingReady||!value.operatorGas||!units(value.operatorGas.balance)||value.operatorGas.positive!==(BigInt(value.operatorGas.balance)>0n)||!['supported','provisional','unavailable'].includes(value.archive?.status))fail('The daily service requirements are inconsistent.');
- if(value.ready&&(value.paused||!value.reporterAuthorized||!fundingReady||!value.operatorGas.positive||value.archive.status!=='supported'||value.blockers.length))fail('The daily readiness result is inconsistent.');
+ const initialArchiveAccepted=release.fast&&value.archive.status==='provisional'&&value.archive.provisionalAccepted===true&&value.archive.fullyVerified===false;
+ if(value.archive.provisionalAccepted===true&&!initialArchiveAccepted)fail('The initial testnet archive status is inconsistent.');
+ if(value.ready&&(value.paused||!value.reporterAuthorized||!fundingReady||!value.operatorGas.positive||(value.archive.status!=='supported'&&!initialArchiveAccepted)||value.blockers.length))fail('The daily readiness result is inconsistent.');
  if(value.dailyAutomationActive!==undefined&&typeof value.dailyAutomationActive!=='boolean')fail('The server scheduling status is invalid.');
+ if(release.fast&&((value.timerActive!==undefined&&typeof value.timerActive!=='boolean')||(value.dailyAutomationActive===true&&value.timerActive!==true)))fail('The fast testnet timer status is invalid.');
  if(!['not-inspected','waiting','scheduled','blocked'].includes(value.automationStatus))fail('The server scheduling status is invalid.');
  const automation=value.automation;
  if(automation){
@@ -52,17 +62,18 @@ export function parseActivationStatus(value,apiConfig,expectedIdentity){
 
 export function activationStatusView(report,nowSeconds=Date.now()/1000){
  const stale=nowSeconds-report.checkpoint.timestamp>900||report.checkpoint.timestamp-nowSeconds>120;
- const active=report.dailyAutomationActive===true&&report.automationStatus==='scheduled'&&report.automation?.status==='scheduled'&&!!report.automation.policy&&report.ready&&!stale;
+ const fast=report.releaseId==='global-fresh-fast-test-v1';
+ const active=report.dailyAutomationActive===true&&(!fast||report.timerActive===true)&&report.automationStatus==='scheduled'&&report.automation?.status==='scheduled'&&!!report.automation.policy&&report.ready&&!stale;
  const title=stale?'Status needs a fresh check':active?'Daily plan is active':report.ready?'Ready for server activation':'Daily plan is waiting';
  const summary=stale?'The latest server check is out of date. Current daily activity is unverified.':active?'The server reports that daily allocation processing is active.':!report.reporterAuthorized?'Daily credits are blocked: the server operator is not authorized.':report.ready?'Contract requirements are satisfied. Active server scheduling has not been verified.':'The server is checking the remaining requirements before daily credits can start.';
  const a=report.reporterProposal;
- const proposal=report.reporterAuthorized?'The server operator is authorized.':!a.queued?'Reporter authorization has not been proposed.':`Council approval: ${a.votes} of ${a.requiredVotes} votes recorded. ${report.checkpoint.timestamp<a.eta?'Authorization is unavailable before '+new Date(a.eta*1000).toLocaleString('en-US')+'.':'The recorded authorization delay has elapsed.'}`;
+ const proposal=report.reporterAuthorized?(fast?'Testnet initial server permission was granted at deployment.':'The server operator is authorized.'):!a.queued?'Reporter authorization has not been proposed.':`Council approval: ${a.votes} of ${a.requiredVotes} votes recorded. ${report.checkpoint.timestamp<a.eta?'Authorization is unavailable before '+new Date(a.eta*1000).toLocaleString('en-US')+'.':'The recorded authorization delay has elapsed.'}`;
  const checks=[
   {label:'Daily credits',value:active?'Active':stale?'Unverified':report.ready?'Ready; scheduling unverified':'Waiting for requirements',ok:active},
-  {label:'Server permission',value:report.reporterAuthorized?'Authorized':'Permission missing',ok:report.reporterAuthorized},
+  {label:fast?'Testnet initial server permission':'Server permission',value:report.reporterAuthorized?'Authorized':'Permission missing',ok:report.reporterAuthorized},
   {label:'Reward funding',value:report.funding.ready?'Ready for the current estimate':'Funding required',ok:report.funding.ready},
   {label:'Transaction fees',value:report.operatorGas.positive?'Test BNB available':'Server operator needs test BNB',ok:report.operatorGas.positive},
-  {label:'Historical account reads',value:report.archive.status==='supported'?'Verified':report.archive.status==='provisional'?'Waiting for a full daily period':'Unavailable',ok:report.archive.status==='supported'},
+  {label:'Historical account reads',value:report.archive.status==='supported'?'Verified':fast&&report.archive.provisionalAccepted===true?'Initial test checkpoint verified; 24-hour retention pending':report.archive.status==='provisional'?'Waiting for a full daily period':'Unavailable',ok:report.archive.status==='supported'},
   {label:'Contract operations',value:report.paused?'Paused':'Open',ok:!report.paused}
  ];
  const funding=report.funding.assets.map(entry=>({symbol:entry.symbol,principal:formatUnits(entry.principal,entry.decimals),rewards:formatUnits(entry.rewards,entry.decimals),cash:formatUnits(entry.cash,entry.decimals),minimum:formatUnits(entry.minimumBudgetRequired,entry.decimals),required:entry.requiredForExistingPrincipal,ready:entry.ready}));

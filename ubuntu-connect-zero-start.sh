@@ -3,7 +3,20 @@
 set +x
 set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
-[ "$#" -eq 0 ] || { echo 'This command reads the fresh deployment report; no address argument is required.'; exit 1; }
+profile_args=()
+state_dir=/var/lib/globaldroptrade/fresh-zero-v1
+directory=/var/lib/globaldroptrade/fresh-zero-connection
+backup_prefix=fresh-zero-connection
+case "$#:${1:-}" in
+ 0:) ;;
+ 1:--fast-testnet)
+  profile_args=(--fast-testnet)
+  state_dir=/var/lib/globaldroptrade/fresh-fast-testnet-v1
+  directory=/var/lib/globaldroptrade/fresh-fast-testnet-connection
+  backup_prefix=fresh-fast-testnet-connection
+ ;;
+ *) echo 'This command reads the fresh deployment report; only --fast-testnet is optional.'; exit 1;;
+esac
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root'; exit 1; }
 case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) echo 'Unsupported CPU'; exit 1;; esac
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
@@ -12,16 +25,15 @@ for tool in node npm nginx curl python3 systemctl flock tar sha256sum cmp; do co
 node -e 'const [a,b]=process.versions.node.split(".").map(Number);if(a<22||(a===22&&b<12))throw Error("Node 22.12+ required")'
 envfile=/etc/globaldroptrade/trades.env
 unit=/etc/systemd/system/globaldroptrade-api.service
-report=/var/lib/globaldroptrade/fresh-zero-v1/connection-public.json
+report="$state_dir/connection-public.json"
 test -s "$envfile" && test -f "$unit"
-test -s /var/lib/globaldroptrade/fresh-zero-v1/deployment-public.json || { echo 'FRESH_ZERO_DEPLOYMENT_REPORT_REQUIRED: run ubuntu-deploy-zero-start.sh --execute first.'; exit 1; }
+test -s "$state_dir/deployment-public.json" || { echo "FRESH_ZERO_DEPLOYMENT_REPORT_REQUIRED: run ubuntu-deploy-zero-start.sh --execute ${profile_args[*]} first."; exit 1; }
 previous=$(readlink -f /opt/globaldroptrade-api/current)
 test -d "$previous"
 for other in globaldroptrade-migration.service globaldroptrade-fresh-rewards.service; do
  if systemctl is-active --quiet "$other"; then echo "Another deployment is running: $other"; exit 1; fi
 done
 umask 077
-directory=/var/lib/globaldroptrade/fresh-zero-connection
 node --input-type=module - "$directory" <<'JS'
 import fs from 'node:fs';
 const directory=process.argv[2];fs.mkdirSync(directory,{recursive:true,mode:0o700});
@@ -35,10 +47,10 @@ trap 'rm -rf -- "$stage"' EXIT
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 bash scripts/unpack-website.sh "$stage"
 tar -xzf "$stage/website-release.tar.gz" -C "$stage"
-node scripts/connect-zero-start.mjs prepare "$stage"
+node scripts/connect-zero-start.mjs prepare "$stage" "${profile_args[@]}"
 # Normalize only the already diagnosed Global entries before taking the cutover snapshot.
 python3 scripts/repair-global-nginx.py --apply
-backup="/var/backups/globaldroptrade/fresh-zero-connection-$(date -u +%Y%m%dT%H%M%S)-$$"
+backup="/var/backups/globaldroptrade/$backup_prefix-$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 700 "$backup"
 cp -p "$envfile" "$backup/trades.env"
 cp -p "$unit" "$backup/api.service"
@@ -135,7 +147,7 @@ JS
  exit 1
 }
 trap rollback ERR INT TERM
-node scripts/connect-zero-start.mjs check "$stage"
+node scripts/connect-zero-start.mjs check "$stage" "${profile_args[@]}"
 # Timers are stopped first so a service cannot restart while its target is changing.
 while IFS='|' read -r worker enabled active; do
  case "$worker" in *.timer)
@@ -148,11 +160,11 @@ while IFS='|' read -r worker enabled active; do
  state=$(systemctl show --property=ActiveState --value "$worker")
  case "$state" in inactive|failed) ;; *) echo 'OLD_WORKER_STILL_RUNNING'; false;; esac
 done < "$backup/worker-state"
-node scripts/connect-zero-start.mjs check "$stage"
+node scripts/connect-zero-start.mjs check "$stage" "${profile_args[@]}"
 install -m 600 "$stage/trades.env" "$envfile"
 unset GLOBAL_SITE_IP GLOBAL_SITE_PORT
 # The verified file, rather than a stale exported shell value, supplies API preflight settings.
-unset TRADES_CHAIN_ID TRADES_VAULT_ADDRESS TRADES_RPC_URL TRADES_START_BLOCK TRADES_PORT TRADES_CONFIRMATIONS TRADES_LOOKBACK_BLOCKS TRADES_LOG_PAGE_SIZE
+unset TRADES_CHAIN_ID TRADES_VAULT_ADDRESS TRADES_RPC_URL TRADES_START_BLOCK TRADES_PORT TRADES_CONFIRMATIONS TRADES_LOOKBACK_BLOCKS TRADES_LOG_PAGE_SIZE TRADES_ZERO_START_PROFILE
 GLOBAL_SKIP_AUTOMATION=1 bash ubuntu-unified.sh
 curl -fsS --noproxy '*' --max-time 12 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/api/config -o "$stage/active.json"
 curl -fsS --noproxy '*' --max-time 12 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$stage/served.html"
@@ -167,9 +179,14 @@ const expected=sha('globaldroptrade-package/site/index.html'),served=sha('served
 if(expected!==served)throw Error('HTTPS_FRONTEND_RELEASE_MISMATCH');
 fs.writeFileSync(d+'/frontend-check.json',JSON.stringify({version:1,chainId:97,vaultAddress:report.target,indexSha256:served,servedIndexSha256:served,expectedIndexSha256:expected,verified:true}),{mode:0o600,flag:'wx'});
 JS
-node scripts/connect-zero-start.mjs publish "$stage"
+node scripts/connect-zero-start.mjs publish "$stage" "${profile_args[@]}"
 trap - ERR INT TERM
 echo "FRESH_ZERO_SITE_CONNECTED chain=97 backup=$backup"
 echo "REPORT=$report"
-echo 'DAILY_AUTOMATION_ACTIVE=false: new reporter authorization, policy and reward funding are required.'
+if [ "${#profile_args[@]}" -eq 1 ]; then
+ echo 'TEST_MODE=true RELEASE_ID=global-fresh-fast-test-v1 INITIAL_SERVER_REPORTER=true'
+ echo 'DAILY_AUTOMATION_ACTIVE=false: fresh policy, reward funding and settlement history checks are required.'
+else
+ echo 'DAILY_AUTOMATION_ACTIVE=false: new reporter authorization, policy and reward funding are required.'
+fi
 echo 'Reload https://globaldroptrade.com/ to load the new contract connection.'

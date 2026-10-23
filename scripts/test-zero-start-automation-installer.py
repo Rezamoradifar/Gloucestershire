@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory() as directory:
     (source/'ubuntu-enable-zero-daily.sh').write_text(installer)
     for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs',
                  'maintain-testnet-oracles.mjs', 'refresh-testnet-oracles.mjs', 'migration-journal.mjs',
-                 'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs']:
+                 'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs']:
         shutil.copyfile(repo/'scripts'/name, source/'scripts'/name)
     for name in ['trades-api.mjs', 'community.mjs', 'marketplace.mjs']:
         shutil.copyfile(repo/'server'/name, source/'server'/name)

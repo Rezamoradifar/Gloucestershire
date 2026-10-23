@@ -4,21 +4,30 @@ import {pathToFileURL} from 'node:url';
 import {Contract,ContractFactory,FetchRequest,Interface,JsonRpcProvider,Wallet,ZeroAddress,getAddress,getCreateAddress,keccak256} from 'ethers';
 import {readPrivateKey} from './migration-signers.mjs';
 import {journalTransaction,writePrivateJson} from './migration-journal.mjs';
+import {getZeroStartProfile,parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 
-export const zeroStartRelease=JSON.parse(fs.readFileSync(new URL('../config/fresh-zero-testnet.json',import.meta.url),'utf8'));
+export const zeroStartRelease=getZeroStartProfile().release;
 const queueAbi=['function vault() view returns(address)','function APPROVAL_VERSION() view returns(uint256)','function requestCount() view returns(uint256)','function pending(address) view returns(uint256)'];
 const registration=new Interface(['event Registered(address indexed user,address indexed referrer)']);
 const feedAbi=['function decimals() view returns(uint8)','function latestRoundData() view returns(uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'];
 
 export function validateZeroStartRelease(value){
- if(value?.version!==1||value.releaseId!=='global-fresh-zero-v1'||value.chainId!==97||value.artifact!=='AutomaticGroupVault')throw Error('ZERO_START_RELEASE_REQUIRED');
+ const fast=value?.releaseId==='global-fresh-fast-test-v1';
+ if(value?.version!==1||value.chainId!==97||(!fast&&value.releaseId!=='global-fresh-zero-v1')||value.artifact!==(fast?'FastTestnetVault':'AutomaticGroupVault'))throw Error('ZERO_START_RELEASE_REQUIRED');
+ if(fast&&(value.testMode!==true||value.initialServerReporter!==true))throw Error('ZERO_START_FAST_TESTNET_FLAGS_REQUIRED');
+ if(!fast&&(value.testMode===true||value.initialServerReporter===true))throw Error('ZERO_START_RELEASE_REQUIRED');
  if(!/^0x[0-9a-f]{64}$/i.test(value.artifactHash||'')||/^0x0{64}$/i.test(value.artifactHash))throw Error('ZERO_START_ARTIFACT_HASH_REQUIRED');
  const address=name=>{try{const result=getAddress(value[name]);if(result!==ZeroAddress)return result;}catch{}throw Error('ZERO_START_ADDRESS_REQUIRED');};
  if(!/^[1-9][0-9]*$/.test(String(value.age))||BigInt(value.age)>604800n)throw Error('ZERO_START_ORACLE_AGE_REQUIRED');
  if(!Array.isArray(value.partners)||value.partners.length!==7)throw Error('ZERO_START_PARTNERS_REQUIRED');
  let partners;try{partners=value.partners.map(getAddress);}catch{throw Error('ZERO_START_PARTNERS_REQUIRED');}
  if(new Set(partners).size!==7||partners.includes(ZeroAddress))throw Error('ZERO_START_PARTNERS_REQUIRED');
- return {version:1,releaseId:value.releaseId,chainId:97,artifact:'AutomaticGroupVault',artifactHash:value.artifactHash.toLowerCase(),owner:address('owner'),deployer:address('deployer'),token:address('token'),bnbFeed:address('bnbFeed'),tokenFeed:address('tokenFeed'),age:String(value.age),partners,operations:address('operations')};
+ const result={version:1,releaseId:value.releaseId,chainId:97,artifact:value.artifact,artifactHash:value.artifactHash.toLowerCase(),owner:address('owner'),deployer:address('deployer'),token:address('token'),bnbFeed:address('bnbFeed'),tokenFeed:address('tokenFeed'),age:String(value.age),partners,operations:address('operations')};
+ if(fast){
+  if(result.owner!==zeroStartRelease.owner||result.deployer!==zeroStartRelease.deployer)throw Error('ZERO_START_FAST_TESTNET_SIGNERS_REQUIRED');
+  result.testMode=true;result.initialServerReporter=true;
+ }
+ return result;
 }
 
 function deploymentRequest(artifact,release){
@@ -59,7 +68,9 @@ export async function verifyZeroStartDeployment({provider,artifact,release=zeroS
  if(getAddress(await vault.owner(o))!==c.owner||await vault.paused(o)||await vault.REWARD_ACCRUAL_VERSION(o)!==1n||await vault.AUTO_REWARD_GROUP_VERSION(o)!==1n||await vault.volumeJobCount(o)!==0n)throw Error('ZERO_START_CAPABILITY_VERIFY_FAILED');
  for(const [method,expected] of [['usdt',c.token],['bnbUsdFeed',c.bnbFeed],['usdtUsdFeed',c.tokenFeed],['dropshippingWallet',c.operations]])if(getAddress(await vault[method](o))!==expected)throw Error('ZERO_START_SETTINGS_MISMATCH');
  if(await vault.maxOracleAge(o)!==BigInt(c.age)||await vault.partnerVotesRequired(o)!==2n||!await vault.reporters(c.owner,o))throw Error('ZERO_START_SETTINGS_MISMATCH');
- if(c.deployer!==c.owner&&await vault.reporters(c.deployer,o))throw Error('ZERO_START_UNEXPECTED_REPORTER');
+ if(c.initialServerReporter){
+  if(!await vault.reporters(c.deployer,o)||await vault.FAST_TESTNET_VERSION(o)!==1n)throw Error('ZERO_START_FAST_TESTNET_REPORTER_REQUIRED');
+ }else if(c.deployer!==c.owner&&await vault.reporters(c.deployer,o))throw Error('ZERO_START_UNEXPECTED_REPORTER');
  for(let i=0;i<7;i++)if(getAddress(await vault.partnerWallets(i,o))!==c.partners[i])throw Error('ZERO_START_PARTNER_MISMATCH');
  const queueAddress=getAddress(await vault.withdrawalQueue(o));
  if(queueAddress===ZeroAddress||await provider.getCode(queueAddress,receipt.blockNumber)==='0x')throw Error('ZERO_START_QUEUE_MISSING');
@@ -72,7 +83,7 @@ export async function verifyZeroStartDeployment({provider,artifact,release=zeroS
  const feedReadiness=await inspectFeeds(provider,c,block);
  // A canonical receipt and exact initcode bind unenumerable mappings to constructor initialization.
  if((await provider.getBlock(receipt.blockNumber))?.hash!==receipt.blockHash)throw Error('ZERO_START_REORG');
- return {version:1,kind:'fresh-zero-automatic-groups',releaseId:c.releaseId,chainId:97,contractAddress:address,owner:c.owner,deployer:c.deployer,hash,block:receipt.blockNumber,blockHash:receipt.blockHash,queue:queueAddress,artifactHash:c.artifactHash,initcodeHash:keccak256(request.data),runtimeHash:keccak256(code),approvalVersion:1,automaticGroupVersion:1,config:c,verified:true,emptyAtDeployment:true,emptyStateCheckpoint:{block:receipt.blockNumber,blockHash:receipt.blockHash},feedReadiness,accountsMigrated:false,siteConnected:false,automationActive:false,dailyAutomationActive:false};
+ return {version:1,kind:'fresh-zero-automatic-groups',releaseId:c.releaseId,chainId:97,contractAddress:address,owner:c.owner,deployer:c.deployer,hash,block:receipt.blockNumber,blockHash:receipt.blockHash,queue:queueAddress,artifactHash:c.artifactHash,initcodeHash:keccak256(request.data),runtimeHash:keccak256(code),approvalVersion:1,automaticGroupVersion:1,...(c.initialServerReporter?{testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{}),config:c,verified:true,emptyAtDeployment:true,emptyStateCheckpoint:{block:receipt.blockNumber,blockHash:receipt.blockHash},feedReadiness,accountsMigrated:false,siteConnected:false,automationActive:false,dailyAutomationActive:false};
 }
 
 // The journal is bound to literal settings and bytecode before its only transaction is signed.
@@ -105,26 +116,27 @@ function privateFile(file){
 async function main(){
  let provider;
  try{
-  if(process.argv.length!==3||process.argv[2]!=='--execute')throw Error('EXPLICIT_EXECUTE_FLAG_REQUIRED');
+  const {profile,args}=parseZeroStartProfileArgs();
+  if(args.length!==1||args[0]!=='--execute')throw Error('EXPLICIT_EXECUTE_FLAG_REQUIRED');
   if(process.getuid?.()!==0)throw Error('ROOT_REQUIRED');
   if(process.env.TRADES_CHAIN_ID!=='97'||!process.env.TRADES_RPC_URL)throw Error('TESTNET_RPC_REQUIRED');
-  const release=validateZeroStartRelease(zeroStartRelease);
+  const release=validateZeroStartRelease(profile.release);
   const key=readPrivateKey('/etc/globaldroptrade/migration-deployer.key')||readPrivateKey('/root/global-testnet-v071/.testnet-server/deployer.key');
   if(!key)throw Error('DEPLOYER_KEY_NOT_FOUND');
   const transport=new FetchRequest(process.env.TRADES_RPC_URL);transport.timeout=20000;
   provider=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});provider.pollingInterval=2000;
   const wallet=new Wallet(key,provider);if(wallet.address!==release.deployer)throw Error('EXPECTED_DEPLOYER_KEY_REQUIRED');
-  const directory='/var/lib/globaldroptrade/fresh-zero-v1';fs.mkdirSync(directory,{recursive:true,mode:0o700});
+  const directory=profile.stateDir;fs.mkdirSync(directory,{recursive:true,mode:0o700});
   const stat=fs.lstatSync(directory);if(!stat.isDirectory()||stat.uid!==0||(stat.mode&0o077)!==0)throw Error('PRIVATE_STATE_DIRECTORY_REQUIRED');
   const journal=path.join(directory,'journal.json'),reportFile=path.join(directory,'deployment-public.json');privateFile(journal);privateFile(reportFile);
   const state=fs.existsSync(journal)?JSON.parse(fs.readFileSync(journal,'utf8')):{transactions:{}};
-  const artifact=JSON.parse(fs.readFileSync(new URL('../artifacts/AutomaticGroupVault.json',import.meta.url),'utf8'));
+  const artifact=JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8'));
   const report=await deployZeroStart({provider,wallet,artifact,release,state,save:()=>writePrivateJson(journal,state),log:console.log});
   writePrivateJson(reportFile,report);
   console.log('ZERO_START_CONTRACT_DEPLOYED_AND_VERIFIED');console.log('NEW_CONTRACT='+report.contractAddress);console.log('WITHDRAWAL_QUEUE='+report.queue);console.log('TX_HASH='+report.hash);console.log('OWNER='+report.owner);console.log('REPORT='+reportFile);
   console.log('ACCOUNTS_MIGRATED=false SITE_CONNECTED=false AUTOMATION_ACTIVE=false');
   console.log('PRICE_FEEDS_READY_AT_DEPLOYMENT='+report.feedReadiness.ready);
-  console.log('The new contract started empty. Site connection and daily reporter authorization are separate steps.');
+  console.log(profile.fast?'The new testnet contract started empty with the existing server reporter authorized. Site connection and reward funding are separate steps.':'The new contract started empty. Site connection and daily reporter authorization are separate steps.');
  }catch(e){console.error('ZERO_START_DEPLOY_STOPPED '+(/^[A-Z][A-Z0-9_]{2,100}$/.test(e.message||'')?e.message:'RPC_OR_VERIFICATION_FAILED'));console.error('Keep the fresh-zero journal and rerun the same command to resume.');process.exitCode=1;}
  finally{provider?.destroy();}
 }

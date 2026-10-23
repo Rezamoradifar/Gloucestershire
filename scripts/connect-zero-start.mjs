@@ -8,10 +8,11 @@ import {Contract,ContractFactory,FetchRequest,JsonRpcProvider,getAddress,getCrea
 import {readConfig} from '../server/trades-api.mjs';
 import {zeroStartRelease,validateZeroStartRelease} from './deploy-zero-start.mjs';
 import {writePrivateJson} from './migration-journal.mjs';
+import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 
 const changedKeys=['TRADES_CHAIN_ID','TRADES_VAULT_ADDRESS','TRADES_START_BLOCK','TRADES_PORT','GLOBAL_MIGRATION_ENABLED'];
 const queueAbi=['function vault() view returns(address)','function APPROVAL_VERSION() view returns(uint256)'];
-const expectedRuntimeBytes=24181;
+const expectedRuntimeBytes={AutomaticGroupVault:24181,FastTestnetVault:24192};
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 
@@ -25,18 +26,24 @@ function existingSettings(original){
 function renderConnectionSettings(original,report){
  const updates={TRADES_CHAIN_ID:'97',TRADES_VAULT_ADDRESS:report.contractAddress,TRADES_START_BLOCK:String(report.block),TRADES_PORT:'3115',GLOBAL_MIGRATION_ENABLED:'false'};
  const before=parseEnv(original);
- if(changedKeys.every(key=>before[key]===updates[key]))return original;
+ // Record explicit fast selection. If a later explicit default connection replaces it,
+ // update the existing marker instead of retaining a stale profile for its worker.
+ const keys=[...changedKeys];
+ if(report.initialServerReporter||Object.hasOwn(before,'TRADES_ZERO_START_PROFILE')){keys.push('TRADES_ZERO_START_PROFILE');updates.TRADES_ZERO_START_PROFILE=report.releaseId;}
+ if(keys.every(key=>before[key]===updates[key]))return original;
  // Last assignments take precedence in both dotenv and systemd EnvironmentFile. Appending
  // preserves quoted multiline secrets verbatim, including text resembling another assignment.
- const env=original+(original.endsWith('\n')?'':'\n')+changedKeys.map(key=>`${key}="${updates[key]}"`).join('\n')+'\n';
- const after=parseEnv(env),retained=value=>Object.fromEntries(Object.entries(value).filter(([key])=>!changedKeys.includes(key)).sort(([a],[b])=>a.localeCompare(b)));
- if(!same(retained(before),retained(after))||changedKeys.some(key=>after[key]!==updates[key]))throw Error('ZERO_START_ENV_PRESERVATION_FAILED');
+ const env=original+(original.endsWith('\n')?'':'\n')+keys.map(key=>`${key}="${updates[key]}"`).join('\n')+'\n';
+ const after=parseEnv(env),retained=value=>Object.fromEntries(Object.entries(value).filter(([key])=>!keys.includes(key)).sort(([a],[b])=>a.localeCompare(b)));
+ if(!same(retained(before),retained(after))||keys.some(key=>after[key]!==updates[key]))throw Error('ZERO_START_ENV_PRESERVATION_FAILED');
  return env;
 }
 
 function identityOf(report,queueRuntimeHash){
- return {version:1,releaseId:report.releaseId,chainId:97,target:report.contractAddress,owner:report.owner,queue:report.queue,hash:report.hash,block:report.block,blockHash:report.blockHash,artifactHash:report.artifactHash,initcodeHash:report.initcodeHash,runtimeHash:report.runtimeHash,queueRuntimeHash};
+ return {version:1,releaseId:report.releaseId,chainId:97,target:report.contractAddress,owner:report.owner,queue:report.queue,hash:report.hash,block:report.block,blockHash:report.blockHash,artifactHash:report.artifactHash,initcodeHash:report.initcodeHash,runtimeHash:report.runtimeHash,queueRuntimeHash,...fastReportFields(report)};
 }
+
+const fastReportFields=report=>report.initialServerReporter?{testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{};
 
 export async function verifyZeroStartCreation({provider,artifact,release=zeroStartRelease,hash,confirmations=3}){
  const c=validateZeroStartRelease(release),bytecode=artifact.bytecode||'0x'+artifact.evm?.bytecode?.object;
@@ -54,7 +61,7 @@ export async function verifyZeroStartCreation({provider,artifact,release=zeroSta
  if(block?.hash!==receipt.blockHash||(await provider.getBlockNumber())-receipt.blockNumber+1<confirmations)throw Error('ZERO_START_RECEIPT_NOT_FINAL');
  // This pinned, non-upgradeable constructor creates empty user mappings and a new queue. It
  // contains no import path. This proves initialization without requiring retained archive state.
- return {version:1,releaseId:c.releaseId,chainId:97,contractAddress:target,owner:c.owner,deployer:c.deployer,hash,block:receipt.blockNumber,blockHash:receipt.blockHash,queue:getCreateAddress({from:target,nonce:1}),artifactHash:c.artifactHash,initcodeHash:keccak256(expected.data),approvalVersion:1,automaticGroupVersion:1,proofMethod:'canonical-creation-and-current-state',emptyAtInitialization:true,initialStateProof:{method:'verified-constructor-initialization',transactionHash:hash,block:receipt.blockNumber,blockHash:receipt.blockHash,importsUserData:false},historicalStateVerified:false,accountsMigrated:false,siteConnected:false,automationActive:false,dailyAutomationActive:false};
+ return {version:1,releaseId:c.releaseId,chainId:97,contractAddress:target,owner:c.owner,deployer:c.deployer,hash,block:receipt.blockNumber,blockHash:receipt.blockHash,queue:getCreateAddress({from:target,nonce:1}),artifactHash:c.artifactHash,initcodeHash:keccak256(expected.data),approvalVersion:1,automaticGroupVersion:1,...fastReportFields(c),proofMethod:'canonical-creation-and-current-state',emptyAtInitialization:true,initialStateProof:{method:'verified-constructor-initialization',transactionHash:hash,block:receipt.blockNumber,blockHash:receipt.blockHash,importsUserData:false},historicalStateVerified:false,accountsMigrated:false,siteConnected:false,automationActive:false,dailyAutomationActive:false};
 }
 
 async function verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations}){
@@ -65,13 +72,15 @@ async function verifyConnectionTarget({provider,artifact,deploymentReport,config
  const o={blockTag:block.number},vault=new Contract(report.contractAddress,artifact.abi,provider),queue=new Contract(report.queue,queueAbi,provider);
  const [code,queueCode]=await Promise.all([provider.getCode(report.contractAddress,block.number),provider.getCode(report.queue,block.number)]);
  const runtime=artifact.evm?.deployedBytecode?.object;
- if(code==='0x'||!runtime||runtime.length!==expectedRuntimeBytes*2||code.length!==expectedRuntimeBytes*2+2)throw Error('ZERO_START_CURRENT_RUNTIME_MISMATCH');
+ const runtimeBytes=expectedRuntimeBytes[c.artifact];
+ if(code==='0x'||!runtime||!Number.isSafeInteger(runtimeBytes)||runtimeBytes<1||runtimeBytes>24576||runtime.length!==runtimeBytes*2||code.length!==runtimeBytes*2+2)throw Error('ZERO_START_CURRENT_RUNTIME_MISMATCH');
  if(queueCode==='0x')throw Error('ZERO_START_CURRENT_QUEUE_RUNTIME_MISMATCH');
  // Exact canonical initcode fixes the runtime of this non-upgradeable implementation. Derive
  // hashes from current chain code, rather than accepting hashes claimed by the saved report.
  report.runtimeHash=keccak256(code);
  if(getAddress(await vault.owner(o))!==c.owner)throw Error('ZERO_START_CURRENT_OWNER_MISMATCH');
  if(getAddress(await vault.withdrawalQueue(o))!==report.queue||await vault.REWARD_ACCRUAL_VERSION(o)!==1n||await vault.AUTO_REWARD_GROUP_VERSION(o)!==1n||await queue.APPROVAL_VERSION(o)!==1n||getAddress(await queue.vault(o))!==report.contractAddress)throw Error('ZERO_START_CURRENT_CAPABILITY_MISMATCH');
+ if(c.initialServerReporter&&(await vault.FAST_TESTNET_VERSION(o)!==1n||!await vault.reporters(c.deployer,o)))throw Error('ZERO_START_CURRENT_FAST_TESTNET_CAPABILITY_MISMATCH');
  for(const [method,expected] of [['usdt',c.token],['bnbUsdFeed',c.bnbFeed],['usdtUsdFeed',c.tokenFeed],['dropshippingWallet',c.operations]])if(getAddress(await vault[method](o))!==expected)throw Error('ZERO_START_CURRENT_SETTINGS_MISMATCH');
  if(await vault.maxOracleAge(o)!==BigInt(c.age))throw Error('ZERO_START_CURRENT_SETTINGS_MISMATCH');
  for(let i=0;i<7;i++)if(getAddress(await vault.partnerWallets(i,o))!==c.partners[i])throw Error('ZERO_START_CURRENT_SETTINGS_MISMATCH');
@@ -105,7 +114,7 @@ function assertStagedConnection(stage,stagedEnv){
 
 function assertStagedIdentity(stage,verified){
  if(!same(stage.identity,verified.identity))throw Error('ZERO_START_STAGED_IDENTITY_CHANGED');
- for(const key of ['contractAddress','owner','queue','hash','block','blockHash','artifactHash','initcodeHash','runtimeHash'])if(stage[key]!==verified.report[key])throw Error('ZERO_START_STAGED_IDENTITY_CHANGED');
+ for(const key of ['releaseId','contractAddress','owner','queue','hash','block','blockHash','artifactHash','initcodeHash','runtimeHash','testMode','initialServerReporter','fastTestnetVersion'])if(stage[key]!==verified.report[key])throw Error('ZERO_START_STAGED_IDENTITY_CHANGED');
  if(stage.target!==verified.report.contractAddress)throw Error('ZERO_START_STAGED_IDENTITY_CHANGED');
 }
 
@@ -133,12 +142,14 @@ export async function publishZeroStartConnection({provider,artifact,deploymentRe
  if(current!==stagedEnv)throw Error('ZERO_START_INSTALLED_ENV_MISMATCH');
  const {config,settings}=existingSettings(current);
  if(settings.GLOBAL_MIGRATION_ENABLED!=='false')throw Error('ZERO_START_LEGACY_MIGRATION_MUST_BE_DISABLED');
+ const selected=validateZeroStartRelease(release);
+ if((selected.initialServerReporter||Object.hasOwn(settings,'TRADES_ZERO_START_PROFILE'))&&settings.TRADES_ZERO_START_PROFILE!==selected.releaseId)throw Error('ZERO_START_INSTALLED_PROFILE_MISMATCH');
  const verified=await verifyConnectionTarget({provider,artifact,deploymentReport,config,release,confirmations});
  assertStagedIdentity(stage,verified);
  if(config.address!==verified.report.contractAddress||config.startBlock!==verified.report.block||config.port!==3115)throw Error('ZERO_START_SITE_TARGET_NOT_INSTALLED');
  const frontendIndexSha256=verifySiteEvidence(active,frontend,verified.report.contractAddress);
  // Deliberate allowlist: no environment contents, RPC URL, API keys or private staging fingerprints.
- return {version:1,kind:'fresh-zero-site-connection',releaseId:verified.report.releaseId,chainId:97,target:verified.report.contractAddress,contractAddress:verified.report.contractAddress,owner:verified.report.owner,queue:verified.report.queue,hash:verified.report.hash,block:verified.report.block,blockHash:verified.report.blockHash,artifactHash:verified.report.artifactHash,initcodeHash:verified.report.initcodeHash,runtimeHash:verified.report.runtimeHash,approvalVersion:1,automaticGroupVersion:1,proofMethod:verified.report.proofMethod,emptyAtInitialization:true,initialStateProof:verified.report.initialStateProof,historicalStateVerified:false,currentState:verified.currentState,frontendIndexSha256,communityDataPreserved:true,verified:true,siteConnected:true,accountsMigrated:false,automationActive:false,dailyAutomationActive:false,transactionsSent:0};
+ return {version:1,kind:'fresh-zero-site-connection',releaseId:verified.report.releaseId,chainId:97,target:verified.report.contractAddress,contractAddress:verified.report.contractAddress,owner:verified.report.owner,queue:verified.report.queue,hash:verified.report.hash,block:verified.report.block,blockHash:verified.report.blockHash,artifactHash:verified.report.artifactHash,initcodeHash:verified.report.initcodeHash,runtimeHash:verified.report.runtimeHash,approvalVersion:1,automaticGroupVersion:1,...fastReportFields(verified.report),proofMethod:verified.report.proofMethod,emptyAtInitialization:true,initialStateProof:verified.report.initialStateProof,historicalStateVerified:false,currentState:verified.currentState,frontendIndexSha256,communityDataPreserved:true,verified:true,siteConnected:true,accountsMigrated:false,automationActive:false,dailyAutomationActive:false,transactionsSent:0};
 }
 
 function privateDirectory(directory,{create=false}={}){
@@ -157,18 +168,19 @@ function writeNewPrivate(file,value){
 }
 
 async function main(){
- const [mode,directoryArg,...extra]=process.argv.slice(2);
+ const {profile,args:cliArgs}=parseZeroStartProfileArgs();
+ const [mode,directoryArg,...extra]=cliArgs;
  if(!['prepare','check','publish'].includes(mode)||!directoryArg||extra.length)throw Error('USAGE_PREPARE_CHECK_OR_PUBLISH_OUTPUT_DIRECTORY');
  if(process.getuid?.()!==0)throw Error('ROOT_REQUIRED');
  const directory=path.resolve(directoryArg);privateDirectory(directory,{create:mode==='prepare'});
  const envFile='/etc/globaldroptrade/trades.env',original=readPrivate(envFile),{config}=existingSettings(original);
  const assertOriginalUnchanged=()=>{if(readPrivate(envFile)!==original)throw Error('ZERO_START_ORIGINAL_ENV_CHANGED');};
- const reportDirectory='/var/lib/globaldroptrade/fresh-zero-v1';privateDirectory(reportDirectory);
+ const reportDirectory=profile.deploymentDir;privateDirectory(reportDirectory);
  const deploymentReport=JSON.parse(readPrivate(path.join(reportDirectory,'deployment-public.json')));
- const artifact=JSON.parse(fs.readFileSync(new URL('../artifacts/AutomaticGroupVault.json',import.meta.url),'utf8'));
+ const artifact=JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8'));
  const request=new FetchRequest(config.rpcUrl);request.timeout=15000;
  const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
- const args={provider,artifact,deploymentReport,confirmations:Math.max(3,config.confirmations)};
+ const args={provider,artifact,deploymentReport,release:profile.release,confirmations:Math.max(3,config.confirmations)};
  try{
   if(mode==='prepare'){
    const prepared=await prepareZeroStartConnection({...args,original});
