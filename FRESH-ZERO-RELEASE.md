@@ -374,6 +374,36 @@ not prove deployment on the user's VPS or native SafePal behavior.
 
 ### Investment and profit repair
 
+When the existing provider cannot read an owed period's start state, the explicit
+archive repair can switch the same connected fast-testnet configuration to the
+fixed PublicNode endpoint after verifying it on this server:
+
+```bash
+bash ubuntu-zero-archive-rpc.sh --check
+bash ubuntu-zero-archive-rpc.sh --execute
+```
+
+Preflight proves the same confirmed chain anchor, exact creation and current
+target identity, canonical completed journal, saved activation and unchanged
+period. It requires the actual owed-period archive state and historical
+registration logs. The repair changes only `TRADES_RPC_URL`, preserves all other
+configuration, refuses unresolved transactions, and takes private backups under
+the existing connection and worker locks. The API must remain healthy on the
+same target before the worker restarts. Failure before worker startup can restore
+the unchanged previous configuration; once a worker may have run, the candidate
+configuration and financial journals are retained for explicit recovery.
+
+This switches the primary provider; it does not introduce a financial-read
+fallback or substitute current balances for old snapshots. Account balances,
+policy dates, epochs and transaction fee reservations are never reset. A verified
+connection alone is not proof of an on-chain profit credit.
+
+After a verified cutover, the launcher may run the same installed service up to
+three additional times only while that same unpaid epoch is still indexing.
+It stops on a credit, another wait reason, an error, a changed policy or pending
+transaction. This uses the existing run lock and cumulative fee cap; it does not
+skip an epoch or start an independent signer.
+
 The investment form validates the current registered referrer, deposit minimum,
 asset precision, pause state and cumulative VIP/KYC requirement before requesting
 a token approval. It rechecks the target, wallet and current requirements after
