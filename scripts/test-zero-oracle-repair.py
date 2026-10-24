@@ -107,7 +107,13 @@ elif stage=='install':
  hourly=(p/'expect-hourly').exists()
  if hourly:expected+=['--hourly-test']
  assert args==expected,(args,expected)
- assert (p/'oracle-confirmed').exists(),'Install happened before quote refresh'
+ profit_recovery=(p/'expect-profit-recovery').exists()
+ if profit_recovery:
+  assert 'worker --oracles-only --execute' not in (p/'calls').read_text(),'Source oracle mode sent during profit recovery'
+  assert 'worker --execute' not in (p/'calls').read_text(),'Source funding mode sent during profit recovery'
+  expected=p/'expected-selected-journal'
+  if expected.exists():assert (root/'journal.json').read_bytes()==expected.read_bytes(),'Source changed selected pending journal before full worker'
+ else:assert (p/'oracle-confirmed').exists(),'Install happened before quote refresh'
  with (root/'run.lock').open('a') as lock:
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
  if mode=='install-fail':raise SystemExit(1)
@@ -124,6 +130,18 @@ elif stage=='install':
    (p/'etc/systemd/system'/{service!r}).unlink();(p/'etc/systemd/system'/{timer!r}).unlink()
    states[{timer!r}]['load']='not-found';states[{service!r}]['load']='not-found'
   (p/'workers.json').write_text(json.dumps(states));raise SystemExit(1)
+ if profit_recovery:
+  # Only the installed full worker can now reconcile the selected journal.
+  file=root/'journal.json';j=json.loads(file.read_text())
+  before=json.dumps(j,sort_keys=True)
+  with (p/'calls').open('a') as f:f.write('installed-full-worker --execute'+(' --fast-testnet' if fast else '')+(' --hourly-test' if hourly else '')+'\\n')
+  for name,entry in j.get('transactions',{{}}).items():
+   if not entry.get('block'):
+    entry['block']=44
+    with (p/'calls').open('a') as f:f.write('full-worker-resumed '+name+'\\n')
+  j.get('oracle',{{}}).pop('pending',None)
+  file.write_text(json.dumps(j));file.chmod(0o600)
+  assert j.get('maxTotalFee')==json.loads(before).get('maxTotalFee'),'Fee cap changed'
  (p/'etc/systemd/system'/{service!r}).write_text('ExecStart=/usr/bin/node worker --execute'+(' --fast-testnet' if fast else '')+(' --hourly-test' if hourly else '')+'\\n')
  (p/'etc/systemd/system'/{timer!r}).write_text('repaired timer')
  current=p/'daily/current'
@@ -179,7 +197,7 @@ else:Path(out).write_text('{{"version":1,"chainId":97,"vaultAddress":"{target}"}
                    'TRADES_ZERO_START_PROFILE': 'untrusted-shell-override'}
 
     def reset(mode='success', fast=True, hourly=False):
-        for name in ['bad-health', 'oracle-confirmed', 'expect-hourly', 'million-confirmed', 'test-reward-budget']:
+        for name in ['bad-health', 'oracle-confirmed', 'expect-hourly', 'expect-profit-recovery', 'expected-selected-journal', 'million-confirmed', 'test-reward-budget']:
             (host/name).unlink(missing_ok=True)
         for name in ['zero-oracle-repair-v1', 'fresh-zero-automation-v1', 'fresh-fast-testnet-automation-v1',
                      'automation-v1', 'oracle-maintenance-v1', 'fresh-fast-testnet-v1']:
@@ -285,7 +303,47 @@ else:Path(out).write_text('{{"version":1,"chainId":97,"vaultAddress":"{target}"}
     (selected/'journal.json').write_text('{"transactions":{"fast-test-reward-topup-1000000-v1-mint":{"hash":"saved-grant"},"oracle-refresh-1":{"hash":"saved-oracle"}},"oracle":{"pending":{"label":"oracle-refresh-1","request":{}}}}')
     stopped(run(('--execute','--fund-test-million')))
     assert 'worker --oracles-only --execute' not in calls.read_text() and 'worker --execute --fast-testnet --fund-test-million' not in calls.read_text()
-    for args in [(),('--execute','--fast-testnet'),('--check','--hourly-test'),('--check','--fund-test-million'),('--execute','--execute'),('--hourly-test','--hourly-test','--execute'),('--execute','--fund-test-million','--fund-test-million')]:
+    # Recovery updates the full worker without dispatching any source-side
+    # financial or oracle transaction, including a selected daily interruption.
+    for fast, hourly, explicit_hourly in [(True, False, False), (True, True, False), (True, False, True), (False, False, False)]:
+        reset(fast=fast, hourly=hourly)
+        if explicit_hourly:(host/'expect-hourly').touch()
+        (host/'expect-profit-recovery').touch()
+        root=selected if fast else standard
+        saved={'transactions':{'daily-fixed-batch':{'hash':'saved-daily-hash','raw':'saved-signed-payload','maxFee':'123456'}},
+               'oracle':{'pending':{'label':'oracle-refresh-2','request':{'to':'reviewed-feed','data':'saved-set'}}},
+               'daily':{'epoch':7},'maxTotalFee':'100000000000000000',
+               'millionTestRewardGrant':{'completed':True,'purpose':'fixed-authorized-grant'}}
+        file=root/'journal.json';file.write_text(json.dumps(saved));file.chmod(0o600)
+        (host/'expected-selected-journal').write_bytes(file.read_bytes())
+        args=('--execute','--profit-recovery')+(('--hourly-test',) if explicit_hourly else ())
+        result=run(args)
+        assert result.returncode==0 and 'ZERO_PROFIT_RECOVERY_COMPLETE:' in result.stdout, result.stdout+result.stderr
+        log=calls.read_text();lines=log.splitlines()
+        assert log.index('worker --oracles-only --check')<log.index('systemctl stop '+timer)<log.index('systemctl stop '+service)<log.index('install ')
+        assert not any(line.startswith('worker ') and '--execute' in line for line in lines)
+        assert log.index('install ')<log.index('installed-full-worker --execute')<log.index('full-worker-resumed daily-fixed-batch')
+        assert '--profit-recovery' not in dailyunit.read_text()
+        assert not (host/'oracle-confirmed').exists() and not (host/'million-confirmed').exists()
+        after=json.loads(file.read_text());expected=copy.deepcopy(saved)
+        expected['transactions']['daily-fixed-batch']['block']=44;del expected['oracle']['pending']
+        assert after==expected, 'Recovery changed saved payload, period, grant or fee reservation'
+    for root in [standard,state/'automation-v1',state/'oracle-maintenance-v1']:
+        reset();(host/'expect-profit-recovery').touch()
+        file=root/'journal.json';file.write_text('{"transactions":{"other":{"hash":"unbroadcast-other"}}}')
+        stopped(run(('--execute','--profit-recovery')))
+        assert 'install ' not in calls.read_text() and 'installed-full-worker' not in calls.read_text()
+        assert 'worker --oracles-only --execute' not in calls.read_text()
+    reset();(host/'expect-profit-recovery').touch()
+    with (selected/'run.lock').open('w') as lock:
+        (selected/'run.lock').chmod(0o600);fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        stopped(run(('--execute','--profit-recovery')));assert 'install ' not in calls.read_text()
+    reset('install-fail');(host/'expect-profit-recovery').touch()
+    (selected/'journal.json').write_text('{"transactions":{"daily-pending":{"hash":"saved-daily-pending"}}}')
+    stopped(run(('--execute','--profit-recovery')))
+    assert 'saved-daily-pending' in (selected/'journal.json').read_text()
+    assert 'worker --oracles-only --execute' not in calls.read_text()
+    for args in [(),('--execute','--fast-testnet'),('--check','--hourly-test'),('--check','--fund-test-million'),('--execute','--execute'),('--hourly-test','--hourly-test','--execute'),('--execute','--fund-test-million','--fund-test-million'),('--check','--profit-recovery'),('--execute','--profit-recovery','--fund-test-million'),('--execute','--profit-recovery','--profit-recovery')]:
         reset();result=run(args);assert result.returncode!=0 and calls.read_text()==''
     reset(fast=False)
     result=run(('--execute','--hourly-test'));assert result.returncode!=0 and calls.read_text()==''
@@ -327,4 +385,4 @@ else:Path(out).write_text('{{"version":1,"chainId":97,"vaultAddress":"{target}"}
     reset();envfile.chmod(0o644);result=run();assert result.returncode!=0 and calls.read_text()==''
     reset();realenv=envfile.with_suffix('.private');envfile.rename(realenv);envfile.symlink_to(realenv)
     result=run();assert result.returncode!=0 and calls.read_text()==''
-    print('ZERO_ORACLE_REPAIR_HOST_CHECKS_PASSED: read-only diagnostics, selected target, shared locks, pending ordering, one-time million-test-token grant, persistent repair, hourly preservation and verified recovery')
+    print('ZERO_ORACLE_REPAIR_HOST_CHECKS_PASSED: read-only diagnostics, selected target, shared locks, pending ordering, full-worker-only profit recovery, one-time million-test-token grant, persistent repair, hourly preservation and verified recovery')

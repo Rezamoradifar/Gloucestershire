@@ -14,6 +14,9 @@ export const dailyAbi=[
  'function owner() view returns(address)','function reporters(address) view returns(bool)',
  'function FAST_TESTNET_VERSION() view returns(uint256)',
  'function usdt() view returns(address)','function dailyTargetBps(address) view returns(uint16)',
+ 'function users(address) view returns(address referrer,bool registered,bool active,bool vipKyc,uint32 activeDirect,uint256 capitalUsd,uint256 salesUsd)',
+ 'function tierOf(address) view returns(uint8)',
+ 'function tierConfig(uint256) view returns((uint256 minUsd,uint16 baseDailyBps,uint16 maxDailyBps,uint32 requiredDirect,uint256 requiredSalesUsd,uint16[4] referrals))',
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 nextWithdrawal)',
  'function ledgers(address) view returns(uint256 principal,uint256 profit,uint256 feeReserve,uint256 rewards)',
  'function usedRewardBatch(bytes32) view returns(bool)','function assetBalance(address) view returns(uint256)',
@@ -73,7 +76,8 @@ export async function indexMembers({provider,policy,state,through,save,maxPages=
  }
  return index.through>=through;
 }
-export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3}){
+export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3,maxRegistryPages=100}){
+ if(!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1||maxRegistryPages>100)throw Error('DAILY_MEMBER_INDEX_LIMIT_INVALID');
  policy=validateDailyPolicy(policy);
  if(isHourlyTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
  if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_DAILY_EPOCH');
@@ -81,7 +85,7 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
  const start=policy.startTimestamp+epoch*policy.periodSeconds,end=start+policy.periodSeconds;
  if(!final||final.timestamp<end)return {status:'not_due',epoch};
  const snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number);
- if(!await indexMembers({provider,policy,state,through:snapshot.number,save}))return {status:'indexing',epoch};
+ if(!await indexMembers({provider,policy,state,through:snapshot.number,save,maxPages:maxRegistryPages}))return {status:'indexing',epoch};
  const options={blockTag:snapshot.number},token=await vault.usdt(options);
  const members=Object.entries(state.registry.members).filter(([,block])=>block<=snapshot.number).map(([address])=>address).sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
  const assets=[ZeroAddress,token],entries=[[],[]],principal=[0n,0n];
@@ -103,11 +107,71 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
    batches.push({id,asset:assets[i],recipients:rows.map(r=>r.recipient),amounts:rows.map(r=>r.amount),rows});
   }
  }
+ // Match settleSalesProfit's seller-tier rates and recipient eligibility at
+ // this period's immutable start. Only personal earnings generate commissions.
+ const users=new Map(),tiers=new Map(),configs=new Map();
+ const user=async address=>{
+  address=getAddress(address);
+  if(!users.has(address)){
+   const value=await vault.users(address,options);
+   if(!value.registered)throw Error('INVALID_DAILY_REFERRAL_USER');
+   users.set(address,value);
+  }
+  return users.get(address);
+ };
+ const tier=async address=>{
+  address=getAddress(address);
+  if(!tiers.has(address)){
+   const value=await vault.tierOf(address,options);
+   if(value<0n||value>4n)throw Error('INVALID_DAILY_REFERRAL_TIER');
+   tiers.set(address,value);
+  }
+  return tiers.get(address);
+ };
+ const rates=async address=>{
+  const index=await tier(address);
+  if(!configs.has(index)){
+   const config=await vault.tierConfig(index,options),values=Array.from(config.referrals);
+   if(values.length!==4||values.some(value=>value<0n||value>3400n)||values.reduce((sum,value)=>sum+value,0n)>3400n||values.some((value,i)=>i>0&&value>values[i-1])||(index!==4n&&values[3]!==0n))throw Error('INVALID_DAILY_REFERRAL_RATES');
+   configs.set(index,values);
+  }
+  return configs.get(index);
+ };
+ for(let i=0;i<2;i++){
+  const commissions=new Map();
+  for(const earning of entries[i]){
+   const source=getAddress(earning.recipient),percentages=await rates(source);
+   let parent=getAddress((await user(source)).referrer);
+   for(let level=0;level<4&&parent!==ZeroAddress;level++){
+    const recipient=await user(parent),recipientTier=await tier(parent);
+    if(recipient.active&&(recipientTier!==4n||recipient.vipKyc)&&(level!==3||recipientTier===4n)){
+     const amount=BigInt(earning.amount)*percentages[level]/10000n;
+     if(amount>0n){
+      const row=commissions.get(parent)||{recipient:parent,amount:0n,sources:[]};
+      row.amount+=amount;row.sources.push({source,level:level+1,amount:amount.toString(),rateBps:percentages[level].toString(),personalProfit:earning.amount});commissions.set(parent,row);
+     }
+    }
+    parent=getAddress(recipient.referrer);
+   }
+  }
+  const rows=Array.from(commissions.values()).sort((a,b)=>a.recipient.toLowerCase().localeCompare(b.recipient.toLowerCase())).map(row=>({...row,amount:row.amount.toString()}));
+  for(let offset=0;offset<rows.length;offset+=100){
+   const group=rows.slice(offset,offset+100),domain=isHourlyTestPolicy(policy)?'GLOBAL_HOURLY_TEST_REFERRAL_V1':'GLOBAL_DAILY_REFERRAL_V1';
+   const id=keccak256(toUtf8Bytes([domain,policy.chainId,policy.vaultAddress.toLowerCase(),policy.startTimestamp,epoch,assets[i].toLowerCase(),offset/100].join(':')));
+   batches.push({id,kind:'profit-referrals',asset:assets[i],recipients:group.map(row=>row.recipient),amounts:group.map(row=>row.amount),rows:group});
+  }
+ }
  return {status:'ready',epoch,start,end,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,batches};
 }
 export async function executeDailyPlan({provider,vault,plan,transact}){
  if(plan.status!=='ready')return [];
  if((await provider.getBlock(plan.snapshotBlock))?.hash!==plan.snapshotHash)throw Error('DAILY_SNAPSHOT_REORG');
+ // Require enough cash and reward budget for every remaining personal and
+ // commission batch before crediting the first one. Confirmed batches are
+ // excluded so an interrupted period can finish without replaying its base.
+ const remaining=new Map();
+ for(const batch of plan.batches)if(!await vault.usedRewardBatch(batch.id))remaining.set(batch.asset,(remaining.get(batch.asset)||0n)+batch.amounts.reduce((sum,value)=>sum+BigInt(value),0n));
+ for(const[asset,total]of remaining)if((await vault.ledgers(asset)).rewards<total||await vault.assetBalance(asset)<total)throw Error('DAILY_PROFIT_FUNDING_REQUIRED');
  const completed=[];
  for(const batch of plan.batches){
   if(await vault.usedRewardBatch(batch.id)){completed.push({id:batch.id,status:'already_credited'});continue;}

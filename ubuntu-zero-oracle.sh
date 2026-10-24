@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Repair only reviewed mock feeds for the currently connected fresh testnet vault.
+# Repair current fresh-testnet feeds or install full-worker profit recovery.
 set +x
 set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 mode=''
 hourly=0
 fund_million=0
+profit_recovery=0
 for argument in "$@"; do
  case "$argument" in
   --check|--execute) [ -z "$mode" ] || { echo 'Choose one repair mode'; exit 1; };mode=$argument;;
   --hourly-test) [ "$hourly" -eq 0 ] || { echo 'Duplicate hourly flag'; exit 1; };hourly=1;;
   --fund-test-million) [ "$fund_million" -eq 0 ] || { echo 'Duplicate test funding flag'; exit 1; };fund_million=1;;
-  *) echo 'Usage: bash ubuntu-zero-oracle.sh --check|--execute [--hourly-test] [--fund-test-million]'; exit 1;;
+  --profit-recovery) [ "$profit_recovery" -eq 0 ] || { echo 'Duplicate profit recovery flag'; exit 1; };profit_recovery=1;;
+  *) echo 'Usage: bash ubuntu-zero-oracle.sh --check|--execute [--hourly-test] [--fund-test-million|--profit-recovery]'; exit 1;;
  esac
 done
 [ -n "$mode" ] || { echo 'Choose --check or --execute'; exit 1; }
+if [ "$profit_recovery" -eq 1 ] && { [ "$mode" != --execute ] || [ "$fund_million" -eq 1 ]; }; then echo 'PROFIT_RECOVERY_REQUIRES_EXECUTE_WITHOUT_TEST_TOPUP'; exit 1;fi
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root'; exit 1; }
 case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) exit 1;; esac
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
@@ -227,6 +230,11 @@ exec 8>"$state/run.lock"
 run_lock_conflict=0
 if ! flock -n 8; then run_lock_conflict=1;echo 'ZERO_AUTOMATION_JOURNAL_IN_USE';false;fi
 cmp -s "$backup/trades.env" "$envfile"
+if [ "$profit_recovery" -eq 1 ]; then
+ # The source CLI never signs in this mode. The updated full worker alone
+ # validates and resumes selected pending transactions after installation.
+ echo 'PROFIT_RECOVERY_INSTALL_ONLY: selected pending transactions belong to the full worker.'
+else
 order=oracle-first
 if [ "$fund_million" -eq 1 ]; then
  # Choose only the recovery order here. Each worker mode validates the exact
@@ -266,10 +274,15 @@ fi
 if [ "$order" = fund-first ]; then node scripts/zero-start-automation.mjs --execute --fast-testnet --fund-test-million;fi
 node scripts/zero-start-automation.mjs --oracles-only --execute "${profile_args[@]}"
 if [ "$fund_million" -eq 1 ] && [ "$order" = oracle-first ]; then node scripts/zero-start-automation.mjs --execute --fast-testnet --fund-test-million;fi
+fi
 flock -u 8
 exec 8>&-
 cmp -s "$backup/trades.env" "$envfile"
 bash ubuntu-enable-zero-daily.sh "${install_args[@]}"
 trap - ERR INT TERM
-echo 'ZERO_ORACLE_REPAIR_COMPLETE: current testnet quotes verified; repaired maintenance worker installed.'
+if [ "$profit_recovery" -eq 1 ]; then
+ echo 'ZERO_PROFIT_RECOVERY_COMPLETE: full worker installed; inspect reported readiness and profit state.'
+else
+ echo 'ZERO_ORACLE_REPAIR_COMPLETE: current testnet quotes verified; repaired maintenance worker installed.'
+fi
 echo 'Contract address, accounts and economic rules were preserved.'

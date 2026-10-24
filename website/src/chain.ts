@@ -1,4 +1,4 @@
-import {BrowserProvider,Contract,ZeroAddress,isAddress,keccak256,toUtf8Bytes} from 'ethers';
+import {BrowserProvider,Contract,ZeroAddress,getAddress,isAddress,keccak256,toUtf8Bytes} from 'ethers';
 import abi from './vault-abi.json';
 import {deferredAbi,queueAbi,hasDeferredRewards,hasApprovalQueue} from './reward-mode';
 import {chainId,configured,vaultAddress,feeWallets} from './config';
@@ -6,6 +6,7 @@ import {parseAmount,feeOf} from './money';
 import {getWalletProvider} from './wallet';
 import {needsReferrerWarning} from './referrer';
 import {requireContractTarget,type ContractTarget} from './transaction-session';
+import {checkInvestmentRequirements} from './invest-preflight';
 export const erc20Abi=['function decimals() view returns(uint8)','function balanceOf(address) view returns(uint256)','function allowance(address,address) view returns(uint256)','function approve(address,uint256) returns(bool)'];
 export type Asset='BNB'|'USDT';
 export type Position={id:number;asset:string;principal:bigint;capitalUsd:bigint;unlockAt:bigint;penaltyBps:bigint};
@@ -42,14 +43,14 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
  if(action.kind==='deposit'){const user=await vault.users(who);if(needsReferrerWarning(action.kind,user.registered,action.referrer)&&!action.noReferrerAcknowledged)throw Error('Confirm that you want to register without a referrer.');}
  const current=await vault.accounts(who,a);const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');
  const amount=parseAmount(action.value,snapshot.decimals);
+ if(action.kind==='reinvest'&&amount>current.profit)throw Error('The reinvestment exceeds your currently funded profit balance.');
  if(['profit','transfer'].includes(action.kind)&&((amount>current.profit)||(amount>await vault.profitWithdrawalCap(who,a))))throw Error('The amount exceeds your funded profit or withdrawal cap.');
  if(['profit','transfer','principal'].includes(action.kind)&&BigInt(block.timestamp)<current.nextWithdrawal)throw Error('The withdrawal cooldown has not elapsed.');
  if(action.kind==='profit'&&await vault.profitFeeBps()!==action.expectedFee)throw Error('The fee changed. Refresh and review the transaction again.');
- if(['deposit','reinvest'].includes(action.kind)){
+ if(action.kind==='deposit'||action.kind==='reinvest'){
   if(await vault.lockDuration()!==action.expectedLock||await vault.principalPenaltyBps()!==action.expectedPenalty)throw Error('Lock or penalty terms changed. Review the updated terms.');
-  const usd=await vault.quoteUsd(a,amount);
-  if(action.kind==='deposit'&&usd<await vault.minDepositUsd())throw Error('The amount is below the minimum deposit value in USD.');
-  if(action.kind==='reinvest'&&usd===0n)throw Error('The reinvestment is too small to have a nonzero USD value.');
+  onStatus('Checking current investment requirements');
+  await checkInvestmentRequirements(vault,{kind:action.kind,who,asset:a,amount,decimals:snapshot.decimals,referrer:action.referrer,noReferrerAcknowledged:action.noReferrerAcknowledged});
  }
  const principalQueue=action.kind==='principal'&&await hasDeferredRewards(vault)&&await hasApprovalQueue(new Contract(await vault.withdrawalQueue(),queueAbi,provider));
  if(((action.kind==='principal'&&!principalQueue)||action.kind==='ownerWithdraw'||(action.kind==='profit'&&!await hasDeferredRewards(vault)))&&await vault.assetBalance(a)<amount)throw Error('Insufficient liquid treasury balance. The owner must restore funds before this withdrawal can succeed.');
@@ -59,14 +60,19 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
   const balance=a===ZeroAddress?await provider.getBalance(who):await new Contract(a,erc20Abi,signer).balanceOf(who);
   if(balance<amount)throw Error('Your wallet balance is insufficient.');
   if(a!==ZeroAddress){const token=new Contract(a,erc20Abi,signer);const allowance=await token.allowance(who,vaultAddress);
+   // A funded existing allowance allows a complete deposit simulation before
+   // signing. With no allowance, validate rules first and simulate after approval.
+   if(action.kind==='deposit'&&allowance>=amount){const reviewed=await checkInvestmentRequirements(vault,{kind:action.kind,who,asset:a,amount,decimals:snapshot.decimals,referrer:action.referrer,noReferrerAcknowledged:action.noReferrerAcknowledged});onStatus('Checking the deposit against the contract');await vault.deposit.staticCall(a,amount,reviewed.referrer,payable);}
    if(allowance<amount){if(allowance>0n){onStatus('Confirm the previous token allowance reset in your wallet');await receipt(await token.approve(vaultAddress,0));}
     await session(who);onStatus('Approve the exact USDT amount in your wallet');const tx=await token.approve(vaultAddress,amount);onStatus('Waiting for USDT approval confirmation',tx.hash);await receipt(tx);}
   }
  }
  await session(who);
+ requireContractTarget(snapshot,{chainId,vaultAddress});
+ const investment=action.kind==='deposit'||action.kind==='reinvest'?await checkInvestmentRequirements(vault,{kind:action.kind,who,asset:a,amount,decimals:snapshot.decimals,referrer:action.referrer,noReferrerAcknowledged:action.noReferrerAcknowledged}):null;
  let method:string,args:unknown[];
  switch(action.kind){
-  case 'deposit':{const u=await vault.users(who);const ref=u.registered?u.referrer:(action.referrer?.trim()||ZeroAddress);if(!isAddress(ref))throw Error('Enter a valid referrer address.');method='deposit';args=[a,amount,ref,payable];break;}
+  case 'deposit':method='deposit';args=[a,amount,investment!.referrer,payable];break;
   case 'profit':method='withdrawProfit';args=[a,amount];break;
   case 'principal':{if(!action.position)throw Error('No position selected.');const p=await vault.positionOf(who,action.position.id);if(p.asset.toLowerCase()!==a.toLowerCase()||p.penaltyBps!==action.expectedFee)throw Error('The position or penalty does not match.');method='withdrawPrincipal';args=[action.position.id,amount];break;}
   case 'reinvest':method='reinvest';args=[a,amount];break;
@@ -86,3 +92,43 @@ export async function execute(action:Action,snapshot:Snapshot,onStatus:(s:string
 }
 export function errorText(error:unknown){const e=error as any;if(e?.code===4001||e?.code==='ACTION_REJECTED')return 'The request was rejected in your wallet.';const name=e?.revert?.name;const errors:Record<string,string>={InvalidRequest:'This request is unavailable, already handled, or still needs administrator approval.',NetworkStageChanged:'This reward stage has changed. Refresh and review it again.',NetworkPreparationRequired:'Prepare the group in batches before claiming.',NetworkInsufficient:'The current reward stage needs more eligible branch volume.',NetworkInvalid:'Check the group, direct branch addresses and batch size.',InsufficientLiquidity:'The treasury lacks liquid funds. Withdrawal depends on capital being returned.',Insufficient:'Insufficient balance, reserve or allowed withdrawal amount.',Locked:'This operation is locked. Check the withdrawal time or pause status.',Unauthorized:'This account does not have the required permission.',Invalid:'The request parameters are invalid.',StalePrice:'The oracle price is invalid or stale.',Unsupported:'This asset or operation is unsupported.'};return errors[name]||e?.shortMessage||e?.message||'Network request failed. Please try again.';}
 export function actionFee(action:Action,amount:bigint){return ['profit','principal'].includes(action.kind)?feeOf(amount,action.expectedFee):0n;}
+
+export type CustomerStatusSnapshot=ContractTarget&{operator:string;customer:string;active:boolean;kyc:boolean;block:number};
+export type CustomerStatusAction={review:CustomerStatusSnapshot;active:boolean;kyc:boolean};
+
+export async function readCustomerStatus(expected:string,customer:string):Promise<CustomerStatusSnapshot>{
+ if(!isAddress(customer)||customer.toLowerCase()===ZeroAddress)throw Error('Enter a valid registered customer address.');
+ const {vault,provider,who}=await session(expected),target={chainId,vaultAddress};
+ const block=await provider.getBlock('latest');if(!block)throw Error('Could not load the latest block.');
+ const options={blockTag:block.number},address=getAddress(customer);
+ const [reporter,user]=await Promise.all([vault.reporters(who,options),vault.users(address,options)]);
+ if(!reporter)throw Error('An authorized reporter is required to update customer status. The owner must also hold the reporter role.');
+ if(!user.registered)throw Error('This customer is not registered on the connected contract.');
+ await session(who);requireContractTarget(target,{chainId,vaultAddress});
+ return {...target,operator:who,customer:address,active:user.active,kyc:user.vipKyc,block:block.number};
+}
+
+async function verifyCustomerStatusReview(expected:string,action:CustomerStatusAction){
+ if(typeof action.active!=='boolean'||typeof action.kyc!=='boolean')throw Error('Review valid customer activity and KYC choices.');
+ requireContractTarget(action.review,{chainId,vaultAddress});
+ if(getAddress(action.review.operator)!==getAddress(expected))throw Error('The administrator wallet changed. Load and review the customer again.');
+ const current=await readCustomerStatus(expected,action.review.customer);
+ if(current.active!==action.review.active||current.kyc!==action.review.kyc)throw Error('Customer status changed after review. Load the customer again before updating it.');
+ if(current.active===action.active&&current.kyc===action.kyc)throw Error('Choose a customer status change before reviewing it.');
+ return current;
+}
+
+export async function executeCustomerStatus(expected:string,action:CustomerStatusAction,onStatus:(message:string,hash?:string)=>void){
+ await verifyCustomerStatusReview(expected,action);
+ const {vault}=await session(expected);requireContractTarget(action.review,{chainId,vaultAddress});
+ onStatus('Checking the reviewed customer status');
+ await vault.setCustomerStatus.staticCall(action.review.customer,action.active,action.kyc);
+ // Recheck identity, authority and reviewed values after simulation, before
+ // requesting the explicit administrator wallet signature.
+ await verifyCustomerStatusReview(expected,action);await session(expected);
+ requireContractTarget(action.review,{chainId,vaultAddress});
+ onStatus('Confirm the customer status update in your wallet');
+ const tx=await vault.setCustomerStatus(action.review.customer,action.active,action.kyc);
+ onStatus('Customer status submitted. Waiting for confirmation.',tx.hash);
+ return receipt(tx);
+}

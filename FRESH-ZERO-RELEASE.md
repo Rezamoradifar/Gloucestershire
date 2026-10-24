@@ -372,6 +372,57 @@ not prove deployment on the user's VPS or native SafePal behavior.
 
 ## Oracle recovery and hourly testing
 
+### Investment and profit repair
+
+The investment form validates the current registered referrer, deposit minimum,
+asset precision, pause state and cumulative VIP/KYC requirement before requesting
+a token approval. It rechecks the target, wallet and current requirements after
+approval and simulates the final transaction. An existing account keeps its
+permanent on-chain referrer. These checks explain a rejected request; they do not
+relax the contract's registration, minimum or VIP rules.
+
+The administrator page lets a connected authorized reporter load a
+registered customer's current activity/KYC status, review the before/after
+values, and explicitly confirm `setCustomerStatus` in their wallet. The UI checks
+the current role, customer, network, contract and reviewed status again before
+signing. The initial owner is a reporter; a later owner still needs the on-chain
+reporter role for this action. Opening the page never activates an account or attests KYC. Complete
+the actual verification process before marking KYC verified. Status changes
+affect eligibility at subsequent period-start snapshots.
+
+Daily and hourly personal profit now also produce separate funded upline batches.
+The calculation uses the same deployed source-tier referral percentages and
+recipient eligibility as sales profit, at the same period-start snapshot as the
+personal earnings. Each source's personal profit generates commissions once;
+commission earnings do not recursively generate more commissions. Active status
+and VIP/KYC conditions remain required. Existing personal batch identifiers stay
+unchanged, with separate idempotent commission identifiers and a combined remaining
+budget check before the first new credit. Previously completed policy epochs are
+not reset or automatically replayed.
+
+An incomplete member index is waiting, rather than active. Read failures expose a
+safe execution phase and numeric RPC code without provider URLs, raw messages or
+signed data. The worker preserves the saved policy, epoch, pending transactions
+and fee reservations. Historical reads still use the configured primary RPC.
+
+From the pinned checkout, install the updated frontend, then use the explicit
+profit recovery mode to upgrade the full worker, including interrupted financial
+transactions in its existing journal:
+
+```bash
+bash ubuntu-website.sh
+bash ubuntu-zero-oracle.sh --execute --hourly-test --profit-recovery
+node scripts/diagnose-zero-profit.mjs --fast-testnet
+```
+
+The recovery launcher retains its non-selected journal checks and signer locks.
+The diagnostic is read-only: it never opens a signer or saves its cloned member
+index. It probes one registration page and can simulate pending period batches
+without broadcasting them. An RPC history/capability failure must be resolved on
+the configured provider; installing the code alone is not evidence of a paid
+period. Initial indexing can require multiple runs, and overdue epochs are
+processed in bounded subsequent runs without changing their snapshot or IDs.
+
 For a fresh vault that is already connected, these commands inspect or repair
 the currently selected release without deploying another contract:
 
