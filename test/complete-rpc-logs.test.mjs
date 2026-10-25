@@ -38,14 +38,14 @@ async function httpHarness(replyLogs){
   else if(payload.method==='eth_getBlockByNumber')body={jsonrpc:'2.0',id:payload.id,result:block(Number(payload.params[0]))};
   else if(payload.method==='eth_getLogs'){
    const value={...payload.params[0],fromBlock:Number(payload.params[0].fromBlock),toBlock:Number(payload.params[0].toBlock)};calls.push(value);
-   const reply=replyLogs(value,payload.id);status=reply.status??200;body=reply.body;
+   const reply=await replyLogs(value,payload.id);status=reply.status??200;body=reply.body;
    if(Object.hasOwn(reply,'records'))body={jsonrpc:'2.0',id:payload.id,result:reply.records.map(row=>({...row,blockNumber:hex(row.blockNumber),logIndex:hex(row.index),transactionIndex:'0x0',index:undefined}))};
   }else body={jsonrpc:'2.0',id:payload.id,error:{code:-32601,message:'Unsupported test method'}};
   response.writeHead(status,{'content-type':'application/json'});response.end(typeof body==='string'?body:JSON.stringify(body));
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const providers=[];
- return {calls,provider(){const request=new FetchRequest('http://127.0.0.1:'+server.address().port+'/private-test-secret');request.retryFunc=async()=>false;const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});providers.push(provider);return provider;},async close(){for(const provider of providers)await provider.destroy();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
+ return {calls,provider({timeout}={}){const request=new FetchRequest('http://127.0.0.1:'+server.address().port+'/private-test-secret');request.retryFunc=async()=>false;if(timeout!==undefined)request.timeout=timeout;const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});providers.push(provider);return provider;},async close(){for(const provider of providers)await provider.destroy();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
 }
 
 for(const code of [-32602,-32600])test('actual ethers HTTP 400 JSON-RPC '+code+' range errors yield complete 500 and 1000 block windows',async()=>{
@@ -158,6 +158,68 @@ test('confirmed 429 responses retry the identical range twice with bounded backo
  assert.deepEqual(waits,[250,750]);assert.equal(h.calls.length,3);assert.deepEqual(h.calls,[h.calls[0],h.calls[0],h.calls[0]]);
  const blocked=harness({throwFor:()=>rpc(429,'private quota response')});
  await assert.rejects(getCompleteLogs({provider:blocked.provider,filter:filter(1,10),waitForRetry:async()=>{}}),error=>error.logProbeDiagnostic.reason==='RATE_LIMITED'&&error.logProbeDiagnostic.requests===3);assert.equal(blocked.calls.length,3);
+});
+
+test('actual ethers transport timeouts can retry the same log request twice only when explicitly enabled',async()=>{
+ let failures=0;
+ const h=await httpHarness(async()=>{if(failures++<2)await delay(350);return {records:[log(3)]};});
+ try{
+  const waits=[],attempts=[],original=filter(1,10),copy=structuredClone(original);
+  const rows=await getCompleteLogs({provider:h.provider({timeout:100}),filter:original,maxTimeoutRetries:2,waitForRetry:async ms=>waits.push(ms),onRequest:value=>attempts.push(value)});
+  assert.deepEqual(rows.map(row=>row.blockNumber),[3]);assert.deepEqual(waits,[500,1500]);assert.equal(attempts.length,3);assert.equal(h.calls.length,3);assert.deepEqual(h.calls,[h.calls[0],h.calls[0],h.calls[0]]);assert.deepEqual(original,copy);
+ }finally{await h.close();}
+});
+
+test('timeout retry is opt-in, limited to the failed child, serial when requested and bounded by the request budget',async()=>{
+ const timeout=()=>Object.assign(Error('private request timed out at https://private.invalid/key'),{code:'TIMEOUT'});
+ const disabled=harness({throwFor:()=>timeout()}),disabledWaits=[];
+ await assert.rejects(getCompleteLogs({provider:disabled.provider,filter:filter(1,10),waitForRetry:async ms=>disabledWaits.push(ms)}),error=>error.logProbeDiagnostic.reason==='TIMEOUT'&&error.logProbeDiagnostic.requests===1);
+ assert.equal(disabled.calls.length,1);assert.deepEqual(disabledWaits,[]);
+ let failures=0;const waits=[],h=harness({limit:10,records:[log(1),log(20),log(100)],delayMs:2,throwFor:value=>value.fromBlock===11&&failures++<2?timeout():null});
+ assert.deepEqual((await getCompleteLogs({provider:h.provider,filter:filter(1,100),maxTimeoutRetries:2,maxConcurrency:1,waitForRetry:async ms=>waits.push(ms)})).map(row=>row.blockNumber),[1,20,100]);
+ const repeated=h.calls.filter(value=>value.fromBlock===11);assert.equal(repeated.length,3);assert.deepEqual(repeated,[repeated[0],repeated[0],repeated[0]]);assert.ok(h.calls.filter(value=>value.fromBlock===1&&value.toBlock===10).length===1);assert.equal(h.maxActive,1);assert.deepEqual(waits,[500,1500]);
+ const budget=harness({throwFor:()=>timeout()}),counts=[];
+ await assert.rejects(getCompleteLogs({provider:budget.provider,filter:filter(1,10),maxTimeoutRetries:2,maxRequests:2,waitForRetry:async()=>{},onRequest:value=>counts.push(value)}),error=>error.message==='COMPLETE_LOG_REQUEST_BUDGET_EXCEEDED'&&error.logProbeDiagnostic.requests===2);
+ assert.equal(budget.calls.length,2);assert.equal(counts.length,2);
+});
+
+test('timeout exhaustion and mixed 429 attempts share a strict three-attempt ceiling without subdivision',async()=>{
+ const timeout=()=>Object.assign(Error('private transport timeout'),{code:'TIMEOUT'});
+ for(const retries of [1,2]){
+  const waits=[],h=harness({throwFor:()=>timeout()});
+  await assert.rejects(getCompleteLogs({provider:h.provider,filter:filter(1,100),maxTimeoutRetries:retries,waitForRetry:async ms=>waits.push(ms)}),error=>error.logProbeDiagnostic.errorCode==='TIMEOUT'&&error.logProbeDiagnostic.reason==='TIMEOUT'&&error.logProbeDiagnostic.requests===1+retries);
+  assert.equal(h.calls.length,1+retries);assert.ok(h.calls.every(value=>value.fromBlock===1&&value.toBlock===100));assert.deepEqual(waits,[500,1500].slice(0,retries));
+ }
+ const waits=[],mixed=harness({throwFor:(_,count)=>count===1?rpc(429,'quota response'):timeout()});
+ await assert.rejects(getCompleteLogs({provider:mixed.provider,filter:filter(1,10),maxTimeoutRetries:2,waitForRetry:async ms=>waits.push(ms)}),error=>error.logProbeDiagnostic.requests===3);
+ assert.equal(mixed.calls.length,3);assert.deepEqual(waits,[250,1500]);
+});
+
+test('timeout-labelled auth, quota, historical and application failures never enter timeout retries, and canonical reads remain hard failures',async()=>{
+ const errors=[
+  [Object.assign(Error('Unauthorized private request timeout'),{code:'TIMEOUT'}),'AUTHENTICATION_REQUIRED'],
+  [Object.assign(Error('Rate limit exceeded; private timeout'),{code:'TIMEOUT'}),'RATE_LIMITED'],
+  [Object.assign(Error('Missing trie node; private request timeout'),{code:'TIMEOUT'}),'HISTORICAL_STATE_UNAVAILABLE'],
+  [Object.assign(Error('Header not found; private request timeout'),{code:'TIMEOUT'}),'HISTORICAL_STATE_UNAVAILABLE'],
+  [Object.assign(Error('private request timeout'),{code:'TIMEOUT',info:{error:{code:-32600,message:'private request timeout'}}}),'TIMEOUT'],
+  [Object.assign(Error('private request timeout'),{code:'TIMEOUT',info:{responseStatus:'400 Bad Request'}}),'TIMEOUT'],
+  [Object.assign(Error('private request timeout'),{code:'SERVER_ERROR'}),'TIMEOUT']
+ ];
+ for(const [original,reason]of errors){
+  const waits=[],h=harness({throwFor:()=>original});
+  await assert.rejects(getCompleteLogs({provider:h.provider,filter:filter(1,100),maxTimeoutRetries:2,waitForRetry:async ms=>waits.push(ms)}),error=>{assert.equal(error.logProbeDiagnostic.requests,1);assert.equal(error.logProbeDiagnostic.reason,reason);assert.doesNotMatch(inspect(error),/private|secret|https?:\/\//);return true;});
+  assert.equal(h.calls.length,1);assert.deepEqual(waits,[]);
+ }
+ const h=harness(),waits=[];let headers=0;
+ h.provider.getBlock=async()=>{headers++;throw Object.assign(Error('private canonical timeout'),{code:'TIMEOUT'});};
+ await assert.rejects(getCompleteLogs({provider:h.provider,filter:filter(1,100),maxTimeoutRetries:2,waitForRetry:async ms=>waits.push(ms)}),error=>error.message==='COMPLETE_LOG_CANONICAL_READ_FAILED'&&error.logProbeDiagnostic.operation==='getBlock');
+ assert.equal(headers,1);assert.equal(h.calls.length,0);assert.deepEqual(waits,[]);
+});
+
+test('retry and concurrency bounds reject invalid controls before contacting the provider',async()=>{
+ for(const options of [{maxTimeoutRetries:-1},{maxTimeoutRetries:3},{maxTimeoutRetries:1.5},{maxTimeoutRetries:'2'},{maxConcurrency:0},{maxConcurrency:5},{maxConcurrency:1.5},{maxConcurrency:'1'}]){
+  const h=harness();await assert.rejects(getCompleteLogs({provider:h.provider,filter:filter(1,10),...options}),/COMPLETE_LOG_REQUEST_LIMIT_REQUIRED/);assert.equal(h.calls.length,0);assert.equal(h.headers.length,0);
+ }
 });
 
 test('a failed parallel child waits for all in-flight reads and discards every partial result',async()=>{

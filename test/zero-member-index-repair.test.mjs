@@ -108,6 +108,34 @@ test('a failing old-log page retains complete progress and never commits a parti
  const recovered=await c.run({candidate:readonly()});assert.equal(recovered.status,'repaired');assert.equal(c.commits.length,1);
 });
 
+test('an exhausted old registration-log timeout yields the last saved page and resumes the same boundary',async()=>{
+ const topic=vault.interface.getEvent('Registered').topicHash,firstEnd=policy.deploymentBlock+499,rebuildRanges=[];let failed=true,phase;
+ const candidate=readonly({getLogs:async filter=>{
+  if(phase==='MEMBER_INDEX_REBUILD'&&filter.topics[0]===topic)rebuildRanges.push({fromBlock:filter.fromBlock,toBlock:filter.toBlock});
+  if(filter.topics[0]===topic&&filter.fromBlock>firstEnd&&failed)throw Object.assign(Error('private timeout at https://private.invalid/timeout-secret'),{code:'TIMEOUT'});
+  return provider.getLogs(filter);
+ }}),c=controller({candidate,onPhase:value=>{phase=value;}}),first=await c.run();
+ assert.equal(first.status,'in-progress');assert.equal(first.waitingFor,'RPC_TIMEOUT');assert.equal(first.through,firstEnd);assert.equal(first.pages,1);assert.equal(first.members,1);assert.equal(first.epoch,0);assert.equal(first.snapshot.block,periodSnapshot.number);
+ assert.equal(first.logProbeDiagnostic.operation,'eth_getLogs');assert.equal(first.logProbeDiagnostic.reason,'TIMEOUT');assert.equal(first.logProbeDiagnostic.errorCode,'TIMEOUT');assert.equal(first.logProbeDiagnostic.fromBlock,firstEnd+1);assert.equal(first.logProbeDiagnostic.toBlock,periodSnapshot.number);
+ assert.equal(c.saves.length,1);assert.equal(c.progress.registry.through,firstEnd);assert.equal(c.commits.length,0);assert.deepEqual(JSON.parse(base.journalText),state);assert.doesNotMatch(inspect(first,{depth:10}),/private|secret|https/);
+ const attempts=rebuildRanges.filter(value=>value.fromBlock===firstEnd+1);assert.equal(attempts.length,3);assert.ok(attempts.every(value=>value.toBlock===periodSnapshot.number));
+ failed=false;rebuildRanges.length=0;const recovered=await c.run();
+ assert.equal(recovered.status,'repaired');assert.equal(recovered.epoch,0);assert.equal(recovered.snapshot.block,periodSnapshot.number);assert.equal(c.commits.length,1);assert.equal(c.progress.registry.through,periodSnapshot.number);
+ assert.deepEqual(rebuildRanges,[{fromBlock:firstEnd+1,toBlock:periodSnapshot.number}]);assert.deepEqual(stripRegistry(JSON.parse(c.commits[0])),stripRegistry(state));
+});
+
+test('a first-page registration-log timeout yields without saving an empty or partially read registry',async()=>{
+ const topic=vault.interface.getEvent('Registered').topicHash,rebuildRanges=[];let failed=true,phase;
+ const candidate=readonly({getLogs:async filter=>{
+  if(phase==='MEMBER_INDEX_REBUILD'&&filter.topics[0]===topic){rebuildRanges.push({fromBlock:filter.fromBlock,toBlock:filter.toBlock});if(failed)throw Object.assign(Error('private timeout at https://private.invalid/first-page-secret'),{code:'TIMEOUT'});}
+  return provider.getLogs(filter);
+ }}),c=controller({candidate,onPhase:value=>{phase=value;}}),first=await c.run();
+ assert.equal(first.status,'in-progress');assert.equal(first.waitingFor,'RPC_TIMEOUT');assert.equal(first.pages,0);assert.equal(first.members,0);assert.equal(first.through,policy.deploymentBlock-1);assert.equal(c.progress,null);assert.equal(c.saves.length,0);assert.equal(c.commits.length,0);
+ assert.equal(first.logProbeDiagnostic.operation,'eth_getLogs');assert.equal(first.logProbeDiagnostic.reason,'TIMEOUT');assert.equal(first.logProbeDiagnostic.errorCode,'TIMEOUT');assert.equal(first.logProbeDiagnostic.fromBlock,policy.deploymentBlock);assert.equal(first.logProbeDiagnostic.toBlock,policy.deploymentBlock+499);assert.equal(rebuildRanges.length,3);
+ assert.doesNotMatch(inspect(first,{depth:10}),/private|secret|https/);assert.deepEqual(JSON.parse(base.journalText),state);
+ failed=false;rebuildRanges.length=0;const recovered=await c.run();assert.equal(recovered.status,'repaired');assert.equal(c.commits.length,1);assert.equal(recovered.epoch,0);assert.equal(rebuildRanges[0].fromBlock,policy.deploymentBlock);assert.equal(c.saves.length,2);
+});
+
 test('a fully scanned registry that still fails the principal invariant remains auxiliary',async()=>{
  const candidate=readonly({getLogs:async filter=>(await provider.getLogs(filter)).filter(log=>log.transactionHash!==deposits[1].hash)}),c=controller({candidate});
  await assert.rejects(c.run(),/INCOMPLETE_DAILY_MEMBER_INDEX/);assert.equal(c.progress.registry.through,periodSnapshot.number);assert.equal(c.commits.length,0);assert.ok(c.saves.length>=2);assert.deepEqual(JSON.parse(base.journalText),state);

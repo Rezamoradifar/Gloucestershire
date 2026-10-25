@@ -477,6 +477,19 @@ The launcher allows at most four passes per command. `--check` never rebuilds.
 If `ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS` is reported, repeat the same pinned
 command to resume complete pages. Changed bound inputs stop resumption.
 
+The member-cache rebuild opts into at most two retries of the identical failed
+log subquery for a typed transport timeout without an RPC code or HTTP status.
+Each attempt counts against the existing request budget; the retry delays are
+500 and 1,500 milliseconds, with at most two log reads in flight. Timeouts never
+permit range subdivision, missing results or a skipped page. Other reader
+callers keep their existing defaults.
+An exhausted rebuild timeout reports `ZERO_MEMBER_INDEX_REBUILD_WAITING`, retains
+only previously completed pages, and leaves the original journal unchanged. The
+controller returns 76 so the launcher stops rather than starting four recovery
+passes against an unavailable provider; the launcher returns resumable status 75.
+Retry the same pinned command after the provider responds. Invalid requests,
+authentication, historical-state errors and canonical failures still block.
+
 The original journal remains untouched until the full reconstructed plan proves
 both principal totals and the full original-period readiness again. Current-epoch
 credit evidence or used personal/referral batch IDs blocks replacement. Only

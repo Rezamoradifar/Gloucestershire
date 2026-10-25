@@ -74,17 +74,25 @@ export async function repairZeroMemberIndex(options){
  await canonical();
  during('MEMBER_INDEX_REBUILD');
  const began=now();let pages=0;
+ const progressReport=()=>({version:1,kind:'fresh-zero-member-index-repair',chainId:97,target:policy.vaultAddress,epoch,snapshot:binding.snapshot,through:progress.registry.through,members:Object.keys(progress.registry.members).length,pages,transactionsSent:0,signerOpened:false});
  while(progress.registry.through<snapshot.number&&pages<maxPages&&now()-began<maxMilliseconds){
   await canonical();
   const daily={registry:structuredClone(progress.registry)},previous=daily.registry;let saved=false;
-  await indexMembers({provider:candidate,policy,state:daily,through:snapshot.number,maxPages:1,pageSize:500,save:()=>{saved=true;}});
+  try{await indexMembers({provider:candidate,policy,state:daily,through:snapshot.number,maxPages:1,pageSize:500,logOptions:{maxTimeoutRetries:2,maxConcurrency:2},save:()=>{saved=true;}});}
+  catch(error){
+   const raw=error?.logProbeDiagnostic,diagnostic=sanitizeCompleteLogDiagnostic(raw),fromBlock=progress.registry.through+1,toBlock=Math.min(fromBlock+499,snapshot.number);
+   const typedTimeout=error?.message==='COMPLETE_LOG_QUERY_FAILED'&&error.code==='TIMEOUT'&&raw?.operation==='eth_getLogs'&&raw.reason==='TIMEOUT'&&raw.errorCode==='TIMEOUT'&&raw.rpcCode===null&&raw.httpStatus===null&&integer(raw.fromBlock)&&integer(raw.toBlock)&&raw.fromBlock>=fromBlock&&raw.toBlock>=raw.fromBlock&&raw.toBlock<=toBlock&&Number.isSafeInteger(raw.requests)&&raw.requests>=1&&raw.requests<=1024&&daily.registry===previous&&!saved;
+   if(!typedTimeout)throw error;
+   await assertCurrent();
+   return {...progressReport(),status:'in-progress',waitingFor:'RPC_TIMEOUT',logProbeDiagnostic:diagnostic};
+  }
   if(!saved||daily.registry!==previous||daily.registry.through<=progress.registry.through)throw Error('MEMBER_INDEX_REBUILD_CHECKPOINT_REORG');
   progress.registry=daily.registry;
   validateProgress(progress,binding,policy);
   await canonical();
   await saveProgress(structuredClone(progress));pages++;
  }
- const report={version:1,kind:'fresh-zero-member-index-repair',chainId:97,target:policy.vaultAddress,epoch,snapshot:binding.snapshot,through:progress.registry.through,members:Object.keys(progress.registry.members).length,pages,transactionsSent:0,signerOpened:false};
+ const report=progressReport();
  if(progress.registry.through<snapshot.number)return {...report,status:'in-progress'};
  during('MEMBER_INDEX_REBUILT_PERIOD_PROOF');
  await canonical();
@@ -167,7 +175,7 @@ async function main(){
    if(existing===null){writeExclusive(backup,inputs.journalText);syncDirectory(profile.automationDir);}
    await assertCurrent();atomicPrivate(paths.journalText,text);
   }});
-  console.log(result.status==='in-progress'?'ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS':result.status==='repaired'?'ZERO_MEMBER_INDEX_REPAIRED':'ZERO_MEMBER_INDEX_REPAIR_NOT_REQUIRED');console.log(JSON.stringify(result));if(result.status==='in-progress')process.exitCode=75;
+  console.log(result.waitingFor==='RPC_TIMEOUT'?'ZERO_MEMBER_INDEX_REBUILD_WAITING':result.status==='in-progress'?'ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS':result.status==='repaired'?'ZERO_MEMBER_INDEX_REPAIRED':'ZERO_MEMBER_INDEX_REPAIR_NOT_REQUIRED');console.log(JSON.stringify(result));if(result.status==='in-progress')process.exitCode=result.waitingFor==='RPC_TIMEOUT'?76:75;
  }catch(error){
   const blocker=/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message||'')?error.message:'MEMBER_INDEX_REPAIR_FAILED';
   const detail={...(error?.archiveReadiness?{readinessSummary:zeroArchiveReadinessSummary(error.archiveReadiness)}:{}),...(error?.memberIndexDiagnostic?{memberIndexDiagnostic:sanitizeDailyMemberIndexDiagnostic(error.memberIndexDiagnostic)}:{})};

@@ -44,9 +44,9 @@ function rpcFailure(error){
  else if([401,403].includes(httpStatus))reason='AUTHENTICATION_REQUIRED';
  else if(rpcCode===429)reason='RATE_LIMITED';
  else if(/unauthorized|forbidden|invalid api key|api key.*invalid/.test(text))reason='AUTHENTICATION_REQUIRED';
- else if(error?.code==='TIMEOUT'||/\btimeout\b|timed out/.test(text))reason='TIMEOUT';
- else if(/missing trie|pruned|historical.*unavailable|header not found|state (?:is )?not available|unknown state/.test(text))reason='HISTORICAL_STATE_UNAVAILABLE';
  else if(/rate limit|too many requests/.test(text))reason='RATE_LIMITED';
+ else if(/missing trie|pruned|historical.*unavailable|header not found|state (?:is )?not available|unknown state/.test(text))reason='HISTORICAL_STATE_UNAVAILABLE';
+ else if(error?.code==='TIMEOUT'||/\btimeout\b|timed out/.test(text))reason='TIMEOUT';
  else if([-32601,-32004].includes(rpcCode))reason='METHOD_UNAVAILABLE';
  else if([-32600,-32602,-32000,-32005,-32603].includes(rpcCode)){
   const range=/block range.*(?:limit|exceed|maximum|max )|(?:maximum|max) block range|(?:up to|limited to|at most) (?:a )?\d+ blocks?(?: range)?|range (?:is )?too (?:large|wide)/.test(rpcText);
@@ -74,9 +74,9 @@ function matchesTopics(expected,actual){
  return Array.isArray(actual)&&actual.length>=expected.length&&actual.length<=4&&actual.every(hash)&&expected.every((value,index)=>value===null||(Array.isArray(value)?value.some(topic=>topic.toLowerCase()===actual[index].toLowerCase()):value.toLowerCase()===actual[index].toLowerCase()));
 }
 
-export async function getCompleteLogs({provider,filter,maxRequests=1024,onRequest=()=>{},waitForRetry=wait}){
+export async function getCompleteLogs({provider,filter,maxRequests=1024,maxTimeoutRetries=0,maxConcurrency=4,onRequest=()=>{},waitForRetry=wait}){
  const scope=fixedFilter(filter);
- if(!provider||typeof provider.getLogs!=='function'||typeof provider.getBlock!=='function'||!Number.isSafeInteger(maxRequests)||maxRequests<1||maxRequests>1024||typeof onRequest!=='function'||typeof waitForRetry!=='function')throw Error('COMPLETE_LOG_REQUEST_LIMIT_REQUIRED');
+ if(!provider||typeof provider.getLogs!=='function'||typeof provider.getBlock!=='function'||!Number.isSafeInteger(maxRequests)||maxRequests<1||maxRequests>1024||!Number.isSafeInteger(maxTimeoutRetries)||maxTimeoutRetries<0||maxTimeoutRetries>2||!Number.isSafeInteger(maxConcurrency)||maxConcurrency<1||maxConcurrency>4||typeof onRequest!=='function'||typeof waitForRetry!=='function')throw Error('COMPLETE_LOG_REQUEST_LIMIT_REQUIRED');
  let requests=0,limit=learnedSpans.get(provider)??null,adapted=false;
  const internalFailures=new WeakSet();
  const failure=(message,error,range,reason,operation='eth_getLogs')=>{
@@ -101,13 +101,14 @@ export async function getCompleteLogs({provider,filter,maxRequests=1024,onReques
    catch(error){
     const details=rpcFailure(error);
     if(details.confirmed429&&retry<2){await waitForRetry(retry===0?250:750);continue;}
+    if(error?.code==='TIMEOUT'&&details.reason==='TIMEOUT'&&details.rpcCode===null&&details.httpStatus===null&&retry<maxTimeoutRetries){await waitForRetry(retry===0?500:1500);continue;}
     throw error;
    }
   }
  };
  while(queue.length){
   const wave=[];
-  while(queue.length&&wave.length<4){
+  while(queue.length&&wave.length<maxConcurrency){
    const range=queue.shift(),size=range.toBlock-range.fromBlock+1;
    if(limit&&size>limit){
     const children=[];for(let start=range.fromBlock;start<=range.toBlock;start+=limit)children.push({fromBlock:start,toBlock:Math.min(start+limit-1,range.toBlock)});

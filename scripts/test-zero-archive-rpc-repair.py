@@ -120,6 +120,8 @@ elif args[0]=='repair':
   else:raise AssertionError('Repair requires the selected journal run lock')
  count=int((p/'repair-count').read_text())+1;(p/'repair-count').write_text(str(count))
  if mode=='member-index-fail':print('MEMBER_INDEX_REPAIR_FAILED');raise SystemExit(1)
+ if mode=='member-index-timeout':
+  (state/'member-index-rebuild.json').write_text(json.dumps({'pages':count}));(state/'member-index-rebuild.json').chmod(0o600);print('ZERO_MEMBER_INDEX_REBUILD_WAITING');raise SystemExit(76)
  if mode=='member-index-long' or (mode=='member-index-progress' and count<4):
   (state/'member-index-rebuild.json').write_text(json.dumps({'pages':count}));(state/'member-index-rebuild.json').chmod(0o600);print('ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS');raise SystemExit(75)
  j=json.loads((state/'journal.json').read_text());j['daily']['registry']={'through':43,'hash':'0x'+'12'*32,'members':{target:42}}
@@ -283,6 +285,10 @@ else:raise AssertionError(args)
         r=run(mode,private=True);assert r.returncode==(75 if mode=='member-index-long' else 1),(mode,r.stdout,r.stderr)
         assert json.loads((state/'journal.json').read_text())==baseline_journal and envfile.read_text()==original_env
         assert 'systemctl stop ' not in (host/'calls').read_text() and json.loads((host/'workers.json').read_text())==prior
+    r=run('member-index-timeout',private=True);assert r.returncode==75 and 'ZERO_MEMBER_INDEX_REBUILD_WAITING' in r.stdout,(r.stdout,r.stderr)
+    assert int((host/'repair-count').read_text())==1,'An exhausted timeout must not multiply full proof/rebuild passes'
+    assert (state/'member-index-rebuild.json').exists() and json.loads((state/'journal.json').read_text())==baseline_journal
+    assert envfile.read_text()==original_env and 'systemctl stop ' not in (host/'calls').read_text() and json.loads((host/'workers.json').read_text())==prior
     r=run('member-index-success',argument='--check',private=True);assert r.returncode!=0 and int((host/'repair-count').read_text())==0
     r=run('member-index-financial-change',private=True);assert r.returncode!=0 and 'MEMBER_REPAIR_CHANGED_FINANCIAL_STATE' in r.stderr,(r.stdout,r.stderr)
     assert 'systemctl stop ' not in (host/'calls').read_text() and envfile.read_text()==original_env

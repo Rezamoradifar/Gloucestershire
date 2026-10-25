@@ -19,8 +19,9 @@ helper = 'scripts/complete-rpc-logs.mjs'
 previous_helper_hashes = {
     'cc86f8004253b5c5f7aa20292ee6151da9140bf18994e1a36661ac04b1f52b14',
     '1ed98c3709a7980fa79abecd740001fd429f707e3541162e3fea943ee7737346',
+    '333b12f9ae97bf13447d369451d73b7cdb7d0564647429fa77b55e929ca01237',
 }
-previous_source_hashes = {'scripts/daily-profit.mjs': {'a1f0d70d10affb6b9f762cf5fb04e249ca428bc3ac2d78f6c45e64a74b5dda37'}}
+previous_source_hashes = {'scripts/daily-profit.mjs': {'a1f0d70d10affb6b9f762cf5fb04e249ca428bc3ac2d78f6c45e64a74b5dda37', '35f99791a01a31b874fe7ddbaad2fcdbf9a73f61ca1fe728a80a5edf0d7a089b'}}
 roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper]}
 
 

@@ -162,6 +162,7 @@ PY
   member_repair_only_registry "$repair_status"
   member_repair_inputs verify;check_candidate;journals_complete "${journals[@]}"
   if [ "$repair_status" -eq 0 ];then repaired=1;break;fi
+  if [ "$repair_status" -eq 76 ];then echo 'ZERO_MEMBER_INDEX_REBUILD_WAITING: RPC timeout; verified pages were preserved. Retry the same command when the provider responds.';exit 75;fi
   [ "$repair_status" -eq 75 ] || exit "$repair_status"
  done
  if [ "$repaired" -ne 1 ];then echo 'ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS: repeat the same command to resume verified pages.';exit 75;fi
