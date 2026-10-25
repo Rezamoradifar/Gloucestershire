@@ -6,7 +6,7 @@ const learnedSpans=new WeakMap();
 const hash=value=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
 const integer=value=>Number.isSafeInteger(value)&&value>=0;
 const errorCodes=new Set(['CALL_EXCEPTION','NETWORK_ERROR','SERVER_ERROR','TIMEOUT','BAD_DATA','UNKNOWN_ERROR','UNSUPPORTED_OPERATION','INVALID_ARGUMENT','NUMERIC_FAULT','BUFFER_OVERRUN','CANCELLED']);
-const reasons=new Set(['BLOCK_RANGE_LIMIT','RESULT_LIMIT','RATE_LIMITED','AUTHENTICATION_REQUIRED','HISTORICAL_STATE_UNAVAILABLE','TIMEOUT','METHOD_UNAVAILABLE','TRANSPORT_UNAVAILABLE','INVALID_RESPONSE','UNKNOWN','CANONICAL_MISMATCH','CONFLICTING_DUPLICATE','REQUEST_BUDGET_EXCEEDED']);
+const reasons=new Set(['BLOCK_RANGE_LIMIT','RESULT_LIMIT','RATE_LIMITED','AUTHENTICATION_REQUIRED','HISTORICAL_STATE_UNAVAILABLE','TIMEOUT','METHOD_UNAVAILABLE','TRANSPORT_UNAVAILABLE','INVALID_REQUEST','INVALID_RESPONSE','UNKNOWN','CANONICAL_MISMATCH','CONFLICTING_DUPLICATE','REQUEST_BUDGET_EXCEEDED']);
 const operations=new Set(['eth_getLogs','getBlock','validate-logs']);
 const fatalReasons=new Set(['CANONICAL_MISMATCH','CONFLICTING_DUPLICATE','INVALID_RESPONSE']);
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -48,10 +48,11 @@ function rpcFailure(error){
  else if(/missing trie|pruned|historical.*unavailable|header not found|state (?:is )?not available|unknown state/.test(text))reason='HISTORICAL_STATE_UNAVAILABLE';
  else if(/rate limit|too many requests/.test(text))reason='RATE_LIMITED';
  else if([-32601,-32004].includes(rpcCode))reason='METHOD_UNAVAILABLE';
- else if([-32602,-32000,-32005,-32603].includes(rpcCode)){
+ else if([-32600,-32602,-32000,-32005,-32603].includes(rpcCode)){
   const range=/block range.*(?:limit|exceed|maximum|max )|(?:maximum|max) block range|(?:up to|limited to|at most) (?:a )?\d+ blocks?(?: range)?|range (?:is )?too (?:large|wide)/.test(rpcText);
   const result=/too many (?:results|logs)|query returned more than|(?:log |response |result )size (?:limit|exceed)|(?:response|result) (?:is )?too large|result limit|maximum (?:number of )?(?:results|logs)/.test(rpcText);
   if(range||result){reason=range?'BLOCK_RANGE_LIMIT':'RESULT_LIMIT';split=true;}
+  else if(rpcCode===-32600)reason='INVALID_REQUEST';
   else if(rpcCode===-32005)reason='RATE_LIMITED';
   const match=rpcText.match(/(?:up to|limited to|at most) (?:a )?(\d+) blocks?(?: range)?|(?:maximum|max) block range(?: is| of|:)?\s*(\d+)|block range limit(?: is| of|:)?\s*(\d+)/);
   if(range&&match){const value=Number(match[1]??match[2]??match[3]);if(Number.isSafeInteger(value)&&value>=1&&value<=1000)limit=value;}

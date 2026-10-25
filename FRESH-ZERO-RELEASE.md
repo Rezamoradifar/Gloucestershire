@@ -454,6 +454,13 @@ failure. Response bodies and private endpoint details are never retained in
 diagnostics. Transport tests use the actual ethers HTTP client, including 400
 responses, in addition to direct-provider fixtures.
 
+The structured RPC code `-32600` is also eligible for subdivision when its own
+bounded message explicitly identifies a block-range or result-size limit.
+The code alone means invalid request and never permits subdivision. Generic
+invalid requests, missing history, authentication and quota failures retain their
+blocking or bounded-retry behavior. No historical principal or member-index
+verification is omitted to accommodate a provider's error-code convention.
+
 A failed probe also reports the exact allowlisted read operation, sanitized
 error/RPC codes, HTTP status and a fixed reason category inferred from the
 provider error. A timeout or malformed response can otherwise look like missing

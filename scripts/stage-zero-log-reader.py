@@ -16,7 +16,10 @@ baseline = {
     'server/trades-api.mjs': '054d954663811ee30096b7e54b548454e7fbf6d1b4787a00f763aa33fd63035d',
 }
 helper = 'scripts/complete-rpc-logs.mjs'
-previous_helper_hashes = {'cc86f8004253b5c5f7aa20292ee6151da9140bf18994e1a36661ac04b1f52b14'}
+previous_helper_hashes = {
+    'cc86f8004253b5c5f7aa20292ee6151da9140bf18994e1a36661ac04b1f52b14',
+    '1ed98c3709a7980fa79abecd740001fd429f707e3541162e3fea943ee7737346',
+}
 roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper]}
 
 

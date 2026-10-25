@@ -48,8 +48,8 @@ async function httpHarness(replyLogs){
  return {calls,provider(){const request=new FetchRequest('http://127.0.0.1:'+server.address().port+'/private-test-secret');request.retryFunc=async()=>false;const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});providers.push(provider);return provider;},async close(){for(const provider of providers)await provider.destroy();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
 }
 
-test('actual ethers HTTP 400 JSON-RPC range errors yield complete 500 and 1000 block windows',async()=>{
- const records=[log(1),log(10),log(11),log(500),log(1000)],h=await httpHarness((value,id)=>value.toBlock-value.fromBlock+1>10?{status:400,body:{jsonrpc:'2.0',id,error:{code:-32602,message:'You can make eth_getLogs requests with up to a 10 block range. https://private.invalid/http-body-secret'}}}:{records:records.filter(row=>row.blockNumber>=value.fromBlock&&row.blockNumber<=value.toBlock)});
+for(const code of [-32602,-32600])test('actual ethers HTTP 400 JSON-RPC '+code+' range errors yield complete 500 and 1000 block windows',async()=>{
+ const records=[log(1),log(10),log(11),log(500),log(1000)],h=await httpHarness((value,id)=>value.toBlock-value.fromBlock+1>10?{status:400,body:{jsonrpc:'2.0',id,error:{code,message:'Under the Free tier plan, you can make eth_getLogs requests with up to a 10 block range. https://private.invalid/http-body-secret'}}}:{records:records.filter(row=>row.blockNumber>=value.fromBlock&&row.blockNumber<=value.toBlock)});
  try{
   for(const end of [500,1000]){
    const start=h.calls.length,requests=[],provider=h.provider(),rows=await getCompleteLogs({provider,filter:filter(1,end),onRequest:value=>requests.push(value)}),calls=h.calls.slice(start);
@@ -61,8 +61,8 @@ test('actual ethers HTTP 400 JSON-RPC range errors yield complete 500 and 1000 b
  }finally{await h.close();}
 });
 
-test('actual ethers HTTP 400 JSON-RPC result limits retain complete child coverage',async()=>{
- const h=await httpHarness((value,id)=>value.toBlock>value.fromBlock?{status:400,body:{jsonrpc:'2.0',id,error:{code:-32005,message:'query returned more than 10000 results; private-body-secret'}}}:{records:[log(value.fromBlock)]});
+for(const code of [-32005,-32600])test('actual ethers HTTP 400 JSON-RPC '+code+' result limits retain complete child coverage',async()=>{
+ const h=await httpHarness((value,id)=>value.toBlock>value.fromBlock?{status:400,body:{jsonrpc:'2.0',id,error:{code,message:'query returned more than 10000 results; private-body-secret'}}}:{records:[log(value.fromBlock)]});
  try{assert.deepEqual((await getCompleteLogs({provider:h.provider(),filter:filter(1,4)})).map(row=>row.blockNumber),[1,2,3,4]);assert.equal(h.calls.filter(value=>value.fromBlock===value.toBlock).length,4);}finally{await h.close();}
 });
 
@@ -79,7 +79,11 @@ test('HTTP error envelopes fail closed for authentication, quota, pruning, malfo
   {status:400,body:envelope(-32602,'too many requests; '+rangeMessage),reason:'RATE_LIMITED',rpcCode:-32602},
   {status:400,body:envelope(-32005,'rate limit exceeded; '+rangeMessage),reason:'RATE_LIMITED',rpcCode:-32005},
   {status:400,body:envelope(-32005,'limit exceeded; private-body-secret'),reason:'RATE_LIMITED',rpcCode:-32005},
-  {status:400,body:envelope(-32600),rpcCode:-32600},
+  {status:400,body:envelope(-32600,'Invalid Request; private-body-secret'),reason:'INVALID_REQUEST',rpcCode:-32600},
+  {status:400,body:envelope(-32600,'invalid API key; '+rangeMessage),reason:'AUTHENTICATION_REQUIRED',rpcCode:-32600},
+  {status:400,body:envelope(-32600,'too many requests; '+rangeMessage),reason:'RATE_LIMITED',rpcCode:-32600},
+  {status:400,body:envelope(-32600,'missing trie node; '+rangeMessage),reason:'HISTORICAL_STATE_UNAVAILABLE',rpcCode:-32600},
+  {status:400,body:envelope(-32042),rpcCode:-32042},
   ...[
    '<html>private-body-secret '+rangeMessage+'</html>',
    '{"error":{"code":-32602,"message":"'+rangeMessage+'"}',
@@ -87,6 +91,7 @@ test('HTTP error envelopes fail closed for authentication, quota, pruning, malfo
    {...envelope(-32602),result:[]},
    {...envelope(-32602),jsonrpc:'1.0'},
    envelope('-32602'),
+   envelope('-32600'),
    {error:{code:-32602}},
    envelope(-32602,''),
    envelope(-32602,rangeMessage+'x'.repeat(8192)),
@@ -187,6 +192,7 @@ test('diagnostics never retain raw exceptions or trust provider-supplied diagnos
  const h=harness({throwFor:()=>source});await assert.rejects(getCompleteLogs({provider:h.provider,filter:filter(1,100)}),error=>{assert.doesNotMatch(inspect(error),/private|secret|https:\/\//);assert.equal(error.logProbeDiagnostic.rpcCode,-32602);return true;});
  const value=sanitizeCompleteLogDiagnostic({operation:'private',fromBlock:'private',toBlock:Infinity,errorCode:'private',rpcCode:'secret',httpStatus:9999,reason:'private',requests:'secret'});
  assert.deepEqual(value,{operation:'eth_getLogs',fromBlock:null,toBlock:null,errorCode:null,rpcCode:null,httpStatus:null,reason:'UNKNOWN',requests:null});
+ assert.equal(sanitizeCompleteLogDiagnostic({reason:'INVALID_REQUEST',url:'https://private.invalid/secret'}).reason,'INVALID_REQUEST');
 });
 
 test('invalid or unconstrained filters fail before contacting the provider',async()=>{

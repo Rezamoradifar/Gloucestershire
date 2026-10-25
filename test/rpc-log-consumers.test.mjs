@@ -48,7 +48,7 @@ before(async()=>{
   if(request.method==='eth_getLogs'){
    const filter={...request.params[0],fromBlock:Number(request.params[0].fromBlock),toBlock:Number(request.params[0].toBlock)};
    requests.push({from:filter.fromBlock,to:filter.toBlock,topic:filter.topics[0]});
-   if(filter.toBlock-filter.fromBlock+1>10){send(400,{error:{code:-32602,message:'eth_getLogs is limited to a 10 block range; https://archive.invalid/private-secret'}});return;}
+   if(filter.toBlock-filter.fromBlock+1>10){send(400,{error:{code:-32600,message:'eth_getLogs is limited to a 10 block range; https://archive.invalid/private-secret'}});return;}
    if(deniedFilter?.(filter)){send(400,{error:{code:-32600,message:'Unauthorized provider https://archive.invalid/private-secret'}});return;}
   }
   assert.ok(!['eth_sendTransaction','eth_sendRawTransaction'].includes(request.method),'Read-only probes must never broadcast');
