@@ -68,12 +68,13 @@ for name in sys.argv[1:]:
 PY
 }
 journals=("$state/journal.json" /var/lib/globaldroptrade/fresh-zero-automation-v1/journal.json /var/lib/globaldroptrade/automation-v1/journal.json /var/lib/globaldroptrade/oracle-maintenance-v1/journal.json)
-if [ "$mode" = --check ];then
- exec 6>"$state/run.lock";flock -n 6 || { echo 'ZERO_AUTOMATION_JOURNAL_IN_USE';exit 1; }
- journals_complete "${journals[@]}"
- node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet
- exit 0
-fi
+# Reject an unusable candidate without interrupting healthy existing services.
+# Execution repeats the entire proof after quiescing, under the stable journal.
+exec 6>"$state/run.lock";flock -n 6 || { echo 'ZERO_AUTOMATION_JOURNAL_IN_USE';exit 1; }
+journals_complete "${journals[@]}"
+node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet
+flock -u 6;exec 6>&-
+if [ "$mode" = --check ];then exit 0;fi
 for other in globaldroptrade-migration.service globaldroptrade-fresh-rewards.service globaldroptrade-automation.timer globaldroptrade-automation.service globaldroptrade-oracles.timer globaldroptrade-oracles.service;do
  load=$(systemctl show --property=LoadState --value "$other");active=$(systemctl show --property=ActiveState --value "$other")
  case "$load:$active" in loaded:inactive|loaded:failed|not-found:inactive|not-found:failed) ;; *) echo 'OTHER_SIGNER_WORKER_ACTIVE_OR_UNKNOWN';exit 1;; esac
@@ -104,6 +105,18 @@ try:
  c=json.load(open(sys.argv[1]));h=json.load(open(sys.argv[2]));before=json.load(open(sys.argv[3]));assert c==before and c['chainId']==97 and h.get('status')=='ok' and h.get('configured') is True
 except Exception:raise SystemExit('API_TARGET_OR_HEALTH_NOT_VERIFIED')
 PY
+}
+api_wait(){
+ local attempt
+ for attempt in 1 2 3 4 5 6 7 8;do
+  if curl -fsS --noproxy '*' --max-time 3 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/api/config -o "$1" && curl -fsS --noproxy '*' --max-time 3 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/api/health -o "$2";then
+   # A successful response with another identity is never treated as warmup.
+   api_check "$1" "$2" "$3";return $?
+  fi
+  [ "$attempt" -eq 8 ] || sleep 1
+ done
+ echo 'API_TARGET_HEALTH_UNAVAILABLE_AFTER_BOUNDED_WAIT'
+ return 1
 }
 https_read api/config "$backup/config.json";https_read api/health "$backup/health.json";api_check "$backup/config.json" "$backup/health.json" "$backup/config.json"
 : > "$backup/workers"
@@ -163,6 +176,7 @@ failed(){
  trap - ERR INT TERM
  set +e
  restored=0
+ env_restored=0
  quiesce
  safe=$?
  if [ "$may_have_run" -eq 0 ];then
@@ -182,12 +196,12 @@ os.replace(p,sys.argv[2]);parent=os.open(os.path.dirname(sys.argv[2]),os.O_RDONL
 try:os.fsync(parent)
 finally:os.close(parent)
 PY
-    [ "$?" -eq 0 ] || safe=1
+    if [ "$?" -eq 0 ];then env_restored=1;else safe=1;fi
    fi
   fi
   if [ "$safe" -eq 0 ];then
-   systemctl restart globaldroptrade-api.service || safe=1
-   https_read api/config "$backup/restored-config.json" && https_read api/health "$backup/restored-health.json" && api_check "$backup/restored-config.json" "$backup/restored-health.json" "$backup/config.json" || safe=1
+   if [ "$env_restored" -eq 1 ];then systemctl restart globaldroptrade-api.service || safe=1;fi
+   api_wait "$backup/restored-config.json" "$backup/restored-health.json" "$backup/config.json" || safe=1
    cmp -s "$backup/trades.env" "$envfile" && financial_snapshot verify && unchanged_installation || safe=1
   fi
   release_run_lock
@@ -229,7 +243,7 @@ const proof=Buffer.from(JSON.stringify({originalEnvSha256:sha(original),stagedEn
 const temporary=file+'.archive-rpc-'+process.pid;fd=fs.openSync(temporary,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,next);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temporary,file);const dir=fs.openSync(path.dirname(file),fs.constants.O_RDONLY);try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}
 JS
 systemctl restart globaldroptrade-api.service
-https_read api/config "$backup/candidate-config.json";https_read api/health "$backup/candidate-health.json";api_check "$backup/candidate-config.json" "$backup/candidate-health.json" "$backup/config.json"
+api_wait "$backup/candidate-config.json" "$backup/candidate-health.json" "$backup/config.json"
 financial_snapshot verify;unchanged_installation
 cmp -s "$backup/stage/trades.env" "$envfile"
 release_run_lock
@@ -237,12 +251,12 @@ release_run_lock
 may_have_run=1
 while IFS='|' read -r worker enabled active;do
  [ "$worker" = "$timer" ] || continue
- case "$enabled" in enabled) systemctl enable "$timer";; enabled-runtime) systemctl enable --runtime "$timer";; esac
+ case "$enabled" in enabled|disabled) systemctl enable "$timer";; enabled-runtime) systemctl enable --runtime "$timer";; esac
 done < "$backup/workers"
 systemctl start "$timer"
 systemctl start "$service"
 systemctl is-active --quiet "$timer"
-https_read api/config "$backup/final-config.json";https_read api/health "$backup/final-health.json";api_check "$backup/final-config.json" "$backup/final-health.json" "$backup/config.json"
+api_wait "$backup/final-config.json" "$backup/final-health.json" "$backup/config.json"
 cmp -s "$backup/stage/trades.env" "$envfile"
 https_read deploy/zero-start-activation.json "$backup/activation.json"
 # Advance only the same unfinished member-index pass, never another epoch.

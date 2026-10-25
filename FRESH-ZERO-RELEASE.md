@@ -383,6 +383,18 @@ bash ubuntu-zero-archive-rpc.sh --check
 bash ubuntu-zero-archive-rpc.sh --execute
 ```
 
+The candidate is first checked before any existing service is stopped. An
+`ARCHIVE_RPC_FULL_READINESS_REQUIRED` failure now reports only safe readiness
+blockers, archive probe results, funding readiness and operator gas status.
+At most three complete checks retry temporary archive/transport availability;
+an identity, funding, pending-state or canonical-history failure remains blocking.
+No incomplete archive result is accepted and no owed period is discarded.
+
+API startup is checked with bounded HTTP availability polling. An unchanged
+environment does not cause an unnecessary API restart during failure recovery.
+Successful explicit execution enables a managed timer left disabled by an older
+failed attempt, only after the new connection and API target pass verification.
+
 Preflight proves the same confirmed chain anchor, exact creation and current
 target identity, canonical completed journal, saved activation and unchanged
 period. It requires the actual owed-period archive state and historical

@@ -68,7 +68,7 @@ if args[0]=='prepare':
   try:fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:pass
   else:raise AssertionError('Staging requires the selected journal run lock')
- if mode in ['proof-fail','fork-fail','history-fail','logs-fail']:print('ARCHIVE_PROOF_REQUIRED');raise SystemExit(1)
+ if mode in ['proof-fail','fork-fail','history-fail','logs-fail'] or (mode=='stage-proof-fail' and args[0]=='--stage'):print('ARCHIVE_PROOF_REQUIRED');raise SystemExit(1)
  if args==['--check','--fast-testnet']:print('ARCHIVE_RPC_CHECKED');raise SystemExit(0)
  assert args[0]=='--stage' and args[2:]==['--fast-testnet']
  assert all(json.loads((p/'workers.json').read_text())[name]['active']=='inactive' for name in [@SERVICE@,@TIMER@])
@@ -92,6 +92,9 @@ elif args[0]=='systemctl':
  elif command=='disable':row['enabled']='disabled'
  elif command=='enable':row['enabled']='enabled-runtime' if '--runtime' in args else 'enabled'
  elif command=='restart':
+  count=int((p/'api-restarts').read_text())+1;(p/'api-restarts').write_text(str(count))
+  if mode=='transient-502' or (mode=='rollback-transient-502' and not new):(p/'http-warmup').write_text('2')
+  if mode=='permanent-502':(p/'http-warmup').write_text('99')
   if new and mode=='api-restart-fail':raise SystemExit(1)
  elif command=='start':
   if unit in [@SERVICE@,@TIMER@]:unlocked()
@@ -106,9 +109,13 @@ elif args[0]=='systemctl':
  (p/'workers.json').write_text(json.dumps(states))
 elif args[0]=='curl':
  args=args[1:];url=next(x for x in args if x.startswith('https://'));out=Path(args[args.index('-o')+1]);new=candidate in envfile.read_text();log('curl '+url.rsplit('/',1)[-1])
- if url.endswith('/api/config'):data={'version':1,'chainId':97,'vaultAddress':target}
+ if url.endswith('/api/config') or url.endswith('/api/health'):
+  if new and url.endswith('/api/config'):log('candidate-config-read')
+  left=int((p/'http-warmup').read_text())
+  if left>0:(p/'http-warmup').write_text(str(left-1));print('HTTP_502_WARMING',file=sys.stderr);raise SystemExit(22)
+ if url.endswith('/api/config'):data={'version':1,'chainId':97,'vaultAddress':'0x'+'11'*20 if new and mode=='wrong-target' else target}
  elif url.endswith('/api/health'):
-  fail=new and (mode=='api-health-fail' or (mode=='final-health-fail' and int((p/'worker-count').read_text())>0));data={'status':'bad' if fail else 'ok','configured':True}
+  fail=new and (mode in ['api-health-fail','rollback-transient-502'] or (mode=='final-health-fail' and int((p/'worker-count').read_text())>0));data={'status':'bad' if fail else 'ok','configured':True}
  elif url.endswith('/deploy/zero-start-activation.json'):
   if mode=='malformed-status':out.write_text('not-json');raise SystemExit(0)
   out.write_bytes((p/'activation.json').read_bytes());raise SystemExit(0)
@@ -120,7 +127,7 @@ else:raise AssertionError(args)
     shim = host/'shim.py';shim.write_text(template);shim.chmod(0o755)
     (host/'bin/node').write_text(f'#!/usr/bin/env bash\nif [ "${{1:-}}" = scripts/prepare-zero-archive-rpc.mjs ];then shift;exec "{shim}" prepare "$@";fi\nexec "{real_node}" "$@"\n')
     for name in ['systemctl', 'curl']:(host/'bin'/name).write_text(f'#!/usr/bin/env bash\nexec "{shim}" {name} "$@"\n')
-    (host/'bin/npm').write_text('#!/usr/bin/env bash\nexit 0\n')
+    (host/'bin/npm').write_text('#!/usr/bin/env bash\nexit 0\n');(host/'bin/sleep').write_text('#!/usr/bin/env bash\nexit 0\n')
     for p in (host/'bin').iterdir():p.chmod(0o755)
     (host/'api/current').symlink_to(host/'api/releases/current', target_is_directory=True)
     (host/'daily/current').symlink_to(host/'daily/releases/current', target_is_directory=True)
@@ -135,7 +142,7 @@ else:raise AssertionError(args)
         envfile.write_text(original_env);envfile.chmod(0o600);(state/'journal.json').write_text(json.dumps(baseline_journal));(state/'journal.json').chmod(0o600)
         (state/'daily-policy.json').write_text(json.dumps(baseline_policy));(state/'daily-policy.json').chmod(0o600)
         for p, data in protected.items():p.write_text(json.dumps(data));p.chmod(0o600)
-        (host/'workers.json').write_text(json.dumps(prior));(host/'calls').write_text('');(host/'worker-count').write_text('0');(host/'mode').write_text(mode)
+        (host/'workers.json').write_text(json.dumps(prior));(host/'calls').write_text('');(host/'worker-count').write_text('0');(host/'api-restarts').write_text('0');(host/'http-warmup').write_text('0');(host/'mode').write_text(mode)
         for root in ['fresh-zero-automation-v1','automation-v1','oracle-maintenance-v1']:
             path=host/'state'/root
             if path.exists():shutil.rmtree(path)
@@ -148,11 +155,22 @@ else:raise AssertionError(args)
     assert json.loads((state/'journal.json').read_text())['millionTestRewardGrant']==baseline_journal['millionTestRewardGrant']
     assert json.loads((host/'workers.json').read_text())[timer]==prior[timer]
     calls=(host/'calls').read_text();assert calls.index('systemctl stop '+timer)<calls.index('systemctl stop '+service);assert int((host/'worker-count').read_text())==1
-    for mode in ['proof-fail','fork-fail','history-fail','logs-fail','stage-hash-fail','stage-key-fail','readiness-fail','api-restart-fail','api-health-fail']:
+    for mode in ['proof-fail','fork-fail','history-fail','logs-fail']:
+        r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert envfile.read_text()==original_env;assert json.loads((host/'workers.json').read_text())==prior
+        assert 'systemctl stop ' not in (host/'calls').read_text() and 'systemctl restart ' not in (host/'calls').read_text(),(mode,r.stdout,r.stderr)
+    for mode in ['stage-proof-fail','stage-hash-fail','stage-key-fail','readiness-fail','api-restart-fail','api-health-fail','rollback-transient-502','wrong-target']:
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert envfile.read_text()==original_env,mode
         assert json.loads((state/'journal.json').read_text())==baseline_journal,mode
         assert json.loads((host/'workers.json').read_text())==prior,(mode,r.stdout,r.stderr)
         assert 'previousWorkersRestored=1' in r.stdout,(mode,r.stdout,r.stderr)
+    r=run('stage-proof-fail');assert r.returncode!=0;assert int((host/'api-restarts').read_text())==0;assert 'previousWorkersRestored=1' in r.stdout
+    r=run('transient-502');assert r.returncode==0,(r.stdout,r.stderr);assert int((host/'api-restarts').read_text())==1;assert candidate in envfile.read_text();assert 'HTTP_502_WARMING' in r.stderr
+    r=run('permanent-502');assert r.returncode!=0,(r.stdout,r.stderr);assert envfile.read_text()==original_env;assert 'previousWorkersRestored=0' in r.stdout
+    assert all(row['active']=='inactive' for row in json.loads((host/'workers.json').read_text()).values());assert (host/'calls').read_text().count('candidate-config-read')==8
+    r=run('wrong-target');assert r.returncode!=0 and (host/'calls').read_text().count('candidate-config-read')==1,(r.stdout,r.stderr)
+    reset();off=copy.deepcopy(prior);off[timer]={'enabled':'disabled','active':'inactive'};off[service]['active']='inactive';(host/'workers.json').write_text(json.dumps(off))
+    r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute'],cwd=source,env=env,text=True,capture_output=True,timeout=30)
+    assert r.returncode==0,(r.stdout,r.stderr);assert json.loads((host/'workers.json').read_text())[timer]=={'enabled':'enabled','active':'active'}
     for mode in ['worker-fail','timer-fail-after-run','final-health-fail','malformed-status']:
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert candidate in envfile.read_text(),mode
         assert 'workerMayHaveRun=1' in r.stdout,(mode,r.stdout,r.stderr)

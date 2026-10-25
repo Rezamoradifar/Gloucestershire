@@ -12,7 +12,7 @@ import {prepareZeroStartConnection} from '../scripts/connect-zero-start.mjs';
 import {verifyZeroStartReadiness} from '../scripts/zero-start-readiness.mjs';
 import {makeHourlyTestPolicy} from '../scripts/zero-start-hourly-test.mjs';
 import {blockAtTime} from '../scripts/daily-profit.mjs';
-import {prepareZeroArchiveRpc,renderZeroArchiveRpcEnvironment,writeZeroArchiveRpcStage,zeroArchiveRpcUrl} from '../scripts/prepare-zero-archive-rpc.mjs';
+import {prepareZeroArchiveRpc,renderZeroArchiveRpcEnvironment,writeZeroArchiveRpcStage,zeroArchiveRpcUrl,zeroArchiveReadinessSummary,zeroArchiveReadinessMaxAttempts} from '../scripts/prepare-zero-archive-rpc.mjs';
 
 const artifact=name=>JSON.parse(fs.readFileSync('artifacts/'+name+'.json'));
 const fast=JSON.parse(fs.readFileSync('config/fresh-fast-testnet.json'));
@@ -88,8 +88,61 @@ test('wrong network and a conflicting current canonical anchor refuse preparatio
 
 test('missing old account state or a changed current owner cannot qualify an archive candidate',async()=>{
  const accounts=vault.interface.getFunction('accounts').selector,owner=vault.interface.getFunction('owner').selector;
- await assert.rejects(prepare({candidate:readonly({call:async request=>{if(request.to===vault.target&&request.data.startsWith(accounts)&&blockNumber(request.blockTag)!==null&&blockNumber(request.blockTag)<=periodSnapshot.number)throw unavailable();return provider.call(request);}})}),/ARCHIVE_RPC_FULL_READINESS_REQUIRED/);
+ const waits=[];
+ await assert.rejects(prepare({availabilityWait:async ms=>waits.push(ms),candidate:readonly({call:async request=>{if(request.to===vault.target&&request.data.startsWith(accounts)&&blockNumber(request.blockTag)!==null&&blockNumber(request.blockTag)<=periodSnapshot.number)throw unavailable();return provider.call(request);}})}),error=>{
+  assert.equal(error.message,'ARCHIVE_RPC_FULL_READINESS_REQUIRED');assert.equal(error.readinessAttempts,zeroArchiveReadinessMaxAttempts);
+  const summary=error.readinessSummary;
+  assert.deepEqual(summary.blockers,['ARCHIVE_RPC_REQUIRED_FOR_PERIOD_START_PRINCIPAL']);assert.equal(summary.fundingReady,true);assert.equal(summary.operatorGasPositive,true);
+  const failed=summary.archive.probes.find(probe=>probe.purpose==='requested-period-start');
+  assert.equal(failed.requestedTimestamp,policy.startTimestamp);assert.equal(failed.block,periodSnapshot.number);assert.equal(failed.supported,false);assert.equal(failed.error,'HISTORICAL_CONTRACT_STATE_UNAVAILABLE');
+  assert.doesNotMatch(JSON.stringify(error),/private\.invalid|Never publish|credential|private-rpc-secret/);return true;
+ });
+ assert.deepEqual(waits,[250,500]);
  await assert.rejects(prepare({candidate:readonly({call:async request=>request.to===vault.target&&request.data===owner?vault.interface.encodeFunctionResult('owner',[addresses[7]]):provider.call(request)})}),/ZERO_START_CURRENT_OWNER_MISMATCH/);
+});
+
+test('readiness summaries retain actual safe reasons while excluding unknown strings and provider details',()=>{
+ const summary=zeroArchiveReadinessSummary({ready:false,blockers:['SERVER_OPERATOR_TEST_BNB_REQUIRED','https://private.invalid/secret'],funding:{ready:true,url:'private-rpc-secret'},operatorGas:{positive:false},archive:{status:'unavailable',fullyVerified:false,requiredRetentionSeconds:3600,probes:[{purpose:'requested-period-start',requestedTimestamp:policy.startTimestamp,block:periodSnapshot.number,supported:false,error:'HISTORICAL_CONTRACT_STATE_UNAVAILABLE',message:'Never publish private provider error'},{purpose:'secret credential',requestedTimestamp:'private',block:'private',error:'https://private.invalid/secret',supported:false}]}});
+ assert.deepEqual(summary.blockers,['SERVER_OPERATOR_TEST_BNB_REQUIRED','UNKNOWN_READINESS_BLOCKER']);assert.equal(summary.fundingReady,true);assert.equal(summary.operatorGasPositive,false);
+ assert.equal(summary.archive.probes[0].purpose,'requested-period-start');assert.equal(summary.archive.probes[1].purpose,'unknown');assert.equal(summary.archive.probes[1].requestedTimestamp,null);assert.equal(summary.archive.probes[1].block,null);assert.equal(summary.archive.probes[1].error,null);
+ assert.doesNotMatch(JSON.stringify(summary),/private|secret|credential|https|Never publish/);
+});
+
+test('a transient archive failure retries the same complete candidate proof without changing the unpaid period',async()=>{
+ const accounts=vault.interface.getFunction('accounts').selector,waits=[];let failed=false;
+ const candidate=readonly({call:async request=>{
+  if(!failed&&request.to===vault.target&&request.data.startsWith(accounts)&&blockNumber(request.blockTag)!==null&&blockNumber(request.blockTag)<=periodSnapshot.number){failed=true;throw unavailable();}
+  return provider.call(request);
+ }});
+ const result=await prepare({candidate,availabilityWait:async ms=>waits.push(ms)});
+ assert.equal(failed,true);assert.deepEqual(waits,[250]);assert.equal(result.stage.readinessAttempts,2);assert.equal(result.readiness.ready,true);assert.equal(result.stage.policySha256,hash(base.policyText));assert.equal(result.stage.journalSha256,hash(base.journalText));assert.equal(result.stage.period.startTimestamp,policy.startTimestamp);assert.equal(result.stage.period.epoch,0);
+});
+
+test('availability timeouts are bounded while funding, identity and fork failures are never retried as archive availability',async()=>{
+ let waits=0,attempts=0;
+ await assert.rejects(prepare({availabilityWait:async()=>{waits++;},candidate:readonly({getBlockNumber:async()=>{attempts++;throw Object.assign(Error('private timeout message'),{code:'TIMEOUT'});}})}),error=>error.code==='TIMEOUT');
+ assert.equal(attempts,zeroArchiveReadinessMaxAttempts);assert.equal(waits,zeroArchiveReadinessMaxAttempts-1);
+ const cash=vault.interface.getFunction('assetBalance').selector;
+ waits=0;
+ await assert.rejects(prepare({availabilityWait:async()=>{waits++;},candidate:readonly({call:async request=>request.to===vault.target&&request.data.startsWith(cash)?vault.interface.encodeFunctionResult('assetBalance',[0n]):provider.call(request)})}),error=>{
+  assert.equal(error.readinessAttempts,1);assert.equal(error.readinessSummary.fundingReady,false);assert.ok(error.readinessSummary.blockers.includes('FUNDED_DAILY_REWARD_BUDGET_REQUIRED'));return error.message==='ARCHIVE_RPC_FULL_READINESS_REQUIRED';
+ });
+ assert.equal(waits,0);
+ const owner=vault.interface.getFunction('owner').selector;
+ await assert.rejects(prepare({availabilityWait:async()=>{waits++;},candidate:readonly({call:async request=>request.to===vault.target&&request.data===owner?vault.interface.encodeFunctionResult('owner',[addresses[7]]):provider.call(request)})}),/ZERO_START_CURRENT_OWNER_MISMATCH/);assert.equal(waits,0);
+ let switched=false,failed=false;const anchor=(await provider.getBlockNumber())-3,accounts=vault.interface.getFunction('accounts').selector;
+ await assert.rejects(prepare({availabilityWait:async()=>{switched=true;},candidate:readonly({getBlock:async number=>{const block=await provider.getBlock(number);return switched&&number===anchor?{...block,hash:'0x'+'44'.repeat(32)}:block;},call:async request=>{if(!failed&&request.to===vault.target&&request.data.startsWith(accounts)&&blockNumber(request.blockTag)!==null&&blockNumber(request.blockTag)<=periodSnapshot.number){failed=true;throw unavailable();}return provider.call(request);}})}),/ARCHIVE_RPC_CURRENT_CHECKPOINT_REORG/);
+});
+
+test('a historical snapshot reorganization is fatal instead of being masked as retryable archive unavailability',async()=>{
+ const accounts=vault.interface.getFunction('accounts').selector;let oldAccountRead=false,waits=0;
+ const candidate=readonly({call:async request=>{
+  const result=await provider.call(request);
+  if(request.to===vault.target&&request.data.startsWith(accounts)&&blockNumber(request.blockTag)===periodSnapshot.number)oldAccountRead=true;
+  return result;
+ },getBlock:async number=>{const block=await provider.getBlock(number);return oldAccountRead&&number===periodSnapshot.number?{...block,hash:'0x'+'55'.repeat(32)}:block;}});
+ await assert.rejects(prepare({candidate,availabilityWait:async()=>{waits++;}}),/ARCHIVE_CHECKPOINT_REORG/);
+ assert.equal(oldAccountRead,true);assert.equal(waits,0);
 });
 
 test('historical registration logs are required even when the saved member index is already complete',async()=>{

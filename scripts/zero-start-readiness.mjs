@@ -45,7 +45,8 @@ async function archiveReadiness({provider,vault,report,token,checkpoint,policy,p
    await vault.ledgers(ZeroAddress,o);await vault.ledgers(token,o);
    if((await provider.getBlock(block.number))?.hash!==block.hash)throw Error('ARCHIVE_CHECKPOINT_REORG');
    probes.push({purpose:request.purpose,requestedTimestamp:request.timestamp,block:block.number,blockHash:block.hash,blockTimestamp:block.timestamp,supported:true});
-  }catch{
+  }catch(error){
+   if(error?.message==='ARCHIVE_CHECKPOINT_REORG')throw error;
    probes.push({purpose:request.purpose,requestedTimestamp:request.timestamp,block:block?.number??null,supported:false,error:'HISTORICAL_CONTRACT_STATE_UNAVAILABLE'});
   }
  }

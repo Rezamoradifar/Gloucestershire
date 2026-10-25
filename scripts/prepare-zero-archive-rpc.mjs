@@ -14,12 +14,43 @@ import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-
 import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy} from './daily-profit.mjs';
 
 export const zeroArchiveRpcUrl='https://bsc-testnet-rpc.publicnode.com';
+export const zeroArchiveReadinessMaxAttempts=3;
 const sha256=value=>createHash('sha256').update(value).digest('hex');
 const json=value=>JSON.stringify(value,null,2)+'\n';
 const retained=value=>Object.fromEntries(Object.entries(value).filter(([key])=>key!=='TRADES_RPC_URL').sort(([a],[b])=>a.localeCompare(b)));
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const hash=value=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
 const registry=new Interface(['event Registered(address indexed user,address indexed referrer)']);
+const readinessBlockers=new Set(['OWNER_UNPAUSE_REQUIRED','COUNCIL_AUTHORIZED_SERVER_REPORTER_REQUIRED','REPORTER_PROPOSAL_REQUIRED','REPORTER_PARTNER_VOTES_REQUIRED','REPORTER_DELAY_NOT_ELAPSED','REPORTER_ENABLE_EXECUTION_REQUIRED','FUNDED_DAILY_REWARD_BUDGET_REQUIRED','BNB_REWARD_BUDGET_REQUIRED','USDT_REWARD_BUDGET_REQUIRED','SERVER_OPERATOR_TEST_BNB_REQUIRED','ARCHIVE_RPC_REQUIRED_FOR_PERIOD_START_PRINCIPAL','ARCHIVE_RETENTION_NOT_YET_VERIFIABLE']);
+const archivePurposes=new Set(['previous-day-retention','previous-hour-retention','deployment-state','requested-period-start']);
+const archiveErrors=new Set(['HISTORICAL_CONTRACT_STATE_UNAVAILABLE','ARCHIVE_CHECKPOINT_REORG']);
+const positiveInteger=value=>Number.isSafeInteger(value)&&value>0?value:null;
+const waitForAvailability=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+// Explicit fields only: provider messages, URLs, credentials and calldata may
+// appear on RPC exceptions and must never become diagnostic report content.
+export function zeroArchiveReadinessSummary(readiness){
+ const archive=readiness?.archive;
+ return {ready:readiness?.ready===true,blockers:Array.isArray(readiness?.blockers)?[...new Set(readiness.blockers.slice(0,32).map(value=>readinessBlockers.has(value)?value:'UNKNOWN_READINESS_BLOCKER'))]:['UNKNOWN_READINESS_BLOCKER'],fundingReady:readiness?.funding?.ready===true,operatorGasPositive:readiness?.operatorGas?.positive===true,archive:{status:['supported','unavailable','provisional'].includes(archive?.status)?archive.status:'unknown',fullyVerified:archive?.fullyVerified===true,requiredRetentionSeconds:[3600,86400].includes(archive?.requiredRetentionSeconds)?archive.requiredRetentionSeconds:null,probes:Array.isArray(archive?.probes)?archive.probes.slice(0,16).map(probe=>({purpose:archivePurposes.has(probe?.purpose)?probe.purpose:'unknown',requestedTimestamp:positiveInteger(probe?.requestedTimestamp),block:positiveInteger(probe?.block),supported:probe?.supported===true,error:archiveErrors.has(probe?.error)?probe.error:null})):[]}};
+}
+
+function archiveAvailabilityOnly(readiness){
+ return readiness?.ready===false&&readiness.reporterAuthorized===true&&readiness.paused===false&&readiness.funding?.ready===true&&readiness.operatorGas?.positive===true&&readiness.archive?.status==='unavailable'&&Array.isArray(readiness.blockers)&&readiness.blockers.length>0&&readiness.blockers.every(value=>value==='ARCHIVE_RPC_REQUIRED_FOR_PERIOD_START_PRINCIPAL')&&Array.isArray(readiness.archive.probes)&&readiness.archive.probes.some(probe=>probe.supported===false&&probe.error==='HISTORICAL_CONTRACT_STATE_UNAVAILABLE');
+}
+
+function readinessRpcAvailability(error){
+ if(['NETWORK_ERROR','SERVER_ERROR','TIMEOUT'].includes(error?.code))return true;
+ const rpcCode=error?.info?.error?.code??error?.error?.code;
+ const method=error?.info?.payload?.method??error?.payload?.method;
+ return ['CALL_EXCEPTION','UNKNOWN_ERROR'].includes(error?.code)&&error?.data==null&&!error?.revert&&!error?.reason&&(error?.action==='call'||method==='eth_call')&&[-32603,-32000,-32002,-32005].includes(rpcCode);
+}
+
+function fullReadinessFailure(readiness,attempts){
+ const error=Error('ARCHIVE_RPC_FULL_READINESS_REQUIRED');
+ Object.defineProperty(error,'archiveReadiness',{value:readiness});
+ error.readinessSummary=zeroArchiveReadinessSummary(readiness);error.readinessAttempts=attempts;
+ return error;
+}
 
 export function renderZeroArchiveRpcEnvironment(original){
  if(typeof original!=='string'||original.includes('\0'))throw Error('ARCHIVE_RPC_ENVIRONMENT_REQUIRED');
@@ -46,7 +77,7 @@ function requireIdentity(state,target,policy){
 
 // Providers are injected for tests. The CLI constructs only the fixed public
 // candidate; all verified history remains a prerequisite, never a substitute.
-export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,original,deploymentText,connectionText,policyText,journalText,confirmations=3,proofProviders=[],assertCurrent=async()=>{},onPhase=()=>{}}){
+export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,original,deploymentText,connectionText,policyText,journalText,confirmations=3,proofProviders=[],assertCurrent=async()=>{},onPhase=()=>{},availabilityWait=waitForAvailability}){
  const c=validateZeroStartRelease(release);
  if(c.releaseId!=='global-fresh-fast-test-v1'||!c.testMode||!c.initialServerReporter)throw Error('ARCHIVE_RPC_EXPLICIT_FAST_PROFILE_REQUIRED');
  if(!Number.isSafeInteger(confirmations)||confirmations<3)throw Error('ARCHIVE_RPC_CONFIRMATIONS_REQUIRED');
@@ -67,9 +98,25 @@ export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,
  const peer=await candidate.getBlock(anchorBlock);
  if(!anchor||!peer||anchor.number!==anchorBlock||peer.number!==anchorBlock||!hash(anchor.hash)||anchor.hash!==peer.hash||anchor.timestamp!==peer.timestamp)throw Error('ARCHIVE_RPC_CURRENT_CHAIN_DISAGREEMENT');
  onPhase('DAILY_READINESS');
- const readiness=await verifyZeroStartReadiness({...options,provider:candidate,original:env,policy,hourlyTest:true,periodStartTimestamp:periodStart});
- for(const key of ['target','owner','operator','queue','hash','block','blockHash','artifactHash','initcodeHash','runtimeHash'])if(readiness[key]!==target[key])throw Error('ARCHIVE_RPC_CANDIDATE_IDENTITY_MISMATCH');
- if(!readiness.ready||readiness.archive?.fullyVerified!==true||!readiness.archive.probes.some(probe=>probe.requestedTimestamp===periodStart&&probe.supported))throw Error('ARCHIVE_RPC_FULL_READINESS_REQUIRED');
+ let readiness,readinessAttempts=0;
+ for(let attempt=1;attempt<=zeroArchiveReadinessMaxAttempts;attempt++){
+  readinessAttempts=attempt;
+  await assertCurrent();
+  if(attempt>1){
+   const [primaryAnchor,candidateAnchor]=await Promise.all([primary.getBlock(anchorBlock),candidate.getBlock(anchorBlock)]);
+   if(primaryAnchor?.hash!==anchor.hash||candidateAnchor?.hash!==anchor.hash)throw Error('ARCHIVE_RPC_CURRENT_CHECKPOINT_REORG');
+  }
+  try{
+   readiness=await verifyZeroStartReadiness({...options,provider:candidate,original:env,policy,hourlyTest:true,periodStartTimestamp:periodStart});
+  }catch(error){
+   if(attempt===zeroArchiveReadinessMaxAttempts||!readinessRpcAvailability(error))throw error;
+   await availabilityWait(attempt*250);continue;
+  }
+  for(const key of ['target','owner','operator','queue','hash','block','blockHash','artifactHash','initcodeHash','runtimeHash'])if(readiness[key]!==target[key])throw Error('ARCHIVE_RPC_CANDIDATE_IDENTITY_MISMATCH');
+  if(readiness.ready&&readiness.archive?.fullyVerified===true&&readiness.archive.probes.some(probe=>probe.requestedTimestamp===periodStart&&probe.supported))break;
+  if(attempt===zeroArchiveReadinessMaxAttempts||!archiveAvailabilityOnly(readiness))throw fullReadinessFailure(readiness,attempt);
+  await availabilityWait(attempt*250);
+ }
  await assertZeroStartJournalCanonical(candidate,state);
  const activation=await candidate.getBlock(state.activation.block);
  if(activation?.hash!==state.activation.blockHash||activation.timestamp!==policy.startTimestamp)throw Error('ARCHIVE_RPC_POLICY_CHECKPOINT_REORG');
@@ -89,7 +136,7 @@ export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,
  if(primaryAgain?.hash!==anchor.hash||candidateAgain?.hash!==anchor.hash)throw Error('ARCHIVE_RPC_CURRENT_CHECKPOINT_REORG');
  await assertCurrent();
  const readinessText=json(readiness);
- const stage={version:1,kind:'fresh-zero-archive-rpc-stage',chainId:97,releaseId:c.releaseId,target:target.target,owner:target.owner,operator:target.operator,queue:target.queue,hash:target.hash,runtimeHash:target.runtimeHash,artifactHash:target.artifactHash,initcodeHash:target.initcodeHash,candidateRpcUrl:zeroArchiveRpcUrl,originalEnvSha256:sha256(original),stagedEnvSha256:sha256(env),journalSha256:sha256(journalText),policySha256:sha256(policyText),deploymentSha256:sha256(deploymentText),connectionSha256:sha256(connectionText),readinessSha256:sha256(readinessText),anchor:{block:anchorBlock,blockHash:anchor.hash,timestamp:anchor.timestamp},period,ready:true,transactionsSent:0,signerOpened:false};
+ const stage={version:1,kind:'fresh-zero-archive-rpc-stage',chainId:97,releaseId:c.releaseId,target:target.target,owner:target.owner,operator:target.operator,queue:target.queue,hash:target.hash,runtimeHash:target.runtimeHash,artifactHash:target.artifactHash,initcodeHash:target.initcodeHash,candidateRpcUrl:zeroArchiveRpcUrl,originalEnvSha256:sha256(original),stagedEnvSha256:sha256(env),journalSha256:sha256(journalText),policySha256:sha256(policyText),deploymentSha256:sha256(deploymentText),connectionSha256:sha256(connectionText),readinessSha256:sha256(readinessText),anchor:{block:anchorBlock,blockHash:anchor.hash,timestamp:anchor.timestamp},period,readinessAttempts,ready:true,transactionsSent:0,signerOpened:false};
  return {env,stage,readiness,readinessText};
 }
 
@@ -135,7 +182,8 @@ async function main(){
   console.log(mode==='--stage'?'ZERO_ARCHIVE_RPC_STAGED':'ZERO_ARCHIVE_RPC_CHECKED');console.log(JSON.stringify(result.stage));
  }catch(error){
   const blocker=/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message||'')?error.message:'ARCHIVE_RPC_READ_ONLY_VERIFICATION_FAILED';
-  console.log('ZERO_ARCHIVE_RPC_PREPARATION_FAILED');console.log(JSON.stringify({version:1,kind:'fresh-zero-archive-rpc-stage-error',blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase}),transactionsSent:0,signerOpened:false}));process.exitCode=1;
+  const detail=error?.message==='ARCHIVE_RPC_FULL_READINESS_REQUIRED'&&error.archiveReadiness?{readinessSummary:zeroArchiveReadinessSummary(error.archiveReadiness),readinessAttempts:Number.isSafeInteger(error.readinessAttempts)&&error.readinessAttempts>=1&&error.readinessAttempts<=zeroArchiveReadinessMaxAttempts?error.readinessAttempts:null}:{};
+  console.log('ZERO_ARCHIVE_RPC_PREPARATION_FAILED');console.log(JSON.stringify({version:1,kind:'fresh-zero-archive-rpc-stage-error',blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase}),...detail,transactionsSent:0,signerOpened:false}));process.exitCode=1;
  }finally{primary?.destroy();candidate?.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
 let invoked;
