@@ -383,6 +383,34 @@ bash ubuntu-zero-archive-rpc.sh --check
 bash ubuntu-zero-archive-rpc.sh --execute
 ```
 
+If the public candidate reports unavailable historical state on the affected
+server, select a BNB Smart Chain Testnet (chain 97) archive endpoint explicitly.
+Enter its full HTTPS URL at the hidden terminal prompt, then run the same proof
+and repair with the private file:
+
+```bash
+python3 scripts/save-zero-archive-rpc.py
+bash ubuntu-zero-archive-rpc.sh --execute --candidate-file /etc/globaldroptrade/archive-rpc-url
+```
+
+The input helper requires an interactive terminal and root. It validates the
+single HTTPS URL and writes it atomically with mode 0600, preserving a private
+copy of a replaced input. It never echoes the URL or places its credentials in
+shell history. Do not put a URL in command arguments or post an API key in chat.
+The endpoint must actually prove the original unpaid snapshot; a provider's
+archive label or a successful current-state query is insufficient. The same
+command with `--check` performs verification without applying the connection.
+
+Without `--candidate-file`, the existing fixed public candidate remains the only
+choice. No local file is selected implicitly. With the flag, a root-owned regular
+0600 UTF-8 file is required. A URL fingerprint and the hash of its exact file
+bytes bind precheck, staging and application; a changed file blocks the switch.
+Stage reports include only this fingerprint metadata, never the candidate URL.
+The URL appears only in private input/environment/backup files. The private
+candidate still passes every chain, creation, runtime, journal, canonical-history,
+funding and original-period proof before the worker can start. No provider is
+silently substituted and no new funding grant or deployment is performed.
+
 The candidate is first checked before any existing service is stopped. An
 `ARCHIVE_RPC_FULL_READINESS_REQUIRED` failure now reports only safe readiness
 blockers, archive probe results, funding readiness and operator gas status.

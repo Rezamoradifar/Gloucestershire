@@ -3,7 +3,19 @@
 set +x
 set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
-case "$#:${1:-}" in 1:--check|1:--execute) mode=$1;; *) echo 'Usage: bash ubuntu-zero-archive-rpc.sh --check|--execute'; exit 1;; esac
+mode=''
+candidate_file=''
+usage(){ echo 'Usage: bash ubuntu-zero-archive-rpc.sh --check|--execute [--candidate-file /PRIVATE/FILE]';exit 1; }
+while [ "$#" -gt 0 ];do
+ case "$1" in
+  --check|--execute) [ -z "$mode" ] || usage;mode=$1;shift;;
+  --candidate-file) [ -z "$candidate_file" ] && [ "$#" -ge 2 ] || usage;case "$2" in /*) candidate_file=$2;; *) usage;; esac;shift 2;;
+  *) usage;;
+ esac
+done
+[ -n "$mode" ] || usage
+candidate_args=()
+if [ -n "$candidate_file" ];then candidate_args=(--candidate-file "$candidate_file");fi
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root'; exit 1; }
 case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) exit 1;; esac
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
@@ -47,6 +59,18 @@ exec 9>"$connection/run.lock";flock -n 9 || { echo 'ZERO_CONNECTION_ALREADY_RUNN
 exec 8>"$directory/setup.lock";flock -n 8 || { echo 'ZERO_ORACLE_REPAIR_ALREADY_RUNNING';exit 1; }
 exec 7>"$state/setup.lock";flock -n 7 || { echo 'ZERO_AUTOMATION_SETUP_ALREADY_RUNNING';exit 1; }
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+candidate_proof=$(mktemp "$directory/candidate-proof.XXXXXX")
+trap 'rm -f -- "$candidate_proof"' EXIT
+node --input-type=module - "$candidate_file" "$candidate_proof" <<'JS'
+import fs from 'node:fs';import {readZeroArchiveCandidate} from './scripts/zero-archive-candidate.mjs';
+const selected=readZeroArchiveCandidate(process.argv[2]||undefined);selected.assertCurrent();const fd=fs.openSync(process.argv[3],fs.constants.O_WRONLY|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW);try{fs.writeFileSync(fd,JSON.stringify(selected.proof)+'\n');fs.fchmodSync(fd,0o600);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+JS
+check_candidate(){
+ node --input-type=module - "$candidate_file" "$candidate_proof" <<'JS'
+import fs from 'node:fs';import {readZeroArchiveCandidate} from './scripts/zero-archive-candidate.mjs';
+const selected=readZeroArchiveCandidate(process.argv[2]||undefined);if(JSON.stringify(selected.proof)!==fs.readFileSync(process.argv[3],'utf8').trim())throw Error('ARCHIVE_RPC_CANDIDATE_CHANGED_SINCE_PRECHECK');selected.assertCurrent();
+JS
+}
 journals_complete(){
  python3 - "$@" <<'PY'
 import json,os,stat,sys
@@ -72,7 +96,8 @@ journals=("$state/journal.json" /var/lib/globaldroptrade/fresh-zero-automation-v
 # Execution repeats the entire proof after quiescing, under the stable journal.
 exec 6>"$state/run.lock";flock -n 6 || { echo 'ZERO_AUTOMATION_JOURNAL_IN_USE';exit 1; }
 journals_complete "${journals[@]}"
-node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet
+node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}"
+check_candidate
 flock -u 6;exec 6>&-
 if [ "$mode" = --check ];then exit 0;fi
 for other in globaldroptrade-migration.service globaldroptrade-fresh-rewards.service globaldroptrade-automation.timer globaldroptrade-automation.service globaldroptrade-oracles.timer globaldroptrade-oracles.service;do
@@ -215,6 +240,7 @@ PY
  echo 'Financial journals and confirmed transactions were preserved. Retry the same command.'
  exit 1
 }
+check_candidate
 trap failed ERR INT TERM
 quiesce
 exec 6>"$state/run.lock"
@@ -223,22 +249,26 @@ run_locked=1
 journals_complete "${journals[@]}"
 financial_snapshot create;financial_ready=1
 cmp -s "$backup/trades.env" "$envfile"
-node scripts/prepare-zero-archive-rpc.mjs --stage "$backup/stage" --fast-testnet
+check_candidate
+node scripts/prepare-zero-archive-rpc.mjs --stage "$backup/stage" --fast-testnet "${candidate_args[@]}"
+check_candidate
 financial_snapshot verify;unchanged_installation
-node --input-type=module - "$envfile" "$backup/trades.env" "$backup/stage" "$state" "$deployment" "$backup/config.json" "$backup/apply-verified.json" <<'JS'
-import fs from 'node:fs';import path from 'node:path';import {createHash} from 'node:crypto';import {parseEnv} from 'node:util';
-const [file,backup,stage,state,deployment,configFile,marker]=process.argv.slice(2),candidate='https://bsc-testnet-rpc.publicnode.com';
+node --input-type=module - "$envfile" "$backup/trades.env" "$backup/stage" "$state" "$deployment" "$backup/config.json" "$backup/apply-verified.json" "$candidate_file" "$candidate_proof" <<'JS'
+import fs from 'node:fs';import path from 'node:path';import {createHash} from 'node:crypto';import {parseEnv} from 'node:util';import {readZeroArchiveCandidate} from './scripts/zero-archive-candidate.mjs';
+const [file,backup,stage,state,deployment,configFile,marker,candidateFile,expectedProofFile]=process.argv.slice(2),selection=readZeroArchiveCandidate(candidateFile||undefined),candidate=selection.url;
 const read=file=>{const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);try{const s=fs.fstatSync(fd);if(!s.isFile()||s.uid!==0||(s.mode&0o077)!==0||s.size>16*1024*1024)throw Error('PRIVATE_RPC_STAGE_REQUIRED');return fs.readFileSync(fd);}finally{fs.closeSync(fd);}};
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const original=read(file),saved=read(backup),next=read(stage+'/trades.env'),report=JSON.parse(read(stage+'/archive-rpc-stage.json')),ready=JSON.parse(read(stage+'/readiness.json'));
 const old=parseEnv(original.toString()),after=parseEnv(next.toString()),config=JSON.parse(read(configFile)),c=JSON.parse(fs.readFileSync('config/fresh-fast-testnet.json','utf8'));
+if(JSON.stringify(selection.proof)!==JSON.stringify(JSON.parse(read(expectedProofFile)))||JSON.stringify(report.candidate)!==JSON.stringify(selection.proof))throw Error('ARCHIVE_RPC_CANDIDATE_CHANGED_SINCE_PRECHECK');selection.assertCurrent();
 const expected=old.TRADES_RPC_URL===candidate?original.toString():original.toString()+(original.toString().endsWith('\n')?'':'\n')+'TRADES_RPC_URL="'+candidate+'"\n';
 if(!original.equals(saved)||next.toString()!==expected||after.TRADES_RPC_URL!==candidate||old.TRADES_CHAIN_ID!=='97'||old.TRADES_ZERO_START_PROFILE!==c.releaseId||after.TRADES_CHAIN_ID!=='97'||after.TRADES_ZERO_START_PROFILE!==c.releaseId)throw Error('RPC_ONLY_ENV_CHANGE_REQUIRED');
 const rest=e=>JSON.stringify(Object.fromEntries(Object.entries(e).filter(([key])=>key!=='TRADES_RPC_URL').sort(([a],[b])=>a.localeCompare(b))));
-if(rest(old)!==rest(after)||report.version!==1||report.kind!=='fresh-zero-archive-rpc-stage'||report.chainId!==97||report.releaseId!==c.releaseId||report.candidateRpcUrl!==candidate||report.ready!==true||report.transactionsSent!==0||report.signerOpened!==false||report.originalEnvSha256!==sha(original)||report.stagedEnvSha256!==sha(next)||report.owner!==c.owner||report.operator!==c.deployer||report.artifactHash!==c.artifactHash)throw Error('VERIFIED_ARCHIVE_RPC_STAGE_REQUIRED');
+if(rest(old)!==rest(after)||report.version!==1||report.kind!=='fresh-zero-archive-rpc-stage'||report.chainId!==97||report.releaseId!==c.releaseId||report.ready!==true||report.transactionsSent!==0||report.signerOpened!==false||report.originalEnvSha256!==sha(original)||report.stagedEnvSha256!==sha(next)||report.owner!==c.owner||report.operator!==c.deployer||report.artifactHash!==c.artifactHash)throw Error('VERIFIED_ARCHIVE_RPC_STAGE_REQUIRED');
 if(config.chainId!==97||typeof config.vaultAddress!=='string'||config.vaultAddress.toLowerCase()!==report.target.toLowerCase()||old.TRADES_VAULT_ADDRESS.toLowerCase()!==report.target.toLowerCase()||ready.ready!==true||ready.chainId!==97||ready.target.toLowerCase()!==report.target.toLowerCase()||ready.archive?.fullyVerified!==true||ready.archive?.requiredRetentionSeconds!==3600||ready.allocationPeriodSeconds!==3600||report.period?.periodSeconds!==3600||!Number.isSafeInteger(report.period?.epoch)||report.period.epoch<0||!Number.isSafeInteger(report.anchor?.block)||report.anchor.block<1)throw Error('CURRENT_HOURLY_ARCHIVE_PROOF_REQUIRED');
 for(const [name,directory,key]of[['journal.json',state,'journalSha256'],['daily-policy.json',state,'policySha256'],['deployment-public.json',deployment,'deploymentSha256'],['connection-public.json',deployment,'connectionSha256']])if(sha(read(directory+'/'+name))!==report[key])throw Error('RPC_REPAIR_INPUT_CHANGED');
 if(report.readinessSha256!==sha(read(stage+'/readiness.json')))throw Error('RPC_READINESS_STAGE_CHANGED');
+selection.assertCurrent();
 const proof=Buffer.from(JSON.stringify({originalEnvSha256:sha(original),stagedEnvSha256:sha(next)})+'\n');let fd=fs.openSync(marker,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,proof);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
 const temporary=file+'.archive-rpc-'+process.pid;fd=fs.openSync(temporary,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,next);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temporary,file);const dir=fs.openSync(path.dirname(file),fs.constants.O_RDONLY);try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}
 JS

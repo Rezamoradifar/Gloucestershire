@@ -13,6 +13,7 @@ import {verifyZeroStartReadiness} from '../scripts/zero-start-readiness.mjs';
 import {makeHourlyTestPolicy} from '../scripts/zero-start-hourly-test.mjs';
 import {blockAtTime} from '../scripts/daily-profit.mjs';
 import {prepareZeroArchiveRpc,renderZeroArchiveRpcEnvironment,writeZeroArchiveRpcStage,zeroArchiveRpcUrl,zeroArchiveReadinessSummary,zeroArchiveReadinessMaxAttempts} from '../scripts/prepare-zero-archive-rpc.mjs';
+import {readZeroArchiveCandidate,validateZeroArchiveCandidateUrl} from '../scripts/zero-archive-candidate.mjs';
 
 const artifact=name=>JSON.parse(fs.readFileSync('artifacts/'+name+'.json'));
 const fast=JSON.parse(fs.readFileSync('config/fresh-fast-testnet.json'));
@@ -61,7 +62,7 @@ test('a candidate with the original unpaid-period archive prepares the same targ
  }}),artifact:base.artifact,release,deploymentReport:JSON.parse(base.deploymentText),connectionReport:JSON.parse(base.connectionText),original:base.original,policy,hourlyTest:true,periodStartTimestamp:policy.startTimestamp,confirmations:3});
  assert.equal(old.ready,false);assert.equal(old.archive.status,'unavailable');assert.ok(old.archive.probes.some(probe=>probe.purpose==='previous-hour-retention'&&probe.supported));
  const result=await prepare();assert.equal(result.stage.ready,true);assert.equal(result.stage.target,vault.target);assert.equal(result.stage.period.epoch,0);assert.equal(result.stage.period.startTimestamp,policy.startTimestamp);assert.equal(result.stage.period.periodSeconds,3600);
- assert.equal(result.stage.candidateRpcUrl,zeroArchiveRpcUrl);assert.equal(result.stage.transactionsSent,0);assert.equal(result.stage.signerOpened,false);
+ assert.deepEqual(result.stage.candidate,readZeroArchiveCandidate().proof);assert.equal(Object.hasOwn(result.stage,'candidateRpcUrl'),false);assert.equal(result.stage.transactionsSent,0);assert.equal(result.stage.signerOpened,false);
  assert.equal(result.stage.originalEnvSha256,hash(base.original));assert.equal(result.stage.stagedEnvSha256,hash(result.env));assert.equal(result.stage.journalSha256,hash(base.journalText));assert.equal(result.stage.policySha256,hash(base.policyText));
  assert.equal(result.readiness.ready,true);assert.equal(result.readiness.archive.fullyVerified,true);assert.ok(result.readiness.archive.probes.some(probe=>probe.requestedTimestamp===policy.startTimestamp&&probe.supported));
  assert.equal(result.stage.period.historicalLogProbe.fromBlock,JSON.parse(base.connectionText).block);assert.ok(result.stage.period.historicalLogProbe.count>=1);
@@ -190,4 +191,71 @@ test('private output contains only the verified staged environment and proof, wi
 test('invalid CLI arguments fail before opening configuration or a signer',()=>{
  const result=spawnSync(process.execPath,['scripts/prepare-zero-archive-rpc.mjs','--check','--fast-testnet','unexpected'],{encoding:'utf8',timeout:15000});
  assert.equal(result.status,1);assert.match(result.stdout,/USAGE_ROOT_FAST_CHECK_OR_STAGE_PRIVATE_OUTPUT_REQUIRED/);assert.match(result.stdout,/"signerOpened":false/);assert.equal(result.stderr,'');
+});
+
+test('an explicitly selected private candidate preserves its exact URL and exposes only URL/file hashes',async()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'global-private-archive-'));
+ try{
+  const file=path.join(directory,'candidate'),url='https://archive.example.invalid:443/v3/PrivateKeyCase?key=private-candidate-secret&network=97';
+  const bytes=url+'\n';fs.writeFileSync(file,bytes,{mode:0o600});
+  const selected=readZeroArchiveCandidate(file);assert.equal(selected.url,url);assert.deepEqual(selected.proof,{kind:'private',sha256:hash(url),fileSha256:hash(bytes)});selected.assertCurrent();
+  const result=await prepare({candidateUrl:selected.url,candidateProof:selected.proof,assertCurrent:async()=>selected.assertCurrent()});
+  assert.deepEqual(result.stage.candidate,selected.proof);assert.equal(Object.hasOwn(result.stage,'candidateRpcUrl'),false);assert.equal(parseEnv(result.env).TRADES_RPC_URL,url);
+  assert.equal(result.env,base.original+'TRADES_RPC_URL="'+url+'"\n');
+  assert.equal(result.stage.policySha256,hash(base.policyText));assert.equal(result.stage.journalSha256,hash(base.journalText));assert.equal(result.stage.period.epoch,0);
+  assert.doesNotMatch(JSON.stringify(result.stage)+result.readinessText,/private-candidate-secret|archive\.example|PrivateKeyCase|https:\/\//);
+  const output=path.join(directory,'stage');writeZeroArchiveRpcStage(output,result);
+  assert.equal(fs.readFileSync(path.join(output,'trades.env'),'utf8'),result.env);assert.equal(fs.statSync(path.join(output,'trades.env')).mode&0o777,0o600);
+  assert.doesNotMatch(fs.readFileSync(path.join(output,'archive-rpc-stage.json'),'utf8'),/private-candidate-secret|archive\.example|https:\/\//);
+ }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
+
+test('private candidate files require exact private ownership/mode, one UTF-8 HTTPS URL and a stable raw-file hash',()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'global-candidate-validation-'));
+ try{
+  const file=path.join(directory,'candidate'),url='https://archive.example.invalid/path?token=case-sensitive-secret';
+  for(const suffix of ['', '\n', '\r\n']){fs.writeFileSync(file,url+suffix,{mode:0o600});fs.chmodSync(file,0o600);const candidate=readZeroArchiveCandidate(file);assert.equal(candidate.url,url);assert.equal(candidate.proof.fileSha256,hash(url+suffix));}
+  const selected=readZeroArchiveCandidate(file);fs.writeFileSync(file,url+'\n');assert.throws(()=>selected.assertCurrent(),/ARCHIVE_RPC_CANDIDATE_FILE_CHANGED/);
+  fs.chmodSync(file,0o644);assert.throws(()=>readZeroArchiveCandidate(file),/ARCHIVE_RPC_PRIVATE_CANDIDATE_FILE_REQUIRED/);fs.chmodSync(file,0o600);
+  const link=path.join(directory,'link');fs.symlinkSync(file,link);assert.throws(()=>readZeroArchiveCandidate(link),/ARCHIVE_RPC_PRIVATE_CANDIDATE_FILE_REQUIRED/);
+  const fifo=path.join(directory,'fifo');assert.equal(spawnSync('mkfifo',['-m','600',fifo],{encoding:'utf8',timeout:5000}).status,0);assert.throws(()=>readZeroArchiveCandidate(fifo),/ARCHIVE_RPC_PRIVATE_CANDIDATE_FILE_REQUIRED/);
+  assert.throws(()=>readZeroArchiveCandidate('relative-candidate'),/ARCHIVE_RPC_ABSOLUTE_CANDIDATE_FILE_REQUIRED/);
+  for(const value of ['',url+'\n\n',url+'\n'+url,'http://archive.example.invalid/key','https://user:secret@archive.example.invalid','https://@archive.example.invalid','https://archive.example.invalid/#','https://archive.example.invalid/#secret','https://archive.example.invalid/path key','https://archive.example.invalid/"key','https://archive.example.invalid/\'key','https://archive.example.invalid/\\key']){
+   fs.writeFileSync(file,value);assert.throws(()=>readZeroArchiveCandidate(file),error=>/^ARCHIVE_RPC_/.test(error.message)&&!error.message.includes('secret'));
+  }
+  fs.writeFileSync(file,Buffer.from([0xff,0xfe]));assert.throws(()=>readZeroArchiveCandidate(file),/ARCHIVE_RPC_UTF8_CANDIDATE_FILE_REQUIRED/);
+  fs.writeFileSync(file,'https://archive.example.invalid/'+('a'.repeat(16384)));assert.throws(()=>readZeroArchiveCandidate(file),/ARCHIVE_RPC_PRIVATE_CANDIDATE_FILE_REQUIRED/);
+  assert.equal(readZeroArchiveCandidate().url,zeroArchiveRpcUrl);assert.equal(readZeroArchiveCandidate().proof.kind,'public');assert.equal(readZeroArchiveCandidate().proof.fileSha256,null);
+ }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
+
+test('candidate URL validation and metadata mismatch never leak a private endpoint or weaken proof requirements',async()=>{
+ const url='https://archive.example.invalid/v3/private-candidate-secret',proof={kind:'private',sha256:hash(url),fileSha256:hash(url+'\n')};
+ assert.equal(validateZeroArchiveCandidateUrl(url),url);
+ assert.throws(()=>validateZeroArchiveCandidateUrl('https://archive.example.invalid/\u0081'),/ARCHIVE_RPC_HTTPS_CANDIDATE_REQUIRED/);
+ await assert.rejects(prepare({candidateUrl:url}),/ARCHIVE_RPC_CANDIDATE_PROOF_REQUIRED/);
+ await assert.rejects(prepare({candidateUrl:url,candidateProof:{...proof,sha256:hash('other')}}),/ARCHIVE_RPC_CANDIDATE_PROOF_REQUIRED/);
+ await assert.rejects(prepare({candidateUrl:url,candidateProof:{...proof,kind:'public',fileSha256:null}}),/ARCHIVE_RPC_CANDIDATE_PROOF_REQUIRED/);
+ const result=await prepare({candidateUrl:url,candidateProof:proof});
+ const broken={...result,stage:{...result.stage,candidate:{...proof,sha256:hash('other')}}};
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'global-candidate-proof-'));
+ try{assert.throws(()=>writeZeroArchiveRpcStage(directory,broken),/ARCHIVE_RPC_CANDIDATE_PROOF_REQUIRED|ARCHIVE_RPC_VERIFIED_STAGE_REQUIRED/);assert.deepEqual(fs.readdirSync(directory),[]);}finally{fs.rmSync(directory,{recursive:true,force:true});}
+ const accounts=vault.interface.getFunction('accounts').selector;
+ await assert.rejects(prepare({candidateUrl:url,candidateProof:proof,availabilityWait:async()=>{},candidate:readonly({call:async request=>{if(request.to===vault.target&&request.data.startsWith(accounts)&&blockNumber(request.blockTag)!==null&&blockNumber(request.blockTag)<=periodSnapshot.number)throw unavailable();return provider.call(request);}})}),error=>{
+  assert.equal(error.message,'ARCHIVE_RPC_FULL_READINESS_REQUIRED');assert.equal(error.readinessAttempts,zeroArchiveReadinessMaxAttempts);assert.doesNotMatch(JSON.stringify(error),/private-candidate-secret|archive\.example/);return true;
+ });
+});
+
+test('candidate-file changes during verification block the result and CLI errors redact the file contents',async()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'global-candidate-race-'));
+ try{
+  const file=path.join(directory,'candidate'),url='https://archive.example.invalid/v3/private-candidate-secret';fs.writeFileSync(file,url+'\n',{mode:0o600});
+  const selected=readZeroArchiveCandidate(file);fs.writeFileSync(file,url+'?changed=1\n');
+  await assert.rejects(prepare({candidateUrl:selected.url,candidateProof:selected.proof,assertCurrent:async()=>selected.assertCurrent()}),/ARCHIVE_RPC_CANDIDATE_FILE_CHANGED/);
+  fs.writeFileSync(file,'https://archive.example.invalid/invalid private-candidate-secret\n');
+  const result=spawnSync(process.execPath,['scripts/prepare-zero-archive-rpc.mjs','--check','--fast-testnet','--candidate-file',file],{encoding:'utf8',timeout:15000});
+  assert.equal(result.status,1);assert.match(result.stdout,/ARCHIVE_RPC_HTTPS_CANDIDATE_REQUIRED/);assert.doesNotMatch(result.stdout+result.stderr,/private-candidate-secret|archive\.example/);assert.equal(result.stderr,'');
+  const duplicate=spawnSync(process.execPath,['scripts/prepare-zero-archive-rpc.mjs','--check','--fast-testnet','--candidate-file',file,'--candidate-file',file],{encoding:'utf8',timeout:15000});
+  assert.equal(duplicate.status,1);assert.match(duplicate.stdout,/ARCHIVE_RPC_ABSOLUTE_CANDIDATE_FILE_REQUIRED/);assert.doesNotMatch(duplicate.stdout+duplicate.stderr,/private-candidate-secret/);
+ }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });

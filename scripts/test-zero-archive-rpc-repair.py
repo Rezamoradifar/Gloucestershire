@@ -31,17 +31,20 @@ with tempfile.TemporaryDirectory() as directory:
         script = script.replace(original, str(replacement))
     (source/'ubuntu-zero-archive-rpc.sh').write_text(script)
     shutil.copy(repo/'config/fresh-fast-testnet.json', source/'config/fresh-fast-testnet.json')
+    shutil.copy(repo/'scripts/zero-archive-candidate.mjs', source/'scripts/zero-archive-candidate.mjs')
     state = host/'state/fresh-fast-testnet-automation-v1'
     deployment = host/'state/fresh-fast-testnet-v1'
     envfile = host/'etc/globaldroptrade/trades.env'
     secret = 'https://private.invalid/never-print-this-key'
+    private_url = 'https://archive.invalid/private-api-key-never-print'
+    candidate_file = host/'etc/globaldroptrade/archive-rpc-url'
     original_env = f'TRADES_CHAIN_ID=97\nTRADES_RPC_URL="{secret}"\nTRADES_VAULT_ADDRESS={target}\nTRADES_ZERO_START_PROFILE=global-fresh-fast-test-v1\nGLOBAL_MIGRATION_ENABLED=false\nUNCHANGED_SETTING="preserve this value"\n'
     baseline_journal = {'transactions': {'confirmed': {'block': 42, 'hash': 'fixed-confirmed', 'maxFee': '17'}}, 'daily': {'epoch': 0}, 'millionTestRewardGrant': {'completed': True}}
     baseline_policy = {'periodSeconds': 3600, 'startTimestamp': 1000, 'testMode': True}
     template = r'''#!@PYTHON@
 import fcntl,hashlib,json,os,sys
 from pathlib import Path
-p=Path(@HOST@);args=sys.argv[1:];mode=(p/'mode').read_text();state=p/'state/fresh-fast-testnet-automation-v1';envfile=p/'etc/globaldroptrade/trades.env';candidate='https://bsc-testnet-rpc.publicnode.com';target=@TARGET@
+p=Path(@HOST@);args=sys.argv[1:];mode=(p/'mode').read_text();state=p/'state/fresh-fast-testnet-automation-v1';envfile=p/'etc/globaldroptrade/trades.env';candidate=(p/'active-candidate-url').read_text() if (p/'active-candidate-url').exists() else 'https://bsc-testnet-rpc.publicnode.com';target=@TARGET@
 def log(value):
  with (p/'calls').open('a') as f:f.write(value+'\n')
 def unlocked():
@@ -63,25 +66,35 @@ def activation(count):
  if mode=='pending-diagnostic':a['diagnostic']={'pendingSignedTransaction':True,'pendingFinancialTransaction':True}
  (p/'activation.json').write_text(json.dumps(v))
 if args[0]=='prepare':
- args=args[1:];log('prepare '+' '.join(args))
+ args=args[1:];log('prepare '+' '.join(args));file=None
+ if '--candidate-file' in args:
+  index=args.index('--candidate-file');file=Path(args[index+1]);del args[index:index+2];raw=file.read_bytes();text=raw.decode('utf8');candidate=text[:-2] if text.endswith('\r\n') else text[:-1] if text.endswith('\n') else text
+  (p/'active-candidate-url').write_text(candidate);(p/'active-candidate-url').chmod(0o600)
+ else:raw=None
+ selected={'kind':'private' if file else 'public','sha256':hashlib.sha256(candidate.encode()).hexdigest(),'fileSha256':hashlib.sha256(raw).hexdigest() if raw is not None else None}
  with (state/'run.lock').open('a') as f:
   try:fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:pass
   else:raise AssertionError('Staging requires the selected journal run lock')
  if mode in ['proof-fail','fork-fail','history-fail','logs-fail'] or (mode=='stage-proof-fail' and args[0]=='--stage'):print('ARCHIVE_PROOF_REQUIRED');raise SystemExit(1)
- if args==['--check','--fast-testnet']:print('ARCHIVE_RPC_CHECKED');raise SystemExit(0)
+ if args==['--check','--fast-testnet']:
+  if file and mode=='candidate-check-change':file.write_text(candidate+'?changed=1\n')
+  if file and mode=='candidate-check-newline-change':file.write_bytes((candidate+'\r\n').encode())
+  print('ARCHIVE_RPC_CHECKED');raise SystemExit(0)
  assert args[0]=='--stage' and args[2:]==['--fast-testnet']
  assert all(json.loads((p/'workers.json').read_text())[name]['active']=='inactive' for name in [@SERVICE@,@TIMER@])
  out=Path(args[1]);out.mkdir(mode=0o700);original=envfile.read_bytes();next=original if candidate.encode() in original else original+(b'' if original.endswith(b'\n') else b'\n')+('TRADES_RPC_URL="'+candidate+'"\n').encode()
  ready={'ready':True,'chainId':97,'target':target,'allocationPeriodSeconds':3600,'archive':{'fullyVerified':True,'requiredRetentionSeconds':3600}}
  c=json.loads((p/'source/config/fresh-fast-testnet.json').read_text());sha=lambda b:hashlib.sha256(b).hexdigest()
- r={'version':1,'kind':'fresh-zero-archive-rpc-stage','chainId':97,'releaseId':c['releaseId'],'target':target,'owner':c['owner'],'operator':c['deployer'],'artifactHash':c['artifactHash'],'candidateRpcUrl':candidate,'ready':True,'transactionsSent':0,'signerOpened':False,'originalEnvSha256':sha(original),'stagedEnvSha256':sha(next),'anchor':{'block':43},'period':{'periodSeconds':3600,'epoch':0,'startTimestamp':1000}}
+ r={'version':1,'kind':'fresh-zero-archive-rpc-stage','chainId':97,'releaseId':c['releaseId'],'target':target,'owner':c['owner'],'operator':c['deployer'],'artifactHash':c['artifactHash'],'candidate':selected,'ready':True,'transactionsSent':0,'signerOpened':False,'originalEnvSha256':sha(original),'stagedEnvSha256':sha(next),'anchor':{'block':43},'period':{'periodSeconds':3600,'epoch':0,'startTimestamp':1000}}
  for name,root,key in [('journal.json',state,'journalSha256'),('daily-policy.json',state,'policySha256'),('deployment-public.json',p/'state/fresh-fast-testnet-v1','deploymentSha256'),('connection-public.json',p/'state/fresh-fast-testnet-v1','connectionSha256')]:r[key]=sha((root/name).read_bytes())
  data=(json.dumps(ready)+'\n').encode();r['readinessSha256']=sha(data)
  if mode=='stage-hash-fail':r['originalEnvSha256']='0'*64
+ if mode=='candidate-proof-fail':r['candidate']={**selected,'fileSha256':'0'*64}
  if mode=='stage-key-fail':next+=b'UNRELATED_CHANGE=1\n';r['stagedEnvSha256']=sha(next)
  if mode=='readiness-fail':ready['archive']['fullyVerified']=False;data=(json.dumps(ready)+'\n').encode();r['readinessSha256']=sha(data)
  for name,value in [('trades.env',next),('readiness.json',data),('archive-rpc-stage.json',(json.dumps(r)+'\n').encode())]:(out/name).write_bytes(value);(out/name).chmod(0o600)
+ if file and mode=='candidate-stage-change':file.write_text(candidate+'?changed=1\n')
  if mode=='input-change':j=json.loads((state/'journal.json').read_text());j['externalChange']=True;(state/'journal.json').write_text(json.dumps(j))
 elif args[0]=='systemctl':
  args=args[1:];command=args[0];unit=args[-1];log('systemctl '+' '.join(args));states=json.loads((p/'workers.json').read_text());row=states.get(unit,{'enabled':'disabled','active':'inactive'});new=candidate in envfile.read_text()
@@ -143,12 +156,16 @@ else:raise AssertionError(args)
         (state/'daily-policy.json').write_text(json.dumps(baseline_policy));(state/'daily-policy.json').chmod(0o600)
         for p, data in protected.items():p.write_text(json.dumps(data));p.chmod(0o600)
         (host/'workers.json').write_text(json.dumps(prior));(host/'calls').write_text('');(host/'worker-count').write_text('0');(host/'api-restarts').write_text('0');(host/'http-warmup').write_text('0');(host/'mode').write_text(mode)
+        if (host/'active-candidate-url').exists():(host/'active-candidate-url').unlink()
         for root in ['fresh-zero-automation-v1','automation-v1','oracle-maintenance-v1']:
             path=host/'state'/root
             if path.exists():shutil.rmtree(path)
-    def run(mode='success', argument='--execute'):
-        reset(mode);r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),argument],cwd=source,env=env,text=True,capture_output=True,timeout=30)
-        assert secret not in r.stdout+r.stderr,(mode,r.stdout,r.stderr)
+    def run(mode='success', argument='--execute', private=False):
+        reset(mode);extra=[]
+        if private:candidate_file.write_text(private_url+'\n');candidate_file.chmod(0o600);extra=['--candidate-file',str(candidate_file)]
+        r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),argument,*extra],cwd=source,env=env,text=True,capture_output=True,timeout=30)
+        assert secret not in r.stdout+r.stderr and private_url not in r.stdout+r.stderr,(mode,r.stdout,r.stderr)
+        assert private_url not in (host/'calls').read_text(),(mode,r.stdout,r.stderr)
         return r
     r=run();assert r.returncode==0,(r.stdout,r.stderr)
     assert envfile.read_text()==original_env+f'TRADES_RPC_URL="{candidate}"\n'
@@ -187,6 +204,22 @@ else:raise AssertionError(args)
         with lock.open('a') as held:
             fcntl.flock(held,fcntl.LOCK_EX|fcntl.LOCK_NB);r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute'],cwd=source,env=env,text=True,capture_output=True,timeout=30)
         assert r.returncode!=0 and envfile.read_text()==original_env,(lock,r.stdout,r.stderr)
+    r=run(private=True);assert r.returncode==0,(r.stdout,r.stderr);assert envfile.read_text()==original_env+f'TRADES_RPC_URL="{private_url}"\n'
+    reports=list((host/'state/zero-oracle-repair-v1').glob('archive-rpc-*/stage/archive-rpc-stage.json'));private_reports=[json.loads(path.read_text()) for path in reports if json.loads(path.read_text()).get('candidate',{}).get('kind')=='private']
+    assert private_reports and all(private_url not in json.dumps(report) for report in private_reports)
+    r=run(argument='--check',private=True);assert r.returncode==0,(r.stdout,r.stderr);assert envfile.read_text()==original_env and json.loads((host/'workers.json').read_text())==prior
+    for mode in ['candidate-check-change','candidate-check-newline-change','candidate-stage-change','candidate-proof-fail']:
+        r=run(mode,private=True);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert envfile.read_text()==original_env and json.loads((state/'journal.json').read_text())==baseline_journal
+        if mode.startswith('candidate-check'):assert 'systemctl stop ' not in (host/'calls').read_text()
+    for invalid in ['permissions','symlink','insecure-url']:
+        reset();candidate_file.write_text(private_url+'\n');candidate_file.chmod(0o600);chosen=candidate_file
+        if invalid=='permissions':candidate_file.chmod(0o644)
+        if invalid=='symlink':chosen=host/'etc/globaldroptrade/archive-rpc-symlink';chosen.symlink_to(candidate_file)
+        if invalid=='insecure-url':candidate_file.write_text('http://archive.invalid/private-api-key-never-print\n')
+        r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute','--candidate-file',str(chosen)],cwd=source,env=env,text=True,capture_output=True,timeout=30)
+        assert r.returncode!=0 and envfile.read_text()==original_env and 'prepare ' not in (host/'calls').read_text()
+        assert private_url not in r.stdout+r.stderr and secret not in r.stdout+r.stderr
+    # A leftover private candidate file never changes the default public choice.
     r=run(argument='--check');assert r.returncode==0,(r.stdout,r.stderr);assert envfile.read_text()==original_env;assert json.loads((host/'workers.json').read_text())==prior;assert 'systemctl stop ' not in (host/'calls').read_text()
     reset();envfile.write_text(original_env.replace('global-fresh-fast-test-v1','global-fresh-zero-v1'))
     r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute'],cwd=source,env=env,text=True,capture_output=True,timeout=30);assert r.returncode!=0 and 'prepare ' not in (host/'calls').read_text()

@@ -12,8 +12,9 @@ import {validateZeroStartRelease} from './deploy-zero-start.mjs';
 import {verifyZeroStartTarget,verifyZeroStartReadiness,sanitizeZeroStartArchiveProbeDiagnostic} from './zero-start-readiness.mjs';
 import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
 import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy} from './daily-profit.mjs';
+import {publicZeroArchiveRpcUrl,readZeroArchiveCandidate,validateZeroArchiveCandidateUrl} from './zero-archive-candidate.mjs';
 
-export const zeroArchiveRpcUrl='https://bsc-testnet-rpc.publicnode.com';
+export const zeroArchiveRpcUrl=publicZeroArchiveRpcUrl;
 export const zeroArchiveReadinessMaxAttempts=3;
 const sha256=value=>createHash('sha256').update(value).digest('hex');
 const json=value=>JSON.stringify(value,null,2)+'\n';
@@ -52,14 +53,22 @@ function fullReadinessFailure(readiness,attempts){
  return error;
 }
 
-export function renderZeroArchiveRpcEnvironment(original){
+export function renderZeroArchiveRpcEnvironment(original,candidateUrl=zeroArchiveRpcUrl){
  if(typeof original!=='string'||original.includes('\0'))throw Error('ARCHIVE_RPC_ENVIRONMENT_REQUIRED');
+ validateZeroArchiveCandidateUrl(candidateUrl);
  const before=parseEnv(original);
  if(!before.TRADES_RPC_URL)throw Error('ARCHIVE_RPC_ENVIRONMENT_REQUIRED');
- const env=before.TRADES_RPC_URL===zeroArchiveRpcUrl?original:original+(original.endsWith('\n')?'':'\n')+'TRADES_RPC_URL="'+zeroArchiveRpcUrl+'"\n';
+ const env=before.TRADES_RPC_URL===candidateUrl?original:original+(original.endsWith('\n')?'':'\n')+'TRADES_RPC_URL="'+candidateUrl+'"\n';
  const after=parseEnv(env);
- if(after.TRADES_RPC_URL!==zeroArchiveRpcUrl||!same(retained(before),retained(after)))throw Error('ARCHIVE_RPC_ENVIRONMENT_PRESERVATION_FAILED');
+ if(after.TRADES_RPC_URL!==candidateUrl||!same(retained(before),retained(after)))throw Error('ARCHIVE_RPC_ENVIRONMENT_PRESERVATION_FAILED');
  return env;
+}
+
+function candidateProofFor(url,proof){
+ validateZeroArchiveCandidateUrl(url);
+ proof??=url===zeroArchiveRpcUrl?readZeroArchiveCandidate().proof:null;
+ if(!proof||proof.sha256!==sha256(url)||(proof.kind==='public'&&(url!==zeroArchiveRpcUrl||proof.fileSha256!==null))||(proof.kind==='private'&&!/^[0-9a-f]{64}$/.test(proof.fileSha256||''))||!['public','private'].includes(proof.kind))throw Error('ARCHIVE_RPC_CANDIDATE_PROOF_REQUIRED');
+ return {kind:proof.kind,sha256:proof.sha256,fileSha256:proof.fileSha256};
 }
 
 function requireState(state){
@@ -75,14 +84,15 @@ function requireIdentity(state,target,policy){
  if(!Number.isSafeInteger(activation?.block)||activation.block<target.block||!hash(activation.blockHash)||activation.block!==policy.activationBlock||activation.blockHash!==policy.activationBlockHash||activation.startTimestamp!==policy.startTimestamp)throw Error('ARCHIVE_RPC_POLICY_CHECKPOINT_REQUIRED');
 }
 
-// Providers are injected for tests. The CLI constructs only the fixed public
-// candidate; all verified history remains a prerequisite, never a substitute.
-export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,original,deploymentText,connectionText,policyText,journalText,confirmations=3,proofProviders=[],assertCurrent=async()=>{},onPhase=()=>{},availabilityWait=waitForAvailability}){
+// Providers are injected for tests. The CLI uses the fixed public candidate or
+// an explicitly selected private file; complete history remains a prerequisite.
+export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,original,deploymentText,connectionText,policyText,journalText,confirmations=3,proofProviders=[],assertCurrent=async()=>{},onPhase=()=>{},availabilityWait=waitForAvailability,candidateUrl=zeroArchiveRpcUrl,candidateProof}){
  const c=validateZeroStartRelease(release);
  if(c.releaseId!=='global-fresh-fast-test-v1'||!c.testMode||!c.initialServerReporter)throw Error('ARCHIVE_RPC_EXPLICIT_FAST_PROFILE_REQUIRED');
  if(!Number.isSafeInteger(confirmations)||confirmations<3)throw Error('ARCHIVE_RPC_CONFIRMATIONS_REQUIRED');
  for(const value of [original,deploymentText,connectionText,policyText,journalText])if(typeof value!=='string')throw Error('ARCHIVE_RPC_PRIVATE_INPUTS_REQUIRED');
- const settings=parseEnv(original),env=renderZeroArchiveRpcEnvironment(original);readConfig(settings);
+ const selectedProof=candidateProofFor(candidateUrl,candidateProof);
+ const settings=parseEnv(original),env=renderZeroArchiveRpcEnvironment(original,candidateUrl);readConfig(settings);
  if(settings.TRADES_ZERO_START_PROFILE!==c.releaseId||settings.TRADES_CHAIN_ID!=='97')throw Error('ARCHIVE_RPC_CONNECTED_PROFILE_MISMATCH');
  const deploymentReport=JSON.parse(deploymentText),connectionReport=JSON.parse(connectionText),policy=validateDailyPolicy(JSON.parse(policyText)),state=JSON.parse(journalText);
  if(!isHourlyTestPolicy(policy))throw Error('ARCHIVE_RPC_EXISTING_HOURLY_POLICY_REQUIRED');
@@ -136,7 +146,7 @@ export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,
  if(primaryAgain?.hash!==anchor.hash||candidateAgain?.hash!==anchor.hash)throw Error('ARCHIVE_RPC_CURRENT_CHECKPOINT_REORG');
  await assertCurrent();
  const readinessText=json(readiness);
- const stage={version:1,kind:'fresh-zero-archive-rpc-stage',chainId:97,releaseId:c.releaseId,target:target.target,owner:target.owner,operator:target.operator,queue:target.queue,hash:target.hash,runtimeHash:target.runtimeHash,artifactHash:target.artifactHash,initcodeHash:target.initcodeHash,candidateRpcUrl:zeroArchiveRpcUrl,originalEnvSha256:sha256(original),stagedEnvSha256:sha256(env),journalSha256:sha256(journalText),policySha256:sha256(policyText),deploymentSha256:sha256(deploymentText),connectionSha256:sha256(connectionText),readinessSha256:sha256(readinessText),anchor:{block:anchorBlock,blockHash:anchor.hash,timestamp:anchor.timestamp},period,readinessAttempts,ready:true,transactionsSent:0,signerOpened:false};
+ const stage={version:1,kind:'fresh-zero-archive-rpc-stage',chainId:97,releaseId:c.releaseId,target:target.target,owner:target.owner,operator:target.operator,queue:target.queue,hash:target.hash,runtimeHash:target.runtimeHash,artifactHash:target.artifactHash,initcodeHash:target.initcodeHash,candidate:selectedProof,originalEnvSha256:sha256(original),stagedEnvSha256:sha256(env),journalSha256:sha256(journalText),policySha256:sha256(policyText),deploymentSha256:sha256(deploymentText),connectionSha256:sha256(connectionText),readinessSha256:sha256(readinessText),anchor:{block:anchorBlock,blockHash:anchor.hash,timestamp:anchor.timestamp},period,readinessAttempts,ready:true,transactionsSent:0,signerOpened:false};
  return {env,stage,readiness,readinessText};
 }
 
@@ -151,7 +161,8 @@ function readPrivate(file){
  }finally{fs.closeSync(fd);}
 }
 export function writeZeroArchiveRpcStage(directory,result){
- if(result?.stage?.kind!=='fresh-zero-archive-rpc-stage'||result.stage.ready!==true||result.stage.candidateRpcUrl!==zeroArchiveRpcUrl||sha256(result.env)!==result.stage.stagedEnvSha256||sha256(result.readinessText)!==result.stage.readinessSha256)throw Error('ARCHIVE_RPC_VERIFIED_STAGE_REQUIRED');
+ if(result?.stage?.kind!=='fresh-zero-archive-rpc-stage'||result.stage.ready!==true||sha256(result.env)!==result.stage.stagedEnvSha256||sha256(result.readinessText)!==result.stage.readinessSha256)throw Error('ARCHIVE_RPC_VERIFIED_STAGE_REQUIRED');
+ if(!same(candidateProofFor(parseEnv(result.env).TRADES_RPC_URL,result.stage.candidate),result.stage.candidate))throw Error('ARCHIVE_RPC_VERIFIED_STAGE_REQUIRED');
  const output=path.resolve(directory);
  try{fs.mkdirSync(output,{mode:0o700});}catch(error){if(error.code!=='EEXIST')throw error;}
  const s=fs.lstatSync(output);
@@ -167,17 +178,25 @@ async function main(){
  let primary,candidate,proofProviders=[],phase='ARGUMENT_VALIDATION';
  try{
   const {profile,args}=parseZeroStartProfileArgs();
-  const [mode,output,...extra]=args;
+  let candidateFile;const commands=[];
+  for(let i=0;i<args.length;i++){
+   if(args[i]!=='--candidate-file'){commands.push(args[i]);continue;}
+   if(candidateFile!==undefined||!args[i+1]||!path.isAbsolute(args[i+1]))throw Error('ARCHIVE_RPC_ABSOLUTE_CANDIDATE_FILE_REQUIRED');
+   candidateFile=args[++i];
+  }
+  const [mode,output,...extra]=commands;
   if(process.getuid?.()!==0||!profile.fast||extra.length||!['--check','--stage'].includes(mode)||(mode==='--check'&&output!==undefined)||(mode==='--stage'&&!output))throw Error('USAGE_ROOT_FAST_CHECK_OR_STAGE_PRIVATE_OUTPUT_REQUIRED');
   phase='LOCAL_CONFIGURATION';
+  const selected=readZeroArchiveCandidate(candidateFile);
   const paths={original:'/etc/globaldroptrade/trades.env',deploymentText:profile.stateDir+'/deployment-public.json',connectionText:profile.stateDir+'/connection-public.json',policyText:profile.automationDir+'/daily-policy.json',journalText:profile.automationDir+'/journal.json'};
   const inputs=Object.fromEntries(Object.entries(paths).map(([key,file])=>[key,readPrivate(file)]));
   const config=readConfig(parseEnv(inputs.original)),transport=new FetchRequest(config.rpcUrl);transport.timeout=15000;
   primary=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
-  const publicTransport=new FetchRequest(zeroArchiveRpcUrl);publicTransport.timeout=15000;
-  candidate=new JsonRpcProvider(publicTransport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+  const candidateTransport=new FetchRequest(selected.url);candidateTransport.timeout=15000;
+  candidate=new JsonRpcProvider(candidateTransport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
   proofProviders=createZeroStartProofProviders();
-  const result=await prepareZeroArchiveRpc({primary,candidate,artifact:JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8')),release:profile.release,...inputs,confirmations:Math.max(3,config.confirmations),proofProviders,onPhase:value=>{phase=value;},assertCurrent:async()=>{for(const[key,file]of Object.entries(paths))if(readPrivate(file)!==inputs[key])throw Error('ARCHIVE_RPC_PRIVATE_INPUT_CHANGED');}});
+  const result=await prepareZeroArchiveRpc({primary,candidate,artifact:JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8')),release:profile.release,...inputs,candidateUrl:selected.url,candidateProof:selected.proof,confirmations:Math.max(3,config.confirmations),proofProviders,onPhase:value=>{phase=value;},assertCurrent:async()=>{selected.assertCurrent();for(const[key,file]of Object.entries(paths))if(readPrivate(file)!==inputs[key])throw Error('ARCHIVE_RPC_PRIVATE_INPUT_CHANGED');}});
+  selected.assertCurrent();
   if(mode==='--stage')writeZeroArchiveRpcStage(output,result);
   console.log(mode==='--stage'?'ZERO_ARCHIVE_RPC_STAGED':'ZERO_ARCHIVE_RPC_CHECKED');console.log(JSON.stringify(result.stage));
  }catch(error){
