@@ -418,6 +418,32 @@ At most three complete checks retry temporary archive/transport availability;
 an identity, funding, pending-state or canonical-history failure remains blocking.
 No incomplete archive result is accepted and no owed period is discarded.
 
+Settlement and registration event windows now use the same-provider complete log
+reader. It divides a rejected window only after a recognized block-range or
+result-size limit, then requires every non-overlapping subrange to succeed. It
+retains the exact contract, event filter and inclusive block range, verifies
+canonical hashes, and rejects malformed or conflicting logs. Authentication,
+missing history and timeout errors do not become empty results. Confirmed 429s
+have a bounded same-request retry; read parallelism and total requests per window
+are bounded. Successful span limits are reused for that provider instance. A
+member-index cursor advances only after its entire logical window succeeds.
+
+Execution also stages immutable copies of the installed API and daily-worker
+code, adding the complete reader and replacing only its reviewed callers. The
+installed callers must match the pinned baseline or the new verified source;
+unrelated source edits require review before services stop. Other installed
+files and dependencies are preserved. The old release pointers and environment
+can be restored before a worker may run. Once a worker may have run, updated
+code, the selected RPC and all financial journals are retained together. Updating
+the checkout alone does not update the running service code.
+
+This preserves the configured logical page sizes and the existing bounded
+indexing progress. Providers with very small log ranges require more requests,
+so historical member indexing may span several worker runs. Previously saved
+complete windows are retained; no unpaid period is skipped. A persistent failure
+reports only sanitized operation, requested range, RPC/HTTP codes and a fixed
+reason category, never provider messages or a private URL.
+
 A failed probe also reports the exact allowlisted read operation, sanitized
 error/RPC codes, HTTP status and a fixed reason category inferred from the
 provider error. A timeout or malformed response can otherwise look like missing

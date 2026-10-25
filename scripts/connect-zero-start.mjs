@@ -9,6 +9,7 @@ import {readConfig} from '../server/trades-api.mjs';
 import {zeroStartRelease,validateZeroStartRelease} from './deploy-zero-start.mjs';
 import {writePrivateJson} from './migration-journal.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
+import {getCompleteLogs,sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
 
 const changedKeys=['TRADES_CHAIN_ID','TRADES_VAULT_ADDRESS','TRADES_START_BLOCK','TRADES_PORT','GLOBAL_MIGRATION_ENABLED'];
 const queueAbi=['function vault() view returns(address)','function APPROVAL_VERSION() view returns(uint256)'];
@@ -171,8 +172,13 @@ async function verifyConnectionTarget({provider,artifact,deploymentReport,config
  let settlementLogProbe={status:inspectSettlementLogs?'awaiting-confirmations':'not-inspected-for-oracle-maintenance',fromBlock:null,toBlock};
  if(inspectSettlementLogs&&toBlock>=report.block){
   const fromBlock=Math.max(report.block,toBlock-config.pageSize+1);
-  try{await provider.getLogs({address:report.contractAddress,topics:[vault.interface.getEvent('SaleSettled').topicHash],fromBlock,toBlock});}
-  catch{throw Error('ZERO_START_SETTLEMENT_LOG_RPC_REQUIRED');}
+  try{await getCompleteLogs({provider,filter:{address:report.contractAddress,topics:[vault.interface.getEvent('SaleSettled').topicHash],fromBlock,toBlock}});}
+  catch(error){
+   if(['CANONICAL_MISMATCH','CONFLICTING_DUPLICATE','INVALID_RESPONSE'].includes(error?.logProbeDiagnostic?.reason)||!['COMPLETE_LOG_QUERY_FAILED','COMPLETE_LOG_CANONICAL_READ_FAILED','COMPLETE_LOG_REQUEST_BUDGET_EXCEEDED'].includes(error?.message))throw error;
+   const failure=Error('ZERO_START_SETTLEMENT_LOG_RPC_REQUIRED');
+   if(error?.logProbeDiagnostic){failure.logProbeDiagnostic=sanitizeCompleteLogDiagnostic(error.logProbeDiagnostic);if(failure.logProbeDiagnostic.errorCode)failure.code=failure.logProbeDiagnostic.errorCode;if(failure.logProbeDiagnostic.rpcCode!==null)failure.info={error:{code:failure.logProbeDiagnostic.rpcCode}};}
+   throw failure;
+  }
   settlementLogProbe={status:'supported',fromBlock,toBlock};
  }
  if((await provider.getBlock(block.number))?.hash!==block.hash)throw Error('ZERO_START_CURRENT_CHECKPOINT_REORG');

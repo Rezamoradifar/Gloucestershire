@@ -13,6 +13,7 @@ import {verifyZeroStartTarget,verifyZeroStartReadiness,sanitizeZeroStartArchiveP
 import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
 import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy} from './daily-profit.mjs';
 import {publicZeroArchiveRpcUrl,readZeroArchiveCandidate,validateZeroArchiveCandidateUrl} from './zero-archive-candidate.mjs';
+import {getCompleteLogs,sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
 
 export const zeroArchiveRpcUrl=publicZeroArchiveRpcUrl;
 export const zeroArchiveReadinessMaxAttempts=3;
@@ -135,7 +136,7 @@ export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,
  if(cursor&&(!Number.isSafeInteger(cursor.through)||cursor.through<target.block-1||(cursor.hash&&(await candidate.getBlock(cursor.through))?.hash!==cursor.hash)))throw Error('ARCHIVE_RPC_REGISTRY_CHECKPOINT_REORG');
  const snapshot=readiness.archive.probes.find(probe=>probe.requestedTimestamp===periodStart&&probe.supported);
  const logStart=target.block,logEnd=Math.min(logStart+499,snapshot.block);
- const logs=await candidate.getLogs({address:target.target,topics:[registry.getEvent('Registered').topicHash],fromBlock:logStart,toBlock:logEnd});
+ const logs=await getCompleteLogs({provider:candidate,filter:{address:target.target,topics:[registry.getEvent('Registered').topicHash],fromBlock:logStart,toBlock:logEnd}});
  for(const log of logs)if(log.removed||getAddress(log.address)!==target.target||log.blockNumber<logStart||log.blockNumber>logEnd||!registry.parseLog(log))throw Error('ARCHIVE_RPC_REGISTRATION_LOG_PROOF_INVALID');
  const vault=new Contract(target.target,artifact.abi,candidate),daily=structuredClone(state.daily);
  // One historical page proves event-query capability without writing a cursor
@@ -202,7 +203,8 @@ async function main(){
  }catch(error){
   const blocker=/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message||'')?error.message:'ARCHIVE_RPC_READ_ONLY_VERIFICATION_FAILED';
   const detail=error?.message==='ARCHIVE_RPC_FULL_READINESS_REQUIRED'&&error.archiveReadiness?{readinessSummary:zeroArchiveReadinessSummary(error.archiveReadiness),readinessAttempts:Number.isSafeInteger(error.readinessAttempts)&&error.readinessAttempts>=1&&error.readinessAttempts<=zeroArchiveReadinessMaxAttempts?error.readinessAttempts:null}:{};
-  console.log('ZERO_ARCHIVE_RPC_PREPARATION_FAILED');console.log(JSON.stringify({version:1,kind:'fresh-zero-archive-rpc-stage-error',blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase}),...detail,transactionsSent:0,signerOpened:false}));process.exitCode=1;
+  const logProbe=error?.logProbeDiagnostic?{logProbeDiagnostic:sanitizeCompleteLogDiagnostic(error.logProbeDiagnostic)}:{};
+  console.log('ZERO_ARCHIVE_RPC_PREPARATION_FAILED');console.log(JSON.stringify({version:1,kind:'fresh-zero-archive-rpc-stage-error',blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase}),...detail,...logProbe,transactionsSent:0,signerOpened:false}));process.exitCode=1;
  }finally{primary?.destroy();candidate?.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
 let invoked;

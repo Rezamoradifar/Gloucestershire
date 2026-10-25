@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as directory:
         destination = root/'server'/name
         destination.write_bytes((repo/'server'/name).read_bytes())
         copied.append(destination)
-    for relative in ['scripts/deferred-migration-core.mjs', 'artifacts/TestnetDeferredMigrationVault.json', 'package.json', 'package-lock.json']:
+    for relative in ['scripts/deferred-migration-core.mjs', 'scripts/complete-rpc-logs.mjs', 'artifacts/TestnetDeferredMigrationVault.json', 'package.json', 'package-lock.json']:
         destination = root/relative
         destination.write_bytes((repo/relative).read_bytes())
         copied.append(destination)
@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert result.returncode == 0, result.stderr
     current, unit = root/'opt/api/current', root/'etc/systemd/system/globaldroptrade-api.service'
     assert current.is_symlink() and (current/'server/trades-api.mjs').is_file()
-    for relative in ['server/marketplace.mjs', 'server/migration-service.mjs', 'scripts/deferred-migration-core.mjs', 'artifacts/TestnetDeferredMigrationVault.json']:
+    for relative in ['server/marketplace.mjs', 'server/migration-service.mjs', 'scripts/deferred-migration-core.mjs', 'scripts/complete-rpc-logs.mjs', 'artifacts/TestnetDeferredMigrationVault.json']:
         assert (current/relative).is_file()
     assert envfile.stat().st_mode & 0o777 == 0o600
     assert 'User=globaldroptrade-api' in unit.read_text() and 'ProtectSystem=strict' in unit.read_text()

@@ -15,7 +15,7 @@ function harness(){
  const provider={getBlockNumber:async()=>30,getBlock:async n=>({number:n,hash:hash(n),timestamp:n*10000}),getLogs:async()=>{
   if(unavailable)throw failure;
   const event=registration.encodeEventLog(registration.getEvent('Registered'),[member,ZeroAddress]);
-  return [{address:target,blockNumber:1,removed:false,...event}];
+  return [{address:target,blockNumber:1,blockHash:hash(1),transactionHash:hash(70),index:0,removed:false,...event}];
  }};
  const vault={target,getAddress:async()=>target,usdt:async()=>token,reporters:async()=>true,dailyTargetBps:async()=>100n,
   users:async()=>({registered:true,referrer:ZeroAddress,active:true,vipKyc:false}),tierOf:async()=>0n,tierConfig:async()=>({referrals:[800n,400n,200n,0n]}),
@@ -53,7 +53,10 @@ test('historical planning RPC failure waits without advancing a period or changi
 
 test('a pending signed financial transaction prevents a read failure from being downgraded to waiting',async()=>{
  const s=harness();s.state.transactions['daily-pending']={raw:'pending signed data'};
- await assert.rejects(s.run(),error=>error===s.failure);assert.equal(s.sends,0);assert.equal(s.state.daily.epoch,0);
+ const saved=structuredClone(s.state.transactions);
+ await assert.rejects(s.run(),error=>{
+  assert.equal(error.code,'UNKNOWN_ERROR');assert.equal(error.info.error.code,-32005);assert.equal(error.logProbeDiagnostic.operation,'eth_getLogs');assert.equal(error.cause,undefined);assert.doesNotMatch(JSON.stringify(error),/private|secret|credentials|https/);return true;
+ });assert.equal(s.sends,0);assert.equal(s.state.daily.epoch,0);assert.deepEqual(s.state.transactions,saved);
 });
 
 test('identity and canonical activation failures remain blocking',async()=>{

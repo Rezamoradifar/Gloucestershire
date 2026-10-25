@@ -8,15 +8,20 @@ const address='0x1111111111111111111111111111111111111111',token='0x222222222222
 const iface=new Interface(['event SaleSettled(bytes32 indexed id,address indexed seller,address indexed asset,uint256 grossProfit,uint256 salesUsd,bytes32 evidenceHash)']);
 const config=()=>readConfig({TRADES_RPC_URL:'https://rpc.invalid/private-token',TRADES_VAULT_ADDRESS:address,TRADES_CHAIN_ID:'97',TRADES_LOOKBACK_BLOCKS:'10',TRADES_LOG_PAGE_SIZE:'5'});
 const log=(asset=token,profit=parseEther('10'))=>({...iface.encodeEventLog(iface.getEvent('SaleSettled'),[hash,address,asset,profit,parseEther('100'),hash]),address,transactionHash:hash,blockHash,blockNumber:95,index:0,removed:false});
-function fixture(logs=[log()]){let calls=0;const provider={getNetwork:async()=>({chainId:97n}),getCode:async()=> '0x1234',getBlockNumber:async()=>100,getLogs:async({fromBlock,toBlock})=>{calls++;return logs.filter(l=>l.blockNumber>=fromBlock&&l.blockNumber<=toBlock);},getBlock:async()=>({hash:blockHash,timestamp:1700000000})};return {provider,metadata:async()=>[token,18],get calls(){return calls;}};}
+function fixture(logs=[log()]){let calls=0;const provider={getNetwork:async()=>({chainId:97n}),getCode:async()=> '0x1234',getBlockNumber:async()=>100,getLogs:async({fromBlock,toBlock})=>{calls++;return logs.filter(l=>l.blockNumber>=fromBlock&&l.blockNumber<=toBlock);},getBlock:async number=>({number,hash:blockHash,timestamp:1700000000})};return {provider,metadata:async()=>[token,18],get calls(){return calls;}};}
 test('API validates network, address, bounded pagination and never defaults to a public live contract',async()=>{
  assert.equal(createTradeFeed(readConfig({})).configured,false);
  for(const env of [{TRADES_CHAIN_ID:'1'},{TRADES_VAULT_ADDRESS:ZeroAddress},{TRADES_LOOKBACK_BLOCKS:'999999'},{TRADES_CONFIRMATIONS:'0'},{TRADES_RPC_URL:'file:///etc/passwd'},{TRADES_PORT:'80'}])assert.throws(()=>readConfig(env));
  const data=await createTradeFeed(readConfig({})).get();assert.equal(data.status,'not_configured');assert.deepEqual(data.trades,[]);
 });
 test('API returns only confirmed matching events with exact amounts and deduplicates overlapping logs',async()=>{
- const f=fixture([log(),log(),{...log(),blockNumber:99},{...log(),address:token,index:1},{...log(),removed:true,index:2}]);
+ const f=fixture([log(),log(),{...log(),blockNumber:99}]);
  const feed=createTradeFeed(config(),f),data=await feed.get();assert.equal(data.status,'live');assert.equal(data.trades.length,1);assert.equal(data.trades[0].grossProfit,'10.0');assert.equal(data.trades[0].salesUsd,'100.0');assert.equal(data.trades[0].confirmations,5);assert.equal(data.testnet,true);assert.match(data.trades[0].explorerUrl,/testnet.bscscan.com/);assert.equal(data.confirmedThrough,97);assert.equal(data.windowStart,88);assert.ok(!JSON.stringify(data).includes('private-token'));
+});
+test('API rejects corrupted provider responses instead of publishing a partial matching feed',async()=>{
+ for(const invalid of [{...log(),address:token,index:1},{...log(),removed:true,index:2}]){
+  const data=await createTradeFeed(config(),fixture([log(),invalid])).get();assert.equal(data.status,'unavailable');assert.deepEqual(data.trades,[]);
+ }
 });
 test('API handles six-decimal tokens and native BNB without floating point',async()=>{
  const native={...log(ZeroAddress,parseEther('0.123456789012345678')),index:1};const f=fixture([log(token,1234567n),native]);f.metadata=async()=>[token,6];const data=await createTradeFeed(config(),f).get();assert.equal(data.trades[0].grossProfit,'0.123456789012345678');assert.equal(data.trades[1].grossProfit,'1.234567');

@@ -4,6 +4,7 @@ import {realpathSync} from 'node:fs';
 import {createCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
 import {Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress} from 'ethers';
+import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 
 const eventAbi=['event SaleSettled(bytes32 indexed id,address indexed seller,address indexed asset,uint256 grossProfit,uint256 salesUsd,bytes32 evidenceHash)'];
 const iface=new Interface(eventAbi);
@@ -34,7 +35,7 @@ export function createTradeFeed(config,{provider,metadata,now=Date.now,ttlMs=150
    const trades=[],seen=new Set(),blocks=new Map();
    for(let end=toBlock;end>=fromBlock&&trades.length<100;){
     const start=Math.max(fromBlock,end-config.pageSize+1);
-    const logs=await provider.getLogs({address:config.address,topics:[iface.getEvent('SaleSettled').topicHash],fromBlock:start,toBlock:end});
+    const logs=await getCompleteLogs({provider,filter:{address:config.address,topics:[iface.getEvent('SaleSettled').topicHash],fromBlock:start,toBlock:end}});
     logs.sort((a,b)=>b.blockNumber-a.blockNumber||b.index-a.index);
     for(const log of logs){
      if(log.removed||log.address.toLowerCase()!==config.address.toLowerCase()||log.blockNumber<start||log.blockNumber>end)continue;

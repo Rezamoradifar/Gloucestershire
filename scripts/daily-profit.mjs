@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {Contract,FetchRequest,Interface,JsonRpcProvider,Wallet,ZeroAddress,getAddress,isAddress,keccak256,toUtf8Bytes,parseEther} from 'ethers';
 import {writePrivateJson,journalTransaction} from './migration-journal.mjs';
 import {readPrivateKey} from './migration-signers.mjs';
+import {getCompleteLogs} from './complete-rpc-logs.mjs';
 
 const registry=new Interface(['event Registered(address indexed user,address indexed referrer)']);
 export const hourlyTestPolicyFields=Object.freeze({testMode:true,releaseId:'global-fresh-fast-test-v1',testInterval:'hourly',fastTestnetVersion:1});
@@ -65,7 +66,7 @@ export async function indexMembers({provider,policy,state,through,save,maxPages=
  let pages=0;
  for(let start=index.through+1;start<=through&&pages<maxPages;pages++){
   const end=Math.min(start+pageSize-1,through);
-  const logs=await provider.getLogs({address:policy.vaultAddress,topics:[registry.getEvent('Registered').topicHash],fromBlock:start,toBlock:end});
+  const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[registry.getEvent('Registered').topicHash],fromBlock:start,toBlock:end}});
   for(const log of logs){
    if(log.removed||log.address.toLowerCase()!==policy.vaultAddress.toLowerCase()||log.blockNumber<start||log.blockNumber>end)throw Error('INVALID_REGISTRATION_LOG');
    const member=getAddress(registry.parseLog(log).args.user);

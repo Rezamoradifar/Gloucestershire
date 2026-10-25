@@ -32,6 +32,20 @@ with tempfile.TemporaryDirectory() as directory:
     (source/'ubuntu-zero-archive-rpc.sh').write_text(script)
     shutil.copy(repo/'config/fresh-fast-testnet.json', source/'config/fresh-fast-testnet.json')
     shutil.copy(repo/'scripts/zero-archive-candidate.mjs', source/'scripts/zero-archive-candidate.mjs')
+    shutil.copy(repo/'scripts/stage-zero-log-reader.py', source/'scripts/stage-zero-log-reader.py')
+    overlay = ['server/trades-api.mjs', 'scripts/connect-zero-start.mjs', 'scripts/daily-profit.mjs', 'scripts/complete-rpc-logs.mjs']
+    for relative in overlay:
+        (source/relative).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(repo/relative, source/relative)
+    for role in ['api', 'daily']:
+        release = host/role/'releases/current'
+        for name in ['server', 'scripts', 'config', 'artifacts']:
+            (release/name).mkdir(exist_ok=True)
+            for file in (repo/name).glob('*.mjs' if name in ['server', 'scripts'] else '*.json'):
+                if file.name != 'complete-rpc-logs.mjs':
+                    shutil.copy(file, release/name/file.name)
+        (release/'node_modules').symlink_to(repo/'node_modules', target_is_directory=True)
+        (release/'unrelated-user-file.txt').write_text('Preserve this installed release file.\n')
     state = host/'state/fresh-fast-testnet-automation-v1'
     deployment = host/'state/fresh-fast-testnet-v1'
     envfile = host/'etc/globaldroptrade/trades.env'
@@ -152,6 +166,10 @@ else:raise AssertionError(args)
         if p.is_dir():p.chmod(0o700)
     env = os.environ.copy();env['PATH']=str(host/'bin')+':'+env['PATH']
     def reset(mode='success'):
+        for role in ['api', 'daily']:
+            current = host/role/'current'
+            current.unlink()
+            current.symlink_to(host/role/'releases/current', target_is_directory=True)
         envfile.write_text(original_env);envfile.chmod(0o600);(state/'journal.json').write_text(json.dumps(baseline_journal));(state/'journal.json').chmod(0o600)
         (state/'daily-policy.json').write_text(json.dumps(baseline_policy));(state/'daily-policy.json').chmod(0o600)
         for p, data in protected.items():p.write_text(json.dumps(data));p.chmod(0o600)
@@ -168,6 +186,15 @@ else:raise AssertionError(args)
         assert private_url not in (host/'calls').read_text(),(mode,r.stdout,r.stderr)
         return r
     r=run();assert r.returncode==0,(r.stdout,r.stderr)
+    for role in ['api', 'daily']:
+        installed=(host/role/'current').resolve()
+        assert installed != host/role/'releases/current'
+        assert (installed/'scripts/complete-rpc-logs.mjs').read_bytes() == (repo/'scripts/complete-rpc-logs.mjs').read_bytes()
+        assert (installed/'unrelated-user-file.txt').read_text() == 'Preserve this installed release file.\n'
+        assert not (host/role/'releases/current/scripts/complete-rpc-logs.mjs').exists()
+    installed_imports=[str((host/'api/current/server/trades-api.mjs').resolve()),str((host/'daily/current/scripts/zero-start-automation.mjs').resolve())]
+    imported=subprocess.run([real_node,'--input-type=module','-e','await Promise.all(process.argv.slice(2).map(file=>import(file)));','--','-',*installed_imports],cwd=repo,text=True,capture_output=True,timeout=20)
+    assert imported.returncode==0,(imported.stdout,imported.stderr)
     assert envfile.read_text()==original_env+f'TRADES_RPC_URL="{candidate}"\n'
     assert json.loads((state/'journal.json').read_text())['millionTestRewardGrant']==baseline_journal['millionTestRewardGrant']
     assert json.loads((host/'workers.json').read_text())[timer]==prior[timer]
@@ -175,11 +202,20 @@ else:raise AssertionError(args)
     for mode in ['proof-fail','fork-fail','history-fail','logs-fail']:
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert envfile.read_text()==original_env;assert json.loads((host/'workers.json').read_text())==prior
         assert 'systemctl stop ' not in (host/'calls').read_text() and 'systemctl restart ' not in (host/'calls').read_text(),(mode,r.stdout,r.stderr)
+    installed_source=host/'daily/releases/current/scripts/daily-profit.mjs'
+    saved_source=installed_source.read_bytes()
+    try:
+        installed_source.write_bytes(saved_source+b'\n// Unrelated local edit must not be overwritten.\n')
+        r=run();assert r.returncode!=0 and 'INSTALLED_LOG_READER_SOURCE_REVIEW_REQUIRED' in r.stderr,(r.stdout,r.stderr)
+        assert installed_source.read_bytes()!=saved_source and envfile.read_text()==original_env
+        assert 'systemctl stop ' not in (host/'calls').read_text()
+    finally:installed_source.write_bytes(saved_source)
     for mode in ['stage-proof-fail','stage-hash-fail','stage-key-fail','readiness-fail','api-restart-fail','api-health-fail','rollback-transient-502','wrong-target']:
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert envfile.read_text()==original_env,mode
         assert json.loads((state/'journal.json').read_text())==baseline_journal,mode
         assert json.loads((host/'workers.json').read_text())==prior,(mode,r.stdout,r.stderr)
         assert 'previousWorkersRestored=1' in r.stdout,(mode,r.stdout,r.stderr)
+        assert all((host/role/'current').resolve()==host/role/'releases/current' for role in ['api','daily']),mode
     r=run('stage-proof-fail');assert r.returncode!=0;assert int((host/'api-restarts').read_text())==0;assert 'previousWorkersRestored=1' in r.stdout
     r=run('transient-502');assert r.returncode==0,(r.stdout,r.stderr);assert int((host/'api-restarts').read_text())==1;assert candidate in envfile.read_text();assert 'HTTP_502_WARMING' in r.stderr
     r=run('permanent-502');assert r.returncode!=0,(r.stdout,r.stderr);assert envfile.read_text()==original_env;assert 'previousWorkersRestored=0' in r.stdout
@@ -191,6 +227,7 @@ else:raise AssertionError(args)
     for mode in ['worker-fail','timer-fail-after-run','final-health-fail','malformed-status']:
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert candidate in envfile.read_text(),mode
         assert 'workerMayHaveRun=1' in r.stdout,(mode,r.stdout,r.stderr)
+        assert all((host/role/'current').resolve()!=host/role/'releases/current' for role in ['api','daily']),mode
         if mode in ['worker-fail','timer-fail-after-run']:assert 'new-pending' in json.loads((state/'journal.json').read_text())['transactions']
     for mode,count in [('warmup-index',4),('warmup-long',4),('warmup-other-wait',1),('warmup-unknown',1),('warmup-advanced',1),('pending-diagnostic',1)]:
         r=run(mode);assert r.returncode==0,(mode,r.stdout,r.stderr);assert int((host/'worker-count').read_text())==count,(mode,r.stdout,r.stderr)

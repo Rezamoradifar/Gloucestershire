@@ -71,7 +71,7 @@ JS
 base=/opt/globaldroptrade-zero-daily
 release="$base/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 755 "$release/scripts" "$release/server" "$release/artifacts" "$release/config"
-for file in zero-start-automation.mjs zero-start-readiness.mjs zero-start-volume.mjs daily-profit.mjs zero-start-hourly-test.mjs maintain-testnet-oracles.mjs refresh-testnet-oracles.mjs migration-journal.mjs migration-signers.mjs connect-zero-start.mjs deploy-zero-start.mjs zero-start-profile.mjs; do cp "scripts/$file" "$release/scripts/"; done
+for file in zero-start-automation.mjs zero-start-readiness.mjs zero-start-volume.mjs daily-profit.mjs complete-rpc-logs.mjs zero-start-hourly-test.mjs maintain-testnet-oracles.mjs refresh-testnet-oracles.mjs migration-journal.mjs migration-signers.mjs connect-zero-start.mjs deploy-zero-start.mjs zero-start-profile.mjs; do cp "scripts/$file" "$release/scripts/"; done
 cp server/trades-api.mjs server/community.mjs server/marketplace.mjs "$release/server/"
 cp artifacts/AutomaticGroupVault.json artifacts/MockFeed.json "$release/artifacts/"
 cp config/fresh-zero-testnet.json "$release/config/"

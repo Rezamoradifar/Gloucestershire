@@ -6,7 +6,7 @@ node --env-file=/etc/globaldroptrade/trades.env scripts/setup-automation.mjs
 base=/opt/globaldroptrade-automation
 release="$base/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 755 "$release/scripts"
-cp scripts/daily-profit.mjs scripts/migration-journal.mjs scripts/migration-signers.mjs "$release/scripts/"
+cp scripts/daily-profit.mjs scripts/migration-journal.mjs scripts/migration-signers.mjs scripts/complete-rpc-logs.mjs "$release/scripts/"
 cp package.json package-lock.json "$release/"
 (cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
 install -d -m 700 /var/lib/globaldroptrade/automation-v1

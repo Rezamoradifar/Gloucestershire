@@ -122,6 +122,8 @@ for worker in "$service" "$timer";do install -m 600 "/etc/systemd/system/$worker
 install -m 600 "$apiunit" "$backup/api.service"
 previous_api=$(readlink -f "$apicurrent");previous_daily=$(readlink -f "$dailycurrent")
 [ -L "$apicurrent" ] && [ -d "$previous_api" ] && [ -L "$dailycurrent" ] && [ -d "$previous_daily" ] || { echo 'MANAGED_API_AND_ZERO_RELEASES_REQUIRED';exit 1; }
+expected_api=$previous_api
+expected_daily=$previous_daily
 https_read(){ curl -fsS --noproxy '*' --max-time 12 --resolve globaldroptrade.com:443:127.0.0.1 "https://globaldroptrade.com/$1" -o "$2"; }
 api_check(){
  python3 - "$1" "$2" "$3" <<'PY'
@@ -180,7 +182,7 @@ elif actual!=json.load(open(sys.argv[2])):raise SystemExit('FINANCIAL_STATE_CHAN
 PY
 }
 unchanged_installation(){
- cmp -s "$backup/api.service" "$apiunit" && cmp -s "$backup/$service" "/etc/systemd/system/$service" && cmp -s "$backup/$timer" "/etc/systemd/system/$timer" && [ -L "$apicurrent" ] && [ "$(readlink -f "$apicurrent")" = "$previous_api" ] && [ -L "$dailycurrent" ] && [ "$(readlink -f "$dailycurrent")" = "$previous_daily" ]
+ cmp -s "$backup/api.service" "$apiunit" && cmp -s "$backup/$service" "/etc/systemd/system/$service" && cmp -s "$backup/$timer" "/etc/systemd/system/$timer" && [ -L "$apicurrent" ] && [ "$(readlink -f "$apicurrent")" = "$expected_api" ] && [ -L "$dailycurrent" ] && [ "$(readlink -f "$dailycurrent")" = "$expected_daily" ]
 }
 release_run_lock(){ if [ "$run_locked" -eq 1 ];then flock -u 6;exec 6>&-;run_locked=0;fi; }
 start_previous(){
@@ -197,16 +199,23 @@ start_previous(){
 run_locked=0
 financial_ready=0
 may_have_run=0
+code_may_have_changed=0
 failed(){
  trap - ERR INT TERM
  set +e
  restored=0
  env_restored=0
+ code_restored=0
  quiesce
  safe=$?
  if [ "$may_have_run" -eq 0 ];then
   [ "$run_locked" -eq 1 ] && [ "$financial_ready" -eq 1 ] || safe=1
   if [ "$financial_ready" -eq 1 ];then financial_snapshot verify || safe=1;fi
+  if [ "$code_may_have_changed" -eq 1 ];then
+   if [ "$safe" -eq 0 ] && python3 scripts/stage-zero-log-reader.py restore "$backup/log-reader-releases.json";then
+    expected_api=$previous_api;expected_daily=$previous_daily;code_restored=1
+   else safe=1;fi
+  fi
   unchanged_installation || safe=1
   if ! cmp -s "$backup/trades.env" "$envfile";then
    [ -f "$backup/apply-verified.json" ] || safe=1
@@ -225,7 +234,7 @@ PY
    fi
   fi
   if [ "$safe" -eq 0 ];then
-   if [ "$env_restored" -eq 1 ];then systemctl restart globaldroptrade-api.service || safe=1;fi
+   if [ "$env_restored" -eq 1 ] || [ "$code_restored" -eq 1 ];then systemctl restart globaldroptrade-api.service || safe=1;fi
    api_wait "$backup/restored-config.json" "$backup/restored-health.json" "$backup/config.json" || safe=1
    cmp -s "$backup/trades.env" "$envfile" && financial_snapshot verify && unchanged_installation || safe=1
   fi
@@ -241,6 +250,12 @@ PY
  exit 1
 }
 check_candidate
+# Prepare immutable public-code copies while the old releases remain active.
+# The pinned baseline guard preserves unrelated edits in an installed release.
+python3 scripts/stage-zero-log-reader.py prepare "$apicurrent" "$dailycurrent" "$backup/log-reader-releases.json"
+new_api=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["roles"]["api"]["next"])' "$backup/log-reader-releases.json")
+new_daily=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["roles"]["daily"]["next"])' "$backup/log-reader-releases.json")
+unchanged_installation
 trap failed ERR INT TERM
 quiesce
 exec 6>"$state/run.lock"
@@ -272,6 +287,10 @@ selection.assertCurrent();
 const proof=Buffer.from(JSON.stringify({originalEnvSha256:sha(original),stagedEnvSha256:sha(next)})+'\n');let fd=fs.openSync(marker,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,proof);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
 const temporary=file+'.archive-rpc-'+process.pid;fd=fs.openSync(temporary,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,next);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temporary,file);const dir=fs.openSync(path.dirname(file),fs.constants.O_RDONLY);try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}
 JS
+code_may_have_changed=1
+python3 scripts/stage-zero-log-reader.py activate "$backup/log-reader-releases.json"
+expected_api=$new_api
+expected_daily=$new_daily
 systemctl restart globaldroptrade-api.service
 api_wait "$backup/candidate-config.json" "$backup/candidate-health.json" "$backup/config.json"
 financial_snapshot verify;unchanged_installation
