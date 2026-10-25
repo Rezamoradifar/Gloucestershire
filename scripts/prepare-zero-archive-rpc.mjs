@@ -9,7 +9,7 @@ import {readConfig} from '../server/trades-api.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {validateZeroStartRelease} from './deploy-zero-start.mjs';
-import {verifyZeroStartTarget,verifyZeroStartReadiness} from './zero-start-readiness.mjs';
+import {verifyZeroStartTarget,verifyZeroStartReadiness,sanitizeZeroStartArchiveProbeDiagnostic} from './zero-start-readiness.mjs';
 import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
 import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy} from './daily-profit.mjs';
 
@@ -31,7 +31,7 @@ const waitForAvailability=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // appear on RPC exceptions and must never become diagnostic report content.
 export function zeroArchiveReadinessSummary(readiness){
  const archive=readiness?.archive;
- return {ready:readiness?.ready===true,blockers:Array.isArray(readiness?.blockers)?[...new Set(readiness.blockers.slice(0,32).map(value=>readinessBlockers.has(value)?value:'UNKNOWN_READINESS_BLOCKER'))]:['UNKNOWN_READINESS_BLOCKER'],fundingReady:readiness?.funding?.ready===true,operatorGasPositive:readiness?.operatorGas?.positive===true,archive:{status:['supported','unavailable','provisional'].includes(archive?.status)?archive.status:'unknown',fullyVerified:archive?.fullyVerified===true,requiredRetentionSeconds:[3600,86400].includes(archive?.requiredRetentionSeconds)?archive.requiredRetentionSeconds:null,probes:Array.isArray(archive?.probes)?archive.probes.slice(0,16).map(probe=>({purpose:archivePurposes.has(probe?.purpose)?probe.purpose:'unknown',requestedTimestamp:positiveInteger(probe?.requestedTimestamp),block:positiveInteger(probe?.block),supported:probe?.supported===true,error:archiveErrors.has(probe?.error)?probe.error:null})):[]}};
+ return {ready:readiness?.ready===true,blockers:Array.isArray(readiness?.blockers)?[...new Set(readiness.blockers.slice(0,32).map(value=>readinessBlockers.has(value)?value:'UNKNOWN_READINESS_BLOCKER'))]:['UNKNOWN_READINESS_BLOCKER'],fundingReady:readiness?.funding?.ready===true,operatorGasPositive:readiness?.operatorGas?.positive===true,archive:{status:['supported','unavailable','provisional'].includes(archive?.status)?archive.status:'unknown',fullyVerified:archive?.fullyVerified===true,requiredRetentionSeconds:[3600,86400].includes(archive?.requiredRetentionSeconds)?archive.requiredRetentionSeconds:null,probes:Array.isArray(archive?.probes)?archive.probes.slice(0,16).map(probe=>({purpose:archivePurposes.has(probe?.purpose)?probe.purpose:'unknown',requestedTimestamp:positiveInteger(probe?.requestedTimestamp),block:positiveInteger(probe?.block),supported:probe?.supported===true,error:archiveErrors.has(probe?.error)?probe.error:null,failure:probe?.supported===false&&probe?.failure?sanitizeZeroStartArchiveProbeDiagnostic(probe.failure):null})):[]}};
 }
 
 function archiveAvailabilityOnly(readiness){

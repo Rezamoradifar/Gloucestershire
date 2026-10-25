@@ -13,6 +13,33 @@ import {writePrivateJson} from './migration-journal.mjs';
 
 const day=86400;
 const markerFields=['chainId','target','contractAddress','owner','queue','hash','block','blockHash','artifactHash','initcodeHash','runtimeHash'];
+const archiveOperations=new Set(['blockAtTime','owner','accounts-native','accounts-token','dailyTargetBps','ledgers-native','ledgers-token','canonical-check']);
+const archiveErrorCodes=new Set(['CALL_EXCEPTION','NETWORK_ERROR','SERVER_ERROR','TIMEOUT','BAD_DATA','UNKNOWN_ERROR','UNSUPPORTED_OPERATION','INVALID_ARGUMENT','NUMERIC_FAULT','BUFFER_OVERRUN','OFFCHAIN_FAULT','CANCELLED']);
+const archiveFailureReasons=new Set(['TIMEOUT','HISTORICAL_STATE_UNAVAILABLE','RATE_LIMITED','METHOD_UNAVAILABLE','TRANSPORT_UNAVAILABLE','INVALID_RESPONSE','REVERTED','UNKNOWN']);
+
+export function sanitizeZeroStartArchiveProbeDiagnostic(value){
+ return {operation:archiveOperations.has(value?.operation)?value.operation:'unknown',errorCode:archiveErrorCodes.has(value?.errorCode)?value.errorCode:null,rpcCode:typeof value?.rpcCode==='number'&&Number.isSafeInteger(value.rpcCode)&&value.rpcCode>=-2147483648&&value.rpcCode<=2147483647?value.rpcCode:null,httpStatus:Number.isSafeInteger(value?.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599?value.httpStatus:null,reason:archiveFailureReasons.has(value?.reason)?value.reason:'UNKNOWN'};
+}
+
+function archiveFailureReason(error,rpcCode,httpStatus){
+ const message=[error?.message,error?.info?.error?.message,error?.error?.message].filter(value=>typeof value==='string').join(' ').toLowerCase();
+ if(error?.code==='TIMEOUT'||/\btimeout\b|timed out/.test(message))return 'TIMEOUT';
+ if(httpStatus===429||rpcCode===-32005||/rate limit|too many requests|limit exceeded/.test(message))return 'RATE_LIMITED';
+ if(/missing trie|pruned|historical (?:contract )?state.*(?:unavailable|not available)|state (?:is )?not available|unknown state/.test(message))return 'HISTORICAL_STATE_UNAVAILABLE';
+ if([-32601,-32004].includes(rpcCode)||/method.*not found|method.*not supported|unsupported method/.test(message))return 'METHOD_UNAVAILABLE';
+ if(error?.revert||(typeof error?.data==='string'&&error.data!=='0x')||/execution reverted|vm exception.*revert/.test(message))return 'REVERTED';
+ if(['BAD_DATA','BUFFER_OVERRUN'].includes(error?.code))return 'INVALID_RESPONSE';
+ if(['NETWORK_ERROR','SERVER_ERROR'].includes(error?.code)||(httpStatus!==null&&httpStatus>=500))return 'TRANSPORT_UNAVAILABLE';
+ return 'UNKNOWN';
+}
+
+export function zeroStartArchiveProbeDiagnostic(error,operation){
+ const value=error?.info?.error?.code??error?.error?.code;
+ const rawStatus=error?.info?.response?.statusCode??error?.info?.responseStatus??error?.response?.statusCode??error?.response?.status??error?.status;
+ const status=typeof rawStatus==='string'&&/^[1-5][0-9]{2}(?:\s|$)/.test(rawStatus)?Number(rawStatus.slice(0,3)):rawStatus;
+ const httpStatus=Number.isSafeInteger(status)&&status>=100&&status<=599?status:null;
+ return sanitizeZeroStartArchiveProbeDiagnostic({operation,errorCode:error?.code,rpcCode:value,httpStatus,reason:archiveFailureReason(error,value,httpStatus)});
+}
 
 function verifyMarker(marker,report){
  if(marker?.version!==1||marker.kind!=='fresh-zero-site-connection'||marker.siteConnected!==true||marker.verified!==true)throw Error('ZERO_START_CONNECTED_MARKER_REQUIRED');
@@ -35,19 +62,22 @@ async function archiveReadiness({provider,vault,report,token,checkpoint,policy,p
  if(requestedPeriod!==undefined&&!requests.some(row=>row.timestamp===requestedPeriod))requests.push({purpose:'requested-period-start',timestamp:requestedPeriod});
  const probes=[];
  for(const request of requests){
-  let block;
+  let block,operation='blockAtTime';
   try{
    block=await blockAtTime(provider,request.timestamp,report.block,checkpoint.number);
    const o={blockTag:block.number};
-   await vault.owner(o);
-   await vault.accounts(report.owner,ZeroAddress,o);await vault.accounts(report.owner,token,o);
-   await vault.dailyTargetBps(report.owner,o);
-   await vault.ledgers(ZeroAddress,o);await vault.ledgers(token,o);
+   operation='owner';await vault.owner(o);
+   operation='accounts-native';await vault.accounts(report.owner,ZeroAddress,o);
+   operation='accounts-token';await vault.accounts(report.owner,token,o);
+   operation='dailyTargetBps';await vault.dailyTargetBps(report.owner,o);
+   operation='ledgers-native';await vault.ledgers(ZeroAddress,o);
+   operation='ledgers-token';await vault.ledgers(token,o);
+   operation='canonical-check';
    if((await provider.getBlock(block.number))?.hash!==block.hash)throw Error('ARCHIVE_CHECKPOINT_REORG');
    probes.push({purpose:request.purpose,requestedTimestamp:request.timestamp,block:block.number,blockHash:block.hash,blockTimestamp:block.timestamp,supported:true});
   }catch(error){
    if(error?.message==='ARCHIVE_CHECKPOINT_REORG')throw error;
-   probes.push({purpose:request.purpose,requestedTimestamp:request.timestamp,block:block?.number??null,supported:false,error:'HISTORICAL_CONTRACT_STATE_UNAVAILABLE'});
+   probes.push({purpose:request.purpose,requestedTimestamp:request.timestamp,block:block?.number??null,supported:false,error:'HISTORICAL_CONTRACT_STATE_UNAVAILABLE',failure:zeroStartArchiveProbeDiagnostic(error,operation)});
   }
  }
  const supported=probes.every(probe=>probe.supported);

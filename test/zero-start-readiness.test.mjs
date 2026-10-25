@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import ganache from 'ganache';
 import {BrowserProvider,Contract,ContractFactory,Wallet,ZeroAddress,getAddress,keccak256,parseEther} from 'ethers';
 import {deployZeroStart,zeroStartRelease} from '../scripts/deploy-zero-start.mjs';
-import {verifyZeroStartReadiness} from '../scripts/zero-start-readiness.mjs';
+import {verifyZeroStartReadiness,zeroStartArchiveProbeDiagnostic,sanitizeZeroStartArchiveProbeDiagnostic} from '../scripts/zero-start-readiness.mjs';
 
 const artifact=name=>JSON.parse(fs.readFileSync('artifacts/'+name+'.json','utf8'));
 const proxy=(target,overrides)=>new Proxy(target,{get(object,name){if(Object.hasOwn(overrides,name))return overrides[name];const value=Reflect.get(object,name);return typeof value==='function'?value.bind(object):value;}});
@@ -116,4 +116,44 @@ test('rejects forged connection identity, unrelated active targets, legacy mode 
  await (await target.connect(signers[3]).transferOwnership(addresses[0])).wait();await (await target.acceptOwnership()).wait();
  await assert.rejects(verifyZeroStartReadiness(options()),/ZERO_START_CONFIRMED_OWNER_MISMATCH/);
  assert.equal(await provider.getTransactionCount(wallet.address),1);
+});
+
+test('historical probe diagnostics identify the exact failing view without exposing provider exceptions',async()=>{
+ await authorize();await (await target.fundRewards(ZeroAddress,1n,{value:1n})).wait();await rpc.request({method:'evm_mine',params:[]});
+ const reference=(await provider.getBlock('latest')).number-1;
+ for(const [operation,method,asset]of [['owner','owner'],['accounts-native','accounts',ZeroAddress],['accounts-token','accounts',token.target],['dailyTargetBps','dailyTargetBps'],['ledgers-native','ledgers',ZeroAddress],['ledgers-token','ledgers',token.target]]){
+  const selector=target.interface.getFunction(method).selector;
+  const observed=proxy(provider,{call:async request=>{
+   const tag=typeof request.blockTag==='number'?request.blockTag:typeof request.blockTag==='string'&&request.blockTag.startsWith('0x')?Number(BigInt(request.blockTag)):reference;
+   const args=request.to===target.target&&request.data.startsWith(selector)?target.interface.decodeFunctionData(method,request.data):null;
+   const matches=args&&(asset===undefined||args[method==='accounts'?1:0]===asset);
+   if(tag<reference&&matches)throw Object.assign(Error('https://private.invalid/?key=never-print-this-secret'),{code:'CALL_EXCEPTION',info:{error:{code:-32603,message:'private provider response'},payload:{params:['private calldata']}}});
+   return provider.call(request);
+  }});
+  const report=await verifyZeroStartReadiness(options({provider:observed})),failed=report.archive.probes.find(probe=>!probe.supported);
+  assert.equal(report.ready,false);assert.equal(report.archive.status,'unavailable');assert.deepEqual(failed.failure,{operation,errorCode:'CALL_EXCEPTION',rpcCode:-32603,httpStatus:null,reason:'UNKNOWN'});
+  assert.doesNotMatch(JSON.stringify(report),/never-print-this-secret|private provider response|private calldata|https:\/\/private/);
+ }
+ assert.deepEqual(zeroStartArchiveProbeDiagnostic({code:'https://private.invalid',error:{code:'secret'}},'secret'),{operation:'unknown',errorCode:null,rpcCode:null,httpStatus:null,reason:'UNKNOWN'});
+});
+
+test('probe reason categories are fixed hints and never expose or trust raw exception text',()=>{
+ const samples=[
+  [{code:'TIMEOUT',message:'https://private.invalid/?key=secret'},'TIMEOUT'],
+  [{code:'CALL_EXCEPTION',info:{error:{code:-32603,message:'missing trie node private secret'}}},'HISTORICAL_STATE_UNAVAILABLE'],
+  [{code:'UNKNOWN_ERROR',info:{error:{code:-32005,message:'private quota'}}},'RATE_LIMITED'],
+  [{code:'SERVER_ERROR',info:{responseStatus:'429 Too Many Requests',error:{message:'private response body'}}},'RATE_LIMITED'],
+  [{code:'UNKNOWN_ERROR',info:{error:{code:-32601,message:'private backend'}}},'METHOD_UNAVAILABLE'],
+  [{code:'NETWORK_ERROR',message:'private network URL'},'TRANSPORT_UNAVAILABLE'],
+  [{code:'BAD_DATA',message:'private response'},'INVALID_RESPONSE'],
+  [{code:'CALL_EXCEPTION',data:'0x1234',message:'private revert data'},'REVERTED'],
+  [{message:'private unknown detail'},'UNKNOWN']
+ ];
+ for(const [error,reason]of samples){
+  const result=zeroStartArchiveProbeDiagnostic(error,'owner');assert.equal(result.reason,reason);assert.doesNotMatch(JSON.stringify(result),/private|secret|https|0x1234/);
+ }
+ assert.equal(zeroStartArchiveProbeDiagnostic(samples[3][0],'owner').httpStatus,429);
+ const sanitized=sanitizeZeroStartArchiveProbeDiagnostic({operation:'accounts-token',errorCode:'CALL_EXCEPTION',rpcCode:-32603,httpStatus:503,reason:'HISTORICAL_STATE_UNAVAILABLE',message:'private body'});
+ assert.deepEqual(sanitized,{operation:'accounts-token',errorCode:'CALL_EXCEPTION',rpcCode:-32603,httpStatus:503,reason:'HISTORICAL_STATE_UNAVAILABLE'});
+ assert.deepEqual(sanitizeZeroStartArchiveProbeDiagnostic({operation:'secret',errorCode:'secret',rpcCode:'secret',httpStatus:'secret',reason:'secret',message:'secret'}),{operation:'unknown',errorCode:null,rpcCode:null,httpStatus:null,reason:'UNKNOWN'});
 });

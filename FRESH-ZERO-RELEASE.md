@@ -390,6 +390,15 @@ At most three complete checks retry temporary archive/transport availability;
 an identity, funding, pending-state or canonical-history failure remains blocking.
 No incomplete archive result is accepted and no owed period is discarded.
 
+A failed probe also reports the exact allowlisted read operation, sanitized
+error/RPC codes, HTTP status and a fixed reason category inferred from the
+provider error. A timeout or malformed response can otherwise look like missing
+history; the generic archive blocker alone does not establish pruning. Provider
+messages, URLs, request payloads and credentials are never copied into this
+diagnostic. Use `--check` to obtain the per-operation result on the affected
+server without stopping services, changing its environment or opening a signer.
+Passing a probe elsewhere does not prove that the server's provider route works.
+
 API startup is checked with bounded HTTP availability polling. An unchanged
 environment does not cause an unnecessary API restart during failure recovery.
 Successful explicit execution enables a managed timer left disabled by an older

@@ -95,6 +95,7 @@ test('missing old account state or a changed current owner cannot qualify an arc
   assert.deepEqual(summary.blockers,['ARCHIVE_RPC_REQUIRED_FOR_PERIOD_START_PRINCIPAL']);assert.equal(summary.fundingReady,true);assert.equal(summary.operatorGasPositive,true);
   const failed=summary.archive.probes.find(probe=>probe.purpose==='requested-period-start');
   assert.equal(failed.requestedTimestamp,policy.startTimestamp);assert.equal(failed.block,periodSnapshot.number);assert.equal(failed.supported,false);assert.equal(failed.error,'HISTORICAL_CONTRACT_STATE_UNAVAILABLE');
+  assert.deepEqual(failed.failure,{operation:'accounts-native',errorCode:'CALL_EXCEPTION',rpcCode:-32603,httpStatus:null,reason:'HISTORICAL_STATE_UNAVAILABLE'});
   assert.doesNotMatch(JSON.stringify(error),/private\.invalid|Never publish|credential|private-rpc-secret/);return true;
  });
  assert.deepEqual(waits,[250,500]);
@@ -106,6 +107,13 @@ test('readiness summaries retain actual safe reasons while excluding unknown str
  assert.deepEqual(summary.blockers,['SERVER_OPERATOR_TEST_BNB_REQUIRED','UNKNOWN_READINESS_BLOCKER']);assert.equal(summary.fundingReady,true);assert.equal(summary.operatorGasPositive,false);
  assert.equal(summary.archive.probes[0].purpose,'requested-period-start');assert.equal(summary.archive.probes[1].purpose,'unknown');assert.equal(summary.archive.probes[1].requestedTimestamp,null);assert.equal(summary.archive.probes[1].block,null);assert.equal(summary.archive.probes[1].error,null);
  assert.doesNotMatch(JSON.stringify(summary),/private|secret|credential|https|Never publish/);
+});
+
+test('per-probe failure summaries preserve only an allowlisted operation, error code and numeric RPC code',()=>{
+ const summary=zeroArchiveReadinessSummary({archive:{status:'unavailable',probes:[{purpose:'requested-period-start',requestedTimestamp:policy.startTimestamp,block:periodSnapshot.number,supported:false,failure:{operation:'owner',errorCode:'TIMEOUT',rpcCode:-32603,message:'private provider credential'}},{supported:false,failure:{operation:'https://private.invalid/credential',errorCode:'private-rpc-secret',rpcCode:'private'}}]}});
+ assert.deepEqual(summary.archive.probes[0].failure,{operation:'owner',errorCode:'TIMEOUT',rpcCode:-32603,httpStatus:null,reason:'UNKNOWN'});
+ assert.deepEqual(summary.archive.probes[1].failure,{operation:'unknown',errorCode:null,rpcCode:null,httpStatus:null,reason:'UNKNOWN'});
+ assert.doesNotMatch(JSON.stringify(summary),/https|private|credential/);
 });
 
 test('a transient archive failure retries the same complete candidate proof without changing the unpaid period',async()=>{
