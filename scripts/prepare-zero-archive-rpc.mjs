@@ -11,7 +11,7 @@ import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {validateZeroStartRelease} from './deploy-zero-start.mjs';
 import {verifyZeroStartTarget,verifyZeroStartReadiness,sanitizeZeroStartArchiveProbeDiagnostic} from './zero-start-readiness.mjs';
 import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
-import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy} from './daily-profit.mjs';
+import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy,sanitizeDailyMemberIndexDiagnostic} from './daily-profit.mjs';
 import {publicZeroArchiveRpcUrl,readZeroArchiveCandidate,validateZeroArchiveCandidateUrl} from './zero-archive-candidate.mjs';
 import {getCompleteLogs,sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
 
@@ -204,7 +204,8 @@ async function main(){
   const blocker=/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message||'')?error.message:'ARCHIVE_RPC_READ_ONLY_VERIFICATION_FAILED';
   const detail=error?.message==='ARCHIVE_RPC_FULL_READINESS_REQUIRED'&&error.archiveReadiness?{readinessSummary:zeroArchiveReadinessSummary(error.archiveReadiness),readinessAttempts:Number.isSafeInteger(error.readinessAttempts)&&error.readinessAttempts>=1&&error.readinessAttempts<=zeroArchiveReadinessMaxAttempts?error.readinessAttempts:null}:{};
   const logProbe=error?.logProbeDiagnostic?{logProbeDiagnostic:sanitizeCompleteLogDiagnostic(error.logProbeDiagnostic)}:{};
-  console.log('ZERO_ARCHIVE_RPC_PREPARATION_FAILED');console.log(JSON.stringify({version:1,kind:'fresh-zero-archive-rpc-stage-error',blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase}),...detail,...logProbe,transactionsSent:0,signerOpened:false}));process.exitCode=1;
+  const memberIndex=error?.memberIndexDiagnostic?{memberIndexDiagnostic:sanitizeDailyMemberIndexDiagnostic(error.memberIndexDiagnostic)}:{};
+  console.log('ZERO_ARCHIVE_RPC_PREPARATION_FAILED');console.log(JSON.stringify({version:1,kind:'fresh-zero-archive-rpc-stage-error',blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase}),...detail,...logProbe,...memberIndex,transactionsSent:0,signerOpened:false}));process.exitCode=1;
  }finally{primary?.destroy();candidate?.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
 let invoked;

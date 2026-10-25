@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ganache from 'ganache';
 import {BrowserProvider,Contract,ContractFactory,ZeroAddress,keccak256,toUtf8Bytes,parseUnits} from 'ethers';
-import {validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests} from '../scripts/daily-profit.mjs';
+import {validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests,sanitizeDailyMemberIndexDiagnostic} from '../scripts/daily-profit.mjs';
 let rpc,provider,s,a,token,vault,queue,snapshot,deploymentBlock;
 const amount=v=>parseUnits(v,6),id=v=>keccak256(toUtf8Bytes(v));
 const tx=async p=>(await p).wait();
@@ -56,11 +56,43 @@ test('funding shortfall and a changed snapshot never create a daily credit',asyn
  assert.equal(await vault.usedRewardBatch(daily.batches[0].id),false);assert.equal((await vault.accounts(a[1],token.target)).profit,0n);
  await assert.rejects(executeDailyPlan({provider:{getBlock:async()=>({hash:id('reorg')})},vault,plan:daily,transact:send}),/SNAPSHOT_REORG/);
 });
-test('an incomplete member index is rejected rather than underpaying omitted depositors',async()=>{
+test('an incomplete index reports both historical principal mismatches without changing the journal or creating credit',async()=>{
+ const native=parseUnits('10',18);
+ await tx(vault.connect(s[1]).deposit(ZeroAddress,native,ZeroAddress,{value:native}));
  const p=await policy(),state={};await advance(86431);const daily=await plan(p,state);
  delete state.registry.members[a[1]];
- await assert.rejects(plan(p,state),/INCOMPLETE_DAILY_MEMBER_INDEX/);
+ state.registry.members[a[3]]=daily.snapshotBlock+1;
+ const before=structuredClone(state),block=await provider.getBlock(daily.snapshotBlock);
+ await assert.rejects(plan(p,state),error=>{
+  assert.equal(error.message,'INCOMPLETE_DAILY_MEMBER_INDEX');
+  assert.deepEqual(error.memberIndexDiagnostic,{
+   snapshot:{block:block.number,hash:block.hash,timestamp:block.timestamp},epoch:0,
+   registry:{through:before.registry.through,hash:before.registry.hash,totalMembers:2,includedMembers:1,futureMembers:1},
+   assets:[{asset:ZeroAddress,indexedPrincipal:'0',ledgerPrincipal:native.toString(),difference:native.toString()},{asset:token.target,indexedPrincipal:'0',ledgerPrincipal:amount('1000').toString(),difference:amount('1000').toString()}]
+  });
+  for(const address of a)assert.equal(JSON.stringify(error.memberIndexDiagnostic).includes(address),false);
+  return true;
+ });
+ assert.deepEqual(state,before);
  assert.equal(await vault.usedRewardBatch(daily.batches[0].id),false);
+ assert.equal((await vault.accounts(a[1],token.target)).profit,0n);
+});
+test('member index diagnostic sanitization removes private fields and rejects unsafe counts, hashes and amounts',()=>{
+ const privateText='https://private.invalid/credential',safeHash=id('safe-snapshot');
+ const value=sanitizeDailyMemberIndexDiagnostic({
+  snapshot:{block:'10',hash:privateText,timestamp:-1,url:privateText},epoch:Infinity,
+  registry:{through:10,hash:safeHash,totalMembers:NaN,includedMembers:2,futureMembers:'3',members:{[a[1]]:1}},
+  assets:[{asset:ZeroAddress,indexedPrincipal:'0',ledgerPrincipal:'140008',difference:'140008',url:privateText},{asset:token.target,indexedPrincipal:'140009',ledgerPrincipal:'140008',difference:'-1'},{asset:a[1],indexedPrincipal:'1',ledgerPrincipal:'1',difference:'0'}],
+  error:privateText,customer:a[1]
+ });
+ assert.deepEqual(value,{
+  snapshot:{block:null,hash:null,timestamp:null},epoch:null,
+  registry:{through:10,hash:safeHash,totalMembers:null,includedMembers:2,futureMembers:null},
+  assets:[{asset:ZeroAddress,indexedPrincipal:'0',ledgerPrincipal:'140008',difference:'140008'},{asset:token.target,indexedPrincipal:'140009',ledgerPrincipal:'140008',difference:'-1'}]
+ });
+ const malformed=sanitizeDailyMemberIndexDiagnostic({assets:[{asset:privateText,indexedPrincipal:'1e18',ledgerPrincipal:'9'.repeat(97),difference:'-0'}]});
+ assert.deepEqual(malformed.assets,[{asset:null,indexedPrincipal:null,ledgerPrincipal:null,difference:null}]);
+ assert.doesNotMatch(JSON.stringify([value,malformed]),/private|credential|https:/);
 });
 test('automatic payouts wait for administrator approval and pay the fixed net amount exactly once',async()=>{
  await tx(vault.batchProfit(id('withdrawal-profit'),token.target,[a[1]],[amount('20')]));

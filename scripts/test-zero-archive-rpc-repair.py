@@ -91,6 +91,8 @@ if args[0]=='prepare':
   except BlockingIOError:pass
   else:raise AssertionError('Staging requires the selected journal run lock')
  if mode in ['proof-fail','fork-fail','history-fail','logs-fail'] or (mode=='stage-proof-fail' and args[0]=='--stage'):print('ARCHIVE_PROOF_REQUIRED');raise SystemExit(1)
+ if mode.startswith('member-index-') and not (p/'registry-repaired').exists():
+  print('ZERO_ARCHIVE_RPC_PREPARATION_FAILED');print(json.dumps({'version':1,'kind':'fresh-zero-archive-rpc-stage-error','blocker':'INCOMPLETE_DAILY_MEMBER_INDEX','diagnostic':{'phase':'DAILY_PERIOD_PLAN'},'transactionsSent':0,'signerOpened':False}));raise SystemExit(1)
  if args==['--check','--fast-testnet']:
   if file and mode=='candidate-check-change':file.write_text(candidate+'?changed=1\n')
   if file and mode=='candidate-check-newline-change':file.write_bytes((candidate+'\r\n').encode())
@@ -110,6 +112,20 @@ if args[0]=='prepare':
  for name,value in [('trades.env',next),('readiness.json',data),('archive-rpc-stage.json',(json.dumps(r)+'\n').encode())]:(out/name).write_bytes(value);(out/name).chmod(0o600)
  if file and mode=='candidate-stage-change':file.write_text(candidate+'?changed=1\n')
  if mode=='input-change':j=json.loads((state/'journal.json').read_text());j['externalChange']=True;(state/'journal.json').write_text(json.dumps(j))
+elif args[0]=='repair':
+ args=args[1:];log('repair '+' '.join(args));assert args[:4]==['--execute','--fast-testnet','--held-run-lock','6']
+ with (state/'run.lock').open('a') as f:
+  try:fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  except BlockingIOError:pass
+  else:raise AssertionError('Repair requires the selected journal run lock')
+ count=int((p/'repair-count').read_text())+1;(p/'repair-count').write_text(str(count))
+ if mode=='member-index-fail':print('MEMBER_INDEX_REPAIR_FAILED');raise SystemExit(1)
+ if mode=='member-index-long' or (mode=='member-index-progress' and count<4):
+  (state/'member-index-rebuild.json').write_text(json.dumps({'pages':count}));(state/'member-index-rebuild.json').chmod(0o600);print('ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS');raise SystemExit(75)
+ j=json.loads((state/'journal.json').read_text());j['daily']['registry']={'through':43,'hash':'0x'+'12'*32,'members':{target:42}}
+ if mode=='member-index-financial-change':j['maxTotalFee']='unexpected-change'
+ if mode=='member-index-epoch-type-change':j['daily']['epoch']=False
+ (state/'journal.json').write_text(json.dumps(j));(p/'registry-repaired').write_text('yes');print('ZERO_MEMBER_INDEX_REPAIRED')
 elif args[0]=='systemctl':
  args=args[1:];command=args[0];unit=args[-1];log('systemctl '+' '.join(args));states=json.loads((p/'workers.json').read_text());row=states.get(unit,{'enabled':'disabled','active':'inactive'});new=candidate in envfile.read_text()
  if command=='show':print(('loaded' if unit in states else 'not-found') if '--property=LoadState' in args else row['active'])
@@ -152,7 +168,7 @@ else:raise AssertionError(args)
 '''
     template = template.replace('@PYTHON@', sys.executable).replace('@HOST@', repr(str(host))).replace('@TARGET@', repr(target)).replace('@SERVICE@', repr(service)).replace('@TIMER@', repr(timer))
     shim = host/'shim.py';shim.write_text(template);shim.chmod(0o755)
-    (host/'bin/node').write_text(f'#!/usr/bin/env bash\nif [ "${{1:-}}" = scripts/prepare-zero-archive-rpc.mjs ];then shift;exec "{shim}" prepare "$@";fi\nexec "{real_node}" "$@"\n')
+    (host/'bin/node').write_text(f'#!/usr/bin/env bash\nif [ "${{1:-}}" = scripts/prepare-zero-archive-rpc.mjs ];then shift;exec "{shim}" prepare "$@";fi\nif [ "${{1:-}}" = scripts/repair-zero-member-index.mjs ];then shift;exec "{shim}" repair "$@";fi\nexec "{real_node}" "$@"\n')
     for name in ['systemctl', 'curl']:(host/'bin'/name).write_text(f'#!/usr/bin/env bash\nexec "{shim}" {name} "$@"\n')
     (host/'bin/npm').write_text('#!/usr/bin/env bash\nexit 0\n');(host/'bin/sleep').write_text('#!/usr/bin/env bash\nexit 0\n')
     for p in (host/'bin').iterdir():p.chmod(0o755)
@@ -174,6 +190,8 @@ else:raise AssertionError(args)
         (state/'daily-policy.json').write_text(json.dumps(baseline_policy));(state/'daily-policy.json').chmod(0o600)
         for p, data in protected.items():p.write_text(json.dumps(data));p.chmod(0o600)
         (host/'workers.json').write_text(json.dumps(prior));(host/'calls').write_text('');(host/'worker-count').write_text('0');(host/'api-restarts').write_text('0');(host/'http-warmup').write_text('0');(host/'mode').write_text(mode)
+        (host/'repair-count').write_text('0')
+        if (host/'registry-repaired').exists():(host/'registry-repaired').unlink()
         if (host/'active-candidate-url').exists():(host/'active-candidate-url').unlink()
         for root in ['fresh-zero-automation-v1','automation-v1','oracle-maintenance-v1']:
             path=host/'state'/root
@@ -258,6 +276,18 @@ else:raise AssertionError(args)
         assert private_url not in r.stdout+r.stderr and secret not in r.stdout+r.stderr
     # A leftover private candidate file never changes the default public choice.
     r=run(argument='--check');assert r.returncode==0,(r.stdout,r.stderr);assert envfile.read_text()==original_env;assert json.loads((host/'workers.json').read_text())==prior;assert 'systemctl stop ' not in (host/'calls').read_text()
+    r=run('member-index-success',private=True);assert r.returncode==0,(r.stdout,r.stderr);assert int((host/'repair-count').read_text())==1;assert json.loads((state/'journal.json').read_text())['daily']['registry']['through']==43
+    assert (host/'calls').read_text().index('repair ') < (host/'calls').read_text().index('systemctl stop '+timer)
+    r=run('member-index-progress',private=True);assert r.returncode==0,(r.stdout,r.stderr);assert int((host/'repair-count').read_text())==4
+    for mode in ['member-index-long','member-index-fail']:
+        r=run(mode,private=True);assert r.returncode==(75 if mode=='member-index-long' else 1),(mode,r.stdout,r.stderr)
+        assert json.loads((state/'journal.json').read_text())==baseline_journal and envfile.read_text()==original_env
+        assert 'systemctl stop ' not in (host/'calls').read_text() and json.loads((host/'workers.json').read_text())==prior
+    r=run('member-index-success',argument='--check',private=True);assert r.returncode!=0 and int((host/'repair-count').read_text())==0
+    r=run('member-index-financial-change',private=True);assert r.returncode!=0 and 'MEMBER_REPAIR_CHANGED_FINANCIAL_STATE' in r.stderr,(r.stdout,r.stderr)
+    assert 'systemctl stop ' not in (host/'calls').read_text() and envfile.read_text()==original_env
+    r=run('member-index-epoch-type-change',private=True);assert r.returncode!=0 and 'MEMBER_REPAIR_CHANGED_FINANCIAL_STATE' in r.stderr,(r.stdout,r.stderr)
+    assert 'systemctl stop ' not in (host/'calls').read_text() and envfile.read_text()==original_env
     reset();envfile.write_text(original_env.replace('global-fresh-fast-test-v1','global-fresh-zero-v1'))
     r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute'],cwd=source,env=env,text=True,capture_output=True,timeout=30);assert r.returncode!=0 and 'prepare ' not in (host/'calls').read_text()
     reset();states=copy.deepcopy(prior);states['globaldroptrade-automation.service']={'active':'active','enabled':'enabled'};(host/'workers.json').write_text(json.dumps(states))

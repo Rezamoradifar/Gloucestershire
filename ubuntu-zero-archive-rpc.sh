@@ -60,7 +60,10 @@ exec 8>"$directory/setup.lock";flock -n 8 || { echo 'ZERO_ORACLE_REPAIR_ALREADY_
 exec 7>"$state/setup.lock";flock -n 7 || { echo 'ZERO_AUTOMATION_SETUP_ALREADY_RUNNING';exit 1; }
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 candidate_proof=$(mktemp "$directory/candidate-proof.XXXXXX")
-trap 'rm -f -- "$candidate_proof"' EXIT
+preflight_report=$(mktemp "$directory/member-preflight.XXXXXX")
+index_before=''
+index_inputs=''
+trap 'rm -f -- "$candidate_proof" "$preflight_report" "$index_before" "$index_inputs"' EXIT
 node --input-type=module - "$candidate_file" "$candidate_proof" <<'JS'
 import fs from 'node:fs';import {readZeroArchiveCandidate} from './scripts/zero-archive-candidate.mjs';
 const selected=readZeroArchiveCandidate(process.argv[2]||undefined);selected.assertCurrent();const fd=fs.openSync(process.argv[3],fs.constants.O_WRONLY|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW);try{fs.writeFileSync(fd,JSON.stringify(selected.proof)+'\n');fs.fchmodSync(fd,0o600);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
@@ -91,19 +94,83 @@ for name in sys.argv[1:]:
  if j.get('pending') or j.get('oracle',{}).get('pending') or any(not isinstance(t,dict) or type(t.get('block')) is not int or t['block']<1 for t in j.get('transactions',{}).values()):raise SystemExit('PENDING_SIGNED_TRANSACTION_REQUIRES_RECONCILIATION')
 PY
 }
+assert_other_signers_inactive(){
+ for other in globaldroptrade-migration.service globaldroptrade-fresh-rewards.service globaldroptrade-automation.timer globaldroptrade-automation.service globaldroptrade-oracles.timer globaldroptrade-oracles.service;do
+  load=$(systemctl show --property=LoadState --value "$other");active=$(systemctl show --property=ActiveState --value "$other")
+  case "$load:$active" in loaded:inactive|loaded:failed|not-found:inactive|not-found:failed) ;; *) echo 'OTHER_SIGNER_WORKER_ACTIVE_OR_UNKNOWN';return 1;; esac
+ done
+}
+member_repair_inputs(){
+ python3 - "$1" "$index_inputs" "$envfile" "$state/daily-policy.json" "$deployment/deployment-public.json" "$deployment/connection-public.json" <<'PY'
+import hashlib,json,os,stat,sys
+values={}
+for name in sys.argv[3:]:
+ fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+ with os.fdopen(fd,'rb') as f:
+  s=os.fstat(f.fileno())
+  if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_mode&0o077:raise SystemExit('PRIVATE_MEMBER_REPAIR_INPUT_REQUIRED')
+  values[name]=hashlib.sha256(f.read()).hexdigest()
+if sys.argv[1]=='create':
+ with open(sys.argv[2],'w') as f:json.dump(values,f)
+elif values!=json.load(open(sys.argv[2])):raise SystemExit('MEMBER_REPAIR_INPUT_CHANGED')
+PY
+}
+member_repair_only_registry(){
+ python3 - "$index_before" "$state/journal.json" "$1" <<'PY'
+import json,os,stat,sys
+def read(name):
+ fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+ with os.fdopen(fd,'rb') as f:
+  s=os.fstat(f.fileno())
+  if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_mode&0o077 or s.st_size>16*1024*1024:raise SystemExit('PRIVATE_MEMBER_REPAIR_JOURNAL_REQUIRED')
+  return f.read()
+old=read(sys.argv[1]);current=read(sys.argv[2]);before=json.loads(old);after=json.loads(current)
+if sys.argv[3]!='0' and old!=current:raise SystemExit('INCOMPLETE_MEMBER_REPAIR_CHANGED_JOURNAL')
+for value in [before,after]:
+ if not isinstance(value.get('daily'),dict):raise SystemExit('MEMBER_REPAIR_DAILY_STATE_REQUIRED')
+ value['daily'].pop('registry',None)
+if json.dumps(before,sort_keys=True,separators=(',',':'))!=json.dumps(after,sort_keys=True,separators=(',',':')):raise SystemExit('MEMBER_REPAIR_CHANGED_FINANCIAL_STATE')
+PY
+}
 journals=("$state/journal.json" /var/lib/globaldroptrade/fresh-zero-automation-v1/journal.json /var/lib/globaldroptrade/automation-v1/journal.json /var/lib/globaldroptrade/oracle-maintenance-v1/journal.json)
 # Reject an unusable candidate without interrupting healthy existing services.
 # Execution repeats the entire proof after quiescing, under the stable journal.
 exec 6>"$state/run.lock";flock -n 6 || { echo 'ZERO_AUTOMATION_JOURNAL_IN_USE';exit 1; }
 journals_complete "${journals[@]}"
-node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}"
+if node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}" > "$preflight_report";then
+ cat "$preflight_report"
+else
+ preflight_status=$?
+ cat "$preflight_report"
+ if [ "$mode" != --execute ] || ! python3 - "$preflight_report" <<'PY'
+import json,sys
+try:
+ value=json.loads(open(sys.argv[1]).read().splitlines()[-1])
+ assert value['version']==1 and value['kind']=='fresh-zero-archive-rpc-stage-error' and value['blocker']=='INCOMPLETE_DAILY_MEMBER_INDEX' and value['diagnostic']['phase']=='DAILY_PERIOD_PLAN' and value['transactionsSent']==0 and value['signerOpened'] is False
+except Exception:raise SystemExit(1)
+PY
+ then exit "$preflight_status";fi
+ assert_other_signers_inactive
+ index_before=$(mktemp "$directory/member-journal-before.XXXXXX")
+ index_inputs=$(mktemp "$directory/member-inputs-before.XXXXXX")
+ install -m 600 "$state/journal.json" "$index_before"
+ member_repair_inputs create
+ repaired=0
+ for rebuild_pass in 1 2 3 4;do
+  journals_complete "${journals[@]}";check_candidate;member_repair_inputs verify
+  if node scripts/repair-zero-member-index.mjs --execute --fast-testnet --held-run-lock 6 "${candidate_args[@]}";then repair_status=0;else repair_status=$?;fi
+  member_repair_only_registry "$repair_status"
+  member_repair_inputs verify;check_candidate;journals_complete "${journals[@]}"
+  if [ "$repair_status" -eq 0 ];then repaired=1;break;fi
+  [ "$repair_status" -eq 75 ] || exit "$repair_status"
+ done
+ if [ "$repaired" -ne 1 ];then echo 'ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS: repeat the same command to resume verified pages.';exit 75;fi
+ node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}"
+fi
 check_candidate
 flock -u 6;exec 6>&-
 if [ "$mode" = --check ];then exit 0;fi
-for other in globaldroptrade-migration.service globaldroptrade-fresh-rewards.service globaldroptrade-automation.timer globaldroptrade-automation.service globaldroptrade-oracles.timer globaldroptrade-oracles.service;do
- load=$(systemctl show --property=LoadState --value "$other");active=$(systemctl show --property=ActiveState --value "$other")
- case "$load:$active" in loaded:inactive|loaded:failed|not-found:inactive|not-found:failed) ;; *) echo 'OTHER_SIGNER_WORKER_ACTIVE_OR_UNKNOWN';exit 1;; esac
-done
+assert_other_signers_inactive
 backup="$directory/archive-rpc-$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 700 "$backup"
 install -m 600 "$envfile" "$backup/trades.env"

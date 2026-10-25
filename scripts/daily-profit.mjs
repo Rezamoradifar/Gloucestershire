@@ -29,6 +29,20 @@ export const approvedQueueAbi=[
  'function requests(uint256) view returns(address user,address asset,uint256 gross,uint256 fee,uint256 dueAt,uint8 status)',
  'function pay(uint256)'
 ];
+// Publish aggregate index reconciliation only; never include customer addresses.
+export function sanitizeDailyMemberIndexDiagnostic(value){
+ const count=number=>Number.isSafeInteger(number)&&number>=0?number:null;
+ const hash=text=>typeof text==='string'&&/^0x[0-9a-f]{64}$/i.test(text)?text:null;
+ const units=text=>typeof text==='string'&&/^(?:0|[1-9][0-9]{0,95})$/.test(text)?text:null;
+ const difference=text=>typeof text==='string'&&/^(?:0|-?[1-9][0-9]{0,95})$/.test(text)?text:null;
+ const asset=text=>{try{return typeof text==='string'?getAddress(text):null;}catch{return null;}};
+ return {
+  snapshot:{block:count(value?.snapshot?.block),hash:hash(value?.snapshot?.hash),timestamp:count(value?.snapshot?.timestamp)},
+  epoch:count(value?.epoch),
+  registry:{through:count(value?.registry?.through),hash:hash(value?.registry?.hash),totalMembers:count(value?.registry?.totalMembers),includedMembers:count(value?.registry?.includedMembers),futureMembers:count(value?.registry?.futureMembers)},
+  assets:Array.isArray(value?.assets)?value.assets.slice(0,2).map(row=>({asset:asset(row?.asset),indexedPrincipal:units(row?.indexedPrincipal),ledgerPrincipal:units(row?.ledgerPrincipal),difference:difference(row?.difference)})):[]
+ };
+}
 export function validateDailyPolicy(p){
  if(p?.version!==1||p.chainId!==97||!isAddress(p.vaultAddress)||getAddress(p.vaultAddress)===ZeroAddress)throw Error('INVALID_DAILY_POLICY');
  if(p.basis!=='period-start-active-principal'||![86400,3600].includes(p.periodSeconds)||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
@@ -98,9 +112,18 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
    if(amount>0n)entries[i].push({recipient:member,amount:amount.toString(),principal:account.principal.toString(),rateBps:rate.toString()});
   }
  }
+ const ledgerPrincipal=await Promise.all(assets.map(async asset=>(await vault.ledgers(asset,options)).principal));
+ if(ledgerPrincipal.some((value,i)=>value!==principal[i])){
+  const error=Error('INCOMPLETE_DAILY_MEMBER_INDEX'),cached=Object.entries(state.registry.members);
+  error.memberIndexDiagnostic=sanitizeDailyMemberIndexDiagnostic({
+   snapshot:{block:snapshot.number,hash:snapshot.hash,timestamp:snapshot.timestamp},epoch,
+   registry:{through:state.registry.through,hash:state.registry.hash,totalMembers:cached.length,includedMembers:members.length,futureMembers:cached.filter(([,block])=>block>snapshot.number).length},
+   assets:assets.map((asset,i)=>({asset,indexedPrincipal:principal[i].toString(),ledgerPrincipal:ledgerPrincipal[i].toString(),difference:(ledgerPrincipal[i]-principal[i]).toString()}))
+  });
+  throw error;
+ }
  const batches=[];
  for(let i=0;i<2;i++){
-  if((await vault.ledgers(assets[i],options)).principal!==principal[i])throw Error('INCOMPLETE_DAILY_MEMBER_INDEX');
   for(let offset=0;offset<entries[i].length;offset+=100){
    const rows=entries[i].slice(offset,offset+100);
    const domain=isHourlyTestPolicy(policy)?'GLOBAL_HOURLY_TEST_V1':'GLOBAL_DAILY_V1';

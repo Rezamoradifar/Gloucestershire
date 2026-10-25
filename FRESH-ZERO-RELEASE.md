@@ -461,6 +461,32 @@ invalid requests, missing history, authentication and quota failures retain thei
 blocking or bounded-retry behavior. No historical principal or member-index
 verification is omitted to accommodate a provider's error-code convention.
 
+If historical account principal does not equal both asset ledger totals, the
+planner still stops with `INCOMPLETE_DAILY_MEMBER_INDEX`. Its safe diagnostic
+shows the same owed snapshot, cache counts and exact per-asset principal sums.
+A canonical cache-ending block does not prove that an earlier RPC supplied every
+registration event.
+
+For this exact failure during `--execute`, the archive launcher can rebuild only
+the derived member registry using the selected candidate. It scans from this
+verified contract's creation through the same unpaid snapshot into a separate
+private `member-index-rebuild.json`. Complete pages are saved durably; bindings
+include original input hashes, policy, epoch, candidate and canonical snapshot.
+Each pass is bounded by 100 logical pages and a 240-second start-page budget.
+The launcher allows at most four passes per command. `--check` never rebuilds.
+If `ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS` is reported, repeat the same pinned
+command to resume complete pages. Changed bound inputs stop resumption.
+
+The original journal remains untouched until the full reconstructed plan proves
+both principal totals and the full original-period readiness again. Current-epoch
+credit evidence or used personal/referral batch IDs blocks replacement. Only
+`daily.registry` can change; epoch, activation, previous credits, transactions,
+raw signed data, grants, fees and all other journal fields remain identical.
+The original bytes are backed up privately before atomic replacement. The
+wrapper independently checks that only the registry changed and repeats normal
+preflight before any service cutover. Rebuilding never opens a signer or credits
+profit, and cannot discard an unpaid period to escape unavailable history.
+
 A failed probe also reports the exact allowlisted read operation, sanitized
 error/RPC codes, HTTP status and a fixed reason category inferred from the
 provider error. A timeout or malformed response can otherwise look like missing

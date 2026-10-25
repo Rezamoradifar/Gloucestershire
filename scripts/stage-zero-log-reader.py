@@ -20,6 +20,7 @@ previous_helper_hashes = {
     'cc86f8004253b5c5f7aa20292ee6151da9140bf18994e1a36661ac04b1f52b14',
     '1ed98c3709a7980fa79abecd740001fd429f707e3541162e3fea943ee7737346',
 }
+previous_source_hashes = {'scripts/daily-profit.mjs': {'a1f0d70d10affb6b9f762cf5fb04e249ca428bc3ac2d78f6c45e64a74b5dda37'}}
 roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper]}
 
 
@@ -94,6 +95,8 @@ def prepare(source, api_current, daily_current, manifest):
             if old_hash == new_hashes[relative]:
                 continue
             if relative == helper and (old_hash is None or old_hash in previous_helper_hashes):
+                continue
+            if old_hash in previous_source_hashes.get(relative, set()):
                 continue
             if old_hash != baseline.get(relative):
                 raise ValueError('INSTALLED_LOG_READER_SOURCE_REVIEW_REQUIRED')
