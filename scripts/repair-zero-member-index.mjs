@@ -12,7 +12,7 @@ import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {prepareZeroArchiveRpc,zeroArchiveReadinessSummary} from './prepare-zero-archive-rpc.mjs';
 import {readZeroArchiveCandidate} from './zero-archive-candidate.mjs';
 import {blockAtTime,indexMembers,planDailyEpoch,validateDailyPolicy,isHourlyTestPolicy,sanitizeDailyMemberIndexDiagnostic} from './daily-profit.mjs';
-import {sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
+import {sanitizeCompleteLogDiagnostic,isCompleteLogTransportTimeout} from './complete-rpc-logs.mjs';
 import {zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
 
 const sha256=value=>createHash('sha256').update(value).digest('hex');
@@ -21,6 +21,8 @@ const hash=value=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
 const integer=value=>Number.isSafeInteger(value)&&value>=0;
 const inputNames=['original','deploymentText','connectionText','policyText','journalText'];
 const repairPhases=new Set(['ORIGINAL_PERIOD_PROOF','MEMBER_INDEX_REBUILD_SNAPSHOT','MEMBER_INDEX_REBUILD','MEMBER_INDEX_REBUILT_PERIOD_PROOF','MEMBER_INDEX_REPAIR_COMMIT']);
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const blockDiagnostic=value=>({operation:'getBlock',blockNumber:integer(value?.blockNumber)?value.blockNumber:null,attempts:Number.isSafeInteger(value?.attempts)&&value.attempts>=1&&value.attempts<=3?value.attempts:null,errorCode:value?.errorCode==='TIMEOUT'?'TIMEOUT':null,rpcCode:null,httpStatus:null,reason:value?.reason==='TIMEOUT'?'TIMEOUT':'UNKNOWN'});
 
 function validateProgress(progress,binding,policy){
  if(!progress||progress.version!==1||progress.kind!=='fresh-zero-member-index-rebuild'||!isDeepStrictEqual(progress.binding,binding))throw Error('MEMBER_INDEX_REBUILD_BINDING_MISMATCH');
@@ -37,8 +39,8 @@ function validateProgress(progress,binding,policy){
 // The injected persistence functions let tests verify every write boundary.
 // Only commitJournal may replace the financial journal; progress is auxiliary.
 export async function repairZeroMemberIndex(options){
- const {loadProgress,saveProgress,commitJournal,maxPages=100,maxMilliseconds=240000,now=Date.now,assertCurrent=async()=>{},onPhase=()=>{}}=options;
- if(typeof loadProgress!=='function'||typeof saveProgress!=='function'||typeof commitJournal!=='function'||typeof now!=='function'||!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100||!Number.isSafeInteger(maxMilliseconds)||maxMilliseconds<1||maxMilliseconds>240000)throw Error('MEMBER_INDEX_REPAIR_PERSISTENCE_REQUIRED');
+ const {loadProgress,saveProgress,commitJournal,maxPages=100,maxMilliseconds=240000,now=Date.now,assertCurrent=async()=>{},onPhase=()=>{},waitForBlockRetry=wait}=options;
+ if(typeof loadProgress!=='function'||typeof saveProgress!=='function'||typeof commitJournal!=='function'||typeof now!=='function'||typeof waitForBlockRetry!=='function'||!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100||!Number.isSafeInteger(maxMilliseconds)||maxMilliseconds<1||maxMilliseconds>240000)throw Error('MEMBER_INDEX_REPAIR_PERSISTENCE_REQUIRED');
  let phase='ORIGINAL_PERIOD_PROOF',mismatch=false,mismatchDiagnostic;
  const during=value=>{phase=value;onPhase(value);};
  const proofOptions={...options,assertCurrent,onPhase:during};
@@ -52,7 +54,20 @@ export async function repairZeroMemberIndex(options){
  if(!mismatch)throw Error('MEMBER_INDEX_REPAIR_MISMATCH_REQUIRED');
  const policy=validateDailyPolicy(JSON.parse(options.policyText)),originalState=JSON.parse(options.journalText),epoch=originalState.daily.epoch;
  if(originalState.daily.lastCredit?.epoch===epoch&&Array.isArray(originalState.daily.lastCredit.credited)&&originalState.daily.lastCredit.credited.length)throw Error('MEMBER_INDEX_REPAIR_REQUIRES_BATCH_RECONCILIATION');
- const candidate=options.candidate,vault=new Contract(policy.vaultAddress,options.artifact.abi,candidate),confirmations=options.confirmations??3;
+ const blockTimeouts=new WeakSet();let exhaustedBlock;
+ const getBlock=async(...args)=>{
+  if(!integer(args[0]))return options.candidate.getBlock(...args);
+  for(let attempt=1;attempt<=3;attempt++){
+   try{const block=await options.candidate.getBlock(...args);if(!block||block.number!==args[0]||!hash(block.hash)||!integer(block.timestamp))throw Error('MEMBER_INDEX_BLOCK_HEADER_INVALID');return block;}
+   catch(error){
+    if(!isCompleteLogTransportTimeout(error))throw error;
+    if(attempt<3){await waitForBlockRetry(attempt===1?500:1500);continue;}
+    exhaustedBlock=blockDiagnostic({blockNumber:args[0],attempts:attempt,errorCode:'TIMEOUT',reason:'TIMEOUT'});
+    const failure=Error('MEMBER_INDEX_BLOCK_RPC_TIMEOUT');failure.code='TIMEOUT';failure.blockReadDiagnostic=exhaustedBlock;blockTimeouts.add(failure);throw failure;
+   }
+  }
+ };
+ const candidate=new Proxy(options.candidate,{get(target,key){if(key==='getBlock')return getBlock;const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}}),vault=new Contract(policy.vaultAddress,options.artifact.abi,candidate),confirmations=options.confirmations??3;
  during('MEMBER_INDEX_REBUILD_SNAPSHOT');
  await assertCurrent();
  const head=await candidate.getBlockNumber(),final=await candidate.getBlock(Math.max(0,head-confirmations)),start=policy.startTimestamp+epoch*policy.periodSeconds;
@@ -65,21 +80,24 @@ export async function repairZeroMemberIndex(options){
  let progress=await loadProgress();
  if(progress===null||progress===undefined)progress={version:1,kind:'fresh-zero-member-index-rebuild',binding,registry:{through:policy.deploymentBlock-1,hash:null,members:{}}};
  progress=structuredClone(validateProgress(progress,binding,policy));
- const canonical=async()=>{
+ const canonical=async(registry=progress.registry)=>{
   await assertCurrent();
   const block=await candidate.getBlock(snapshot.number);
   if(block?.hash!==snapshot.hash||block.timestamp!==snapshot.timestamp)throw Error('MEMBER_INDEX_REBUILD_SNAPSHOT_REORG');
-  if(progress.registry.hash&&(await candidate.getBlock(progress.registry.through))?.hash!==progress.registry.hash)throw Error('MEMBER_INDEX_REBUILD_CHECKPOINT_REORG');
+  if(registry.hash&&(await candidate.getBlock(registry.through))?.hash!==registry.hash)throw Error('MEMBER_INDEX_REBUILD_CHECKPOINT_REORG');
  };
+ let pages=0;
+ const progressReport=()=>({version:1,kind:'fresh-zero-member-index-repair',chainId:97,target:policy.vaultAddress,epoch,snapshot:binding.snapshot,through:progress.registry.through,members:Object.keys(progress.registry.members).length,pages,transactionsSent:0,signerOpened:false});
+ try{
  await canonical();
  during('MEMBER_INDEX_REBUILD');
- const began=now();let pages=0;
- const progressReport=()=>({version:1,kind:'fresh-zero-member-index-repair',chainId:97,target:policy.vaultAddress,epoch,snapshot:binding.snapshot,through:progress.registry.through,members:Object.keys(progress.registry.members).length,pages,transactionsSent:0,signerOpened:false});
+ const began=now();
  while(progress.registry.through<snapshot.number&&pages<maxPages&&now()-began<maxMilliseconds){
   await canonical();
   const daily={registry:structuredClone(progress.registry)},previous=daily.registry;let saved=false;
   try{await indexMembers({provider:candidate,policy,state:daily,through:snapshot.number,maxPages:1,pageSize:500,logOptions:{maxTimeoutRetries:2,maxConcurrency:2},save:()=>{saved=true;}});}
   catch(error){
+   if(daily.registry!==previous||saved)throw Error('MEMBER_INDEX_REBUILD_CHECKPOINT_REORG');
    const raw=error?.logProbeDiagnostic,diagnostic=sanitizeCompleteLogDiagnostic(raw),fromBlock=progress.registry.through+1,toBlock=Math.min(fromBlock+499,snapshot.number);
    const typedTimeout=error?.message==='COMPLETE_LOG_QUERY_FAILED'&&error.code==='TIMEOUT'&&raw?.operation==='eth_getLogs'&&raw.reason==='TIMEOUT'&&raw.errorCode==='TIMEOUT'&&raw.rpcCode===null&&raw.httpStatus===null&&integer(raw.fromBlock)&&integer(raw.toBlock)&&raw.fromBlock>=fromBlock&&raw.toBlock>=raw.fromBlock&&raw.toBlock<=toBlock&&Number.isSafeInteger(raw.requests)&&raw.requests>=1&&raw.requests<=1024&&daily.registry===previous&&!saved;
    if(!typedTimeout)throw error;
@@ -87,10 +105,10 @@ export async function repairZeroMemberIndex(options){
    return {...progressReport(),status:'in-progress',waitingFor:'RPC_TIMEOUT',logProbeDiagnostic:diagnostic};
   }
   if(!saved||daily.registry!==previous||daily.registry.through<=progress.registry.through)throw Error('MEMBER_INDEX_REBUILD_CHECKPOINT_REORG');
-  progress.registry=daily.registry;
-  validateProgress(progress,binding,policy);
-  await canonical();
-  await saveProgress(structuredClone(progress));pages++;
+  const next={...progress,registry:daily.registry};
+  validateProgress(next,binding,policy);
+  await canonical(next.registry);
+  await saveProgress(structuredClone(next));progress=next;pages++;
  }
  const report=progressReport();
  if(progress.registry.through<snapshot.number)return {...report,status:'in-progress'};
@@ -114,6 +132,13 @@ export async function repairZeroMemberIndex(options){
  during('MEMBER_INDEX_REPAIR_COMMIT');
  await commitJournal(replacementText);
  return {...report,status:'repaired',originalJournalSha256:sha256(options.journalText),journalSha256:sha256(replacementText)};
+ }catch(error){
+  const diagnostic=error?.logProbeDiagnostic;
+  const wrappedBlockTimeout=exhaustedBlock&&error?.message==='COMPLETE_LOG_CANONICAL_READ_FAILED'&&isCompleteLogTransportTimeout(error)&&diagnostic?.operation==='getBlock'&&diagnostic.reason==='TIMEOUT'&&diagnostic.errorCode==='TIMEOUT'&&diagnostic.rpcCode===null&&diagnostic.httpStatus===null&&integer(diagnostic.fromBlock)&&integer(diagnostic.toBlock)&&exhaustedBlock.blockNumber>=diagnostic.fromBlock&&exhaustedBlock.blockNumber<=diagnostic.toBlock;
+  if(!blockTimeouts.has(error)&&!wrappedBlockTimeout)throw error;
+  await assertCurrent();
+  return {...progressReport(),status:'in-progress',waitingFor:'RPC_TIMEOUT',blockReadDiagnostic:blockDiagnostic(exhaustedBlock)};
+ }
 }
 
 export function assertZeroMemberIndexRunLock(file,fd=6){
@@ -178,7 +203,7 @@ async function main(){
   console.log(result.waitingFor==='RPC_TIMEOUT'?'ZERO_MEMBER_INDEX_REBUILD_WAITING':result.status==='in-progress'?'ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS':result.status==='repaired'?'ZERO_MEMBER_INDEX_REPAIRED':'ZERO_MEMBER_INDEX_REPAIR_NOT_REQUIRED');console.log(JSON.stringify(result));if(result.status==='in-progress')process.exitCode=result.waitingFor==='RPC_TIMEOUT'?76:75;
  }catch(error){
   const blocker=/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message||'')?error.message:'MEMBER_INDEX_REPAIR_FAILED';
-  const detail={...(error?.archiveReadiness?{readinessSummary:zeroArchiveReadinessSummary(error.archiveReadiness)}:{}),...(error?.memberIndexDiagnostic?{memberIndexDiagnostic:sanitizeDailyMemberIndexDiagnostic(error.memberIndexDiagnostic)}:{})};
+  const detail={...(error?.archiveReadiness?{readinessSummary:zeroArchiveReadinessSummary(error.archiveReadiness)}:{}),...(error?.memberIndexDiagnostic?{memberIndexDiagnostic:sanitizeDailyMemberIndexDiagnostic(error.memberIndexDiagnostic)}:{}),...(error?.blockReadDiagnostic?{blockReadDiagnostic:blockDiagnostic(error.blockReadDiagnostic)}:{})};
   const diagnostic=zeroStartWorkerDiagnostic(error,{phase});if(repairPhases.has(phase))diagnostic.phase=phase;
   console.log('ZERO_MEMBER_INDEX_REPAIR_FAILED');console.log(JSON.stringify({version:1,kind:'fresh-zero-member-index-repair-error',blocker,diagnostic,...detail,...(error?.logProbeDiagnostic?{logProbeDiagnostic:sanitizeCompleteLogDiagnostic(error.logProbeDiagnostic)}:{}),transactionsSent:0,signerOpened:false}));process.exitCode=1;
  }finally{primary?.destroy();candidate?.destroy();for(const provider of proofProviders)provider.destroy();}

@@ -490,6 +490,18 @@ passes against an unavailable provider; the launcher returns resumable status 75
 Retry the same pinned command after the provider responds. Invalid requests,
 authentication, historical-state errors and canonical failures still block.
 
+Reconstruction also retries fixed-number block-header reads at most twice on
+the same strict transport timeout classification. Snapshot, cache cursor,
+window anchors, event block hashes and page-end reads use the same selected
+provider; no block number or expected hash changes during retry. Once progress
+is bound to the proved snapshot, an exhausted read reports only the numeric
+block and bounded attempt count and pauses with the previous durable page.
+Earlier snapshot-discovery exhaustion fails with the same safe diagnostic and
+does not modify saved progress. A newly read page becomes the reported checkpoint
+only after its canonical checks and auxiliary persistence finish successfully.
+Missing or malformed headers and changed canonical hashes remain fatal. The
+final archive preparation retains its existing separate retry limits.
+
 The original journal remains untouched until the full reconstructed plan proves
 both principal totals and the full original-period readiness again. Current-epoch
 credit evidence or used personal/referral batch IDs blocks replacement. Only

@@ -62,6 +62,14 @@ function rpcFailure(error){
  return {errorCode:errorCodes.has(error?.code)?error.code:null,rpcCode,httpStatus,reason,split,limit,confirmed429:reason==='RATE_LIMITED'&&(httpStatus===429||rpcCode===429)};
 }
 
+export function isCompleteLogTransportTimeout(error){
+ try{
+  if(error?.code!=='TIMEOUT')return false;
+  const details=rpcFailure(error);
+  return details.reason==='TIMEOUT'&&details.rpcCode===null&&details.httpStatus===null;
+ }catch{return false;}
+}
+
 function fixedFilter(filter){
  if(!filter||typeof filter!=='object'||Object.keys(filter).some(key=>!['address','topics','fromBlock','toBlock'].includes(key))||!integer(filter.fromBlock)||!integer(filter.toBlock)||filter.toBlock<filter.fromBlock||filter.toBlock-filter.fromBlock+1>1000)throw Error('COMPLETE_LOG_FILTER_REQUIRED');
  let address;try{address=getAddress(filter.address);}catch{throw Error('COMPLETE_LOG_FILTER_REQUIRED');}
@@ -101,7 +109,7 @@ export async function getCompleteLogs({provider,filter,maxRequests=1024,maxTimeo
    catch(error){
     const details=rpcFailure(error);
     if(details.confirmed429&&retry<2){await waitForRetry(retry===0?250:750);continue;}
-    if(error?.code==='TIMEOUT'&&details.reason==='TIMEOUT'&&details.rpcCode===null&&details.httpStatus===null&&retry<maxTimeoutRetries){await waitForRetry(retry===0?500:1500);continue;}
+    if(retry<maxTimeoutRetries&&isCompleteLogTransportTimeout(error)){await waitForRetry(retry===0?500:1500);continue;}
     throw error;
    }
   }

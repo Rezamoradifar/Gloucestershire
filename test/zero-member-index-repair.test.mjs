@@ -136,6 +136,97 @@ test('a first-page registration-log timeout yields without saving an empty or pa
  failed=false;rebuildRanges.length=0;const recovered=await c.run();assert.equal(recovered.status,'repaired');assert.equal(c.commits.length,1);assert.equal(recovered.epoch,0);assert.equal(rebuildRanges[0].fromBlock,policy.deploymentBlock);assert.equal(c.saves.length,2);
 });
 
+test('numeric block retries recover snapshot, cursor, page-anchor, end-header and pre-save canonical reads',async()=>{
+ const seed=controller();await seed.run({maxPages:1});const saved=seed.progress,firstEnd=policy.deploymentBlock+499;
+ const cases=[
+  {name:'snapshot discovery',matches:({phase})=>phase==='MEMBER_INDEX_REBUILD_SNAPSHOT'},
+  {name:'loaded cursor',initial:saved,matches:({loaded,number})=>loaded&&number===firstEnd},
+  {name:'pre-page snapshot',matches:({phase,number,ordinal})=>phase==='MEMBER_INDEX_REBUILD'&&number===periodSnapshot.number&&ordinal===1},
+  {name:'helper page anchor',matches:({phase,number,ordinal})=>phase==='MEMBER_INDEX_REBUILD'&&number===firstEnd&&ordinal===1},
+  {name:'index end header',matches:({phase,number,ordinal})=>phase==='MEMBER_INDEX_REBUILD'&&number===firstEnd&&ordinal===3},
+  {name:'post-page canonical',matches:({phase,number,ordinal})=>phase==='MEMBER_INDEX_REBUILD'&&number===periodSnapshot.number&&ordinal===2}
+ ];
+ for(const entry of cases){
+  let phase,loaded=false,triggered=false,target,triggerIndex,failures=0;const calls=[],counts=new Map(),waits=[];
+  const candidate=readonly({getBlock:async(number,...rest)=>{
+   const key=phase+':'+number,ordinal=(counts.get(key)??0)+1;counts.set(key,ordinal);calls.push(number);
+   if(!triggered&&entry.matches({phase,loaded,number,ordinal})){triggered=true;target=number;triggerIndex=calls.length-1;}
+   if(triggered&&number===target&&failures<2){failures++;throw Object.assign(Error('private block timeout https://private.invalid/block-secret'),{code:'TIMEOUT'});}
+   return provider.getBlock(number,...rest);
+  }}),c=controller({candidate,onPhase:value=>{phase=value;},waitForBlockRetry:async ms=>waits.push(ms),loadProgress:async()=>{loaded=true;return structuredClone(entry.initial??null);}},entry.initial??null),result=await c.run();
+  assert.equal(result.status,'repaired',entry.name);assert.equal(triggered,true,entry.name);assert.equal(failures,2,entry.name);assert.deepEqual(waits,[500,1500],entry.name);assert.deepEqual(calls.slice(triggerIndex,triggerIndex+3),[target,target,target],entry.name);assert.equal(c.commits.length,1,entry.name);assert.deepEqual(stripRegistry(JSON.parse(c.commits[0])),stripRegistry(state),entry.name);
+ }
+});
+
+test('an exhausted saved-page block timeout waits with durable progress and resumes the same registration boundary',async()=>{
+ const firstEnd=policy.deploymentBlock+499,topic=vault.interface.getEvent('Registered').topicHash,waits=[],ranges=[];let phase,stored=null,failed=true;const commits=[],saves=[];
+ const candidate=readonly({getBlock:async(number,...rest)=>{
+  if(failed&&stored&&phase==='MEMBER_INDEX_REBUILD'&&number===periodSnapshot.number)throw Object.assign(Error('private block timeout https://private.invalid/saved-page-secret'),{code:'TIMEOUT'});
+  return provider.getBlock(number,...rest);
+ },getLogs:async filter=>{if(phase==='MEMBER_INDEX_REBUILD'&&filter.topics[0]===topic)ranges.push({fromBlock:filter.fromBlock,toBlock:filter.toBlock});return provider.getLogs(filter);}}),c=controller({candidate,onPhase:value=>{phase=value;},waitForBlockRetry:async ms=>waits.push(ms),loadProgress:async()=>structuredClone(stored),saveProgress:async value=>{stored=structuredClone(value);saves.push(structuredClone(value));},commitJournal:async text=>commits.push(text)}),first=await c.run();
+ assert.equal(first.status,'in-progress');assert.equal(first.waitingFor,'RPC_TIMEOUT');assert.equal(first.pages,1);assert.equal(first.through,firstEnd);assert.equal(first.members,1);assert.equal(saves.length,1);assert.equal(stored.registry.through,firstEnd);assert.equal(commits.length,0);assert.deepEqual(waits,[500,1500]);
+ assert.deepEqual(first.blockReadDiagnostic,{operation:'getBlock',blockNumber:periodSnapshot.number,attempts:3,errorCode:'TIMEOUT',rpcCode:null,httpStatus:null,reason:'TIMEOUT'});assert.doesNotMatch(inspect(first,{depth:10}),/private|secret|https/);assert.deepEqual(JSON.parse(base.journalText),state);
+ failed=false;ranges.length=0;const recovered=await c.run();assert.equal(recovered.status,'repaired');assert.equal(recovered.epoch,0);assert.equal(commits.length,1);assert.deepEqual(ranges,[{fromBlock:firstEnd+1,toBlock:periodSnapshot.number}]);assert.deepEqual(stripRegistry(JSON.parse(commits[0])),stripRegistry(state));
+});
+
+test('a pre-save block timeout never publishes or persists the candidate page as completed progress',async()=>{
+ const firstEnd=policy.deploymentBlock+499;
+ for(const entry of [{name:'post-page canonical',block:periodSnapshot.number,firstFailure:2,ranges:[{fromBlock:policy.deploymentBlock,toBlock:firstEnd}]},{name:'wrapped helper anchor',block:firstEnd,firstFailure:1,ranges:[]}]){
+  const waits=[],ranges=[];let phase,targetReads=0,failed=true;
+  const candidate=readonly({getBlock:async(number,...rest)=>{
+   if(phase==='MEMBER_INDEX_REBUILD'&&number===entry.block){targetReads++;if(failed&&targetReads>=entry.firstFailure)throw Object.assign(Error('private pre-save timeout https://private.invalid/candidate-page-secret'),{code:'TIMEOUT'});}
+   return provider.getBlock(number,...rest);
+  },getLogs:async filter=>{if(phase==='MEMBER_INDEX_REBUILD')ranges.push({fromBlock:filter.fromBlock,toBlock:filter.toBlock});return provider.getLogs(filter);}}),c=controller({candidate,onPhase:value=>{phase=value;},waitForBlockRetry:async ms=>waits.push(ms)}),first=await c.run();
+  assert.equal(first.status,'in-progress',entry.name);assert.equal(first.waitingFor,'RPC_TIMEOUT',entry.name);assert.equal(first.pages,0,entry.name);assert.equal(first.members,0,entry.name);assert.equal(first.through,policy.deploymentBlock-1,entry.name);assert.equal(c.progress,null,entry.name);assert.equal(c.saves.length,0,entry.name);assert.equal(c.commits.length,0,entry.name);assert.deepEqual(waits,[500,1500],entry.name);assert.equal(first.blockReadDiagnostic.blockNumber,entry.block,entry.name);assert.equal(first.blockReadDiagnostic.attempts,3,entry.name);assert.deepEqual(ranges,entry.ranges,entry.name);assert.doesNotMatch(inspect(first,{depth:10}),/private|secret|https/);
+  failed=false;ranges.length=0;const recovered=await c.run();assert.equal(recovered.status,'repaired',entry.name);assert.equal(c.commits.length,1,entry.name);assert.equal(ranges[0].fromBlock,policy.deploymentBlock,entry.name);assert.deepEqual(JSON.parse(base.journalText),state);
+ }
+});
+
+test('a prebinding block timeout fails with safe exact-block diagnostics and never starts a cache rebuild',async()=>{
+ let phase,target;const waits=[],calls=[];
+ const c=controller({onPhase:value=>{phase=value;},waitForBlockRetry:async ms=>waits.push(ms),candidate:readonly({getBlock:async(number,...rest)=>{
+  if(phase==='MEMBER_INDEX_REBUILD_SNAPSHOT'){target??=number;calls.push(number);throw Object.assign(Error('private discovery timeout https://private.invalid/prebinding-secret'),{code:'TIMEOUT'});}
+  return provider.getBlock(number,...rest);
+ }})});
+ await assert.rejects(c.run(),error=>{assert.equal(error.message,'MEMBER_INDEX_BLOCK_RPC_TIMEOUT');assert.deepEqual(error.blockReadDiagnostic,{operation:'getBlock',blockNumber:target,attempts:3,errorCode:'TIMEOUT',rpcCode:null,httpStatus:null,reason:'TIMEOUT'});assert.doesNotMatch(inspect(error,{depth:10}),/private|secret|https/);return true;});
+ assert.deepEqual(calls,[target,target,target]);assert.deepEqual(waits,[500,1500]);assert.equal(c.saves.length,0);assert.equal(c.commits.length,0);assert.equal(c.progress,null);
+});
+
+test('nontransport block failures, invalid headers and persistence exceptions are never retried or softened',async()=>{
+ const failures=[
+  {info:{responseStatus:'401 Unauthorized'}},
+  {info:{responseStatus:'429 Too Many Requests'}},
+  {info:{responseStatus:'400 Bad Request'}},
+  {info:{error:{code:-32603,message:'historical state unavailable'}}},
+  {info:{error:{code:-32000,message:'missing trie node'}}},
+  {info:{error:{code:-32600,message:'invalid request'}}}
+ ];
+ for(const details of failures){
+  let loaded=false,attempts=0;const waits=[],c=controller({loadProgress:async()=>{loaded=true;return null;},waitForBlockRetry:async ms=>waits.push(ms),candidate:readonly({getBlock:async(number,...rest)=>{if(loaded&&number===periodSnapshot.number){attempts++;throw Object.assign(Error('private block request failed'),{code:'TIMEOUT',...details});}return provider.getBlock(number,...rest);}})});
+  await assert.rejects(c.run(),error=>error.message!=='MEMBER_INDEX_BLOCK_RPC_TIMEOUT');assert.equal(attempts,1);assert.deepEqual(waits,[]);assert.equal(c.saves.length,0);assert.equal(c.commits.length,0);
+ }
+ for(const change of [()=>null,block=>({...block,number:block.number+1}),block=>({...block,hash:'invalid'}),block=>({...block,timestamp:-1}),block=>({...block,timestamp:undefined}),block=>({...block,hash:'0x'+'66'.repeat(32)})]){
+  let loaded=false,attempts=0;const waits=[],c=controller({loadProgress:async()=>{loaded=true;return null;},waitForBlockRetry:async ms=>waits.push(ms),candidate:readonly({getBlock:async(number,...rest)=>{const block=await provider.getBlock(number,...rest);if(loaded&&number===periodSnapshot.number){attempts++;return change(block);}return block;}})});
+  await assert.rejects(c.run(),/MEMBER_INDEX_BLOCK_HEADER_INVALID|MEMBER_INDEX_REBUILD_SNAPSHOT_REORG/);assert.equal(attempts,1);assert.deepEqual(waits,[]);assert.equal(c.saves.length,0);assert.equal(c.commits.length,0);
+ }
+ const waits=[],c=controller({waitForBlockRetry:async ms=>waits.push(ms),saveProgress:async()=>{throw Object.assign(Error('PERSISTENCE_TIMEOUT'),{code:'TIMEOUT'});}});
+ await assert.rejects(c.run(),/PERSISTENCE_TIMEOUT/);assert.deepEqual(waits,[]);assert.equal(c.commits.length,0);assert.deepEqual(JSON.parse(base.journalText),state);
+});
+
+test('an index reset followed by a block timeout remains a hard checkpoint failure without saving the reset',async()=>{
+ const seed=controller();await seed.run({maxPages:1});const saved=seed.progress,firstEnd=policy.deploymentBlock+499,waits=[];let phase,cursorReads=0,reset=false;
+ const candidate=readonly({getBlock:async(number,...rest)=>{
+  const block=await provider.getBlock(number,...rest);
+  if(phase==='MEMBER_INDEX_REBUILD'&&number===firstEnd){
+   cursorReads++;
+   if(cursorReads===2){reset=true;return {...block,hash:'0x'+'77'.repeat(32)};}
+   if(reset)throw Object.assign(Error('private timeout after reset https://private.invalid/reset-secret'),{code:'TIMEOUT'});
+  }
+  return block;
+ }}),c=controller({candidate,onPhase:value=>{phase=value;},waitForBlockRetry:async ms=>waits.push(ms)},saved);
+ await assert.rejects(c.run(),/MEMBER_INDEX_REBUILD_CHECKPOINT_REORG/);assert.equal(reset,true);assert.deepEqual(waits,[500,1500]);assert.equal(c.saves.length,0);assert.equal(c.commits.length,0);assert.deepEqual(c.progress,saved);assert.deepEqual(JSON.parse(base.journalText),state);
+});
+
 test('a fully scanned registry that still fails the principal invariant remains auxiliary',async()=>{
  const candidate=readonly({getLogs:async filter=>(await provider.getLogs(filter)).filter(log=>log.transactionHash!==deposits[1].hash)}),c=controller({candidate});
  await assert.rejects(c.run(),/INCOMPLETE_DAILY_MEMBER_INDEX/);assert.equal(c.progress.registry.through,periodSnapshot.number);assert.equal(c.commits.length,0);assert.ok(c.saves.length>=2);assert.deepEqual(JSON.parse(base.journalText),state);

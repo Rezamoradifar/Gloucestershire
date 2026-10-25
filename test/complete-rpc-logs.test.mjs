@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {inspect} from 'node:util';
 import {createServer} from 'node:http';
 import {FetchRequest,JsonRpcProvider} from 'ethers';
-import {getCompleteLogs,sanitizeCompleteLogDiagnostic} from '../scripts/complete-rpc-logs.mjs';
+import {getCompleteLogs,sanitizeCompleteLogDiagnostic,isCompleteLogTransportTimeout} from '../scripts/complete-rpc-logs.mjs';
 
 const address='0x1111111111111111111111111111111111111111';
 const topic='0x'+'ab'.repeat(32),hash=n=>'0x'+(n+1).toString(16).padStart(64,'0');
@@ -214,6 +214,26 @@ test('timeout-labelled auth, quota, historical and application failures never en
  h.provider.getBlock=async()=>{headers++;throw Object.assign(Error('private canonical timeout'),{code:'TIMEOUT'});};
  await assert.rejects(getCompleteLogs({provider:h.provider,filter:filter(1,100),maxTimeoutRetries:2,waitForRetry:async ms=>waits.push(ms)}),error=>error.message==='COMPLETE_LOG_CANONICAL_READ_FAILED'&&error.logProbeDiagnostic.operation==='getBlock');
  assert.equal(headers,1);assert.equal(h.calls.length,0);assert.deepEqual(waits,[]);
+});
+
+test('the exported transport-timeout predicate returns only a boolean and refuses application errors and private details',()=>{
+ const timeout=extra=>Object.freeze(Object.assign(Error('private transport timeout at https://private.invalid/key'),{code:'TIMEOUT',...extra}));
+ const cases=[
+  [timeout(),true],
+  [timeout({message:'private missing trie node; timeout'}),false],
+  [timeout({message:'private header not found; timeout'}),false],
+  [timeout({message:'private unauthorized timeout'}),false],
+  [timeout({message:'private rate limit timeout'}),false],
+  [timeout({info:{error:{code:-32600,message:'private transport timeout'}}}),false],
+  [timeout({info:{error:{code:429,message:'private transport timeout'}}}),false],
+  [timeout({info:{responseStatus:'400 Bad Request'}}),false],
+  [timeout({response:{status:403}}),false],
+  [timeout({code:'SERVER_ERROR'}),false],
+  [Error('private timeout'),false],[null,false],[undefined,false],['TIMEOUT',false],
+  [{code:'TIMEOUT',get info(){throw Error('private property details');}},false]
+ ];
+ const results=cases.map(([error,expected])=>{const result=isCompleteLogTransportTimeout(error);assert.equal(typeof result,'boolean');assert.equal(result,expected);return result;});
+ assert.doesNotMatch(JSON.stringify(results),/private|secret|https?:\/\//);
 });
 
 test('retry and concurrency bounds reject invalid controls before contacting the provider',async()=>{
