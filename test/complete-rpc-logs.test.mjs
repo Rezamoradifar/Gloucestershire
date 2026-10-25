@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {inspect} from 'node:util';
+import {createServer} from 'node:http';
+import {FetchRequest,JsonRpcProvider} from 'ethers';
 import {getCompleteLogs,sanitizeCompleteLogDiagnostic} from '../scripts/complete-rpc-logs.mjs';
 
 const address='0x1111111111111111111111111111111111111111';
@@ -23,6 +25,93 @@ function harness({limit=Infinity,records=[],throwFor,delayMs=0}={}){
  }};
  return {provider,calls,headers,get active(){return active;},get maxActive(){return maxActive;}};
 }
+
+async function httpHarness(replyLogs){
+ const calls=[];
+ const hex=value=>'0x'+value.toString(16);
+ const block=number=>({number:hex(number),hash:hash(number),parentHash:hash(number-1),timestamp:'0x1',nonce:'0x0000000000000000',difficulty:'0x0',gasLimit:'0x1c9c380',gasUsed:'0x0',miner:'0x'+'00'.repeat(20),extraData:'0x',transactions:[],baseFeePerGas:'0x0'});
+ const server=createServer(async(request,response)=>{
+  const chunks=[];for await(const chunk of request)chunks.push(chunk);
+  const payload=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  let status=200,body;
+  if(payload.method==='eth_chainId')body={jsonrpc:'2.0',id:payload.id,result:'0x61'};
+  else if(payload.method==='eth_getBlockByNumber')body={jsonrpc:'2.0',id:payload.id,result:block(Number(payload.params[0]))};
+  else if(payload.method==='eth_getLogs'){
+   const value={...payload.params[0],fromBlock:Number(payload.params[0].fromBlock),toBlock:Number(payload.params[0].toBlock)};calls.push(value);
+   const reply=replyLogs(value,payload.id);status=reply.status??200;body=reply.body;
+   if(Object.hasOwn(reply,'records'))body={jsonrpc:'2.0',id:payload.id,result:reply.records.map(row=>({...row,blockNumber:hex(row.blockNumber),logIndex:hex(row.index),transactionIndex:'0x0',index:undefined}))};
+  }else body={jsonrpc:'2.0',id:payload.id,error:{code:-32601,message:'Unsupported test method'}};
+  response.writeHead(status,{'content-type':'application/json'});response.end(typeof body==='string'?body:JSON.stringify(body));
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const providers=[];
+ return {calls,provider(){const request=new FetchRequest('http://127.0.0.1:'+server.address().port+'/private-test-secret');request.retryFunc=async()=>false;const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});providers.push(provider);return provider;},async close(){for(const provider of providers)await provider.destroy();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
+}
+
+test('actual ethers HTTP 400 JSON-RPC range errors yield complete 500 and 1000 block windows',async()=>{
+ const records=[log(1),log(10),log(11),log(500),log(1000)],h=await httpHarness((value,id)=>value.toBlock-value.fromBlock+1>10?{status:400,body:{jsonrpc:'2.0',id,error:{code:-32602,message:'You can make eth_getLogs requests with up to a 10 block range. https://private.invalid/http-body-secret'}}}:{records:records.filter(row=>row.blockNumber>=value.fromBlock&&row.blockNumber<=value.toBlock)});
+ try{
+  for(const end of [500,1000]){
+   const start=h.calls.length,requests=[],provider=h.provider(),rows=await getCompleteLogs({provider,filter:filter(1,end),onRequest:value=>requests.push(value)}),calls=h.calls.slice(start);
+   assert.deepEqual(rows.map(row=>row.blockNumber),records.filter(row=>row.blockNumber<=end).map(row=>row.blockNumber));
+   assert.equal(calls[0].toBlock,end);assert.equal(calls.length,1+end/10);assert.equal(requests.length,calls.length);
+   const coverage=new Array(end).fill(0);for(const value of calls.slice(1)){assert.equal(value.address,address);assert.deepEqual(value.topics,[topic]);assert.ok(value.toBlock-value.fromBlock+1<=10);for(let n=value.fromBlock;n<=value.toBlock;n++)coverage[n-1]++;}assert.ok(coverage.every(count=>count===1));
+   const offset=h.calls.length;await getCompleteLogs({provider,filter:filter(end+1,end+100)});assert.ok(h.calls.slice(offset).every(value=>value.toBlock-value.fromBlock+1<=10));
+  }
+ }finally{await h.close();}
+});
+
+test('actual ethers HTTP 400 JSON-RPC result limits retain complete child coverage',async()=>{
+ const h=await httpHarness((value,id)=>value.toBlock>value.fromBlock?{status:400,body:{jsonrpc:'2.0',id,error:{code:-32005,message:'query returned more than 10000 results; private-body-secret'}}}:{records:[log(value.fromBlock)]});
+ try{assert.deepEqual((await getCompleteLogs({provider:h.provider(),filter:filter(1,4)})).map(row=>row.blockNumber),[1,2,3,4]);assert.equal(h.calls.filter(value=>value.fromBlock===value.toBlock).length,4);}finally{await h.close();}
+});
+
+test('HTTP error envelopes fail closed for authentication, quota, pruning, malformed bodies and unbound messages',async()=>{
+ const rangeMessage='up to a 10 block range; https://private.invalid/http-body-secret';
+ const envelope=(code,message=rangeMessage)=>({jsonrpc:'2.0',id:1,error:{code,message}});
+ const scenarios=[
+  {status:401,body:envelope(429),reason:'AUTHENTICATION_REQUIRED',rpcCode:429},
+  {status:403,body:envelope(-32602),reason:'AUTHENTICATION_REQUIRED',rpcCode:-32602},
+  {status:429,body:envelope(-32602),reason:'RATE_LIMITED',rpcCode:-32602,attempts:3},
+  {status:400,body:envelope(429),reason:'RATE_LIMITED',rpcCode:429,attempts:3},
+  {status:400,body:envelope(-32000,'invalid API key; '+rangeMessage),reason:'AUTHENTICATION_REQUIRED',rpcCode:-32000},
+  {status:400,body:envelope(-32000,'missing trie node; '+rangeMessage),reason:'HISTORICAL_STATE_UNAVAILABLE',rpcCode:-32000},
+  {status:400,body:envelope(-32602,'too many requests; '+rangeMessage),reason:'RATE_LIMITED',rpcCode:-32602},
+  {status:400,body:envelope(-32005,'rate limit exceeded; '+rangeMessage),reason:'RATE_LIMITED',rpcCode:-32005},
+  {status:400,body:envelope(-32005,'limit exceeded; private-body-secret'),reason:'RATE_LIMITED',rpcCode:-32005},
+  {status:400,body:envelope(-32600),rpcCode:-32600},
+  ...[
+   '<html>private-body-secret '+rangeMessage+'</html>',
+   '{"error":{"code":-32602,"message":"'+rangeMessage+'"}',
+   [envelope(-32602)],
+   {...envelope(-32602),result:[]},
+   {...envelope(-32602),jsonrpc:'1.0'},
+   envelope('-32602'),
+   {error:{code:-32602}},
+   envelope(-32602,''),
+   envelope(-32602,rangeMessage+'x'.repeat(8192)),
+   JSON.stringify(envelope(-32602))+' '.repeat(65536),
+   envelope(-2147483649),
+   envelope(1.25)
+  ].map(body=>({status:400,body,rpcCode:null}))
+ ];
+ let scenario;const h=await httpHarness(()=>scenario);
+ try{
+  for(scenario of scenarios){
+   const start=h.calls.length,waits=[];
+   await assert.rejects(getCompleteLogs({provider:h.provider(),filter:filter(1,100),waitForRetry:async value=>waits.push(value)}),error=>{
+    assert.equal(error.message,'COMPLETE_LOG_QUERY_FAILED');assert.equal(error.logProbeDiagnostic.errorCode,'SERVER_ERROR');assert.equal(error.logProbeDiagnostic.httpStatus,scenario.status);assert.equal(error.logProbeDiagnostic.rpcCode,scenario.rpcCode);if(scenario.reason)assert.equal(error.logProbeDiagnostic.reason,scenario.reason);
+    assert.doesNotMatch(inspect(error,{depth:10,showHidden:true}),/private|secret|https?:\/\//);assert.equal(Object.hasOwn(error,'cause'),false);return true;
+   });
+   const calls=h.calls.slice(start);assert.equal(calls.length,scenario.attempts??1);assert.ok(calls.every(value=>value.fromBlock===1&&value.toBlock===100));assert.deepEqual(waits,scenario.attempts===3?[250,750]:[]);
+  }
+ }finally{await h.close();}
+ const body=JSON.stringify(envelope(-32602));
+ const selected=harness({throwFor:()=>Object.assign(Error('private outer '+rangeMessage),{code:'SERVER_ERROR',info:{responseStatus:'400 Bad Request',responseBody:body,error:{code:-32602,message:'invalid argument'}}})});
+ await assert.rejects(getCompleteLogs({provider:selected.provider,filter:filter(1,100)}),error=>error.logProbeDiagnostic.rpcCode===-32602);assert.equal(selected.calls.length,1,'A code from one error must not bind a range message from another error');
+ const fallback=harness({limit:10,throwFor:value=>value.toBlock-value.fromBlock+1>10?Object.assign(Error('private outer'),{code:'SERVER_ERROR',response:{statusCode:400,get bodyText(){return body;}}}):null});
+ assert.deepEqual(await getCompleteLogs({provider:fallback.provider,filter:filter(1,100)}),[]);assert.equal(fallback.calls.length,11);
+});
 
 test('recognized block limits yield every log with unchanged filters, ordered nonoverlapping coverage and cached provider limits',async()=>{
  const h=harness({limit:10,records:[log(1),log(10),log(11),log(50),log(100),log(110),log(200)],delayMs:2}),original=filter(1,100),copy=structuredClone(original),requests=[];

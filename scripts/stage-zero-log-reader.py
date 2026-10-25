@@ -16,6 +16,7 @@ baseline = {
     'server/trades-api.mjs': '054d954663811ee30096b7e54b548454e7fbf6d1b4787a00f763aa33fd63035d',
 }
 helper = 'scripts/complete-rpc-logs.mjs'
+previous_helper_hashes = {'cc86f8004253b5c5f7aa20292ee6151da9140bf18994e1a36661ac04b1f52b14'}
 roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper]}
 
 
@@ -89,7 +90,7 @@ def prepare(source, api_current, daily_current, manifest):
         for relative, old_hash in old_hashes.items():
             if old_hash == new_hashes[relative]:
                 continue
-            if relative == helper and old_hash is None:
+            if relative == helper and (old_hash is None or old_hash in previous_helper_hashes):
                 continue
             if old_hash != baseline.get(relative):
                 raise ValueError('INSTALLED_LOG_READER_SOURCE_REVIEW_REQUIRED')

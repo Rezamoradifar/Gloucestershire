@@ -1,8 +1,9 @@
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import ganache from 'ganache';
-import {BrowserProvider,ContractFactory,ZeroAddress,parseEther as E,keccak256,toUtf8Bytes} from 'ethers';
+import {BrowserProvider,JsonRpcProvider,ContractFactory,ZeroAddress,parseEther as E,keccak256,toUtf8Bytes} from 'ethers';
 import {prepareZeroStartConnection} from '../scripts/connect-zero-start.mjs';
 import {verifyZeroStartReadiness} from '../scripts/zero-start-readiness.mjs';
 import {makeHourlyTestPolicy} from '../scripts/zero-start-hourly-test.mjs';
@@ -14,9 +15,7 @@ const artifact=name=>JSON.parse(fs.readFileSync('artifacts/'+name+'.json'));
 const fast=JSON.parse(fs.readFileSync('config/fresh-fast-testnet.json'));
 const tx=async p=>(await p).wait();
 const mine=async count=>{for(let i=0;i<count;i++)await rpc.request({method:'evm_mine',params:[]});};
-const proxy=(target,overrides)=>new Proxy(target,{get(object,key){if(Object.hasOwn(overrides,key))return overrides[key];const value=Reflect.get(object,key);return typeof value==='function'?value.bind(object):value;}});
-const denied=()=>Object.assign(Error('Unauthorized provider https://archive.invalid/private-secret'),{code:'UNKNOWN_ERROR',info:{error:{code:-32600,message:'Unauthorized'}}});
-let rpc,provider,vault,release,policy,state,base,periodSnapshot,sale,addresses,limited,deniedFilter=null;
+let rpc,provider,vault,release,policy,state,base,periodSnapshot,sale,addresses,limited,gateway,deniedFilter=null;
 const requests=[];
 before(async()=>{
  rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},wallet:{totalAccounts:12,unlockedAccounts:[fast.owner,fast.deployer]},miner:{blockGasLimit:30000000}});
@@ -41,14 +40,25 @@ before(async()=>{
  await rpc.request({method:'evm_increaseTime',params:[7202]});await mine(5);
  periodSnapshot=await blockAtTime(provider,policy.startTimestamp,ready.block,await provider.getBlockNumber());
  base={artifact:artifact('FastTestnetVault'),release,original:prepared.env,deploymentText:JSON.stringify(deploymentReport),connectionText:JSON.stringify(connectionReport),policyText:JSON.stringify(policy),journalText:JSON.stringify(state),confirmations:3};
- limited=proxy(provider,{getLogs:async filter=>{
-  requests.push({from:filter.fromBlock,to:filter.toBlock,topic:filter.topics[0]});
-  if(filter.toBlock-filter.fromBlock+1>10)throw Object.assign(Error('eth_getLogs is limited to a 10 block range'),{code:'UNKNOWN_ERROR',info:{error:{code:-32602,message:'eth_getLogs is limited to a 10 block range'}}});
-  if(deniedFilter?.(filter))throw denied();
-  return provider.getLogs(filter);
- },broadcastTransaction:async()=>{throw Error('READ_ONLY_PROBE_MUST_NOT_BROADCAST');}});
+ gateway=http.createServer(async(req,res)=>{
+  let body='';for await(const chunk of req)body+=chunk;
+  const request=JSON.parse(body);
+  const send=(status,value)=>{res.writeHead(status,{'Content-Type':'application/json','Connection':'close'});res.end(JSON.stringify({jsonrpc:'2.0',id:request.id,...value}));};
+  assert.equal(Array.isArray(request),false,'The HTTP fixture must inspect each RPC request independently');
+  if(request.method==='eth_getLogs'){
+   const filter={...request.params[0],fromBlock:Number(request.params[0].fromBlock),toBlock:Number(request.params[0].toBlock)};
+   requests.push({from:filter.fromBlock,to:filter.toBlock,topic:filter.topics[0]});
+   if(filter.toBlock-filter.fromBlock+1>10){send(400,{error:{code:-32602,message:'eth_getLogs is limited to a 10 block range; https://archive.invalid/private-secret'}});return;}
+   if(deniedFilter?.(filter)){send(400,{error:{code:-32600,message:'Unauthorized provider https://archive.invalid/private-secret'}});return;}
+  }
+  assert.ok(!['eth_sendTransaction','eth_sendRawTransaction'].includes(request.method),'Read-only probes must never broadcast');
+  try{send(200,{result:await rpc.request({method:request.method,params:request.params})});}
+  catch(error){send(200,{error:{code:Number.isSafeInteger(error.code)?error.code:-32603,message:'Ganache read failed'}});}
+ });
+ await new Promise(resolve=>gateway.listen(0,'127.0.0.1',resolve));
+ limited=new JsonRpcProvider('http://127.0.0.1:'+gateway.address().port,97,{staticNetwork:true,cacheTimeout:-1,batchMaxCount:1});limited.pollingInterval=10;
 },60000);
-after(async()=>{await provider?.destroy();await rpc?.disconnect();});
+after(async()=>{await limited?.destroy();await new Promise(resolve=>gateway?gateway.close(resolve):resolve());await provider?.destroy();await rpc?.disconnect();});
 
 test('archive preparation proves complete settlement and registration windows under a ten-block log cap',async()=>{
  requests.length=0;const result=await prepareZeroArchiveRpc({...base,primary:provider,candidate:limited});

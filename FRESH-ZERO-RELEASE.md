@@ -444,6 +444,16 @@ complete windows are retained; no unpaid period is skipped. A persistent failure
 reports only sanitized operation, requested range, RPC/HTTP codes and a fixed
 reason category, never provider messages or a private URL.
 
+The reader also recognizes a bounded structured JSON-RPC error carried inside an
+HTTP error response. Some HTTP transports reject a 400 response before exposing
+its RPC code, so inspecting only the top-level exception misses a legitimate
+range-limit rejection. Only a valid error envelope with a numeric code and a
+recognized range/result-limit message can enable subdivision. A generic HTTP
+400, malformed body, authentication error or missing historical state remains a
+failure. Response bodies and private endpoint details are never retained in
+diagnostics. Transport tests use the actual ethers HTTP client, including 400
+responses, in addition to direct-provider fixtures.
+
 A failed probe also reports the exact allowlisted read operation, sanitized
 error/RPC codes, HTTP status and a fixed reason category inferred from the
 provider error. A timeout or malformed response can otherwise look like missing

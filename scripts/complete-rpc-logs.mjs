@@ -1,5 +1,6 @@
 // Complete bounded log windows using one provider and one immutable filter.
 import {getAddress,ZeroAddress} from 'ethers';
+import {Buffer} from 'node:buffer';
 
 const learnedSpans=new WeakMap();
 const hash=value=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
@@ -9,34 +10,55 @@ const reasons=new Set(['BLOCK_RANGE_LIMIT','RESULT_LIMIT','RATE_LIMITED','AUTHEN
 const operations=new Set(['eth_getLogs','getBlock','validate-logs']);
 const fatalReasons=new Set(['CANONICAL_MISMATCH','CONFLICTING_DUPLICATE','INVALID_RESPONSE']);
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const rpcCode=value=>Number.isSafeInteger(value)&&value>=-2147483648&&value<=2147483647;
+
+function rpcErrorDetails(value){
+ if(!value||typeof value!=='object'||Array.isArray(value)||!rpcCode(value.code)||typeof value.message!=='string'||value.message.length>8192||!value.message.trim())return null;
+ return {code:value.code,message:value.message};
+}
+
+function httpRpcError(error,httpStatus){
+ if(httpStatus===null||httpStatus<400)return null;
+ let body;
+ try{body=error?.info?.responseBody??error?.response?.bodyText??error?.info?.response?.bodyText;}catch{return null;}
+ if(typeof body!=='string'||body.length>65536||Buffer.byteLength(body,'utf8')>65536)return null;
+ let envelope;try{envelope=JSON.parse(body);}catch{return null;}
+ if(!envelope||typeof envelope!=='object'||Array.isArray(envelope)||Object.hasOwn(envelope,'result')||(Object.hasOwn(envelope,'jsonrpc')&&envelope.jsonrpc!=='2.0'))return null;
+ return rpcErrorDetails(envelope.error);
+}
 
 export function sanitizeCompleteLogDiagnostic(value){
  return {operation:operations.has(value?.operation)?value.operation:'eth_getLogs',fromBlock:integer(value?.fromBlock)?value.fromBlock:null,toBlock:integer(value?.toBlock)?value.toBlock:null,errorCode:errorCodes.has(value?.errorCode)?value.errorCode:null,rpcCode:typeof value?.rpcCode==='number'&&Number.isSafeInteger(value.rpcCode)&&value.rpcCode>=-2147483648&&value.rpcCode<=2147483647?value.rpcCode:null,httpStatus:Number.isSafeInteger(value?.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599?value.httpStatus:null,reason:reasons.has(value?.reason)?value.reason:'UNKNOWN',requests:integer(value?.requests)&&value.requests<=1024?value.requests:null};
 }
 
 function rpcFailure(error){
- const rpcCode=error?.info?.error?.code??error?.error?.code??(typeof error?.code==='number'?error.code:null);
  const rawStatus=error?.info?.response?.statusCode??error?.info?.responseStatus??error?.response?.statusCode??error?.response?.status??error?.status;
  const parsed=typeof rawStatus==='string'&&/^[1-5][0-9]{2}(?:\s|$)/.test(rawStatus)?Number(rawStatus.slice(0,3)):rawStatus;
  const httpStatus=Number.isSafeInteger(parsed)&&parsed>=100&&parsed<=599?parsed:null;
- const text=[error?.message,error?.info?.error?.message,error?.error?.message].filter(value=>typeof value==='string').join(' ').toLowerCase();
+ const selected=rpcErrorDetails(error?.info?.error)??rpcErrorDetails(error?.error)??rpcErrorDetails(error)??httpRpcError(error,httpStatus);
+ const rpcCode=selected?.code??null;
+ const text=(selected?.message??(typeof error?.message==='string'?error.message.slice(0,8192):'')).toLowerCase();
+ const rpcText=selected?.message.toLowerCase()??'';
  let reason='UNKNOWN',split=false,limit=null;
- if(httpStatus===429||rpcCode===429)reason='RATE_LIMITED';
- else if([401,403].includes(httpStatus)||/unauthorized|forbidden|invalid api key|api key.*invalid/.test(text))reason='AUTHENTICATION_REQUIRED';
+ if(httpStatus===429)reason='RATE_LIMITED';
+ else if([401,403].includes(httpStatus))reason='AUTHENTICATION_REQUIRED';
+ else if(rpcCode===429)reason='RATE_LIMITED';
+ else if(/unauthorized|forbidden|invalid api key|api key.*invalid/.test(text))reason='AUTHENTICATION_REQUIRED';
  else if(error?.code==='TIMEOUT'||/\btimeout\b|timed out/.test(text))reason='TIMEOUT';
  else if(/missing trie|pruned|historical.*unavailable|header not found|state (?:is )?not available|unknown state/.test(text))reason='HISTORICAL_STATE_UNAVAILABLE';
+ else if(/rate limit|too many requests/.test(text))reason='RATE_LIMITED';
  else if([-32601,-32004].includes(rpcCode))reason='METHOD_UNAVAILABLE';
  else if([-32602,-32000,-32005,-32603].includes(rpcCode)){
-  const range=/block range.*(?:limit|exceed|maximum|max )|(?:maximum|max) block range|(?:up to|limited to|at most) (?:a )?\d+ blocks?(?: range)?|range (?:is )?too (?:large|wide)/.test(text);
-  const result=/too many (?:results|logs)|query returned more than|(?:log |response |result )size (?:limit|exceed)|(?:response|result) (?:is )?too large|result limit|maximum (?:number of )?(?:results|logs)/.test(text);
+  const range=/block range.*(?:limit|exceed|maximum|max )|(?:maximum|max) block range|(?:up to|limited to|at most) (?:a )?\d+ blocks?(?: range)?|range (?:is )?too (?:large|wide)/.test(rpcText);
+  const result=/too many (?:results|logs)|query returned more than|(?:log |response |result )size (?:limit|exceed)|(?:response|result) (?:is )?too large|result limit|maximum (?:number of )?(?:results|logs)/.test(rpcText);
   if(range||result){reason=range?'BLOCK_RANGE_LIMIT':'RESULT_LIMIT';split=true;}
-  else if(rpcCode===-32005||/rate limit|too many requests/.test(text))reason='RATE_LIMITED';
-  const match=text.match(/(?:up to|limited to|at most) (?:a )?(\d+) blocks?(?: range)?|(?:maximum|max) block range(?: is| of|:)?\s*(\d+)|block range limit(?: is| of|:)?\s*(\d+)/);
+  else if(rpcCode===-32005)reason='RATE_LIMITED';
+  const match=rpcText.match(/(?:up to|limited to|at most) (?:a )?(\d+) blocks?(?: range)?|(?:maximum|max) block range(?: is| of|:)?\s*(\d+)|block range limit(?: is| of|:)?\s*(\d+)/);
   if(range&&match){const value=Number(match[1]??match[2]??match[3]);if(Number.isSafeInteger(value)&&value>=1&&value<=1000)limit=value;}
  }
  if(reason==='UNKNOWN'&&['NETWORK_ERROR','SERVER_ERROR'].includes(error?.code))reason='TRANSPORT_UNAVAILABLE';
  if(reason==='UNKNOWN'&&['BAD_DATA','BUFFER_OVERRUN'].includes(error?.code))reason='INVALID_RESPONSE';
- return {errorCode:errorCodes.has(error?.code)?error.code:null,rpcCode,httpStatus,reason,split,limit,confirmed429:httpStatus===429||rpcCode===429};
+ return {errorCode:errorCodes.has(error?.code)?error.code:null,rpcCode,httpStatus,reason,split,limit,confirmed429:reason==='RATE_LIMITED'&&(httpStatus===429||rpcCode===429)};
 }
 
 function fixedFilter(filter){
