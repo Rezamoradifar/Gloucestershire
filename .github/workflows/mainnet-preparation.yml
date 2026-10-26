@@ -1,0 +1,84 @@
+name: Mainnet preparation checks
+
+on:
+  push:
+    branches:
+      - codex/global-mainnet-preparation-20261026
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mainnet-preparation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: npm run compile && npm run compile:fresh && npm run compile:fast-testnet
+      - name: Local contract and worker tests
+        env:
+          SHARD: ${{ matrix.shard }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(rg --files test -g '*.test.mjs' | sort)
+          selected=()
+          for index in "${!files[@]}"; do
+            if (( index % 3 == SHARD )); then selected+=("${files[$index]}"); fi
+          done
+          test "${#selected[@]}" -gt 0
+          sudo --preserve-env=PATH node --test --test-concurrency=1 "${selected[@]}"
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+        working-directory: website
+      - run: npm test && npm run build
+        working-directory: website
+
+  installation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: npm audit --omit=dev
+      - run: node scripts/server-mainnet.mjs plan
+      - name: Managed staging and rollback
+        run: |
+          sudo --preserve-env=PATH python3 scripts/test-stage-zero-log-reader.py
+          sudo --preserve-env=PATH python3 scripts/test-zero-start-status.py
+          sudo --preserve-env=PATH python3 scripts/test-zero-archive-rpc-repair.py
