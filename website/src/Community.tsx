@@ -1,12 +1,23 @@
 import {useEffect,useRef,useState} from 'react';
-import {session,errorText} from './chain';
+import {errorText} from './chain';
+import {communityApi as api,signInSupport,withSupportSession} from './community-client';
 type Entry={id:string;title:string;message?:string;status?:string;wallet?:string;createdAt:string;messages?:{id:string;message:string;admin:boolean;createdAt:string}[]};
-async function api<T>(route:string,method='GET',body?:unknown,token=''):Promise<T>{const r=await fetch('/api/community/'+route,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(20000)});const d=await r.json().catch(()=>({error:'Support server unavailable. Check that its update is installed.'}));if(!r.ok)throw Error(d.error||'Request failed.');return d;}
 export default function Community({mode,who,admin}:{mode:'tickets'|'announcements';who:string;admin:boolean}){
- const [token,setToken]=useState(''),[items,setItems]=useState<Entry[]>([]),[ticket,setTicket]=useState<Entry|null>(null),[title,setTitle]=useState(''),[message,setMessage]=useState(''),[reply,setReply]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');const generation=useRef(0);
- useEffect(()=>{generation.current++;setToken('');setItems([]);setTicket(null);setTitle('');setMessage('');setReply('');setError('');setBusy(false);return()=>{generation.current++;};},[who,mode]);
+ const [token,setToken]=useState(''),[items,setItems]=useState<Entry[]>([]),[ticket,setTicket]=useState<Entry|null>(null),[title,setTitle]=useState(''),[message,setMessage]=useState(''),[reply,setReply]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');const generation=useRef(0),running=useRef(false);
+ useEffect(()=>{generation.current++;setToken('');setItems([]);setTicket(null);setTitle('');setMessage('');setReply('');setError('');setBusy(false);running.current=false;return()=>{generation.current++;};},[who,mode,admin]);
  useEffect(()=>{if(mode!=='announcements')return;let stopped=false;api<{items:Entry[]}>('announcements').then(d=>{if(!stopped)setItems(d.items);}).catch(e=>{if(!stopped)setError(errorText(e));});return()=>{stopped=true;};},[mode,who]);
- async function run(fn:(auth:string,valid:()=>boolean)=>Promise<void>,authRequired=true){const id=generation.current,valid=()=>generation.current===id;setBusy(true);setError('');try{let auth=token;if(authRequired){if(!who)throw Error('Connect your wallet first.');if(!auth){const c=await api<{nonce:string;message:string}>('challenge','POST',{wallet:who});const {signer}=await session(who);const signature=await signer.signMessage(c.message);await session(who);if(!valid())return;const s=await api<{token:string}>('session','POST',{nonce:c.nonce,signature});auth=s.token;if(valid())setToken(auth);}}if(valid())await fn(auth,valid);}catch(e){if(valid()){setError(errorText(e));if(String(e).includes('Sign in'))setToken('');}}finally{if(valid())setBusy(false);}}
+ async function run(fn:(auth:string,valid:()=>boolean)=>Promise<void>,authRequired=true){
+  if(running.current)return;
+  const id=generation.current,valid=()=>generation.current===id;
+  running.current=true;setBusy(true);setError('');
+  try{
+   if(authRequired){
+    if(!who)throw Error('Connect your wallet first.');
+    await withSupportSession(token,()=>signInSupport(who,valid),value=>{if(valid())setToken(value);},async auth=>{if(valid())await fn(auth,valid);});
+   }else if(valid())await fn('',valid);
+  }catch(e){if(valid())setError(errorText(e));}
+  finally{if(valid()){running.current=false;setBusy(false);}}
+ }
  async function refresh(auth:string,valid:()=>boolean){const d=await api<{items:Entry[]}>(mode==='tickets'?'tickets'+(admin?'?admin=1':''):'announcements','GET',undefined,auth);if(valid())setItems(d.items);}
  return <section className="panel community-panel"><div className="panel-title"><h2>{mode==='tickets'?'Support tickets':'Announcements'}</h2><button className="small-button" disabled={busy} onClick={()=>void run(refresh,mode==='tickets')}>{busy?'Please wait…':'Refresh'}</button></div>{error&&<p className="inline-error" role="alert">{error}</p>}
  {mode==='tickets'&&<><p>Sign in with a wallet signature to access private tickets. This is not a blockchain transaction.</p><button className="small-button" disabled={!who||busy} onClick={()=>void run(refresh)}>{token?'Load tickets':admin?'Sign in & load support inbox':'Sign in & load my tickets'}</button></>}
