@@ -70,11 +70,23 @@ test('requires one funded period for each existing principal asset, an unpaused 
  await (await token.mint(addresses[0],parseEther('100'))).wait();await (await token.approve(target.target,parseEther('100'))).wait();
  await (await target.fundRewards(token.target,1n)).wait();await authorize();
  let report=await checked(),asset=report.funding.assets.find(row=>row.symbol==='USDT');
- const principal=(await target.ledgers(token.target)).principal,minimum=(principal*200n+9999n)/10000n;
+ const principal=(await target.ledgers(token.target)).principal,personal=(principal*200n+9999n)/10000n,referrals=(personal*3400n+9999n)/10000n,minimum=personal+referrals;
+ assert.equal(report.funding.estimateVersion,2);assert.equal(report.funding.maxReferralBps,3400);
+ assert.equal(asset.estimatedDailyRequirement,personal.toString());assert.equal(asset.estimatedReferralRequirement,referrals.toString());assert.equal(asset.estimatedTotalDailyRequirement,minimum.toString());
  assert.equal(asset.minimumBudgetRequired,minimum.toString());assert.equal(asset.ready,false);assert.ok(report.blockers.includes('USDT_REWARD_BUDGET_REQUIRED'));
- await (await target.fundRewards(token.target,minimum)).wait();
+ await (await target.fundRewards(token.target,personal)).wait();
+ report=await checked();assert.equal(report.funding.ready,false);assert.ok(report.blockers.includes('USDT_REWARD_BUDGET_REQUIRED'));
+ await (await target.fundRewards(token.target,referrals)).wait();
  report=await checked();assert.equal(report.ready,true);assert.equal(report.funding.assets.find(row=>row.symbol==='BNB').requiredForExistingPrincipal,false);
  const cashSelector=target.interface.getFunction('assetBalance').selector;
+ const ledgerSelector=target.interface.getFunction('ledgers').selector;
+ const dust=proxy(provider,{call:async request=>{
+  if(request.to===target.target&&request.data.startsWith(ledgerSelector)&&target.interface.decodeFunctionData('ledgers',request.data)[0]===token.target)return target.interface.encodeFunctionResult('ledgers',[1n,0n,0n,1n]);
+  if(request.to===target.target&&request.data.startsWith(cashSelector)&&target.interface.decodeFunctionData('assetBalance',request.data)[0]===token.target)return target.interface.encodeFunctionResult('assetBalance',[1n]);
+  return provider.call(request);
+ }});
+ const dustReport=await checked({provider:dust}),dustAsset=dustReport.funding.assets.find(row=>row.symbol==='USDT');
+ assert.equal(dustAsset.estimatedDailyRequirement,'1');assert.equal(dustAsset.estimatedReferralRequirement,'1');assert.equal(dustAsset.estimatedTotalDailyRequirement,'2');assert.equal(dustAsset.minimumBudgetRequired,'2');assert.equal(dustAsset.ready,false);
  const partiallyBacked=proxy(provider,{call:async tx=>tx.to===target.target&&tx.data.startsWith(cashSelector)?target.interface.encodeFunctionResult('assetBalance',[minimum]):provider.call(tx)});
  report=await checked({provider:partiallyBacked});asset=report.funding.assets.find(row=>row.symbol==='USDT');
  assert.equal(report.ready,true);assert.equal(asset.fullyBackedRewards,false);assert.equal(asset.rewardBackingShortfall,'1');
@@ -101,6 +113,7 @@ test('fails closed on pruned history and probes only the fresh target, including
  assert.equal(report.archive.status,'supported');assert.ok(report.archive.probes.some(probe=>probe.purpose==='requested-period-start'));
  assert.ok(report.archive.probes.every(probe=>probe.block>=deploymentReport.block&&probe.supported));
  await assert.rejects(checked({policy:{...policy,vaultAddress:addresses[4]}}),/ZERO_START_DAILY_POLICY_IDENTITY_MISMATCH/);
+ await assert.rejects(checked({policy:{...policy,chainId:56}}),/ZERO_START_DAILY_POLICY_IDENTITY_MISMATCH/);
 });
 
 test('rejects forged connection identity, unrelated active targets, legacy mode and wrong creation proof',async()=>{

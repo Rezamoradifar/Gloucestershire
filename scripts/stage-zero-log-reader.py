@@ -14,6 +14,9 @@ baseline = {
     'scripts/connect-zero-start.mjs': '4d2672a2f55c71e7d848c9d988951af3405187d14dcf5833070710219afa0236',
     'scripts/daily-profit.mjs': '52d8e00ef4fa10e541dffad7d33357f90300bb19513c2ed81055cac9f1a1351b',
     'server/trades-api.mjs': '054d954663811ee30096b7e54b548454e7fbf6d1b4787a00f763aa33fd63035d',
+    'scripts/zero-start-automation.mjs': '23d71b3a88e905c61cb8abe72d822a8c543869a9d35469df1bd809a057152104',
+    'scripts/zero-start-readiness.mjs': '872c48ea6fb5c52bd222116c2ceed7316fa5ddffe46982cc0691de477f1c7fc1',
+    'scripts/zero-start-hourly-test.mjs': '60992c0a3d5b7aece389a21f916a58999a641394f2bf98592bbe6e41ca5722dc',
 }
 helper = 'scripts/complete-rpc-logs.mjs'
 previous_helper_hashes = {
@@ -22,7 +25,7 @@ previous_helper_hashes = {
     '333b12f9ae97bf13447d369451d73b7cdb7d0564647429fa77b55e929ca01237',
     'b8aba9c6bf0e693f13d22cfd34b1053084868eb5ac9ceb8819d8087b9ed8cfc5',
 }
-previous_source_hashes = {'scripts/daily-profit.mjs': {'a1f0d70d10affb6b9f762cf5fb04e249ca428bc3ac2d78f6c45e64a74b5dda37', '35f99791a01a31b874fe7ddbaad2fcdbf9a73f61ca1fe728a80a5edf0d7a089b'}}
+previous_source_hashes = {'scripts/daily-profit.mjs': {'a1f0d70d10affb6b9f762cf5fb04e249ca428bc3ac2d78f6c45e64a74b5dda37', '35f99791a01a31b874fe7ddbaad2fcdbf9a73f61ca1fe728a80a5edf0d7a089b', 'f3af625330d95b87508a60dca5d264646e9d2545084f5a6f47765b1da6b64213'}}
 roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper]}
 
 

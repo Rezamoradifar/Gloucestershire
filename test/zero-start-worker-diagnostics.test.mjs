@@ -10,9 +10,9 @@ const target=address(10),token=address(11),owner=address(12),operator=address(13
 const registration=new Interface(['event Registered(address indexed user,address indexed referrer)']);
 function harness(){
  let unavailable=true,sends=0,credited=false,phases=[];
- const state={transactions:{}},policy={version:1,chainId:97,vaultAddress:target,runtimeHash:hash(99),deploymentBlock:1,startTimestamp:100000,activationBlock:10,activationBlockHash:hash(10),basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true};
+ const runtime='0x6000',state={transactions:{}},policy={version:1,chainId:97,vaultAddress:target,runtimeHash:keccak256(runtime),deploymentBlock:1,startTimestamp:100000,activationBlock:10,activationBlockHash:hash(10),basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true};
  const failure=Object.assign(Error('Private provider https://private.invalid/secret credentials and transaction data must remain private'),{code:'UNKNOWN_ERROR',info:{error:{code:-32005,message:'Provider credential secret must not be published'}}});
- const provider={getBlockNumber:async()=>30,getBlock:async n=>({number:n,hash:hash(n),timestamp:n*10000}),getLogs:async()=>{
+ const provider={send:async()=> '0x61',getCode:async()=>runtime,getBlockNumber:async()=>30,getBlock:async n=>({number:n,hash:hash(n),timestamp:n*10000}),getLogs:async()=>{
   if(unavailable)throw failure;
   const event=registration.encodeEventLog(registration.getEvent('Registered'),[member,ZeroAddress]);
   return [{address:target,blockNumber:1,blockHash:hash(1),transactionHash:hash(70),index:0,removed:false,...event}];
@@ -49,6 +49,11 @@ test('historical planning RPC failure waits without advancing a period or changi
  assert.deepEqual(s.policy,saved);assert.doesNotMatch(JSON.stringify(waiting),/https|credentials|secret/);
  s.recover();const completed=await s.run();assert.equal(completed.status,'scheduled');assert.equal(completed.dailyCredits[0].status,'credited');assert.equal(s.state.daily.epoch,1);assert.equal(s.sends,1);
  await s.run();assert.equal(s.sends,1);assert.equal(s.state.daily.epoch,1);assert.deepEqual(s.policy,saved);
+});
+test('the testnet worker rejects an ordinary mainnet policy before daily planning or credit',async()=>{
+ const s=harness(),policy={...s.policy,chainId:56};
+ await assert.rejects(s.run({loadPolicy:()=>policy}),/ZERO_START_AUTOMATION_POLICY_CHANGED/);
+ assert.equal(s.sends,0);assert.equal(s.state.daily.epoch,0);assert.equal(s.state.daily.registry,undefined);
 });
 
 test('a pending signed financial transaction prevents a read failure from being downgraded to waiting',async()=>{

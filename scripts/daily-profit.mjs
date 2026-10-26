@@ -18,6 +18,8 @@ export const dailyAbi=[
  'function users(address) view returns(address referrer,bool registered,bool active,bool vipKyc,uint32 activeDirect,uint256 capitalUsd,uint256 salesUsd)',
  'function tierOf(address) view returns(uint8)',
  'function tierConfig(uint256) view returns((uint256 minUsd,uint16 baseDailyBps,uint16 maxDailyBps,uint32 requiredDirect,uint256 requiredSalesUsd,uint16[4] referrals))',
+ 'function qualifiedDirects(address) view returns(uint256)','function networkBranchCount(address) view returns(uint256)',
+ 'function rankVolumePage(address,uint256,uint256,uint256) view returns(uint256 eligibleUsd,uint256 next)',
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 nextWithdrawal)',
  'function ledgers(address) view returns(uint256 principal,uint256 profit,uint256 feeReserve,uint256 rewards)',
  'function usedRewardBatch(bytes32) view returns(bool)','function assetBalance(address) view returns(uint256)',
@@ -44,7 +46,8 @@ export function sanitizeDailyMemberIndexDiagnostic(value){
  };
 }
 export function validateDailyPolicy(p){
- if(p?.version!==1||p.chainId!==97||!isAddress(p.vaultAddress)||getAddress(p.vaultAddress)===ZeroAddress)throw Error('INVALID_DAILY_POLICY');
+ if(p?.version!==1||![56,97].includes(p.chainId)||!isAddress(p.vaultAddress)||getAddress(p.vaultAddress)===ZeroAddress)throw Error('INVALID_DAILY_POLICY');
+ if(p.chainId===56&&(p.periodSeconds!==86400||['testMode','initialServerReporter','fastTestnetVersion','testInterval'].some(key=>Object.hasOwn(p,key))||p.releaseId===hourlyTestPolicyFields.releaseId))throw Error('MAINNET_DAILY_POLICY_REQUIRED');
  if(p.basis!=='period-start-active-principal'||![86400,3600].includes(p.periodSeconds)||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
  if((p.periodSeconds===3600&&!isHourlyTestPolicy(p))||(p.periodSeconds!==3600&&p.testInterval==='hourly'))throw Error('HOURLY_TEST_POLICY_MARKERS_REQUIRED');
  if(!Number.isSafeInteger(p.startTimestamp)||p.startTimestamp<=0||!Number.isSafeInteger(p.deploymentBlock)||p.deploymentBlock<1)throw Error('INVALID_DAILY_START');
@@ -52,7 +55,49 @@ export function validateDailyPolicy(p){
  return {...p,vaultAddress:getAddress(p.vaultAddress)};
 }
 export function isHourlyTestPolicy(p){
- return p?.periodSeconds===3600&&Object.entries(hourlyTestPolicyFields).every(([key,value])=>p[key]===value);
+ return p?.chainId===97&&p.periodSeconds===3600&&Object.entries(hourlyTestPolicyFields).every(([key,value])=>p[key]===value);
+}
+async function assertDailyIdentity({provider,vault,chainId,vaultAddress,runtimeHash}){
+ if(![56,97].includes(chainId)||!isAddress(vaultAddress)||getAddress(vaultAddress)===ZeroAddress||!/^0x[0-9a-f]{64}$/i.test(runtimeHash||''))throw Error('DAILY_PLAN_IDENTITY_REQUIRED');
+ if(Number(await provider.send('eth_chainId',[]))!==chainId)throw Error('DAILY_CHAIN_MISMATCH');
+ if(getAddress(await vault.getAddress())!==getAddress(vaultAddress))throw Error('DAILY_VAULT_MISMATCH');
+ if(keccak256(await provider.getCode(vaultAddress)).toLowerCase()!==runtimeHash.toLowerCase())throw Error('DAILY_RUNTIME_MISMATCH');
+}
+export async function assertDailyTarget({provider,vault,policy}){
+ const validated=validateDailyPolicy(policy);
+ await assertDailyIdentity({...validated,provider,vault});
+ return validated;
+}
+// Reproduce the deployed rate using bounded historical reads, including every
+// branch when an account remains below its tier's qualification target.
+export async function readDailyTargetBpsAtSnapshot({vault,member,blockTag,pageSize=64}){
+ if(!Number.isSafeInteger(blockTag)||blockTag<0||!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>64)throw Error('DAILY_RANK_SNAPSHOT_REQUIRED');
+ member=getAddress(member);
+ const options={blockTag},unsigned=value=>typeof value==='bigint'&&value>=0n;
+ const [user,first]=await Promise.all([vault.users(member,options),vault.tierConfig(0,options)]);
+ if(!unsigned(user?.capitalUsd)||!unsigned(first?.minUsd)||first.minUsd===0n)throw Error('INVALID_DAILY_RANK_STATE');
+ if(user.capitalUsd<first.minUsd)return 0n;
+ const tier=await vault.tierOf(member,options);
+ if(!unsigned(tier)||tier>4n)throw Error('INVALID_DAILY_REFERRAL_TIER');
+ const config=tier===0n?first:await vault.tierConfig(tier,options);
+ if(!unsigned(config?.baseDailyBps)||!unsigned(config?.maxDailyBps)||config.baseDailyBps>config.maxDailyBps||config.maxDailyBps>1000n||!unsigned(config?.requiredDirect)||config.requiredDirect>4294967295n||!unsigned(config?.requiredSalesUsd))throw Error('INVALID_DAILY_RANK_STATE');
+ const target=config.requiredSalesUsd;
+ if(target===0n)return config.baseDailyBps;
+ const directs=await vault.qualifiedDirects(member,options);
+ if(!unsigned(directs))throw Error('INVALID_DAILY_RANK_STATE');
+ if(directs<config.requiredDirect)return config.baseDailyBps;
+ const count=await vault.networkBranchCount(member,options);
+ if(!unsigned(count))throw Error('INVALID_DAILY_RANK_STATE');
+ const usd=10n**18n,capBps=target<=10000n*usd?6000n:target<=100000n*usd?4500n:3500n,cap=target*capBps/10000n;
+ let cursor=0n,total=0n;
+ while(cursor<count){
+  const expected=cursor+BigInt(pageSize)<count?cursor+BigInt(pageSize):count;
+  const page=await vault.rankVolumePage(member,target,cursor,pageSize,options),amount=page?.eligibleUsd,next=page?.next,maximum=(expected-cursor)*cap;
+  if(!unsigned(amount)||!unsigned(next)||next!==expected||next<=cursor||amount>target||amount>maximum)throw Error('INVALID_DAILY_RANK_PAGE');
+  total+=amount;if(total>=target)return config.maxDailyBps;
+  cursor=next;
+ }
+ return config.baseDailyBps;
 }
 // A short interval is available only for the explicit, deployed fast test profile.
 export async function assertHourlyTestTarget({provider,vault,policy}){
@@ -95,6 +140,7 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
  if(!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1||maxRegistryPages>100)throw Error('DAILY_MEMBER_INDEX_LIMIT_INVALID');
  policy=validateDailyPolicy(policy);
  if(isHourlyTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
+ else await assertDailyTarget({provider,vault,policy});
  if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_DAILY_EPOCH');
  const head=await provider.getBlockNumber(),final=await provider.getBlock(Math.max(0,head-confirmations));
  const start=policy.startTimestamp+epoch*policy.periodSeconds,end=start+policy.periodSeconds;
@@ -105,7 +151,7 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
  const members=Object.entries(state.registry.members).filter(([,block])=>block<=snapshot.number).map(([address])=>address).sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
  const assets=[ZeroAddress,token],entries=[[],[]],principal=[0n,0n];
  for(const member of members){
-  const rate=await vault.dailyTargetBps(member,options);if(rate<0n||rate>1000n)throw Error('INVALID_PLAN_RATE');
+  const rate=policy.chainId===56?await readDailyTargetBpsAtSnapshot({vault,member,blockTag:snapshot.number}):await vault.dailyTargetBps(member,options);if(rate<0n||rate>1000n)throw Error('INVALID_PLAN_RATE');
   for(let i=0;i<2;i++){
    const account=await vault.accounts(member,assets[i],options);principal[i]+=account.principal;
    const amount=account.principal*rate/10000n;
@@ -185,11 +231,12 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
    batches.push({id,kind:'profit-referrals',asset:assets[i],recipients:group.map(row=>row.recipient),amounts:group.map(row=>row.amount),rows:group});
   }
  }
- return {status:'ready',epoch,start,end,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,batches};
+ return {status:'ready',chainId:policy.chainId,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,epoch,start,end,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,batches};
 }
 export async function executeDailyPlan({provider,vault,plan,transact}){
  if(plan.status!=='ready')return [];
  if((await provider.getBlock(plan.snapshotBlock))?.hash!==plan.snapshotHash)throw Error('DAILY_SNAPSHOT_REORG');
+ await assertDailyIdentity({...plan,provider,vault});
  // Require enough cash and reward budget for every remaining personal and
  // commission batch before crediting the first one. Confirmed batches are
  // excluded so an interrupted period can finish without replaying its base.
@@ -202,6 +249,7 @@ export async function executeDailyPlan({provider,vault,plan,transact}){
   const amounts=batch.amounts.map(BigInt),total=amounts.reduce((a,b)=>a+b,0n);
   if((await vault.ledgers(batch.asset)).rewards<total||await vault.assetBalance(batch.asset)<total)throw Error('DAILY_PROFIT_FUNDING_REQUIRED');
   if((await provider.getBlock(plan.snapshotBlock))?.hash!==plan.snapshotHash)throw Error('DAILY_SNAPSHOT_REORG');
+  await assertDailyIdentity({...plan,provider,vault});
   await vault.batchProfit.staticCall(batch.id,batch.asset,batch.recipients,amounts);
   const receipt=await transact('daily-'+batch.id,await vault.batchProfit.populateTransaction(batch.id,batch.asset,batch.recipients,amounts));
   if(receipt.status!==1||!await vault.usedRewardBatch(batch.id))throw Error('DAILY_CREDIT_NOT_CONFIRMED');
@@ -241,7 +289,7 @@ async function main(){
   const fd=fs.openSync(lockPath,'wx',0o600);lock=lockPath;fs.writeFileSync(fd,String(process.pid));fs.closeSync(fd);
   const policy=validateDailyPolicy(JSON.parse(fs.readFileSync(process.env.GLOBAL_DAILY_POLICY||'/etc/globaldroptrade/daily-policy.json','utf8')));
   if(isHourlyTestPolicy(policy))throw Error('HOURLY_TEST_REQUIRES_ZERO_START_WORKER');
-  if(process.env.TRADES_CHAIN_ID!=='97'||process.env.TRADES_VAULT_ADDRESS?.toLowerCase()!==policy.vaultAddress.toLowerCase()||!process.env.TRADES_RPC_URL)throw Error('AUTOMATION_TARGET_MISMATCH');
+  if(policy.chainId!==97||process.env.TRADES_CHAIN_ID!=='97'||process.env.TRADES_VAULT_ADDRESS?.toLowerCase()!==policy.vaultAddress.toLowerCase()||!process.env.TRADES_RPC_URL)throw Error('AUTOMATION_TARGET_MISMATCH');
   const request=new FetchRequest(process.env.TRADES_RPC_URL);request.timeout=15000;
   provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});provider.pollingInterval=2000;
   const guard=async()=>{if(Number(await provider.send('eth_chainId',[]))!==97||keccak256(await provider.getCode(policy.vaultAddress))!==policy.runtimeHash)throw Error('AUTOMATION_CHAIN_OR_RUNTIME_CHANGED');};

@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {WalletConnection,wallets,switchWalletNetwork,type WalletProvider} from '../src/wallet';
+import {WalletConnection,wallets,switchWalletNetwork,selectInjectedWalletProvider,type WalletProvider} from '../src/wallet';
 import {session} from '../src/chain';
 
 vi.mock('../src/config',()=>({chainId:97,chainName:'BNB Testnet',explorer:'https://testnet.bscscan.com',configured:true,vaultAddress:'0x7f19354B765920B9b17003d0840EEaA133883DcA',feeWallets:[]}));
@@ -19,6 +19,18 @@ describe('wallet connection boundaries',()=>{
  it('does not contact wallets until the user chooses a connection',()=>{
   const injected=provider(),mobile=vi.fn();const connection=new WalletConnection(()=>injected,mobile);
   expect(connection.getProvider()).toBeNull();expect(injected.request).not.toHaveBeenCalled();expect(mobile).not.toHaveBeenCalled();
+ });
+ it('connects to the SafePal browser provider when no generic Ethereum injection exists',async()=>{
+  const safePal=provider();vi.stubGlobal('window',{safepalProvider:safePal});
+  await wallets.connect('injected');expect(wallets.getProvider()).toBe(safePal);
+  expect(safePal.request).toHaveBeenCalledExactlyOnceWith({method:'eth_requestAccounts'});
+ });
+ it('selects SafePal from a multi-wallet injection and retains the generic wallet fallback',()=>{
+  const generic=provider(),safePal={...provider(),isSafePal:true};
+  expect(selectInjectedWalletProvider({ethereum:{...generic,providers:[safePal]}})).toBe(safePal);
+  expect(selectInjectedWalletProvider({ethereum:generic})).toBe(generic);
+  expect(selectInjectedWalletProvider({})).toBeUndefined();
+  expect(generic.request).not.toHaveBeenCalled();expect(safePal.request).not.toHaveBeenCalled();
  });
  it('uses the mobile provider for account reads without any browser extension',async()=>{
   const mobile=provider();const connection=new WalletConnection(()=>undefined,async()=>mobile);

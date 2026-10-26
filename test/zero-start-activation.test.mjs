@@ -30,6 +30,15 @@ function fixture(){
   operatorGas:{balance:'1000000000000000',positive:true},archive:{status:'supported'},automationStatus:'not-inspected'
  };
 }
+function combinedFixture(){
+ const report=fixture();
+ report.funding.estimateVersion=2;report.funding.maxReferralBps=3400;
+ report.funding.assets=report.funding.assets.map(entry=>{
+  const personal=BigInt(entry.estimatedDailyRequirement),referrals=(personal*3400n+9999n)/10000n,total=personal+referrals,minimum=total>0n?total:1n,cash=entry.requiredForExistingPrincipal?parseEther('100'):BigInt(entry.cash),rewards=BigInt(entry.rewards);
+  return {...entry,estimatedReferralRequirement:String(referrals),estimatedTotalDailyRequirement:String(total),minimumBudgetRequired:String(minimum),cash:cash.toString(),backed:rewards>0n&&cash>=rewards,ready:rewards>=minimum&&cash>=minimum};
+ });
+ return report;
+}
 function scheduled(){
  const report=fixture(),start=now-100;
  report.dailyAutomationActive=true;report.automationStatus='scheduled';
@@ -114,6 +123,49 @@ test('one-period funding may be ready without backing all rewards and zero-princ
  for(const change of [{ready:false},{backed:true},{minimumBudgetRequired:'1'},{requiredForExistingPrincipal:false}]){
   const wrong=fixture();Object.assign(wrong.funding.assets[1],change);assert.throws(()=>parsed(wrong),/funding estimate/);
  }
+});
+
+test('version 2 funding requires the combined personal-profit and referral bound in both cash and reward budget',()=>{
+ const full=combinedFixture(),report=parsed(full),view=activationStatusView(report,now);
+ assert.equal(report.funding.assets[1].estimatedDailyRequirement,parseEther('20').toString());
+ assert.equal(report.funding.assets[1].estimatedReferralRequirement,parseEther('6.8').toString());
+ assert.equal(report.funding.assets[1].estimatedTotalDailyRequirement,parseEther('26.8').toString());
+ assert.equal(view.funding[1].minimum,'26.8');assert.equal(view.funding[1].ready,true);
+ assert.match(view.checks.find(row=>row.label==='Reward funding').value,/personal-profit and referral estimate/);
+ for(const field of ['cash','rewards']){
+  const personalOnly=combinedFixture();personalOnly.funding.assets[1][field]=parseEther('20').toString();personalOnly.funding.assets[1].ready=false;
+  personalOnly.funding.assets[1].backed=BigInt(personalOnly.funding.assets[1].cash)>=BigInt(personalOnly.funding.assets[1].rewards);
+  personalOnly.funding.ready=false;personalOnly.ready=false;personalOnly.blockers=['FUNDED_DAILY_REWARD_BUDGET_REQUIRED'];
+  const waiting=activationStatusView(parsed(personalOnly),now);
+  assert.equal(waiting.funding[1].minimum,'26.8');assert.equal(waiting.funding[1].ready,false);assert.equal(waiting.checks.find(row=>row.label==='Reward funding').ok,false);
+  personalOnly.funding.assets[1].ready=true;assert.throws(()=>parsed(personalOnly),/funding estimate/);
+ }
+ const legacy=fixture();legacy.funding.estimateVersion=1;
+ assert.equal(activationStatusView(parsed(legacy),now).funding[1].minimum,'20.0');
+ assert.match(activationStatusView(parsed(legacy),now).checks.find(row=>row.label==='Reward funding').value,/legacy personal-profit estimate/);
+});
+
+test('version 2 rounds each referral bound upward and retains the positive empty-pool minimum',()=>{
+ const report=combinedFixture();report.funding.maxReferralBps=1;
+ report.funding.assets=[
+  {...asset(ZeroAddress,0n,0n,0n),estimatedReferralRequirement:'0',estimatedTotalDailyRequirement:'0'},
+  {...asset(token,1n,2n,2n),estimatedReferralRequirement:'1',estimatedTotalDailyRequirement:'2',minimumBudgetRequired:'2'}
+ ];
+ const assets=parsed(report).funding.assets;
+ assert.equal(assets[0].minimumBudgetRequired,'1');assert.equal(assets[0].ready,false);
+ assert.equal(assets[1].estimatedDailyRequirement,'1');assert.equal(assets[1].estimatedReferralRequirement,'1');assert.equal(assets[1].minimumBudgetRequired,'2');assert.equal(assets[1].ready,true);
+});
+
+test('version 2 rejects unknown versions, missing referral fields and inconsistent combined estimates',()=>{
+ const mutations=[
+  value=>{value.funding.estimateVersion=3;},value=>{value.funding.estimateVersion='2';},value=>{value.funding.estimateVersion=null;},
+  value=>{delete value.funding.maxReferralBps;},value=>{value.funding.maxReferralBps=3401;},value=>{value.funding.maxReferralBps=-1;},value=>{value.funding.maxReferralBps=1.5;},value=>{value.funding.maxReferralBps='3400';},
+  value=>{delete value.funding.assets[1].estimatedReferralRequirement;},value=>{delete value.funding.assets[1].estimatedTotalDailyRequirement;},
+  value=>{value.funding.assets[1].estimatedReferralRequirement='-1';},value=>{value.funding.assets[1].estimatedReferralRequirement='6.8';},
+  value=>{value.funding.assets[1].estimatedReferralRequirement='0';},value=>{value.funding.assets[1].estimatedTotalDailyRequirement=parseEther('20').toString();},
+  value=>{value.funding.assets[1].minimumBudgetRequired=parseEther('20').toString();},value=>{value.funding.ready=false;}
+ ];
+ for(const mutate of mutations){const value=combinedFixture();mutate(value);assert.throws(()=>parsed(value),/funding|budget|service requirements/);}
 });
 
 test('scheduling and credit evidence must match the established fresh identity and period',()=>{

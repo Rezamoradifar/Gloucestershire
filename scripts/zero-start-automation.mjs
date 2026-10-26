@@ -147,7 +147,7 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
  let policy=await during('POLICY_LOAD',()=>loadPolicy());
  if(policy){
   phase='POLICY_VERIFICATION';onPhase(phase);
-  policy=validateDailyPolicy(policy);if(policy.vaultAddress!==target||policy.runtimeHash!==readiness.runtimeHash||policy.deploymentBlock!==readiness.block)throw Error('ZERO_START_AUTOMATION_POLICY_CHANGED');
+  policy=validateDailyPolicy(policy);if(policy.chainId!==97||policy.vaultAddress!==target||policy.runtimeHash!==readiness.runtimeHash||policy.deploymentBlock!==readiness.block)throw Error('ZERO_START_AUTOMATION_POLICY_CHANGED');
   if(policy.periodSeconds===3600&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
   const activation=state.activation||(policy.activationBlockHash?{block:policy.activationBlock,blockHash:policy.activationBlockHash}:null);
   if(activation&&(await provider.getBlock(activation.block))?.hash!==activation.blockHash)throw Error('ZERO_START_ACTIVATION_CHECKPOINT_REORG');
@@ -276,6 +276,7 @@ async function main(){
   };
   const loadCurrentPolicy=()=>{
    const current=fs.existsSync(policyFile)?validateDailyPolicy(JSON.parse(readPrivate(policyFile))):undefined;
+   if(current&&current.chainId!==97)throw Error('ZERO_START_AUTOMATION_POLICY_CHANGED');
    if(current?.periodSeconds===3600&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
    return current;
   };

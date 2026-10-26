@@ -11,3 +11,4 @@ node_modules/
 *.log
 
 .mainnet-server/
+.mainnet-preparation/

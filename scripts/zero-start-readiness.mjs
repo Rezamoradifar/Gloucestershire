@@ -53,7 +53,7 @@ async function archiveReadiness({provider,vault,report,token,checkpoint,policy,p
  let requestedPeriod=periodStartTimestamp;
  if(policy){
   policy=validateDailyPolicy(policy);
-  if(policy.vaultAddress!==report.target||policy.runtimeHash!==report.runtimeHash||policy.deploymentBlock!==report.block||policy.startTimestamp<created.timestamp)throw Error('ZERO_START_DAILY_POLICY_IDENTITY_MISMATCH');
+  if(policy.chainId!==97||policy.vaultAddress!==report.target||policy.runtimeHash!==report.runtimeHash||policy.deploymentBlock!==report.block||policy.startTimestamp<created.timestamp)throw Error('ZERO_START_DAILY_POLICY_IDENTITY_MISMATCH');
   requestedPeriod??=policy.startTimestamp;
  }
  if(requestedPeriod!==undefined&&(!Number.isSafeInteger(requestedPeriod)||requestedPeriod<created.timestamp||requestedPeriod>checkpoint.timestamp))throw Error('ZERO_START_DAILY_PERIOD_START_INVALID');
@@ -119,16 +119,18 @@ export async function verifyZeroStartReadiness({provider,artifact,deploymentRepo
  const reporterProposal={calldata,hash,eta,round,votes,requiredVotes,currentQuorum,queued,delaySeconds:Number(delayValue),delayElapsed,executable:!reporterAuthorized&&queued&&delayElapsed&&votes>=requiredVotes,partners,queueCalldata:vault.interface.encodeFunctionData('queueConfiguration',[hash]),voteCalldata:vault.interface.encodeFunctionData('voteConfiguration',[hash]),cancelCalldata:vault.interface.encodeFunctionData('cancelConfiguration',[hash])};
  const tiers=await Promise.all(Array.from({length:5},(_,i)=>vault.tierConfig(i,o)));
  const maxDailyBps=tiers.reduce((max,tier)=>tier.maxDailyBps>max?tier.maxDailyBps:max,0n);
- if(maxDailyBps>1000n)throw Error('ZERO_START_DAILY_PLAN_INVALID');
+ const referralTotals=tiers.map(tier=>{const rates=Array.from(tier.referrals);if(rates.length!==4||rates.some(value=>typeof value!=='bigint'||value<0n||value>3400n))throw Error('ZERO_START_DAILY_PLAN_INVALID');return rates.reduce((sum,value)=>sum+value,0n);});
+ const maxReferralBps=referralTotals.reduce((max,value)=>value>max?value:max,0n);
+ if(maxDailyBps>1000n||maxReferralBps>3400n)throw Error('ZERO_START_DAILY_PLAN_INVALID');
  const assets=[];
  for(const [asset,symbol,decimals] of [[ZeroAddress,'BNB',18],[c.token,'USDT',Number(tokenDecimalsValue)]]){
   const [ledger,cash]=await Promise.all([vault.ledgers(asset,o),vault.assetBalance(asset,o)]);
-  const estimate=(ledger.principal*maxDailyBps+9999n)/10000n,minimum=estimate>0n?estimate:1n;
+  const estimate=(ledger.principal*maxDailyBps+9999n)/10000n,referralEstimate=(estimate*maxReferralBps+9999n)/10000n,totalEstimate=estimate+referralEstimate,minimum=totalEstimate>0n?totalEstimate:1n;
   const fullyBackedRewards=ledger.rewards>0n&&cash>=ledger.rewards;
-  assets.push({asset,symbol,decimals,principal:ledger.principal.toString(),rewards:ledger.rewards.toString(),cash:cash.toString(),estimatedDailyRequirement:estimate.toString(),minimumBudgetRequired:minimum.toString(),backed:fullyBackedRewards,fullyBackedRewards,rewardBackingShortfall:(ledger.rewards>cash?ledger.rewards-cash:0n).toString(),ready:ledger.rewards>=minimum&&cash>=minimum,requiredForExistingPrincipal:ledger.principal>0n});
+  assets.push({asset,symbol,decimals,principal:ledger.principal.toString(),rewards:ledger.rewards.toString(),cash:cash.toString(),estimatedDailyRequirement:estimate.toString(),estimatedReferralRequirement:referralEstimate.toString(),estimatedTotalDailyRequirement:totalEstimate.toString(),minimumBudgetRequired:minimum.toString(),backed:fullyBackedRewards,fullyBackedRewards,rewardBackingShortfall:(ledger.rewards>cash?ledger.rewards-cash:0n).toString(),ready:ledger.rewards>=minimum&&cash>=minimum,requiredForExistingPrincipal:ledger.principal>0n});
  }
  const requiredAssets=assets.filter(asset=>asset.requiredForExistingPrincipal);
- const funding={maxDailyBps:Number(maxDailyBps),estimateBasis:'current-principal-times-highest-current-plan-rate-rounded-up',emptyPrincipalMinimumBasis:'one-smallest-asset-unit-positive-budget-only',assets,ready:requiredAssets.length?requiredAssets.every(asset=>asset.ready):assets.some(asset=>asset.ready)};
+ const funding={estimateVersion:2,maxDailyBps:Number(maxDailyBps),maxReferralBps:Number(maxReferralBps),estimateBasis:'conservative-current-principal-personal-plus-referrals-rounded-up',emptyPrincipalMinimumBasis:'one-smallest-asset-unit-positive-budget-only',assets,ready:requiredAssets.length?requiredAssets.every(asset=>asset.ready):assets.some(asset=>asset.ready)};
  const gas=await provider.getBalance(c.deployer,checkpoint.number),operatorGas={balance:gas.toString(),positive:gas>0n};
  const archive=await archiveReadiness({provider,vault,report,token:c.token,checkpoint,policy,periodStartTimestamp,requiredRetentionSeconds:hourlyTest?3600:day});
  // The separate test profile can establish its first policy while young, after

@@ -115,28 +115,43 @@ cat .testnet-server/health-public.json
 
 After success, rerunning returns the saved result without new deposits. If interrupted or failed, preserve `health-run.json` and report the error; interruption can occur after broadcast. A completed report marks only this limited test suite, not full security or guaranteed liquidity.
 
-## Mainnet deployment — real BNB fees
+## Mainnet preparation
 
-The mainnet configuration uses `config.mainnet.json`: 18-decimal Binance-Peg USDT, Chainlink BNB/USD and USDT/USD feeds, a 3,600-second price-age limit and the configured owner/partners. Address references: https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json and https://explorer.bnbchain.org/asset/USDT-6D8 .
+The mainnet entrypoint now prepares the ordinary fresh `AutomaticGroupVault`
+with its approval queue and automatic groups. It pins BNB Chain 56, the reviewed
+creation bytecode, owner `0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632`,
+production USDT and Chainlink feed proxies, 86,400-second daily periods and a
+3,600-second oracle-age limit. Fast testnet contracts, mock assets and hourly
+policies cannot be selected through this entrypoint.
+
+Run from a separate checkout, because the wrapper installs production-only
+dependencies in that checkout:
 
 ```bash
-git pull --ff-only
-bash ubuntu-mainnet.sh prepare
+bash ubuntu-mainnet.sh plan
+bash ubuntu-mainnet.sh prepare --from 0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632
 ```
 
-Prepare creates a separate wallet under `.mainnet-server` with a mode-600 key, checks the network/token/feeds and produces an unsigned transaction and gas estimate. Review `deployment-preview.json`. No funds or transactions are sent during prepare. RPC or stale-price failures stop the process.
+`plan` needs no RPC and builds an unsigned constructor report. `prepare` uses the
+public `--from` address only for gas simulation; it does not identify a funded
+signer. It checks the selected RPC, production asset/feed metadata and fresh
+prices at a confirmed checkpoint, rechecks that checkpoint, and estimates the
+unsigned gas cost within 0.02 BNB. A private HTTPS endpoint may be supplied using
+`--rpc-file /absolute/private/file` with mode 600; never paste its URL into chat
+or command arguments.
 
-After reviewing the `MAINNET DEPLOYER` address and funding that exact address with real BNB for gas:
+Reports are saved separately under `.mainnet-preparation/`. No signing key is
+created or opened, no transaction is signed or sent, and existing
+`.mainnet-server` keys and deployment journals are preserved. `deploy` is blocked
+before filesystem or RPC work. The legacy generic unsigned-preparation command
+also refuses chain 56, so it cannot silently select the old base contract.
 
-```bash
-bash ubuntu-mainnet.sh deploy
-```
-
-Deploy publishes one GLOBAL contract on chain 56, without mock tokens or feeds. Transaction value is zero; only actual gas is paid. The signed maximum gas cost is capped at 0.02 BNB; the estimate may be much lower. No owner key is needed; ownership is assigned to the configured address. The signed transaction is saved before broadcast for safe resumption. After interruption, preserve files and repeat the same command. Share only `.mainnet-server/deployment-public.json`, never the directory or private key.
-
-Limitations: no independent audit; complete live profit/withdrawal and VIP testing remains outstanding. All deposits leave the vault while full principal claims remain, and the owner can access all cash. Deployment starts unpaused. Mainnet deployment does not certify security, profitability or frontend readiness.
-
-Automated prepare tests cover wrong networks, invalid addresses, stale prices and the gas ceiling. The recorded development-environment live check timed out; server-side prepare must pass live verification.
+`MAINNET_READ_ONLY_PREFLIGHT_PASSED` proves only its stated RPC preparation
+scope. Every report retains `readyToDeploy: false` and the remaining activation
+blockers. Mainnet contract connection, the actual reporter/worker, reward cash,
+archive reads and live credit/approved-payout evidence are still required.
+See [MAINNET-READINESS.md](MAINNET-READINESS.md) for the exact financial model and
+what has and has not been verified. Do not fund a deployer based on this preview.
 
 ## Run the updated release
 

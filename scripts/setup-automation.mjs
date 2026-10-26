@@ -17,7 +17,7 @@ try{
  const file='/etc/globaldroptrade/daily-policy.json';
  if(fs.existsSync(file)){
   const p=validateDailyPolicy(JSON.parse(fs.readFileSync(file,'utf8')));
-  if(p.vaultAddress.toLowerCase()!==config.address.toLowerCase()||p.runtimeHash!==keccak256(code))throw Error('EXISTING_POLICY_TARGET_MISMATCH');
+  if(p.chainId!==97||p.vaultAddress.toLowerCase()!==config.address.toLowerCase()||p.runtimeHash!==keccak256(code))throw Error('EXISTING_POLICY_TARGET_MISMATCH');
  }else{
   let low=0,high=await provider.getBlockNumber();const latest=await provider.getBlock(high);
   // Migration deployments expose their immutable creation block; no genesis-state binary search is needed.

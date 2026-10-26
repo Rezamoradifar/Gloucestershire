@@ -70,12 +70,18 @@ export function parseActivationStatus(value,apiConfig,expectedIdentity){
  if(!checkpoint||!integer(checkpoint.timestamp)||!integer(checkpoint.block)||!hash(checkpoint.blockHash)||!a||!same(a.calldata,expectedCalldata)||!same(a.hash,expectedProposalHash)||![a.eta,a.round,a.votes,a.requiredVotes,a.currentQuorum].every(integer)||a.requiredVotes<2||a.requiredVotes>7||a.currentQuorum<2||a.currentQuorum>7||a.votes>7||a.delaySeconds!==172800||typeof a.queued!=='boolean'||a.queued!==(a.eta>0))fail('The reporter permission status is invalid.');
  const f=value.funding;
  if(!f||typeof f.ready!=='boolean'||!integer(f.maxDailyBps)||f.maxDailyBps>1000||!Array.isArray(f.assets)||f.assets.length!==2)fail('The daily funding status is invalid.');
+ const combinedEstimate=f.estimateVersion===2;
+ if(f.estimateVersion!==undefined&&f.estimateVersion!==1&&!combinedEstimate)fail('The daily funding estimate version is invalid.');
+ if(combinedEstimate&&(!integer(f.maxReferralBps)||f.maxReferralBps>3400))fail('The daily referral funding estimate is invalid.');
  const assets=f.assets.map(entry=>{
   if(!entry||![entry.principal,entry.rewards,entry.cash,entry.estimatedDailyRequirement,entry.minimumBudgetRequired].every(units)||entry.decimals!==18||typeof entry.ready!=='boolean'||typeof entry.backed!=='boolean'||typeof entry.requiredForExistingPrincipal!=='boolean')fail('The reward budget data is invalid.');
+  if(combinedEstimate&&![entry.estimatedReferralRequirement,entry.estimatedTotalDailyRequirement].every(units))fail('The combined reward budget data is invalid.');
   const asset=same(entry.asset,ZeroAddress)?ZeroAddress:address(entry.asset);
   if(asset!==ZeroAddress&&!same(asset,policy.token))fail('An unexpected reward asset was reported.');
-  const principal=BigInt(entry.principal),rewards=BigInt(entry.rewards),cash=BigInt(entry.cash),estimate=(principal*BigInt(f.maxDailyBps)+9999n)/10000n,minimum=estimate>0n?estimate:1n;
+  const principal=BigInt(entry.principal),rewards=BigInt(entry.rewards),cash=BigInt(entry.cash),estimate=(principal*BigInt(f.maxDailyBps)+9999n)/10000n;
+  const referrals=combinedEstimate?(estimate*BigInt(f.maxReferralBps)+9999n)/10000n:0n,total=estimate+referrals,minimum=total>0n?total:1n;
   const backed=rewards>0n&&cash>=rewards,ready=rewards>=minimum&&cash>=minimum;
+  if(combinedEstimate&&(BigInt(entry.estimatedReferralRequirement)!==referrals||BigInt(entry.estimatedTotalDailyRequirement)!==total))fail('The combined reward funding estimate is inconsistent.');
   if(BigInt(entry.estimatedDailyRequirement)!==estimate||BigInt(entry.minimumBudgetRequired)!==minimum||entry.requiredForExistingPrincipal!==(principal>0n)||entry.backed!==backed||entry.ready!==ready)fail('The reward funding estimate is inconsistent.');
   return {...entry,asset,symbol:asset===ZeroAddress?'tBNB':'Test USDT'};
  });
@@ -119,7 +125,7 @@ export function activationStatusView(report,nowSeconds=Date.now()/1000){
   {label:hourly?'Hourly test cycle':'Daily credits',value:active?'Active':stale?'Unverified':oracles.failed?'Oracle check failed':report.ready?'Ready; scheduling unverified':'Waiting for requirements',ok:active},
   {label:'Oracle prices',value:oracles.failed?'Check failed: '+oracles.errors.join(', '):oracles.verified?(oracleStale?'Previously verified; fresh check required':'Both contract quotes verified'):'Not inspected',ok:oracles.verified&&!oracleStale},
   {label:fast?'Testnet initial server permission':'Server permission',value:report.reporterAuthorized?'Authorized':'Permission missing',ok:report.reporterAuthorized},
-  {label:'Reward funding',value:report.funding.ready?'Ready for the current estimate':'Funding required',ok:report.funding.ready},
+  {label:'Reward funding',value:report.funding.ready?(report.funding.estimateVersion===2?'Ready for the personal-profit and referral estimate':'Ready for the legacy personal-profit estimate'):'Funding required',ok:report.funding.ready},
   {label:'Transaction fees',value:report.operatorGas.positive?'Test BNB available':'Server operator needs test BNB',ok:report.operatorGas.positive},
   {label:'Historical account reads',value:report.archive.status==='supported'?(hourlyRetention?'1-hour test retention verified':'Verified'):fast&&report.archive.provisionalAccepted===true?`Initial test checkpoint verified; ${hourlyRetention?'1-hour':'24-hour'} retention pending`:report.archive.status==='provisional'?(hourlyRetention?'Waiting for a full hourly test period':'Waiting for a full daily period'):'Unavailable',ok:report.archive.status==='supported'},
   {label:'Contract operations',value:report.paused?'Paused':'Open',ok:!report.paused}

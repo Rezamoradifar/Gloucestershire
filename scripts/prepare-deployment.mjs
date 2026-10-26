@@ -5,6 +5,7 @@ const args=process.argv.slice(2);
 const contractKind=args.includes('--approved-withdrawals')?'DeferredRewardsVault':'DropshippingVault';
 const config=JSON.parse(fs.readFileSync(args.find(a=>!a.startsWith('--'))||'config.json','utf8'));
 if(![56,97].includes(config.chainId))throw Error('Expected BSC chainId 56 or 97');
+if(config.chainId===56)throw Error('MAINNET_FRESH_PREPARATION_REQUIRED: use ubuntu-mainnet.sh plan or prepare with the pinned AutomaticGroupVault release.');
 for(const k of ['initialOwner','usdt','bnbUsdFeed','usdtUsdFeed','dropshippingWallet']){
  if(!config[k])throw Error('Missing '+k);config[k]=getAddress(config[k]);
  if(/^0x0{40}$/i.test(config[k]))throw Error('Zero '+k);

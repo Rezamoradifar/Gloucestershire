@@ -12,7 +12,7 @@ export default function WalletPicker({open,address,busy,onClose,onConnect,onDisc
   <p className="muted">{chainName} · Choose how to connect</p>
   {address&&<p className="connected-wallet"><code>{address}</code></p>}
   <div className="wallet-options">
-   <button disabled={busy} onClick={()=>onConnect('injected')}><Wallet/><span><strong>Browser wallet</strong><small>MetaMask, Trust Wallet or another installed wallet</small></span></button>
+   <button disabled={busy} onClick={()=>onConnect('injected')}><Wallet/><span><strong>Browser wallet</strong><small>SafePal, MetaMask, Trust Wallet or another installed wallet</small></span></button>
    <button disabled={busy||!walletConnectReady} onClick={()=>onConnect('walletconnect')}><QrCode/><span><strong>WalletConnect</strong><small>{walletConnectReady?'Scan a QR code or connect a mobile wallet':'Mobile & QR connections are not available yet'}</small></span></button>
   </div>
   <p className="muted wallet-connection-note">Connecting shares your public account address. Payments require a separate confirmation in your wallet.</p>

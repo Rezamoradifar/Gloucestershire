@@ -12,7 +12,7 @@ export function makeHourlyTestPolicy(readiness){
 }
 
 function assertIdentity(readiness,state,policy){
- if(policy.vaultAddress!==getAddress(readiness.target)||policy.runtimeHash!==readiness.runtimeHash||policy.deploymentBlock!==readiness.block)throw Error('HOURLY_TEST_POLICY_TARGET_MISMATCH');
+ if(policy.chainId!==97||policy.vaultAddress!==getAddress(readiness.target)||policy.runtimeHash!==readiness.runtimeHash||policy.deploymentBlock!==readiness.block)throw Error('HOURLY_TEST_POLICY_TARGET_MISMATCH');
  const expected={version:1,chainId:97,target:readiness.target,owner:readiness.owner,operator:readiness.operator,queue:readiness.queue,hash:readiness.hash,runtimeHash:readiness.runtimeHash};
  if(!same(state.identity,expected))throw Error('HOURLY_TEST_JOURNAL_IDENTITY_MISMATCH');
 }

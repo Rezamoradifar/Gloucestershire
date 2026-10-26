@@ -512,6 +512,14 @@ wrapper independently checks that only the registry changed and repeats normal
 preflight before any service cutover. Rebuilding never opens a signer or credits
 profit, and cannot discard an unpaid period to escape unavailable history.
 
+The reviewed immutable worker upgrade also carries explicit chain-97 policy
+guards when the shared daily library gains ordinary chain-56 planning. Funding
+estimate version 2 includes the conservative referral allocation bound alongside
+personal profit. Its matching read-only status parser is installed before a new
+worker report can appear. A verified pre-worker failure restores its managed
+public files with the old code and environment; once a worker may have run, the
+matching new parser remains with the new worker and all financial journals.
+
 A failed probe also reports the exact allowlisted read operation, sanitized
 error/RPC codes, HTTP status and a fixed reason category inferred from the
 provider error. A timeout or malformed response can otherwise look like missing

@@ -41,7 +41,7 @@ test('hourly policies require the exact fast test markers and remain testnet-onl
  assert.equal(policy.periodSeconds,3600);assert.deepEqual(Object.fromEntries(Object.keys(hourlyTestPolicyFields).map(key=>[key,policy[key]])),hourlyTestPolicyFields);
  assert.equal(await assertHourlyTestTarget({provider,vault,policy}),true);
  for(const change of [{testMode:false},{releaseId:'global-fresh-zero-v1'},{testInterval:'daily'},{fastTestnetVersion:0}])assert.throws(()=>validateDailyPolicy({...policy,...change}),/HOURLY_TEST_POLICY_MARKERS_REQUIRED/);
- assert.throws(()=>validateDailyPolicy({...policy,chainId:56}),/INVALID_DAILY_POLICY/);
+ assert.throws(()=>validateDailyPolicy({...policy,chainId:56}),/MAINNET_DAILY_POLICY_REQUIRED/);
  assert.throws(()=>makeHourlyTestPolicy({...baseReadiness,initialServerReporter:false}),/VERIFIED_FAST_PROFILE_REQUIRED/);
  assert.throws(()=>makeHourlyTestPolicy({...baseReadiness,checkpoint:{...baseReadiness.checkpoint,blockHash:'0x00'}}),/CONFIRMED_CHECKPOINT_REQUIRED/);
  await assert.rejects(planDailyEpoch({provider:proxy(provider,{send:async()=> '0x38'}),vault,policy,state:{},epoch:0}),/TESTNET_ONLY/);
@@ -105,6 +105,7 @@ test('an interrupted policy replacement resumes the same start and preserves its
 
 test('previous credits, pending signatures, changed identity and noncanonical checkpoints block a transition',async()=>{
  const previous=oldPolicy(baseReadiness),base={identity:identity(baseReadiness),transactions:{},daily:{epoch:0},activation:activation(previous)};
+ await assert.rejects(transitionHourlyTestPolicy({provider,vault,readiness:baseReadiness,state:structuredClone(base),policy:JSON.parse(JSON.stringify({...previous,chainId:56})),save:()=>{throw Error('UNEXPECTED_SAVE');},saveArchive:()=>{throw Error('UNEXPECTED_ARCHIVE');},savePolicy:()=>{throw Error('UNEXPECTED_POLICY');}}),/HOURLY_TEST_POLICY_TARGET_MISMATCH/);
  const run=state=>transitionHourlyTestPolicy({provider,vault,readiness:baseReadiness,state,policy:previous,save:()=>{throw Error('UNEXPECTED_SAVE');},saveArchive:()=>{throw Error('UNEXPECTED_ARCHIVE');},savePolicy:()=>{throw Error('UNEXPECTED_POLICY');}});
  await assert.rejects(run({...structuredClone(base),transactions:{pending:{raw:'saved-signature'}}}),/PENDING_TRANSACTION_REQUIRED_FIRST/);
  await assert.rejects(run({...structuredClone(base),daily:{epoch:1}}),/PREVIOUS_CREDITS_REQUIRE_REVIEW/);

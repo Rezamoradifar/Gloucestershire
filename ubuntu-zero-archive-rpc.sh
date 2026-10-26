@@ -279,6 +279,9 @@ failed(){
  if [ "$may_have_run" -eq 0 ];then
   [ "$run_locked" -eq 1 ] && [ "$financial_ready" -eq 1 ] || safe=1
   if [ "$financial_ready" -eq 1 ];then financial_snapshot verify || safe=1;fi
+  if [ -f "$backup/status-console/manifest.json" ];then
+   if [ "$safe" -eq 0 ];then python3 scripts/install-zero-start-status.py --restore "$backup/status-console" || safe=1;else safe=1;fi
+  fi
   if [ "$code_may_have_changed" -eq 1 ];then
    if [ "$safe" -eq 0 ] && python3 scripts/stage-zero-log-reader.py restore "$backup/log-reader-releases.json";then
     expected_api=$previous_api;expected_daily=$previous_daily;code_restored=1
@@ -355,6 +358,9 @@ selection.assertCurrent();
 const proof=Buffer.from(JSON.stringify({originalEnvSha256:sha(original),stagedEnvSha256:sha(next)})+'\n');let fd=fs.openSync(marker,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,proof);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
 const temporary=file+'.archive-rpc-'+process.pid;fd=fs.openSync(temporary,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);try{fs.writeFileSync(fd,next);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temporary,file);const dir=fs.openSync(path.dirname(file),fs.constants.O_RDONLY);try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}
 JS
+# Publish the matching versioned funding parser before a new worker report can
+# appear. Its managed public files have their own verified rollback manifest.
+python3 scripts/install-zero-start-status.py --backup-dir "$backup/status-console"
 code_may_have_changed=1
 python3 scripts/stage-zero-log-reader.py activate "$backup/log-reader-releases.json"
 expected_api=$new_api

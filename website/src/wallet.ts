@@ -8,6 +8,11 @@ export type WalletProvider=Eip1193Provider & {
 };
 type MobileProvider=WalletProvider & {enable:()=>Promise<string[]>};
 export type WalletKind='injected'|'walletconnect';
+type InjectedWalletScope={safepalProvider?:WalletProvider;ethereum?:WalletProvider&{providers?:Array<WalletProvider&{isSafePal?:boolean}>}};
+export function selectInjectedWalletProvider(scope:InjectedWalletScope):WalletProvider|undefined{
+ const providers=Array.isArray(scope.ethereum?.providers)?scope.ethereum.providers:[];
+ return [scope.safepalProvider,...providers.filter(provider=>provider?.isSafePal),scope.ethereum].find(provider=>typeof provider?.request==='function');
+}
 export const walletConnectProjectId=String(import.meta.env.VITE_WALLETCONNECT_PROJECT_ID||'').trim();
 export const walletConnectReady=/^[a-f0-9]{32}$/i.test(walletConnectProjectId);
 
@@ -92,7 +97,7 @@ async function loadMobileProvider():Promise<MobileProvider>{
  })().catch(error=>{mobileProvider=undefined;throw error;});
  return mobileProvider;
 }
-export const wallets=new WalletConnection(()=>typeof window==='undefined'?undefined:window.ethereum,loadMobileProvider);
+export const wallets=new WalletConnection(()=>typeof window==='undefined'?undefined:selectInjectedWalletProvider(window),loadMobileProvider);
 export const getWalletProvider=()=>wallets.getProvider();
 export async function switchWalletNetwork(){
  const provider=getWalletProvider();

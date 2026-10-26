@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "kind": "fresh-mainnet-preparation",
+  "releaseId": "global-fresh-mainnet-v1",
+  "chainId": 56,
+  "status": "rpc-preflight-passed",
+  "preparationOnly": true,
+  "readyToDeploy": false,
+  "artifact": "AutomaticGroupVault",
+  "artifactHash": "0x64f24990045d9ef3d268e97657ed6e6af013cb73fc8ec39b9a862929c069e8cf",
+  "compiler": "0.8.30+commit.73712a01.Emscripten.clang",
+  "runtimeBytes": 24181,
+  "configurationHash": "3b37a11a6d73d943ba9a12d3fb947fdea298b95b359d335caa1a20f40c420b9c",
+  "simulationFrom": "0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632",
+  "constructorArguments": [
+    "0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632",
+    "0x55d398326f99059fF775485246999027B3197955",
+    "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",
+    "0xB97Ad0E74fa7d920791E90258A6E2085088b4320",
+    3600,
+    [
+      "0xA7705F5c98263Caae042626a5d49528Dd982Af5F",
+      "0x2F980aC9ae92DB23cA2AEAd1CE8188A5764a7Bfa",
+      "0x730C4664C58aE506C05b50e06c1CE73f71D82b87",
+      "0xa63AD5EEe7907D76B22eb140cC4009fDc3a6c977",
+      "0xba869ec421be39c5F5410033Cf7Ec203298B151a",
+      "0x4274d411FF49Cfd2FCf1eC97Fb05f51099d5E0A3",
+      "0x63c5B98AEfd69658B652d5F35FFda3C6c06847E3"
+    ],
+    "0x8c4AC9b009808a0B49Ba77b58e3871e7cDba463c"
+  ],
+  "economics": {
+    "periodSeconds": 86400,
+    "basis": "period-start-active-principal",
+    "includeCompletedReinvestment": true,
+    "automaticReinvestment": false,
+    "withdrawalApprovalRequired": true,
+    "initialReporters": [
+      "0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632"
+    ],
+    "serverReporterPartnerVotes": 2,
+    "serverReporterDelaySeconds": 172800
+  },
+  "trustModel": {
+    "ownerMayWithdrawAllLiquidAssets": true,
+    "rewardFundingIsNotGuaranteed": true,
+    "partnerAndOperationsAddressesReconfirmed": false,
+    "depositRouting": {
+      "feesEachBps": 1000,
+      "operationsBps": 8000,
+      "principalRetainedBps": 0
+    },
+    "dailyReporterCanAllocateWithinBudget": true,
+    "unfundedNetworkClaimsPossible": true
+  },
+  "blockers": [
+    "MAINNET_DEPLOYMENT_DISABLED_PREPARATION_ONLY",
+    "LIVE_TESTNET_CREDIT_AND_APPROVED_PAYOUT_EVIDENCE_REQUIRED",
+    "MAINNET_CONNECTION_AND_WORKER_ACTIVATION_REQUIRED",
+    "MAINNET_REWARD_FUNDING_AND_ARCHIVE_PROOF_REQUIRED",
+    "MAINNET_SERVER_REPORTER_GOVERNANCE_REQUIRED",
+    "MAINNET_RECIPIENT_CONFIRMATION_REQUIRED",
+    "OWNER_LIQUIDITY_AUTHORITY_REQUIRES_REVIEW"
+  ],
+  "signerOpened": false,
+  "keysRead": false,
+  "transactionsSigned": 0,
+  "transactionsSent": 0,
+  "checkpoint": {
+    "block": 129802358,
+    "blockHash": "0x3c5ae6526f1916837f83ea50b2e820832833a6b0bc5a13d16c973a4661550024",
+    "timestamp": 1792974834,
+    "observedHead": 129802361,
+    "confirmations": 3
+  },
+  "contracts": [
+    {
+      "role": "usdt",
+      "address": "0x55d398326f99059fF775485246999027B3197955",
+      "runtimeHash": "0x97a48aa4c129657440dafdacd4c836389734d28cc4a0ca7403e68da660a74a59"
+    },
+    {
+      "role": "bnbUsdFeed",
+      "address": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",
+      "runtimeHash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+    },
+    {
+      "role": "usdtUsdFeed",
+      "address": "0xB97Ad0E74fa7d920791E90258A6E2085088b4320",
+      "runtimeHash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+    }
+  ],
+  "feeds": [
+    {
+      "address": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",
+      "description": "BNB / USD",
+      "decimals": 8,
+      "round": "55340232221132194647",
+      "answer": "73993768000",
+      "updatedAt": "1792974807",
+      "answeredInRound": "55340232221132194647",
+      "ageSeconds": "27",
+      "maxOracleAge": 3600
+    },
+    {
+      "address": "0xB97Ad0E74fa7d920791E90258A6E2085088b4320",
+      "description": "USDT / USD",
+      "decimals": 8,
+      "round": "73786976294838212798",
+      "answer": "99868739",
+      "updatedAt": "1792974735",
+      "answeredInRound": "73786976294838212798",
+      "ageSeconds": "99",
+      "maxOracleAge": 3600
+    }
+  ],
+  "proofScope": "selected-rpc-read-only-constructor-and-live-asset-validation",
+  "independentCanonicalProof": false,
+  "rpc": {
+    "kind": "public",
+    "urlSha256": "67626edb23a4c0401269d063e056c2d3f2f1d67efbadbee7634f9c662e4b69d9"
+  },
+  "checkedAt": "2026-10-26T00:34:01.658Z",
+  "unsignedDeployment": {
+    "chainId": 56,
+    "to": null,
+    "value": "0",
+    "initcodeHash": "0x10f0489a7077bf5d27df79e58e2d7f996796e57c5ef136ab8f42609a9a69fbd0",
+    "from": "0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632",
+    "gasLimit": "8478525",
+    "gasPrice": "50000000",
+    "maximumGasCostWei": "423926250000000",
+    "gasCostLimitWei": "20000000000000000",
+    "calldataOmittedFromSummary": true
+  },
+  "reproduce": "node scripts/server-mainnet.mjs prepare --from 0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632"
+}

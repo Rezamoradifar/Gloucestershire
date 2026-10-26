@@ -107,5 +107,7 @@ test('automatic payouts wait for administrator approval and pay the fixed net am
 test('the daily policy rejects other networks, ambiguous time rules and invalid starts',()=>{
  const valid={version:1,chainId:97,vaultAddress:'0x1111111111111111111111111111111111111111',runtimeHash:id('runtime'),deploymentBlock:1,startTimestamp:1,basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true};
  assert.equal(validateDailyPolicy(valid).chainId,97);
- for(const change of [{chainId:56},{periodSeconds:3600},{startTimestamp:0},{includeReinvestment:false},{runtimeHash:null},{basis:'wallet-balance'}])assert.throws(()=>validateDailyPolicy({...valid,...change}));
+ assert.equal(validateDailyPolicy({...valid,chainId:56}).periodSeconds,86400);
+ for(const change of [{chainId:1},{periodSeconds:3600},{startTimestamp:0},{includeReinvestment:false},{runtimeHash:null},{basis:'wallet-balance'}])assert.throws(()=>validateDailyPolicy({...valid,...change}));
+ for(const change of [{periodSeconds:3600},{testMode:true},{testMode:false},{initialServerReporter:true},{fastTestnetVersion:1},{testInterval:'hourly'},{releaseId:'global-fresh-fast-test-v1'}])assert.throws(()=>validateDailyPolicy({...valid,chainId:56,...change}),/MAINNET_DAILY_POLICY_REQUIRED/);
 });

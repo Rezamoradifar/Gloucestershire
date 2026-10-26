@@ -33,7 +33,23 @@ with tempfile.TemporaryDirectory() as directory:
     shutil.copy(repo/'config/fresh-fast-testnet.json', source/'config/fresh-fast-testnet.json')
     shutil.copy(repo/'scripts/zero-archive-candidate.mjs', source/'scripts/zero-archive-candidate.mjs')
     shutil.copy(repo/'scripts/stage-zero-log-reader.py', source/'scripts/stage-zero-log-reader.py')
-    overlay = ['server/trades-api.mjs', 'scripts/connect-zero-start.mjs', 'scripts/daily-profit.mjs', 'scripts/complete-rpc-logs.mjs']
+    status_installer='''import json,sys
+from pathlib import Path
+p=Path(@HOST@)
+args=sys.argv[1:]
+with (p/'calls').open('a') as f:f.write('status-console '+args[0]+'\\n')
+backup=Path(args[1])
+if args[0]=='--backup-dir':
+ backup.mkdir(parents=True,exist_ok=True,mode=0o700)
+ (backup/'manifest.json').write_text(json.dumps({'previous':(p/'status-console').read_text()}));(backup/'manifest.json').chmod(0o600)
+ (p/'status-console').write_text('new')
+ if (p/'mode').read_text()=='status-install-fail':raise SystemExit(1)
+elif args[0]=='--restore':(p/'status-console').write_text(json.loads((backup/'manifest.json').read_text())['previous'])
+else:raise AssertionError(args)
+'''
+    (source/'scripts/install-zero-start-status.py').write_text(status_installer.replace('@HOST@',repr(str(host))))
+    overlay = ['server/trades-api.mjs', 'scripts/connect-zero-start.mjs', 'scripts/daily-profit.mjs', 'scripts/complete-rpc-logs.mjs',
+               'scripts/zero-start-automation.mjs', 'scripts/zero-start-readiness.mjs', 'scripts/zero-start-hourly-test.mjs']
     for relative in overlay:
         (source/relative).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(repo/relative, source/relative)
@@ -193,6 +209,7 @@ else:raise AssertionError(args)
         for p, data in protected.items():p.write_text(json.dumps(data));p.chmod(0o600)
         (host/'workers.json').write_text(json.dumps(prior));(host/'calls').write_text('');(host/'worker-count').write_text('0');(host/'api-restarts').write_text('0');(host/'http-warmup').write_text('0');(host/'mode').write_text(mode)
         (host/'repair-count').write_text('0')
+        (host/'status-console').write_text('old')
         if (host/'registry-repaired').exists():(host/'registry-repaired').unlink()
         if (host/'active-candidate-url').exists():(host/'active-candidate-url').unlink()
         for root in ['fresh-zero-automation-v1','automation-v1','oracle-maintenance-v1']:
@@ -219,6 +236,8 @@ else:raise AssertionError(args)
     assert json.loads((state/'journal.json').read_text())['millionTestRewardGrant']==baseline_journal['millionTestRewardGrant']
     assert json.loads((host/'workers.json').read_text())[timer]==prior[timer]
     calls=(host/'calls').read_text();assert calls.index('systemctl stop '+timer)<calls.index('systemctl stop '+service);assert int((host/'worker-count').read_text())==1
+    assert (host/'status-console').read_text()=='new'
+    assert calls.index('status-console --backup-dir')<calls.index('systemctl start '+timer),'The matching funding parser must be installed before worker activation'
     for mode in ['proof-fail','fork-fail','history-fail','logs-fail']:
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert envfile.read_text()==original_env;assert json.loads((host/'workers.json').read_text())==prior
         assert 'systemctl stop ' not in (host/'calls').read_text() and 'systemctl restart ' not in (host/'calls').read_text(),(mode,r.stdout,r.stderr)
@@ -230,12 +249,13 @@ else:raise AssertionError(args)
         assert installed_source.read_bytes()!=saved_source and envfile.read_text()==original_env
         assert 'systemctl stop ' not in (host/'calls').read_text()
     finally:installed_source.write_bytes(saved_source)
-    for mode in ['stage-proof-fail','stage-hash-fail','stage-key-fail','readiness-fail','api-restart-fail','api-health-fail','rollback-transient-502','wrong-target']:
+    for mode in ['stage-proof-fail','stage-hash-fail','stage-key-fail','readiness-fail','status-install-fail','api-restart-fail','api-health-fail','rollback-transient-502','wrong-target']:
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert envfile.read_text()==original_env,mode
         assert json.loads((state/'journal.json').read_text())==baseline_journal,mode
         assert json.loads((host/'workers.json').read_text())==prior,(mode,r.stdout,r.stderr)
         assert 'previousWorkersRestored=1' in r.stdout,(mode,r.stdout,r.stderr)
         assert all((host/role/'current').resolve()==host/role/'releases/current' for role in ['api','daily']),mode
+        assert (host/'status-console').read_text()=='old',mode
     r=run('stage-proof-fail');assert r.returncode!=0;assert int((host/'api-restarts').read_text())==0;assert 'previousWorkersRestored=1' in r.stdout
     r=run('transient-502');assert r.returncode==0,(r.stdout,r.stderr);assert int((host/'api-restarts').read_text())==1;assert candidate in envfile.read_text();assert 'HTTP_502_WARMING' in r.stderr
     r=run('permanent-502');assert r.returncode!=0,(r.stdout,r.stderr);assert envfile.read_text()==original_env;assert 'previousWorkersRestored=0' in r.stdout
@@ -248,6 +268,7 @@ else:raise AssertionError(args)
         r=run(mode);assert r.returncode!=0,(mode,r.stdout,r.stderr);assert candidate in envfile.read_text(),mode
         assert 'workerMayHaveRun=1' in r.stdout,(mode,r.stdout,r.stderr)
         assert all((host/role/'current').resolve()!=host/role/'releases/current' for role in ['api','daily']),mode
+        assert (host/'status-console').read_text()=='new' and 'status-console --restore' not in (host/'calls').read_text(),mode
         if mode in ['worker-fail','timer-fail-after-run']:assert 'new-pending' in json.loads((state/'journal.json').read_text())['transactions']
     for mode,count in [('warmup-index',4),('warmup-long',4),('warmup-other-wait',1),('warmup-unknown',1),('warmup-advanced',1),('pending-diagnostic',1)]:
         r=run(mode);assert r.returncode==0,(mode,r.stdout,r.stderr);assert int((host/'worker-count').read_text())==count,(mode,r.stdout,r.stderr)
