@@ -6,7 +6,9 @@ export class CommunityApiError extends Error {
 }
 export async function communityApi<T>(route:string,method='GET',body?:unknown,token=''):Promise<T>{
  const response=await fetch('/api/community/'+route,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(20000)});
- const data=await response.json().catch(()=>({error:'Support server unavailable. Check that its update is installed.'}));
+ let data;
+ try{data=await response.json();}catch{throw new CommunityApiError('Support server unavailable. Check that its update is installed.',503);}
+ if(!data||typeof data!=='object'||Array.isArray(data))throw new CommunityApiError('Invalid support server response.',503);
  if(!response.ok)throw new CommunityApiError(data.error||'Support request failed.',response.status);
  return data;
 }

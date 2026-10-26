@@ -46,3 +46,8 @@ it('retains sessions for permission failures and exposes HTTP errors',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({error:'Sign in'}),{status:401})));
  await expect(communityApi('tickets')).rejects.toMatchObject({status:401});
 });
+
+it('reports an HTML fallback page as unavailable instead of crashing the ticket list',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response('<html>Website fallback</html>',{status:200})));
+ await expect(communityApi('tickets')).rejects.toMatchObject({status:503});
+});
