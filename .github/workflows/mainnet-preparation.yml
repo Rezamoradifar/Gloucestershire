@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t files < <(rg --files test -g '*.test.mjs' | sort)
+          mapfile -t files < <(find test -maxdepth 1 -type f -name '*.test.mjs' | LC_ALL=C sort)
           selected=()
           for index in "${!files[@]}"; do
             if (( index % 3 == SHARD )); then selected+=("${files[$index]}"); fi
