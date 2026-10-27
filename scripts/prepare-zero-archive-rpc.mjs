@@ -13,7 +13,7 @@ import {verifyZeroStartTarget,verifyZeroStartReadiness,sanitizeZeroStartArchiveP
 import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
 import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy,sanitizeDailyMemberIndexDiagnostic} from './daily-profit.mjs';
 import {publicZeroArchiveRpcUrl,readZeroArchiveCandidate,validateZeroArchiveCandidateUrl} from './zero-archive-candidate.mjs';
-import {getCompleteLogs,sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
+import {getCompleteLogs,sanitizeCompleteLogDiagnostic,installHistoricalCallRetry} from './complete-rpc-logs.mjs';
 
 export const zeroArchiveRpcUrl=publicZeroArchiveRpcUrl;
 export const zeroArchiveReadinessMaxAttempts=3;
@@ -192,9 +192,9 @@ async function main(){
   const paths={original:'/etc/globaldroptrade/trades.env',deploymentText:profile.stateDir+'/deployment-public.json',connectionText:profile.stateDir+'/connection-public.json',policyText:profile.automationDir+'/daily-policy.json',journalText:profile.automationDir+'/journal.json'};
   const inputs=Object.fromEntries(Object.entries(paths).map(([key,file])=>[key,readPrivate(file)]));
   const config=readConfig(parseEnv(inputs.original)),transport=new FetchRequest(config.rpcUrl);transport.timeout=15000;
-  primary=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+  primary=installHistoricalCallRetry(new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1}));
   const candidateTransport=new FetchRequest(selected.url);candidateTransport.timeout=15000;
-  candidate=new JsonRpcProvider(candidateTransport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+  candidate=installHistoricalCallRetry(new JsonRpcProvider(candidateTransport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1}));
   proofProviders=createZeroStartProofProviders();
   const result=await prepareZeroArchiveRpc({primary,candidate,artifact:JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8')),release:profile.release,...inputs,candidateUrl:selected.url,candidateProof:selected.proof,confirmations:Math.max(3,config.confirmations),proofProviders,onPhase:value=>{phase=value;},assertCurrent:async()=>{selected.assertCurrent();for(const[key,file]of Object.entries(paths))if(readPrivate(file)!==inputs[key])throw Error('ARCHIVE_RPC_PRIVATE_INPUT_CHANGED');}});
   selected.assertCurrent();

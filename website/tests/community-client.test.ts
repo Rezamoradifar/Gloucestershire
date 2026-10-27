@@ -51,3 +51,10 @@ it('reports an HTML fallback page as unavailable instead of crashing the ticket 
  vi.stubGlobal('fetch',vi.fn(async()=>new Response('<html>Website fallback</html>',{status:200})));
  await expect(communityApi('tickets')).rejects.toMatchObject({status:503});
 });
+it('supports the official www alias while keeping the canonical support origin bound',async()=>{
+ vi.stubGlobal('window',{location:{origin:'https://www.globaldroptrade.com'}});
+ const request=async(route:string)=>route==='challenge'?challenge():{token:'private-session'};
+ expect(await signInSupport(wallet.address,()=>true,request as any)).toBe('private-session');
+ vi.stubGlobal('window',{location:{origin:'https://untrusted.invalid'}});
+ await expect(signInSupport(wallet.address,()=>true,request as any)).rejects.toThrow('does not match');
+});

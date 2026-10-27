@@ -106,6 +106,11 @@ export function parseActivationStatus(value,apiConfig,expectedIdentity){
    if(policy.version!==1||policy.chainId!==97||!same(policy.vaultAddress,target)||!same(policy.runtimeHash,value.runtimeHash)||policy.deploymentBlock!==value.block||!integer(policy.startTimestamp)||!supported||hourlySelected&&!hourly||!integer(automation.nextEpoch)||automation.firstPeriodEndsAt!==policy.startTimestamp+policy.periodSeconds||!integer(automation.firstPeriodEndsAt+automation.nextEpoch*policy.periodSeconds))fail('The daily period does not match the fresh contract.');
   }else if(automation.firstPeriodEndsAt!==undefined||automation.nextEpoch!==undefined)fail('The daily period has no established start time.');
   if(!automation.dailyCredits.every(batch=>batch&&hash(batch.id)&&['credited','already_credited'].includes(batch.status)&&(batch.status!=='credited'||hash(batch.transactionHash))))fail('The daily credit evidence is invalid.');
+  if(automation.lastDailyCredit!==undefined&&automation.lastDailyCredit!==null){
+   const history=automation.lastDailyCredit;
+   if(!integer(history.epoch)||automation.nextEpoch!==undefined&&history.epoch>=automation.nextEpoch||!Array.isArray(history.batches)||!history.batches.length||history.batches.length>10000||!history.batches.every(batch=>batch&&hash(batch.id)&&hash(batch.transactionHash)&&integer(batch.block)&&batch.block>0&&hash(batch.blockHash))||new Set(history.batches.map(batch=>batch.id.toLowerCase())).size!==history.batches.length||new Set(history.batches.map(batch=>batch.transactionHash.toLowerCase())).size!==history.batches.length)fail('The completed credit history is invalid.');
+  }
+
  }
  return {...value,...identity,identity,funding:{...f,assets},oracleStatus:oracleStatusOf(value,target)};
 }
@@ -116,13 +121,14 @@ export function activationStatusView(report,nowSeconds=Date.now()/1000){
  const hourly=hourlyPolicy(report.automation?.policy,fast)||hourlySelection(report,fast),oracles=report.oracleStatus||oracleStatusOf(report,report.target),serviceErrors=report.automation?.errors||[];
  const oracleStale=oracles.checkedAt===undefined?stale:nowSeconds-oracles.checkedAt>900||oracles.checkedAt-nowSeconds>120;
  const active=report.dailyAutomationActive===true&&(!fast||report.timerActive===true)&&report.automationStatus==='scheduled'&&report.automation?.status==='scheduled'&&!!report.automation.policy&&report.ready&&!stale&&!oracles.failed&&!(oracles.verified&&oracleStale)&&serviceErrors.length===0;
- const title=stale?'Status needs a fresh check':oracles.failed?'Oracle prices need attention':oracles.verified&&oracleStale?'Oracle prices need a fresh check':active?(hourly?'Hourly test cycle is active':'Daily plan is active'):report.ready?(hourly?'Ready for hourly test activation':'Ready for server activation'):(hourly?'Hourly test cycle is waiting':'Daily plan is waiting');
- const summary=stale?'The latest server check is out of date. Current daily activity is unverified.':oracles.failed?'The latest oracle check failed. Valid contract quotes are required before investing.':oracles.verified&&oracleStale?'The latest oracle check is out of date. Current contract quotes are unverified.':active?(hourly?'The daily plan percentage is applied once per one-hour test cycle on BNB Testnet.':'The server reports that daily allocation processing is active.'):!report.reporterAuthorized?'Daily credits are blocked: the server operator is not authorized.':report.ready?'Contract requirements are satisfied. Active server scheduling has not been verified.':'The server is checking the remaining requirements before daily credits can start.';
+ const workerWaiting=report.automationStatus==='waiting'&&report.automation?.status==='waiting';
+ const title=stale?'Status needs a fresh check':oracles.failed?'Oracle prices need attention':oracles.verified&&oracleStale?'Oracle prices need a fresh check':active?(hourly?'Hourly test cycle is active':'Daily plan is active'):workerWaiting?(hourly?'Hourly test cycle is waiting':'Daily plan is waiting'):report.ready?(hourly?'Ready for hourly test activation':'Ready for server activation'):(hourly?'Hourly test cycle is waiting':'Daily plan is waiting');
+ const summary=stale?'The latest server check is out of date. Current daily activity is unverified.':oracles.failed?'The latest oracle check failed. Valid contract quotes are required before investing.':oracles.verified&&oracleStale?'The latest oracle check is out of date. Current contract quotes are unverified.':active?(hourly?'The daily plan percentage is applied once per one-hour test cycle on BNB Testnet.':'The server reports that daily allocation processing is active.'):!report.reporterAuthorized?'Daily credits are blocked: the server operator is not authorized.':workerWaiting?'The worker is waiting for the current period checks to finish. Previously confirmed credits remain recorded.':report.ready?'Contract requirements are satisfied. Active server scheduling has not been verified.':'The server is checking the remaining requirements before daily credits can start.';
  const a=report.reporterProposal;
  const proposal=report.reporterAuthorized?(fast?'Testnet initial server permission was granted at deployment.':'The server operator is authorized.'):!a.queued?'Reporter authorization has not been proposed.':`Council approval: ${a.votes} of ${a.requiredVotes} votes recorded. ${report.checkpoint.timestamp<a.eta?'Authorization is unavailable before '+new Date(a.eta*1000).toLocaleString('en-US')+'.':'The recorded authorization delay has elapsed.'}`;
  const hourlyRetention=report.archive.requiredRetentionSeconds===3600;
  const checks=[
-  {label:hourly?'Hourly test cycle':'Daily credits',value:active?'Active':stale?'Unverified':oracles.failed?'Oracle check failed':report.ready?'Ready; scheduling unverified':'Waiting for requirements',ok:active},
+  {label:hourly?'Hourly test cycle':'Daily credits',value:active?'Active':stale?'Unverified':oracles.failed?'Oracle check failed':workerWaiting?'Worker waiting':report.ready?'Ready; scheduling unverified':'Waiting for requirements',ok:active},
   {label:'Oracle prices',value:oracles.failed?'Check failed: '+oracles.errors.join(', '):oracles.verified?(oracleStale?'Previously verified; fresh check required':'Both contract quotes verified'):'Not inspected',ok:oracles.verified&&!oracleStale},
   {label:fast?'Testnet initial server permission':'Server permission',value:report.reporterAuthorized?'Authorized':'Permission missing',ok:report.reporterAuthorized},
   {label:'Reward funding',value:report.funding.ready?(report.funding.estimateVersion===2?'Ready for the personal-profit and referral estimate':'Ready for the legacy personal-profit estimate'):'Funding required',ok:report.funding.ready},
@@ -134,8 +140,11 @@ export function activationStatusView(report,nowSeconds=Date.now()/1000){
  const automation=report.automation,period=automation?.policy,epoch=automation?.nextEpoch;
  const schedule=period?`Next ${hourly?'hourly test cycle':'daily period'}: ${epoch+1}. ${hourly?'Cycle':'Period'} ends ${new Date((automation.firstPeriodEndsAt+epoch*period.periodSeconds)*1000).toLocaleString('en-US')}.`:'A daily start time has not been established.';
  const credited=automation?.dailyCredits.filter(batch=>batch.status==='credited')||[];
- const creditSummary=credited.length?`${credited.length} ${hourly?'hourly test':'daily'} credit ${credited.length===1?'batch was':'batches were'} confirmed in the latest server check.`:`No new ${hourly?'hourly test':'daily'} credit batches were reported in the latest server check.`;
- return {title,summary,active,stale,checks,funding,proposal,schedule,creditSummary};
+ const latestCreditSummary=credited.length?`${credited.length} ${hourly?'hourly test':'daily'} credit ${credited.length===1?'batch was':'batches were'} confirmed in the latest server check.`:`No new ${hourly?'hourly test':'daily'} credit batches were reported in the latest server check.`;
+ const previous=automation?.lastDailyCredit;
+ const creditSummary=latestCreditSummary+(previous?` Last recorded completed ${hourly?'cycle':'period'}: ${previous.epoch+1}, with ${previous.batches.length} confirmed credit ${previous.batches.length===1?'transaction':'transactions'}.`:'');
+ const creditTransactions=[...new Set([...credited.map(batch=>batch.transactionHash),...(previous?.batches||[]).map(batch=>batch.transactionHash)])];
+ return {title,summary,active,stale,checks,funding,proposal,schedule,creditSummary,creditTransactions};
 }
 
 function startStatusPage(){
@@ -149,7 +158,8 @@ function startStatusPage(){
    if(stopped)return;const report=parseActivationStatus(data,api,identity),view=activationStatusView(report);identity=report.identity;
    $('headline').textContent=view.title;$('summary').textContent=view.summary;$('checks').replaceChildren();
    for(const check of view.checks){const row=document.createElement('div'),label=document.createElement('span'),value=document.createElement('strong');row.className='status-row';label.textContent=check.label;value.textContent=check.value;value.className=check.ok?'complete':'waiting';row.append(label,value);$('checks').append(row);}
-   $('proposal').textContent=view.proposal;$('schedule').textContent=view.schedule;$('credits').textContent=view.creditSummary;$('funding').replaceChildren();
+   $('proposal').textContent=view.proposal;$('schedule').textContent=view.schedule;$('credits').textContent=view.creditSummary;
+   const links=$('credit-transactions');if(links)links.replaceChildren(...view.creditTransactions.map((hash,index)=>{const link=document.createElement('a');link.href='https://testnet.bscscan.com/tx/'+hash;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View confirmed credit '+(index+1);link.style.marginRight='1em';return link;}));$('funding').replaceChildren();
    for(const asset of view.funding){const row=document.createElement('tr');for(const text of [asset.symbol,asset.principal,asset.rewards,asset.cash,asset.required?asset.minimum:'No active principal',asset.ready?'Ready':asset.required?'Funding needed':'No active principal']){const cell=document.createElement('td');cell.textContent=text;row.append(cell);}$('funding').append(row);}
    $('target').textContent=report.target;$('owner').textContent=report.owner;$('operator').textContent=report.operator;$('creation').textContent=report.hash;$('creation').href='https://testnet.bscscan.com/tx/'+report.hash;$('identity').hidden=false;
    $('checked').textContent='Server checkpoint: '+new Date(report.checkpoint.timestamp*1000).toLocaleString('en-US')+' · Block '+report.checkpoint.block+(view.stale?' · Out of date':'');

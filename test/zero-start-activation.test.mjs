@@ -180,3 +180,12 @@ test('scheduling and credit evidence must match the established fresh identity a
  const waiting=fixture();waiting.automationStatus='waiting';waiting.automation={version:1,kind:'fresh-zero-server-automation',chainId:97,target,status:'waiting',dailyCredits:[]};
  assert.match(activationStatusView(parsed(waiting),now).schedule,/start time has not been established/);
 });
+
+test('a waiting later run preserves completed credit links without claiming a new payment',()=>{
+ const report=scheduled();report.automationStatus='waiting';report.dailyAutomationActive=false;report.automation.status='waiting';report.automation.nextEpoch=1;
+ report.automation.lastDailyCredit={epoch:0,batches:[{id:hash('5'),transactionHash:hash('6'),block:150,blockHash:hash('7')}]};
+ const view=activationStatusView(parsed(report),now);assert.equal(view.active,false);assert.equal(view.title,'Daily plan is waiting');assert.match(view.summary,/Previously confirmed credits remain recorded/);assert.match(view.creditSummary,/No new daily credit batches/);assert.match(view.creditSummary,/Last recorded completed period: 1/);assert.deepEqual(view.creditTransactions,[hash('6')]);
+ for(const mutate of [v=>v.epoch=1,v=>v.batches[0].transactionHash='private',v=>v.batches[0].block=-1,v=>v.batches.push({...v.batches[0]})]){
+  const bad=structuredClone(report);mutate(bad.automation.lastDailyCredit);assert.throws(()=>parsed(bad),/credit history/);
+ }
+});

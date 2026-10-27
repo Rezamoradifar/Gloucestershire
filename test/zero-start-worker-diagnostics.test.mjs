@@ -128,3 +128,16 @@ test('seed and million-token pending scopes still require their exact dedicated 
   await assert.rejects(s.resume({[scope]:check}),/EXACT_GRANT_VERIFICATION_REQUIRED/);assert.equal(checked,1);assert.equal(s.sends,0);
  }
 });
+
+test('a completed period retains only journal-bound credit evidence on later checks',async()=>{
+ const {lastConfirmedDailyCredit}=await import('../scripts/zero-start-automation.mjs');
+ const s=harness();s.recover();await s.run();
+ const batch=s.state.daily.lastCredit.credited[0];
+ s.state.transactions['daily-'+batch.id]={hash:batch.transactionHash,block:20,blockHash:hash(20),raw:'PRIVATE_SIGNED_BYTES',maxFee:'1'};
+ const wanted={epoch:0,batches:[{id:batch.id,transactionHash:batch.transactionHash,block:20,blockHash:hash(20)}]};
+ const before=structuredClone(s.state),report=await s.run();assert.deepEqual(report.dailyCredits,[]);assert.deepEqual(report.lastDailyCredit,wanted);assert.equal(s.sends,1);assert.deepEqual(s.state,before);
+ assert.doesNotMatch(JSON.stringify(report.lastDailyCredit),/PRIVATE|raw|maxFee/);
+ const mismatched=structuredClone(s.state);mismatched.transactions['daily-'+batch.id].hash=hash(999);assert.equal(lastConfirmedDailyCredit(mismatched),null);
+ const pending=structuredClone(s.state);delete pending.transactions['daily-'+batch.id].block;assert.equal(lastConfirmedDailyCredit(pending),null);
+ const resumed=structuredClone(s.state);resumed.daily.lastCredit.credited[0]={id:batch.id,status:'already_credited'};assert.deepEqual(lastConfirmedDailyCredit(resumed),wanted);
+});

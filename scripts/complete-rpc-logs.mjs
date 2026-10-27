@@ -159,3 +159,24 @@ export async function getCompleteLogs({provider,filter,maxRequests=1024,maxTimeo
  if(adapted&&limit)learnedSpans.set(provider,Math.min(learnedSpans.get(provider)??Infinity,limit));
  return logs.sort((a,b)=>a.blockNumber-b.blockNumber||(a.index??a.logIndex)-(b.index??b.logIndex));
 }
+
+// Retry only an immutable historical eth_call after a proven transport timeout.
+// Broadcasts, latest-state simulations, RPC errors and missing history never retry.
+const callRetryProviders=new WeakSet();
+export function installHistoricalCallRetry(provider,{waitForRetry=wait}={}){
+ if(!provider||typeof provider.send!=='function'||typeof waitForRetry!=='function')throw Error('HISTORICAL_CALL_PROVIDER_REQUIRED');
+ if(callRetryProviders.has(provider))return provider;
+ const send=provider.send.bind(provider);
+ provider.send=async(method,params)=>{
+  if(method!=='eth_call'||!Array.isArray(params)||params.length!==2||!/^0x[0-9a-f]+$/i.test(params[1]||''))return send(method,params);
+  const fixed=structuredClone(params);
+  for(let attempt=0;;attempt++){
+   try{return await send(method,structuredClone(fixed));}
+   catch(error){
+    if(attempt>=2||!isCompleteLogTransportTimeout(error))throw error;
+    await waitForRetry(attempt===0?500:1500);
+   }
+  }
+ };
+ callRetryProviders.add(provider);return provider;
+}

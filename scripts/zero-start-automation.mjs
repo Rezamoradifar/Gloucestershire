@@ -10,6 +10,7 @@ import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {verifyZeroStartReadiness,verifyZeroStartTarget} from './zero-start-readiness.mjs';
 import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests} from './daily-profit.mjs';
+import {installHistoricalCallRetry} from './complete-rpc-logs.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 import {maintainOracles} from './maintain-testnet-oracles.mjs';
 import {inspectMockFeeds} from './refresh-testnet-oracles.mjs';
@@ -128,6 +129,20 @@ export async function runZeroStartOracleMaintenance({provider,wallet,artifact,re
  return maintainOracles({provider,wallet,artifact,vaultAddress:readiness.target,feedAddresses:[release.bnbFeed,release.tokenFeed],state:state.oracle,save,confirmations,transact:options=>transact(options.label,options.request)});
 }
 
+export function lastConfirmedDailyCredit(state){
+ const credit=state?.daily?.lastCredit,epoch=credit?.epoch;
+ if(!Number.isSafeInteger(epoch)||epoch<0||!Number.isSafeInteger(state.daily.epoch)||epoch>=state.daily.epoch||!Array.isArray(credit.credited)||credit.credited.length>10000)return null;
+ const batches=[];
+ for(const batch of credit.credited){
+  if(!/^0x[0-9a-f]{64}$/i.test(batch?.id||''))continue;
+  const entry=state.transactions?.['daily-'+batch.id];
+  if(!entry||!Number.isSafeInteger(entry.block)||entry.block<1||!/^0x[0-9a-f]{64}$/i.test(entry.blockHash||'')||!/^0x[0-9a-f]{64}$/i.test(entry.hash||''))continue;
+  if(batch.status!=='already_credited'&&(batch.status!=='credited'||batch.transactionHash!==entry.hash))continue;
+  batches.push({id:batch.id,transactionHash:entry.hash,block:entry.block,blockHash:entry.blockHash});
+ }
+ return batches.length?{epoch,batches}:null;
+}
+
 export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,onPhase=()=>{}}){
  let phase='TARGET_VERIFICATION';
  const during=async(name,action)=>{phase=name;onPhase(name);return action();};
@@ -138,7 +153,7 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
  if(!state.identity&&Object.keys(state.transactions||{}).length)throw Error('ZERO_START_UNBOUND_AUTOMATION_JOURNAL');
  await assertZeroStartJournalCanonical(provider,state);
  state.identity=identity;state.transactions??={};state.daily??={epoch:0};save();
- const report={version:1,kind:'fresh-zero-server-automation',chainId:97,target,...(readiness.releaseId==='global-fresh-fast-test-v1'?{releaseId:readiness.releaseId,testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{}),checkedAt:new Date().toISOString(),walletPrompts:0,readiness,status:'waiting',policyCreated:false,dailyCredits:[],withdrawals:null,volume:null,oracles:null,errors:[]};
+ const report={version:1,kind:'fresh-zero-server-automation',chainId:97,target,...(readiness.releaseId==='global-fresh-fast-test-v1'?{releaseId:readiness.releaseId,testMode:true,initialServerReporter:true,fastTestnetVersion:1}:{}),checkedAt:new Date().toISOString(),walletPrompts:0,readiness,status:'waiting',policyCreated:false,dailyCredits:[],lastDailyCredit:lastConfirmedDailyCredit(state),withdrawals:null,volume:null,oracles:null,errors:[]};
  try{
  // Approved withdrawals remain independently payable while daily funding or reporter permission is missing.
  report.withdrawals=await during('APPROVED_WITHDRAWALS',()=>payApprovedRequests({vault,queue,state:state.daily,save,transact}));
@@ -175,7 +190,7 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   try{
    report.dailyCredits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,plan,transact}));
    state.daily.epoch++;state.daily.lastCredit={epoch:plan.epoch,credited:report.dailyCredits};save();
-   report.nextEpoch=state.daily.epoch;
+   report.nextEpoch=state.daily.epoch;report.lastDailyCredit=lastConfirmedDailyCredit(state);
   }catch(e){if(Object.values(state.transactions||{}).some(entry=>!entry.block))throw e;report.errors.push(code(e));report.diagnostic=zeroStartWorkerDiagnostic(e,{phase,state});return report;}
  }
  report.status=readiness.ready&&report.errors.length===0?'scheduled':'waiting';
@@ -255,7 +270,7 @@ async function main(){
   const mockArtifact=JSON.parse(fs.readFileSync(new URL('../artifacts/MockFeed.json',import.meta.url),'utf8'));
   const policyFile=privateRoot+'/daily-policy.json',stateFile=privateRoot+'/journal.json';
   const transport=new FetchRequest(config.rpcUrl);transport.timeout=15000;
-  provider=new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});provider.pollingInterval=2000;
+  provider=installHistoricalCallRetry(new JsonRpcProvider(transport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1}));provider.pollingInterval=2000;
   proofProviders=createZeroStartProofProviders();
   const targetOptions={provider,artifact,deploymentReport,connectionReport,original,release,confirmations:Math.max(3,config.confirmations),proofProviders};
   // Verify immutable identity first. Reward funding, archives, seed state and the
@@ -351,7 +366,7 @@ async function main(){
   // optional test faucet cannot be inspected. Missing full readiness still waits.
   const {warnings:optionalSeedWarnings,blocking:blockingDailyReadErrors}=partitionZeroStartDailyReadErrors(dailyReadErrors,readiness);
   if(blockingDailyReadErrors.length){
-   const report={version:1,kind:'fresh-zero-server-automation',chainId:97,target:readiness.target,checkedAt:new Date().toISOString(),status:'waiting',policyCreated:false,dailyCredits:[],oracles:completedOracles,errors:blockingDailyReadErrors,blockers:[...new Set([...(readiness.blockers||[]),...blockingDailyReadErrors])],diagnostic:dailyReadDiagnostics.at(-1),walletPrompts:0};
+   const report={version:1,kind:'fresh-zero-server-automation',chainId:97,target:readiness.target,checkedAt:new Date().toISOString(),status:'waiting',policyCreated:false,dailyCredits:[],lastDailyCredit:lastConfirmedDailyCredit(state),...(policy?{policy,nextEpoch:state.daily?.epoch??0,firstPeriodEndsAt:policy.startTimestamp+policy.periodSeconds}:{}),oracles:completedOracles,errors:blockingDailyReadErrors,blockers:[...new Set([...(readiness.blockers||[]),...blockingDailyReadErrors])],diagnostic:dailyReadDiagnostics.at(-1),walletPrompts:0};
    writePrivateJson(privateRoot+'/status.json',report);
    const publicReport={...readiness,ready:false,dailyAutomationActive:false,automationStatus:'waiting',blockers:report.blockers,oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,automation:report};
    if(readiness.kind!=='fresh-zero-daily-readiness'){publicReport.kind='fresh-zero-automation-error';publicReport.diagnostic=report.diagnostic;delete publicReport.automation;}

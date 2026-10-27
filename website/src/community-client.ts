@@ -26,7 +26,9 @@ export async function signInSupport(who:string,valid:()=>boolean,request=communi
  const challenge=await request<{nonce:string;message:string}>('challenge','POST',{wallet:who});
  await check();
  const lines=challenge.message?.split('\n');
- if(!/^[a-f0-9]{48}$/.test(challenge.nonce)||lines?.length!==8||lines[0]!=='GlobalDropTrade support sign-in'||lines[1]!==`Origin: ${window.location.origin}`||lines[2]!==`Chain: ${chainId}`||lines[3]?.toLowerCase()!==`Contract: ${vaultAddress}`.toLowerCase()||lines[4]?.toLowerCase()!==`Wallet: ${who}`.toLowerCase()||lines[5]!==`Nonce: ${challenge.nonce}`||!Number.isFinite(Date.parse(lines[6]?.slice(9)))||!lines[6]?.startsWith('Expires: ')||lines[7]!=='This signature authenticates support access only. It does not authorize a transaction.')throw Error('The support sign-in request does not match this website and account.');
+ const origins=new Set([window.location.origin]);
+ if(window.location.origin==='https://www.globaldroptrade.com')origins.add('https://globaldroptrade.com');
+ if(!/^[a-f0-9]{48}$/.test(challenge.nonce)||lines?.length!==8||lines[0]!=='GlobalDropTrade support sign-in'||!origins.has(lines[1]?.slice(8)||'')||!lines[1]?.startsWith('Origin: ')||lines[2]!==`Chain: ${chainId}`||lines[3]?.toLowerCase()!==`Contract: ${vaultAddress}`.toLowerCase()||lines[4]?.toLowerCase()!==`Wallet: ${who}`.toLowerCase()||lines[5]!==`Nonce: ${challenge.nonce}`||!Number.isFinite(Date.parse(lines[6]?.slice(9)))||!lines[6]?.startsWith('Expires: ')||lines[7]!=='This signature authenticates support access only. It does not authorize a transaction.')throw Error('The support sign-in request does not match this website and account.');
  const provider=new BrowserProvider(wallet);
  try{
   const signer=await provider.getSigner(who);await check();

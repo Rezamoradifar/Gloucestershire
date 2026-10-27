@@ -12,7 +12,7 @@ import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {prepareZeroArchiveRpc,zeroArchiveReadinessSummary} from './prepare-zero-archive-rpc.mjs';
 import {readZeroArchiveCandidate} from './zero-archive-candidate.mjs';
 import {blockAtTime,indexMembers,planDailyEpoch,validateDailyPolicy,isHourlyTestPolicy,sanitizeDailyMemberIndexDiagnostic} from './daily-profit.mjs';
-import {sanitizeCompleteLogDiagnostic,isCompleteLogTransportTimeout} from './complete-rpc-logs.mjs';
+import {sanitizeCompleteLogDiagnostic,isCompleteLogTransportTimeout,installHistoricalCallRetry} from './complete-rpc-logs.mjs';
 import {zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
 
 const sha256=value=>createHash('sha256').update(value).digest('hex');
@@ -187,7 +187,7 @@ async function main(){
   const selected=readZeroArchiveCandidate(candidateFile),paths={original:'/etc/globaldroptrade/trades.env',deploymentText:profile.stateDir+'/deployment-public.json',connectionText:profile.stateDir+'/connection-public.json',policyText:profile.automationDir+'/daily-policy.json',journalText:profile.automationDir+'/journal.json'};
   const inputs=Object.fromEntries(Object.entries(paths).map(([key,file])=>[key,readPrivate(file)])),config=readConfig(parseEnv(inputs.original));
   const assertCurrent=async()=>{assertZeroMemberIndexRunLock(lockFile,held);selected.assertCurrent();for(const[key,file]of Object.entries(paths))if(readPrivate(file)!==inputs[key])throw Error('MEMBER_INDEX_REPAIR_PRIVATE_INPUT_CHANGED');};
-  const transport=url=>{const request=new FetchRequest(url);request.timeout=15000;return new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});};
+  const transport=url=>{const request=new FetchRequest(url);request.timeout=15000;return installHistoricalCallRetry(new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1}));};
   primary=transport(config.rpcUrl);candidate=transport(selected.url);proofProviders=createZeroStartProofProviders();
   const progressFile=profile.automationDir+'/member-index-rebuild.json';
   let progressReports=0;
