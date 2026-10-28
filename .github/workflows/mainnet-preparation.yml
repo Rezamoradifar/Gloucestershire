@@ -80,6 +80,7 @@ jobs:
       - name: Managed staging and rollback
         run: |
           sudo --preserve-env=PATH python3 scripts/test-support-installer.py
+          sudo --preserve-env=PATH python3 scripts/test-reset-fast-testnet.py
           sudo --preserve-env=PATH python3 scripts/test-website-installer.py
           sudo --preserve-env=PATH python3 scripts/test-stage-zero-log-reader.py
           sudo --preserve-env=PATH python3 scripts/test-zero-start-status.py
