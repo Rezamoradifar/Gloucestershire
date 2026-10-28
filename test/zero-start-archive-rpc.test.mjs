@@ -259,3 +259,23 @@ test('candidate-file changes during verification block the result and CLI errors
   assert.equal(duplicate.status,1);assert.match(duplicate.stdout,/ARCHIVE_RPC_ABSOLUTE_CANDIDATE_FILE_REQUIRED/);assert.doesNotMatch(duplicate.stdout+duplicate.stderr,/private-candidate-secret/);
  }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });
+test('explicit receipt RPC replacement proves the candidate independently and still rejects invalid candidate receipts or old header conflicts',async()=>{
+ let oldReceiptReads=0;
+ const bad=readonly({getTransactionReceipt:async hash=>{oldReceiptReads++;const r=await provider.getTransactionReceipt(hash);return {...r,contractAddress:null,from:addresses[8],to:addresses[9]};}});
+ await assert.rejects(prepare({primary:bad}),/ZERO_START_RECEIPT_REQUIRED/);
+ oldReceiptReads=0;
+ const result=await prepare({primary:bad,receiptRpcReplacement:true});
+ assert.equal(oldReceiptReads,0);assert.equal(result.stage.creationProofSource,'replacement-candidate');assert.equal(result.stage.target,vault.target);assert.equal(result.stage.journalSha256,hash(base.journalText));
+ await assert.rejects(prepare({primary:bad,candidate:bad,receiptRpcReplacement:true}),/ZERO_START_RECEIPT_REQUIRED/);
+ const head=await provider.getBlockNumber(),anchor=head-3;
+ const conflict=readonly({getTransactionReceipt:bad.getTransactionReceipt,getBlock:async n=>{const b=await provider.getBlock(n);return n===anchor?{...b,hash:'0x'+'77'.repeat(32)}:b;}});
+ await assert.rejects(prepare({primary:conflict,receiptRpcReplacement:true}),/ARCHIVE_RPC_CURRENT_CHAIN_DISAGREEMENT/);
+ assert.equal(broadcasts,0);
+});
+test('position-policy RPC recovery probes its activation history instead of inventing a future global epoch',async()=>{
+ const nextPolicy={...policy,basis:'position-anniversary-principal',positionScheduleVersion:1};
+ const nextState={...state,daily:{epoch:20}};
+ const result=await prepare({policyText:JSON.stringify(nextPolicy),journalText:JSON.stringify(nextState),receiptRpcReplacement:true});
+ assert.equal(result.stage.period.epoch,20);assert.equal(result.stage.period.startTimestamp,policy.startTimestamp);
+ assert.equal(result.stage.journalSha256,hash(JSON.stringify(nextState)));assert.equal(result.stage.policySha256,hash(JSON.stringify(nextPolicy)));
+});

@@ -12,6 +12,7 @@ import {validateZeroStartRelease} from './deploy-zero-start.mjs';
 import {verifyZeroStartTarget,verifyZeroStartReadiness,sanitizeZeroStartArchiveProbeDiagnostic} from './zero-start-readiness.mjs';
 import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
 import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy,sanitizeDailyMemberIndexDiagnostic} from './daily-profit.mjs';
+import {isPositionPolicy} from './position-profit.mjs';
 import {publicZeroArchiveRpcUrl,readZeroArchiveCandidate,validateZeroArchiveCandidateUrl} from './zero-archive-candidate.mjs';
 import {getCompleteLogs,sanitizeCompleteLogDiagnostic,installHistoricalCallRetry} from './complete-rpc-logs.mjs';
 
@@ -87,7 +88,8 @@ function requireIdentity(state,target,policy){
 
 // Providers are injected for tests. The CLI uses the fixed public candidate or
 // an explicitly selected private file; complete history remains a prerequisite.
-export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,original,deploymentText,connectionText,policyText,journalText,confirmations=3,proofProviders=[],assertCurrent=async()=>{},onPhase=()=>{},availabilityWait=waitForAvailability,candidateUrl=zeroArchiveRpcUrl,candidateProof}){
+export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,original,deploymentText,connectionText,policyText,journalText,confirmations=3,proofProviders=[],assertCurrent=async()=>{},onPhase=()=>{},availabilityWait=waitForAvailability,candidateUrl=zeroArchiveRpcUrl,candidateProof,receiptRpcReplacement=false}){
+ if(typeof receiptRpcReplacement!=='boolean')throw Error('ARCHIVE_RPC_EXPLICIT_REPLACEMENT_MODE_REQUIRED');
  const c=validateZeroStartRelease(release);
  if(c.releaseId!=='global-fresh-fast-test-v1'||!c.testMode||!c.initialServerReporter)throw Error('ARCHIVE_RPC_EXPLICIT_FAST_PROFILE_REQUIRED');
  if(!Number.isSafeInteger(confirmations)||confirmations<3)throw Error('ARCHIVE_RPC_CONFIRMATIONS_REQUIRED');
@@ -98,12 +100,15 @@ export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,
  const deploymentReport=JSON.parse(deploymentText),connectionReport=JSON.parse(connectionText),policy=validateDailyPolicy(JSON.parse(policyText)),state=JSON.parse(journalText);
  if(!isHourlyTestPolicy(policy))throw Error('ARCHIVE_RPC_EXISTING_HOURLY_POLICY_REQUIRED');
  requireState(state);
- const epoch=state.daily.epoch,periodStart=policy.startTimestamp+epoch*policy.periodSeconds;
+ const epoch=state.daily.epoch,periodStart=isPositionPolicy(policy)?policy.startTimestamp:policy.startTimestamp+epoch*policy.periodSeconds;
  if(!Number.isSafeInteger(periodStart))throw Error('INVALID_DAILY_EPOCH');
  onPhase('TARGET_VERIFICATION');
  if(Number(await primary.send('eth_chainId',[]))!==97||Number(await candidate.send('eth_chainId',[]))!==97)throw Error('TESTNET_ONLY');
  const options={artifact,deploymentReport,connectionReport,release:c,confirmations,proofProviders};
- const target=await verifyZeroStartTarget({...options,provider:primary,original,inspectSettlementLogs:false});
+ // In explicit RPC replacement mode, independently prove creation on the new
+ // provider. Old-provider headers must still agree; no malformed receipt is
+ // accepted or replaced within the existing creation verifier.
+ const target=await verifyZeroStartTarget({...options,provider:receiptRpcReplacement?candidate:primary,original,inspectSettlementLogs:false});
  requireIdentity(state,target,policy);
  const anchorBlock=Math.max(target.block,target.currentState.block-confirmations),anchor=await primary.getBlock(anchorBlock);
  const peer=await candidate.getBlock(anchorBlock);
@@ -147,7 +152,7 @@ export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,
  if(primaryAgain?.hash!==anchor.hash||candidateAgain?.hash!==anchor.hash)throw Error('ARCHIVE_RPC_CURRENT_CHECKPOINT_REORG');
  await assertCurrent();
  const readinessText=json(readiness);
- const stage={version:1,kind:'fresh-zero-archive-rpc-stage',chainId:97,releaseId:c.releaseId,target:target.target,owner:target.owner,operator:target.operator,queue:target.queue,hash:target.hash,runtimeHash:target.runtimeHash,artifactHash:target.artifactHash,initcodeHash:target.initcodeHash,candidate:selectedProof,originalEnvSha256:sha256(original),stagedEnvSha256:sha256(env),journalSha256:sha256(journalText),policySha256:sha256(policyText),deploymentSha256:sha256(deploymentText),connectionSha256:sha256(connectionText),readinessSha256:sha256(readinessText),anchor:{block:anchorBlock,blockHash:anchor.hash,timestamp:anchor.timestamp},period,readinessAttempts,ready:true,transactionsSent:0,signerOpened:false};
+ const stage={version:1,kind:'fresh-zero-archive-rpc-stage',chainId:97,releaseId:c.releaseId,target:target.target,owner:target.owner,operator:target.operator,queue:target.queue,hash:target.hash,runtimeHash:target.runtimeHash,artifactHash:target.artifactHash,initcodeHash:target.initcodeHash,candidate:selectedProof,...(receiptRpcReplacement?{creationProofSource:'replacement-candidate'}:{}),originalEnvSha256:sha256(original),stagedEnvSha256:sha256(env),journalSha256:sha256(journalText),policySha256:sha256(policyText),deploymentSha256:sha256(deploymentText),connectionSha256:sha256(connectionText),readinessSha256:sha256(readinessText),anchor:{block:anchorBlock,blockHash:anchor.hash,timestamp:anchor.timestamp},period,readinessAttempts,ready:true,transactionsSent:0,signerOpened:false};
  return {env,stage,readiness,readinessText};
 }
 
@@ -179,8 +184,9 @@ async function main(){
  let primary,candidate,proofProviders=[],phase='ARGUMENT_VALIDATION';
  try{
   const {profile,args}=parseZeroStartProfileArgs();
-  let candidateFile;const commands=[];
+  let candidateFile,receiptRpcReplacement=false;const commands=[];
   for(let i=0;i<args.length;i++){
+   if(args[i]==='--receipt-rpc-replacement'){if(receiptRpcReplacement)throw Error('ARCHIVE_RPC_DUPLICATE_REPLACEMENT_MODE');receiptRpcReplacement=true;continue;}
    if(args[i]!=='--candidate-file'){commands.push(args[i]);continue;}
    if(candidateFile!==undefined||!args[i+1]||!path.isAbsolute(args[i+1]))throw Error('ARCHIVE_RPC_ABSOLUTE_CANDIDATE_FILE_REQUIRED');
    candidateFile=args[++i];
@@ -196,7 +202,7 @@ async function main(){
   const candidateTransport=new FetchRequest(selected.url);candidateTransport.timeout=15000;
   candidate=installHistoricalCallRetry(new JsonRpcProvider(candidateTransport,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1}));
   proofProviders=createZeroStartProofProviders();
-  const result=await prepareZeroArchiveRpc({primary,candidate,artifact:JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8')),release:profile.release,...inputs,candidateUrl:selected.url,candidateProof:selected.proof,confirmations:Math.max(3,config.confirmations),proofProviders,onPhase:value=>{phase=value;},assertCurrent:async()=>{selected.assertCurrent();for(const[key,file]of Object.entries(paths))if(readPrivate(file)!==inputs[key])throw Error('ARCHIVE_RPC_PRIVATE_INPUT_CHANGED');}});
+  const result=await prepareZeroArchiveRpc({primary,candidate,artifact:JSON.parse(fs.readFileSync(profile.artifactUrl,'utf8')),release:profile.release,...inputs,candidateUrl:selected.url,candidateProof:selected.proof,receiptRpcReplacement,confirmations:Math.max(3,config.confirmations),proofProviders,onPhase:value=>{phase=value;},assertCurrent:async()=>{selected.assertCurrent();for(const[key,file]of Object.entries(paths))if(readPrivate(file)!==inputs[key])throw Error('ARCHIVE_RPC_PRIVATE_INPUT_CHANGED');}});
   selected.assertCurrent();
   if(mode==='--stage')writeZeroArchiveRpcStage(output,result);
   console.log(mode==='--stage'?'ZERO_ARCHIVE_RPC_STAGED':'ZERO_ARCHIVE_RPC_CHECKED');console.log(JSON.stringify(result.stage));

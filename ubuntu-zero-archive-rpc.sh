@@ -5,15 +5,19 @@ set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 mode=''
 candidate_file=''
-usage(){ echo 'Usage: bash ubuntu-zero-archive-rpc.sh --check|--execute [--candidate-file /PRIVATE/FILE]';exit 1; }
+receipt_rpc_replacement=0
+usage(){ echo 'Usage: bash ubuntu-zero-archive-rpc.sh --check|--execute [--candidate-file /PRIVATE/FILE] [--receipt-rpc-replacement]';exit 1; }
 while [ "$#" -gt 0 ];do
  case "$1" in
   --check|--execute) [ -z "$mode" ] || usage;mode=$1;shift;;
+  --receipt-rpc-replacement) [ "$receipt_rpc_replacement" -eq 0 ] || usage;receipt_rpc_replacement=1;shift;;
   --candidate-file) [ -z "$candidate_file" ] && [ "$#" -ge 2 ] || usage;case "$2" in /*) candidate_file=$2;; *) usage;; esac;shift 2;;
   *) usage;;
  esac
 done
 [ -n "$mode" ] || usage
+prepare_args=()
+if [ "$receipt_rpc_replacement" -eq 1 ];then prepare_args=(--receipt-rpc-replacement);fi
 candidate_args=()
 if [ -n "$candidate_file" ];then candidate_args=(--candidate-file "$candidate_file");fi
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root'; exit 1; }
@@ -137,7 +141,7 @@ journals=("$state/journal.json" /var/lib/globaldroptrade/fresh-zero-automation-v
 # Execution repeats the entire proof after quiescing, under the stable journal.
 exec 6>"$state/run.lock";flock -n 6 || { echo 'ZERO_AUTOMATION_JOURNAL_IN_USE';exit 1; }
 journals_complete "${journals[@]}"
-if node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}" > "$preflight_report";then
+if node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}" "${prepare_args[@]}" > "$preflight_report";then
  cat "$preflight_report"
 else
  preflight_status=$?
@@ -166,7 +170,7 @@ PY
   [ "$repair_status" -eq 75 ] || exit "$repair_status"
  done
  if [ "$repaired" -ne 1 ];then echo 'ZERO_MEMBER_INDEX_REBUILD_IN_PROGRESS: repeat the same command to resume verified pages.';exit 75;fi
- node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}"
+ node scripts/prepare-zero-archive-rpc.mjs --check --fast-testnet "${candidate_args[@]}" "${prepare_args[@]}"
 fi
 check_candidate
 flock -u 6;exec 6>&-
@@ -336,7 +340,7 @@ journals_complete "${journals[@]}"
 financial_snapshot create;financial_ready=1
 cmp -s "$backup/trades.env" "$envfile"
 check_candidate
-node scripts/prepare-zero-archive-rpc.mjs --stage "$backup/stage" --fast-testnet "${candidate_args[@]}"
+node scripts/prepare-zero-archive-rpc.mjs --stage "$backup/stage" --fast-testnet "${candidate_args[@]}" "${prepare_args[@]}"
 check_candidate
 financial_snapshot verify;unchanged_installation
 node --input-type=module - "$envfile" "$backup/trades.env" "$backup/stage" "$state" "$deployment" "$backup/config.json" "$backup/apply-verified.json" "$candidate_file" "$candidate_proof" <<'JS'
