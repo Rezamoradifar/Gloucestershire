@@ -20,6 +20,7 @@ baseline = {
 }
 helper = 'scripts/complete-rpc-logs.mjs'
 previous_helper_hashes = {
+    'f86750a9aa3eb847d25c795b7fdcb14d639741442147be833dad2a86cc183a9c',
     'fb146f99d0134b0ea3c6f24d4f22a1a2fc0b518e3d0b0fe2cec395b861768ea8',
     'cc86f8004253b5c5f7aa20292ee6151da9140bf18994e1a36661ac04b1f52b14',
     '1ed98c3709a7980fa79abecd740001fd429f707e3541162e3fea943ee7737346',
@@ -31,6 +32,7 @@ previous_source_hashes.setdefault('scripts/daily-profit.mjs', set()).add('c23b56
 previous_source_hashes.setdefault('scripts/zero-start-automation.mjs', set()).add('8f615927b1870cbb0a2a37c5a1d0c29048483dcd68b54e702c7df1b8c7f5cc1d')
 previous_source_hashes.setdefault('scripts/zero-start-automation.mjs', set()).add('cbe4a83c2e3f141aca2100af68794d97ea5e214186f3cf0f8395e10e2d2c6012')
 previous_source_hashes.setdefault('scripts/position-profit.mjs', set()).add('5645c59ee2fb6e635e3233c9e15a9849e9d79ebc54d2563782304bbc55783ce8')
+previous_source_hashes.setdefault('scripts/position-profit.mjs', set()).add('f24ab0a82adf6d915d7a6e2518c4059193e9c8fa80aab75a679cbdac7822486b')
 roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper, 'scripts/position-profit.mjs']}
 
 

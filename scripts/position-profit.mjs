@@ -40,7 +40,7 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
   state.positionScanTarget={number:final.number,hash:final.hash};save();
  }
  const indexing=()=>({status:'indexing',indexTarget:final.number,indexThrough:state.positionIndex?.through??null});
- if(!await indexMembers({provider,policy,state,through:final.number,save,maxPages:maxRegistryPages,logOptions:{maxTimeoutRetries:2}}))return indexing();
+ if(!await indexMembers({provider,policy,state,through:final.number,save,maxPages:maxRegistryPages,logOptions:{maxTimeoutRetries:2,maxBlockSpan:10}}))return indexing();
  state.positionIndex??={through:policy.deploymentBlock-1,hash:null,positions:{}};
  state.positionPaid??={};state.positionClosed??={};
  const index=state.positionIndex;
@@ -50,7 +50,7 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
  for(let start=index.through+1;start<=final.number&&pages<maxRegistryPages;pages++){
   const end=Math.min(start+499,final.number),discovered={};
   for(const name of ['Deposited','Reinvested']){
-   const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2});
+   const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:10});
    for(const log of logs){
     const args=events.parseLog(log).args,member=getAddress(args.user),asset=getAddress(args.asset),id=args.position.toString(),key=member.toLowerCase()+':'+id;
     if(index.positions[key]||discovered[key]||args.amount<=0n)throw Error('POSITION_DUPLICATE_OPEN_EVENT');

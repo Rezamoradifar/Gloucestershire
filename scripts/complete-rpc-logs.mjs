@@ -82,10 +82,10 @@ function matchesTopics(expected,actual){
  return Array.isArray(actual)&&actual.length>=expected.length&&actual.length<=4&&actual.every(hash)&&expected.every((value,index)=>value===null||(Array.isArray(value)?value.some(topic=>topic.toLowerCase()===actual[index].toLowerCase()):value.toLowerCase()===actual[index].toLowerCase()));
 }
 
-export async function getCompleteLogs({provider,filter,maxRequests=1024,maxTimeoutRetries=0,maxConcurrency=4,onRequest=()=>{},waitForRetry=wait}){
+export async function getCompleteLogs({provider,filter,maxRequests=1024,maxTimeoutRetries=0,maxConcurrency=4,maxBlockSpan=1000,onRequest=()=>{},waitForRetry=wait}){
  const scope=fixedFilter(filter);
- if(!provider||typeof provider.getLogs!=='function'||typeof provider.getBlock!=='function'||!Number.isSafeInteger(maxRequests)||maxRequests<1||maxRequests>1024||!Number.isSafeInteger(maxTimeoutRetries)||maxTimeoutRetries<0||maxTimeoutRetries>2||!Number.isSafeInteger(maxConcurrency)||maxConcurrency<1||maxConcurrency>4||typeof onRequest!=='function'||typeof waitForRetry!=='function')throw Error('COMPLETE_LOG_REQUEST_LIMIT_REQUIRED');
- let requests=0,limit=learnedSpans.get(provider)??null,adapted=false;
+ if(!provider||typeof provider.getLogs!=='function'||typeof provider.getBlock!=='function'||!Number.isSafeInteger(maxRequests)||maxRequests<1||maxRequests>1024||!Number.isSafeInteger(maxTimeoutRetries)||maxTimeoutRetries<0||maxTimeoutRetries>2||!Number.isSafeInteger(maxConcurrency)||maxConcurrency<1||maxConcurrency>4||!Number.isSafeInteger(maxBlockSpan)||maxBlockSpan<1||maxBlockSpan>1000||typeof onRequest!=='function'||typeof waitForRetry!=='function')throw Error('COMPLETE_LOG_REQUEST_LIMIT_REQUIRED');
+ let requests=0,limit=Math.min(learnedSpans.get(provider)??1000,maxBlockSpan),adapted=false;
  const internalFailures=new WeakSet();
  const failure=(message,error,range,reason,operation='eth_getLogs')=>{
   const details=rpcFailure(error),wrapped=Error(message);

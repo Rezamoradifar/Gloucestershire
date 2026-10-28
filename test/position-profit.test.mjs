@@ -98,3 +98,17 @@ test('planning read budget stops new RPC reads while leaving financial work outs
  assert.equal((await r.getBlock(1)).number,1);t=100;
  await assert.rejects(r.getBlock(2),e=>e.code==='TIMEOUT'&&e.message==='POSITION_READ_BUDGET_EXCEEDED');assert.equal(reads,1);
 });
+
+test('position and member scans use small requests when opaque server errors reject wider ranges',async()=>{
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(3600);
+ for(let i=0;i<600;i++)await rpc.request({method:'evm_mine',params:[]});
+ const spans=[];
+ const narrow=new Proxy(p,{get(t,k){
+  if(k==='getLogs')return async filter=>{const size=filter.toBlock-filter.fromBlock+1;spans.push(size);if(size>10)throw Object.assign(Error('opaque server failure'),{code:'SERVER_ERROR'});return t.getLogs(filter);};
+  const value=Reflect.get(t,k);return typeof value==='function'?value.bind(t):value;
+ }});
+ const result=await planDailyEpoch({provider:narrow,vault:v,policy:q,state,epoch:0,confirmations:0});
+ assert.equal(result.status,'ready');assert.ok(spans.length>60);assert.ok(spans.every(n=>n<=10));
+ assert.equal(state.positionIndex.through,state.registry.through);assert.deepEqual(state.positionPaid,{});
+ await pay(result,state);assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));
+});

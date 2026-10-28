@@ -316,3 +316,15 @@ test('the actual connection probe covers a limited provider completely and prese
   await assert.rejects(prepareZeroStartConnection({...options,provider:invalid}),error=>{assert.equal(error.message,'COMPLETE_LOG_RESPONSE_INVALID');assert.equal(retryableDailyReadFailure(error,{transactions:{}}),false);return true;});
  }finally{await provider.destroy();await rpc.disconnect();}
 });
+
+
+test('an explicit small span covers every block despite opaque errors on larger requests',async()=>{
+ const h=harness({records:[log(1),log(10),log(11),log(499),log(500)],throwFor:r=>r.toBlock-r.fromBlock+1>10?Object.assign(Error('opaque failure'),{code:'SERVER_ERROR'}):null});
+ const result=await getCompleteLogs({provider:h.provider,filter:filter(1,500),maxBlockSpan:10});
+ assert.deepEqual(result.map(x=>x.blockNumber),[1,10,11,499,500]);
+ assert.equal(h.calls.length,50);
+ assert.ok(h.calls.every(x=>x.toBlock-x.fromBlock+1<=10));
+ const covered=h.calls.flatMap(x=>Array.from({length:x.toBlock-x.fromBlock+1},(_,i)=>x.fromBlock+i)).sort((a,b)=>a-b);
+ assert.deepEqual(covered,Array.from({length:500},(_,i)=>i+1));
+ for(const maxBlockSpan of [0,1001,1.5])await assert.rejects(getCompleteLogs({provider:h.provider,filter:filter(),maxBlockSpan}),/REQUEST_LIMIT/);
+});
