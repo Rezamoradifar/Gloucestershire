@@ -43,3 +43,8 @@ rejection, preservation of new deployment state across retries and completed
 session idempotency. Existing 27 daily, hourly and referral tests were rerun
 successfully locally. No public-chain transaction or VPS reset was executed
 while preparing this release.
+
+Existing private installer rollback directories named `install-YYYYMMDDTHHMMSS-PID`
+inside the automation state directory remain untouched at their original paths.
+Other directories, symlinks and public-readable backups are rejected before
+archiving. This behavior is covered by offline regression tests.

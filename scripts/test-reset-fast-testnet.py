@@ -50,6 +50,31 @@ with tempfile.TemporaryDirectory() as t:
  try:m.archive(base,session,state);raise AssertionError('changed source accepted')
  except RuntimeError:pass
  assert (base/state['files'][0]['path']).exists()
+# Real installed states contain nested installer rollback directories. They must
+# remain at their original paths, without weakening symlink or unknown-directory guards.
+with tempfile.TemporaryDirectory() as t:
+ root=Path(t);base,session=fixture(root)
+ backup=base/m.NAMES[1]/'install-20261026T234653-534394'
+ write(backup/'journal.json',{'transactions':{'historical':{'raw':'preserved-backup-bytes'}}})
+ content=(backup/'journal.json').read_bytes();inode=backup.stat().st_ino
+ state=m.plan_archive(base,session)
+ assert state['preservedInstallerBackups']==[m.NAMES[1]+'/'+backup.name]
+ assert all('install-' not in f['path'] for f in state['files'])
+ m.archive(base,session,state)
+ assert backup.stat().st_ino==inode and (backup/'journal.json').read_bytes()==content
+ assert not (base/m.NAMES[1]/'journal.json').exists()
+ assert (session/'previous-state'/m.NAMES[1]/'journal.json').exists()
+for kind in ('unknown-directory','symlink-directory','public-backup'):
+ with tempfile.TemporaryDirectory() as t:
+  root=Path(t);base,session=fixture(root)
+  p=base/m.NAMES[1]/'install-20261026T234653-534394'
+  if kind=='unknown-directory':p=p.with_name('unreviewed-folder');p.mkdir(mode=0o700)
+  elif kind=='public-backup':p.mkdir(mode=0o755)
+  else:p.symlink_to(session, target_is_directory=True)
+  try:m.plan_archive(base,session);raise AssertionError('unsafe backup accepted: '+kind)
+  except RuntimeError:pass
+  assert not (session/'session.json').exists()
+  assert (base/m.NAMES[1]/'journal.json').exists()
 # Resume after a child deployment failure cannot archive the new journal or redeploy twice.
 with tempfile.TemporaryDirectory() as t:
  root=Path(t);base,session=fixture(root);state=m.plan_archive(base,session);m.archive(base,session,state)
@@ -72,4 +97,4 @@ with tempfile.TemporaryDirectory() as t:
  m.main();count=len(calls);m.main();assert len(calls)==count
  assert json.loads((session/'session.json').read_text())['phase']=='complete'
  assert (session/'previous-state'/m.NAMES[0]/'journal.json').exists()
-print('RESET_OFFLINE_TESTS_PASSED: archive resume, original lock inodes, pending guards, mainnet rejection, changed inputs, preserved new signatures and completed-session idempotency')
+print('RESET_OFFLINE_TESTS_PASSED: installed backup preservation, unsafe directory rejection, archive resume, original lock inodes, pending guards, mainnet rejection, changed inputs, preserved new signatures and completed-session idempotency')

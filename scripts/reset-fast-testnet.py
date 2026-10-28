@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -21,7 +22,7 @@ REPO = Path(__file__).resolve().parent.parent
 def private(path, directory=False):
     s = path.lstat()
     if s.st_uid != os.getuid() or s.st_mode & 0o077 or not (stat.S_ISDIR(s.st_mode) if directory else stat.S_ISREG(s.st_mode)):
-        raise RuntimeError('RESET_PRIVATE_REGULAR_INPUT_REQUIRED')
+        raise RuntimeError('RESET_PRIVATE_REGULAR_INPUT_REQUIRED path='+str(path))
 
 
 def digest(path):
@@ -57,9 +58,18 @@ def settled(path):
 def plan_archive(base, session):
     """Freeze a file manifest before moving anything; preserve lock inodes."""
     files = []
+    preserved_backups = []
     for name in NAMES:
         root = base/name; private(root, True); settled(root/'journal.json')
         for p in sorted(root.iterdir()):
+            # Installer recovery folders remain in place; they are not live generation state.
+            # Use lstat so a symlink can never masquerade as a recognized backup.
+            if stat.S_ISDIR(p.lstat().st_mode):
+                private(p, True)
+                if name != NAMES[1] or not re.fullmatch(r'install-[0-9]{8}T[0-9]{6}-[0-9]+', p.name):
+                    raise RuntimeError('RESET_UNEXPECTED_STATE_DIRECTORY path='+str(p))
+                preserved_backups.append(name+'/'+p.name)
+                continue
             if p.name.endswith('.lock'):
                 private(p); continue
             files.append({'path': name+'/'+p.name, 'sha256': digest(p)})
@@ -69,7 +79,7 @@ def plan_archive(base, session):
     report = json.loads((base/NAMES[0]/'deployment-public.json').read_text())
     if report.get('chainId') != 97 or report.get('contractAddress', '').lower() != OLD:
         raise RuntimeError('RESET_OLD_DEPLOYMENT_MISMATCH')
-    value = {'version': 1, 'oldTarget': OLD, 'phase': 'archiving', 'files': files}
+    value = {'version': 1, 'oldTarget': OLD, 'phase': 'archiving', 'files': files, 'preservedInstallerBackups': preserved_backups}
     save(session/'session.json', value)
     return value
 
