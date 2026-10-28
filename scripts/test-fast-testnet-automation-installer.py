@@ -340,4 +340,15 @@ exit 0''', 'curl': '#!/bin/bash\n'+curl_body, 'nginx': '#!/bin/bash\nexit 0'}
         assert result.returncode != 0 and 'Usage:' in result.stdout
         assert current.resolve() == host/'runtime/releases/old' and not calls.read_text()
         assert json.loads(worker_file.read_text()) == old_workers
+    reset()
+    policy_file=state/'daily-policy.json'
+    policy_value='{"basis":"position-anniversary-principal"}'
+    preserved[policy_file]=policy_value
+    policy_file.write_text(policy_value)
+    (host/'fail-service').touch()
+    result=run()
+    assert result.returncode != 0 and 'PREVIOUS_WORKERS_LEFT_STOPPED_POSITION_POLICY' in result.stdout
+    assert all(row['active']=='inactive' for row in json.loads(worker_file.read_text()).values())
+    assert json.loads(worker_file.read_text())[timer]['enabled']=='disabled'
+    assert current.resolve()==host/'runtime/releases/old'
     print('PASS: explicit fast profile, seed and fast-only hourly flags; copied hourly module imports; minimal oracle-recovery preflight with hourly selection and honest staged status; unsafe recovery proof rejected before signer or worker changes; isolated fast policy/journal and shared serialized operator; WAIT readiness can advance after first worker; existing credentials and prior journals preserved; hourly/default failure rollbacks and first-install absence restored; wrong operator and unsupported flags rejected; public directory readable under private umask.')

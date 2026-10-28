@@ -124,7 +124,23 @@ rollback(){
  if [ -f "$backup/activation.json" ]; then cp -p "$backup/activation.json" "$public/activation.json" || restored=0; else rm -f -- "$public/activation.json" || restored=0; fi
  if [ -f "$backup/status-console/manifest.json" ]; then python3 scripts/install-zero-start-status.py --restore "$backup/status-console" || restored=0; fi
  systemctl daemon-reload || restored=0
- if [ "$restored" -eq 1 ]; then
+ resume_previous=1
+ # Restoring source files does not roll back a saved position policy or journal.
+ # Keep all prior workers stopped when a position-policy installation fails.
+ if python3 - "$state/daily-policy.json" <<'PYGUARD'
+import os,stat,sys
+try:
+ fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW)
+except FileNotFoundError:raise SystemExit(1)
+except OSError:raise SystemExit(0)
+with os.fdopen(fd) as f:
+ s=os.fstat(f.fileno())
+ if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_mode&0o022 or s.st_size>1048576:raise SystemExit(0)
+ value=f.read()
+raise SystemExit(0 if 'position-anniversary-principal' in value else 1)
+PYGUARD
+ then resume_previous=0;echo 'PREVIOUS_WORKERS_LEFT_STOPPED_POSITION_POLICY';fi
+ if [ "$restored" -eq 1 ] && [ "$resume_previous" -eq 1 ]; then
   while IFS='|' read -r worker enabled active; do
    case "$enabled" in enabled) systemctl enable "$worker" || restored=0;; enabled-runtime) systemctl enable --runtime "$worker" || restored=0;; esac
    case "$active" in active|activating) systemctl start "$worker" || restored=0;; esac

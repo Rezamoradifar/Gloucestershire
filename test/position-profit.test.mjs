@@ -75,3 +75,26 @@ test('switching timing preserves journal data and refuses any old or pending cre
  for(const blocked of [{...state,pending:{signed:true}},{...state,transactions:{'daily-old':{block:1}}},{...state,transactions:{unsigned:{raw:'pending'}}},{...state,daily:{lastCredit:{epoch:1}}}])assert.throws(()=>positionPolicyTransition({policy:oldPolicy,state:blocked,expectedTarget:v.target}),/PREVIOUS_OR_PENDING/);
  assert.throws(()=>positionPolicyTransition({policy:oldPolicy,state,expectedTarget:a[0]}),/EXPECTED_FAST_TARGET/);
 });
+test('a long index catches up in bounded resumable pages without chasing the moving head or paying early',async()=>{
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(3600);
+ for(let i=0;i<4100;i++)await rpc.request({method:'evm_mine',params:[]});
+ const first=await plan(q,state);assert.equal(first.status,'indexing');const fixed=state.positionScanTarget.number;
+ assert.ok(state.registry.through<=q.deploymentBlock+1999);
+ for(let i=0;i<600;i++)await rpc.request({method:'evm_mine',params:[]});
+ let result;
+ for(let i=0;i<10;i++){
+  const before=state.positionIndex?.through;
+  result=await plan(q,state);
+  if(before!==undefined)assert.ok(state.positionIndex.through-before<=2000);
+  if(result.status==='ready')break;
+  assert.equal(state.positionScanTarget.number,fixed);assert.deepEqual(state.positionPaid||{},{});
+ }
+ assert.equal(result.status,'ready');assert.equal(state.positionIndex.through,fixed);assert.equal((await v.accounts(a[1],token.target)).profit,0n);
+ await pay(result,state);assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));
+});
+test('planning read budget stops new RPC reads while leaving financial work outside the budget',async()=>{
+ const {positionReadBudget}=await import('../scripts/position-profit.mjs');let t=0,reads=0;
+ const r=positionReadBudget({getBlock:async n=>{reads++;return {number:n};}},{clock:()=>t,milliseconds:100});
+ assert.equal((await r.getBlock(1)).number,1);t=100;
+ await assert.rejects(r.getBlock(2),e=>e.code==='TIMEOUT'&&e.message==='POSITION_READ_BUDGET_EXCEEDED');assert.equal(reads,1);
+});

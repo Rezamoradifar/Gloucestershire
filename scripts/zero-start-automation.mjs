@@ -183,10 +183,10 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   state.activation={block:checkpoint.number,blockHash:checkpoint.hash,startTimestamp:checkpoint.timestamp};save();
  }
  report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=policy.startTimestamp+policy.periodSeconds;
- for(let positionPass=0;positionPass<(isPositionPolicy(policy)?8:1);positionPass++){
+ for(let positionPass=0;positionPass<(isPositionPolicy(policy)?2:1);positionPass++){
  const plan=await during('DAILY_PERIOD_PLAN',()=>planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations}));
  report.dailyStatus=plan.status;
- if(isPositionPolicy(policy))report.positionSchedule={version:1,intervalSeconds:3600,nextDueAt:plan.nextDueAt??null};
+ if(isPositionPolicy(policy))report.positionSchedule={version:1,intervalSeconds:3600,nextDueAt:plan.nextDueAt??null,indexThrough:plan.indexThrough??null,indexTarget:plan.indexTarget??null};
  if(plan.status==='indexing'){report.blockers=[...new Set([...(readiness.blockers||[]),'DAILY_MEMBER_INDEX_INCOMPLETE'])];return report;}
  if(plan.status==='ready'){
   if(!await vault.reporters(readiness.operator)){report.errors.push('AUTOMATION_SIGNER_IS_NOT_REPORTER');report.blockers=['COUNCIL_AUTHORIZED_SERVER_REPORTER_REQUIRED'];return report;}

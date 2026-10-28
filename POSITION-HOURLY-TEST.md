@@ -9,7 +9,7 @@ confirmed creation-block timestamp. Its principal and plan/referral rates are
 read at the start of each interval. A full interval must pass before a credit is
 due. Reinvestment creates a separate position; it does not retroactively increase
 the parent's already-started interval. The worker checks every five minutes and
-handles at most eight due position intervals in one run. Confirmation delay, RPC
+handles at most two due position intervals in one run. Confirmation delay, RPC
 availability, backlog and funding can delay recording after the eligibility time;
 this is not an exact wall-clock payment guarantee.
 
@@ -34,3 +34,15 @@ actual worker status and receipts before calling the site active.
 The ordinary 24-hour policy and mainnet deployment paths are unchanged. This
 anniversary implementation explicitly rejects mainnet and 24-hour selection;
 production anniversary support requires its own reviewed activation path.
+
+Recovery bounds: each planner invocation reads at most four 500-block registration
+pages and four 500-block position pages. A saved canonical scan target prevents
+moving-head starvation. Each completed page keeps its existing checkpoint; an
+interrupted or limited scan never advances a payment cursor. New read requests
+stop after a 90-second planning budget; an in-flight read still uses the existing
+transport timeout. Financial sends are never cancelled or timed out by this
+budget. These bounds do not shorten the one-hour earning interval.
+
+If a position-policy installation fails, the installer restores its source and
+status files but leaves prior financial workers stopped. It does not resume an
+older worker against the saved position policy or a potentially advanced journal.
