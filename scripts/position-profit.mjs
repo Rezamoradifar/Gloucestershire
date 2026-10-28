@@ -15,7 +15,7 @@ export function isPositionPolicy(p){return p?.basis===positionBasis&&p.positionS
 export function positionReadBudget(provider,{clock=Date.now,milliseconds=90000}={}){
  const deadline=clock()+milliseconds;
  const check=()=>{if(clock()>=deadline)throw Object.assign(Error('POSITION_READ_BUDGET_EXCEEDED'),{code:'TIMEOUT'});};
- const bounded={check};
+ const bounded={check,remaining:()=>Math.max(0,deadline-clock())};
  for(const method of ['getBlockNumber','getBlock','getLogs'])bounded[method]=async(...args)=>{
   check();
   return provider[method](...args);
@@ -23,9 +23,9 @@ export function positionReadBudget(provider,{clock=Date.now,milliseconds=90000}=
  return bounded;
 }
 
-export async function planPositionHour({provider,vault,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4}){
+export async function planPositionHour({provider,vault,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,refreshDrainedTarget=true}){
  if(policy.chainId!==97||policy.periodSeconds!==3600||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
- // At most four 500-block pages per index per call, even when callers ask for more.
+ // Keep the 2,000-block scan cap, but commit smaller verified pages.
  maxRegistryPages=Math.min(maxRegistryPages,4);
  provider=positionReadBudget(provider);
  let final;
@@ -39,16 +39,18 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
   if(!final)throw Error('POSITION_FINAL_BLOCK_REQUIRED');
   state.positionScanTarget={number:final.number,hash:final.hash};save();
  }
+ const wasIndexed=state.registry?.through===final.number&&state.positionIndex?.through===final.number;
  const indexing=()=>({status:'indexing',indexTarget:final.number,indexThrough:state.positionIndex?.through??null});
- if(!await indexMembers({provider,policy,state,through:final.number,save,maxPages:maxRegistryPages,logOptions:{maxTimeoutRetries:2,maxBlockSpan:10}}))return indexing();
+ if(!await indexMembers({provider,policy,state,through:final.number,save,maxPages:maxRegistryPages*5,pageSize:100,shouldContinue:()=>provider.remaining()>=30000,logOptions:{maxTimeoutRetries:2,maxBlockSpan:10}}))return indexing();
  state.positionIndex??={through:policy.deploymentBlock-1,hash:null,positions:{}};
  state.positionPaid??={};state.positionClosed??={};
  const index=state.positionIndex;
  if(!safe(index.through)||!index.positions||index.through>final.number)throw Error('POSITION_INDEX_INVALID');
  if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash)throw Error('POSITION_INDEX_REORG');
  let pages=0;
- for(let start=index.through+1;start<=final.number&&pages<maxRegistryPages;pages++){
-  const end=Math.min(start+499,final.number),discovered={};
+ for(let start=index.through+1;start<=final.number&&pages<maxRegistryPages*5;pages++){
+  if(provider.remaining()<30000)return indexing();
+  const end=Math.min(start+99,final.number),discovered={};
   for(const name of ['Deposited','Reinvested']){
    const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:10});
    for(const log of logs){
@@ -73,13 +75,14 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
  }
  for(const member of Object.keys(state.registry.members)){provider.check();if(await vault.positionCount(member,options)!==(counts.get(getAddress(member))||0n))throw Error('POSITION_INDEX_INCOMPLETE');}
  for(let i=0;i<assets.length;i++){provider.check();if((await vault.ledgers(assets[i],options)).principal!==principal[i])throw Error('POSITION_PRINCIPAL_INDEX_INCOMPLETE');}
- delete state.positionScanTarget;save();
+ // Keep this canonical target while draining all hours due at its timestamp.
+ // Advancing to a moving head after every credit can starve the next payment.
  const candidates=Object.entries(index.positions).map(([key,row])=>{
   const paid=state.positionPaid[key]??0;if(!safe(paid))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
   const start=row.openedAt+paid*3600;if(!safe(start+3600))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
   return {key,row,paid,start,end:start+3600};
  }).filter(x=>!state.positionClosed[x.key]&&x.end<=final.timestamp).sort((a,b)=>a.end-b.end||a.key.localeCompare(b.key));
- if(!candidates.length){const next=Object.entries(index.positions).filter(([key])=>!state.positionClosed[key]).map(([key,row])=>row.openedAt+((state.positionPaid[key]??0)+1)*3600);return {status:'not_due',nextDueAt:next.length?Math.min(...next):null};}
+ if(!candidates.length){delete state.positionScanTarget;save();if(wasIndexed&&refreshDrainedTarget)return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,refreshDrainedTarget:false});const next=Object.entries(index.positions).filter(([key])=>!state.positionClosed[key]).map(([key,row])=>row.openedAt+((state.positionPaid[key]??0)+1)*3600);return {status:'not_due',nextDueAt:next.length?Math.min(...next):null};}
  const {key,row,paid,start,end}=candidates[0],snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number),o={blockTag:snapshot.number};
  provider.check();
  const position=await vault.positionOf(row.member,BigInt(row.id),o);

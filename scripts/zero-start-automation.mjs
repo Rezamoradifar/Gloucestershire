@@ -10,7 +10,7 @@ import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {verifyZeroStartReadiness,verifyZeroStartTarget} from './zero-start-readiness.mjs';
 import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests} from './daily-profit.mjs';
-import {installHistoricalCallRetry} from './complete-rpc-logs.mjs';
+import {installHistoricalCallRetry,sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 import {maintainOracles} from './maintain-testnet-oracles.mjs';
 import {inspectMockFeeds} from './refresh-testnet-oracles.mjs';
@@ -209,6 +209,7 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   report.status='waiting';report.errors.push(blocker);
   report.blockers=[...new Set([...(readiness.blockers||[]),blocker])];
   report.diagnostic=zeroStartWorkerDiagnostic(error,{phase,state});
+  if(error.logProbeDiagnostic)report.logProbeDiagnostic=sanitizeCompleteLogDiagnostic(error.logProbeDiagnostic);
   return report;
  }
 }

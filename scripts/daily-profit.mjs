@@ -121,12 +121,13 @@ export async function blockAtTime(provider,timestamp,first,last){
  while(low<high){const mid=Math.ceil((low+high)/2),b=await provider.getBlock(mid);if(!b)throw Error('HISTORICAL_BLOCK_UNAVAILABLE');if(b.timestamp<=timestamp)low=mid;else high=mid-1;}
  const block=await provider.getBlock(low);if(!block)throw Error('HISTORICAL_BLOCK_UNAVAILABLE');return block;
 }
-export async function indexMembers({provider,policy,state,through,save,maxPages=100,pageSize=500,logOptions={}}){
+export async function indexMembers({provider,policy,state,through,save,maxPages=100,pageSize=500,logOptions={},shouldContinue=()=>true}){
  state.registry??={through:policy.deploymentBlock-1,hash:null,members:{}};
  const index=state.registry;
- if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash){state.registry={through:policy.deploymentBlock-1,hash:null,members:{}};save();return indexMembers({provider,policy,state,through,save,maxPages,pageSize,logOptions});}
+ if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash){state.registry={through:policy.deploymentBlock-1,hash:null,members:{}};save();return indexMembers({provider,policy,state,through,save,maxPages,pageSize,logOptions,shouldContinue});}
  let pages=0;
  for(let start=index.through+1;start<=through&&pages<maxPages;pages++){
+  if(!shouldContinue())return false;
   const end=Math.min(start+pageSize-1,through);
   const logs=await getCompleteLogs({...logOptions,provider,filter:{address:policy.vaultAddress,topics:[registry.getEvent('Registered').topicHash],fromBlock:start,toBlock:end}});
   for(const log of logs){

@@ -112,3 +112,35 @@ test('position and member scans use small requests when opaque server errors rej
  assert.equal(state.positionIndex.through,state.registry.through);assert.deepEqual(state.positionPaid,{});
  await pay(result,state);assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));
 });
+
+test('due hours drain at the verified target without rescanning a moving head between credits',async()=>{
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(10800);
+ const first=await plan(q,state),fixed=state.positionScanTarget.number;await pay(first,state);
+ for(let i=0;i<600;i++)await rpc.request({method:'evm_mine',params:[]});await advance(3600);
+ let logReads=0;
+ const noScan=new Proxy(p,{get(t,k){if(k==='getLogs')return async()=>{logReads++;throw Error('UNEXPECTED_RESCAN');};const x=Reflect.get(t,k);return typeof x==='function'?x.bind(t):x;}});
+ const next=()=>planDailyEpoch({provider:noScan,vault:v,policy:q,state,epoch:0,confirmations:0});
+ const second=await next();assert.equal(second.status,'ready');assert.equal(state.positionScanTarget.number,fixed);await pay(second,state);
+ const third=await next();assert.equal(third.status,'ready');assert.equal(state.positionScanTarget.number,fixed);await pay(third,state);
+ assert.equal(logReads,0);assert.equal((await v.accounts(a[1],token.target)).profit,E('1.5'));
+ await assert.rejects(next());assert.ok(logReads>0);assert.equal(Object.values(state.positionPaid)[0],3);
+});
+
+test('a failed later log page retains completed 100-block position pages and retries without duplicate credit',async()=>{
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(3600);
+ for(let i=0;i<250;i++)await rpc.request({method:'evm_mine',params:[]});
+ const reinvestTopic=keccak256(toUtf8Bytes('Reinvested(address,address,uint256,uint256)'));
+ const failing=new Proxy(p,{get(t,k){if(k==='getLogs')return async filter=>{if(filter.topics[0]===reinvestTopic&&filter.fromBlock>=q.deploymentBlock+100)throw Object.assign(Error('opaque failure'),{code:'SERVER_ERROR'});return t.getLogs(filter);};const x=Reflect.get(t,k);return typeof x==='function'?x.bind(t):x;}});
+ await assert.rejects(planDailyEpoch({provider:failing,vault:v,policy:q,state,epoch:0,confirmations:0}));
+ assert.equal(state.positionIndex.through,q.deploymentBlock+99);assert.deepEqual(state.positionPaid,{});
+ const resumed=await plan(q,state);assert.equal(resumed.status,'ready');await pay(resumed,state);
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));assert.equal(Object.values(state.positionPaid)[0],1);
+});
+
+test('a cooperative scan yield saves only complete registration pages and never fabricates payment',async()=>{
+ const {indexMembers}=await import('../scripts/daily-profit.mjs');
+ const q=await policy(),state={};let pages=0,saved=0;
+ const empty={getBlock:async number=>({number,hash:'0x'+number.toString(16).padStart(64,'0')}),getLogs:async()=>[]};
+ const complete=await indexMembers({provider:empty,policy:q,state,through:q.deploymentBlock+500,save:()=>{saved++;},pageSize:100,maxPages:20,logOptions:{maxBlockSpan:10},shouldContinue:()=>pages++<1});
+ assert.equal(complete,false);assert.equal(state.registry.through,q.deploymentBlock+99);assert.equal(saved,1);assert.equal(state.positionPaid,undefined);
+});

@@ -45,6 +45,9 @@ test('historical planning RPC failure waits without advancing a period or changi
  const waiting=await s.run();
  assert.equal(waiting.status,'waiting');assert.equal(waiting.dailyCredits.length,0);assert.equal(s.state.daily.epoch,0);assert.equal(s.sends,0);
  assert.ok(waiting.blockers.includes('DAILY_PERIOD_PLAN_RPC_UNAVAILABLE'));
+ assert.equal(waiting.logProbeDiagnostic.operation,'eth_getLogs');
+ assert.equal(waiting.logProbeDiagnostic.fromBlock,1);
+ assert.equal(waiting.logProbeDiagnostic.reason,'RATE_LIMITED');
  assert.deepEqual(waiting.diagnostic,{phase:'DAILY_PERIOD_PLAN',errorCode:'UNKNOWN_ERROR',rpcCode:-32005,pendingSignedTransaction:false,pendingFinancialTransaction:false});
  assert.deepEqual(s.policy,saved);assert.doesNotMatch(JSON.stringify(waiting),/https|credentials|secret/);
  s.recover();const completed=await s.run();assert.equal(completed.status,'scheduled');assert.equal(completed.dailyCredits[0].status,'credited');assert.equal(s.state.daily.epoch,1);assert.equal(s.sends,1);
