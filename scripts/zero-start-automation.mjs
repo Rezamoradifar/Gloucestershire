@@ -16,6 +16,7 @@ import {maintainOracles} from './maintain-testnet-oracles.mjs';
 import {inspectMockFeeds} from './refresh-testnet-oracles.mjs';
 import {readPrivateKey} from './migration-signers.mjs';
 import {journalTransaction,writePrivateJson} from './migration-journal.mjs';
+import {isPositionPolicy,completePositionHour} from './position-profit.mjs';
 import {makeHourlyTestPolicy,transitionHourlyTestPolicy} from './zero-start-hourly-test.mjs';
 
 const publicRoot='/var/www/globaldroptrade/automation-data';
@@ -182,16 +183,22 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   state.activation={block:checkpoint.number,blockHash:checkpoint.hash,startTimestamp:checkpoint.timestamp};save();
  }
  report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=policy.startTimestamp+policy.periodSeconds;
+ for(let positionPass=0;positionPass<(isPositionPolicy(policy)?8:1);positionPass++){
  const plan=await during('DAILY_PERIOD_PLAN',()=>planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations}));
  report.dailyStatus=plan.status;
+ if(isPositionPolicy(policy))report.positionSchedule={version:1,intervalSeconds:3600,nextDueAt:plan.nextDueAt??null};
  if(plan.status==='indexing'){report.blockers=[...new Set([...(readiness.blockers||[]),'DAILY_MEMBER_INDEX_INCOMPLETE'])];return report;}
  if(plan.status==='ready'){
   if(!await vault.reporters(readiness.operator)){report.errors.push('AUTOMATION_SIGNER_IS_NOT_REPORTER');report.blockers=['COUNCIL_AUTHORIZED_SERVER_REPORTER_REQUIRED'];return report;}
   try{
-   report.dailyCredits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,plan,transact}));
-   state.daily.epoch++;state.daily.lastCredit={epoch:plan.epoch,credited:report.dailyCredits};save();
+   const credits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,plan,transact}));
+   report.dailyCredits.push(...credits);
+   if(isPositionPolicy(policy))completePositionHour(state.daily,plan);
+   const completedEpoch=state.daily.epoch;state.daily.epoch++;state.daily.lastCredit={epoch:completedEpoch,credited:credits};save();
    report.nextEpoch=state.daily.epoch;report.lastDailyCredit=lastConfirmedDailyCredit(state);
   }catch(e){if(Object.values(state.transactions||{}).some(entry=>!entry.block))throw e;report.errors.push(code(e));report.diagnostic=zeroStartWorkerDiagnostic(e,{phase,state});return report;}
+ }
+ if(plan.status!=='ready')break;
  }
  report.status=readiness.ready&&report.errors.length===0?'scheduled':'waiting';
  report.blockers=readiness.blockers;
@@ -287,7 +294,7 @@ async function main(){
   let policy;
   const checkReadiness=()=>{
    const current=hourlyTest&&policy?.periodSeconds!==3600?undefined:policy;
-   return verifyZeroStartReadiness({...targetOptions,hourlyTest,policy:current,periodStartTimestamp:current?current.startTimestamp+(state.daily?.epoch||0)*current.periodSeconds:undefined});
+   return verifyZeroStartReadiness({...targetOptions,hourlyTest,policy:current,periodStartTimestamp:current?(isPositionPolicy(current)?current.startTimestamp:current.startTimestamp+(state.daily?.epoch||0)*current.periodSeconds):undefined});
   };
   const loadCurrentPolicy=()=>{
    const current=fs.existsSync(policyFile)?validateDailyPolicy(JSON.parse(readPrivate(policyFile))):undefined;

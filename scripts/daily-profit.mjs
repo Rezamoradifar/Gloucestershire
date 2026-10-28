@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {Contract,FetchRequest,Interface,JsonRpcProvider,Wallet,ZeroAddress,getAddress,isAddress,keccak256,toUtf8Bytes,parseEther} from 'ethers';
 import {writePrivateJson,journalTransaction} from './migration-journal.mjs';
 import {readPrivateKey} from './migration-signers.mjs';
+import {planPositionHour,isPositionPolicy} from './position-profit.mjs';
 import {getCompleteLogs} from './complete-rpc-logs.mjs';
 
 const registry=new Interface(['event Registered(address indexed user,address indexed referrer)']);
@@ -20,6 +21,7 @@ export const dailyAbi=[
  'function tierConfig(uint256) view returns((uint256 minUsd,uint16 baseDailyBps,uint16 maxDailyBps,uint32 requiredDirect,uint256 requiredSalesUsd,uint16[4] referrals))',
  'function qualifiedDirects(address) view returns(uint256)','function networkBranchCount(address) view returns(uint256)',
  'function rankVolumePage(address,uint256,uint256,uint256) view returns(uint256 eligibleUsd,uint256 next)',
+ 'function positionCount(address) view returns(uint256)','function positionOf(address,uint256) view returns((address asset,uint256 principal,uint256 capitalUsd,uint256 unlockAt,uint16 penaltyBps))',
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 nextWithdrawal)',
  'function ledgers(address) view returns(uint256 principal,uint256 profit,uint256 feeReserve,uint256 rewards)',
  'function usedRewardBatch(bytes32) view returns(bool)','function assetBalance(address) view returns(uint256)',
@@ -48,7 +50,8 @@ export function sanitizeDailyMemberIndexDiagnostic(value){
 export function validateDailyPolicy(p){
  if(p?.version!==1||![56,97].includes(p.chainId)||!isAddress(p.vaultAddress)||getAddress(p.vaultAddress)===ZeroAddress)throw Error('INVALID_DAILY_POLICY');
  if(p.chainId===56&&(p.periodSeconds!==86400||['testMode','initialServerReporter','fastTestnetVersion','testInterval'].some(key=>Object.hasOwn(p,key))||p.releaseId===hourlyTestPolicyFields.releaseId))throw Error('MAINNET_DAILY_POLICY_REQUIRED');
- if(p.basis!=='period-start-active-principal'||![86400,3600].includes(p.periodSeconds)||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
+ if((p.basis!=='period-start-active-principal'&&!isPositionPolicy(p))||![86400,3600].includes(p.periodSeconds)||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
+ if(isPositionPolicy(p)&&(p.chainId!==97||p.periodSeconds!==3600))throw Error('POSITION_HOURLY_TEST_ONLY');
  if((p.periodSeconds===3600&&!isHourlyTestPolicy(p))||(p.periodSeconds!==3600&&p.testInterval==='hourly'))throw Error('HOURLY_TEST_POLICY_MARKERS_REQUIRED');
  if(!Number.isSafeInteger(p.startTimestamp)||p.startTimestamp<=0||!Number.isSafeInteger(p.deploymentBlock)||p.deploymentBlock<1)throw Error('INVALID_DAILY_START');
  if(!/^0x[0-9a-f]{64}$/i.test(p.runtimeHash||''))throw Error('DAILY_RUNTIME_HASH_REQUIRED');
@@ -141,6 +144,7 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
  policy=validateDailyPolicy(policy);
  if(isHourlyTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
  else await assertDailyTarget({provider,vault,policy});
+ if(isPositionPolicy(policy))return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages});
  if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_DAILY_EPOCH');
  const head=await provider.getBlockNumber(),final=await provider.getBlock(Math.max(0,head-confirmations));
  const start=policy.startTimestamp+epoch*policy.periodSeconds,end=start+policy.periodSeconds;

@@ -15,7 +15,7 @@ const signedUnits=value=>typeof value==='string'&&/^(0|-?[1-9][0-9]*)$/.test(val
 const fail=message=>{throw Error(message);};
 function address(value){try{const result=getAddress(value);if(result!==ZeroAddress)return result;}catch{}return fail('The fresh contract identity is invalid.');}
 const feedAddresses=['0xDA264c16Ec8832748a1A5A31b963deD9E48e337a','0xE7D68dF5e1e9B0F5BeB3201b4Ab1d64aC7761454'];
-const hourlyPolicy=(value,fast)=>fast&&value?.periodSeconds===3600&&value.testMode===true&&value.releaseId==='global-fresh-fast-test-v1'&&value.testInterval==='hourly'&&value.fastTestnetVersion===1&&value.basis==='period-start-active-principal'&&value.includeReinvestment===true;
+const hourlyPolicy=(value,fast)=>fast&&value?.periodSeconds===3600&&value.testMode===true&&value.releaseId==='global-fresh-fast-test-v1'&&value.testInterval==='hourly'&&value.fastTestnetVersion===1&&(value.basis==='period-start-active-principal'||value.basis==='position-anniversary-principal'&&value.positionScheduleVersion===1)&&value.includeReinvestment===true;
 const hourlySelection=(value,fast)=>fast&&value?.testInterval==='hourly'&&value.allocationPeriodSeconds===3600;
 const oracleError=value=>typeof value==='string'&&value!=='DAILY_AUTOMATION_NOT_INSPECTED_BY_ORACLE_REPAIR'&&(/ORACLE|STALE_PRICE|STALEPRICE/.test(value)||['TESTNET_GAS_COST_LIMIT','TOTAL_TEST_BNB_FEE_LIMIT_0_1','INSUFFICIENT_TEST_BNB','AUTOMATION_RPC_OR_EXECUTION_FAILED'].includes(value));
 
@@ -138,7 +138,7 @@ export function activationStatusView(report,nowSeconds=Date.now()/1000){
  ];
  const funding=report.funding.assets.map(entry=>({symbol:entry.symbol,principal:formatUnits(entry.principal,entry.decimals),rewards:formatUnits(entry.rewards,entry.decimals),cash:formatUnits(entry.cash,entry.decimals),minimum:formatUnits(entry.minimumBudgetRequired,entry.decimals),required:entry.requiredForExistingPrincipal,ready:entry.ready}));
  const automation=report.automation,period=automation?.policy,epoch=automation?.nextEpoch;
- const schedule=period?`Next ${hourly?'hourly test cycle':'daily period'}: ${epoch+1}. ${hourly?'Cycle':'Period'} ends ${new Date((automation.firstPeriodEndsAt+epoch*period.periodSeconds)*1000).toLocaleString('en-US')}.`:'A daily start time has not been established.';
+ const schedule=period?.basis==='position-anniversary-principal'?'Each deposit and reinvestment earns after its own complete hour. The worker records due credits on its next check.':period?`Next ${hourly?'hourly test cycle':'daily period'}: ${epoch+1}. ${hourly?'Cycle':'Period'} ends ${new Date((automation.firstPeriodEndsAt+epoch*period.periodSeconds)*1000).toLocaleString('en-US')}.`:'A daily start time has not been established.';
  const credited=automation?.dailyCredits.filter(batch=>batch.status==='credited')||[];
  const latestCreditSummary=credited.length?`${credited.length} ${hourly?'hourly test':'daily'} credit ${credited.length===1?'batch was':'batches were'} confirmed in the latest server check.`:`No new ${hourly?'hourly test':'daily'} credit batches were reported in the latest server check.`;
  const previous=automation?.lastDailyCredit;

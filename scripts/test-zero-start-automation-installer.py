@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as directory:
     for original, replacement in replacements.items():
         installer = installer.replace(original, str(replacement))
     (source/'ubuntu-enable-zero-daily.sh').write_text(installer)
-    for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs', 'complete-rpc-logs.mjs', 'zero-start-hourly-test.mjs',
+    for name in ['zero-start-automation.mjs', 'zero-start-readiness.mjs', 'zero-start-volume.mjs', 'daily-profit.mjs', 'position-profit.mjs', 'complete-rpc-logs.mjs', 'zero-start-hourly-test.mjs',
                  'maintain-testnet-oracles.mjs', 'refresh-testnet-oracles.mjs', 'migration-journal.mjs',
                  'migration-signers.mjs', 'connect-zero-start.mjs', 'deploy-zero-start.mjs', 'zero-start-profile.mjs', 'fund-million-test-rewards.mjs']:
         shutil.copyfile(repo/'scripts'/name, source/'scripts'/name)
