@@ -3,13 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {parseEnv} from 'node:util';
 import {pathToFileURL} from 'node:url';
-import {Contract,FetchRequest,JsonRpcProvider} from 'ethers';
+import {Contract,FetchRequest,JsonRpcProvider,isAddress} from 'ethers';
 import {readConfig} from '../server/trades-api.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {verifyZeroStartTarget,verifyZeroStartReadiness} from './zero-start-readiness.mjs';
 import {planDailyEpoch,validateDailyPolicy} from './daily-profit.mjs';
 import {zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
+import {diagnosticPeriodStart,auditPositionWallet,auditProfitReceipt,recentJournalProfitCredits} from './hourly-payment-audit.mjs';
+import {sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
 
 function readPrivate(file){
  const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
@@ -25,7 +27,8 @@ async function main(){
  const report={version:1,kind:'fresh-zero-read-only-diagnostic',transactionsSent:0,signerOpened:false};
  try{
   const {profile,args}=parseZeroStartProfileArgs();
-  if(process.getuid?.()!==0||args.length)throw Error('ROOT_DIAGNOSTIC_PROFILE_ONLY_REQUIRED');
+  const wallet=args.length===2&&args[0]==='--wallet'&&isAddress(args[1])?args[1]:null;
+  if(process.getuid?.()!==0||(args.length&&!wallet))throw Error('ROOT_DIAGNOSTIC_PROFILE_ONLY_REQUIRED');
   phase='LOCAL_CONFIGURATION';
   const original=readPrivate('/etc/globaldroptrade/trades.env'),settings=parseEnv(original),config=readConfig(settings);
   if((settings.TRADES_ZERO_START_PROFILE||'global-fresh-zero-v1')!==profile.release.releaseId)throw Error('DIAGNOSTIC_CONNECTED_PROFILE_MISMATCH');
@@ -45,8 +48,14 @@ async function main(){
   const target=await verifyZeroStartTarget({...targetOptions,inspectSettlementLogs:false});
   Object.assign(report,{chainId:97,target:target.target,periodSeconds:policy?.periodSeconds??null,nextEpoch:epoch,pending:zeroStartWorkerDiagnostic(null,{phase,state})});
   const vault=new Contract(target.target,artifact.abi,provider);
+  if(wallet)report.wallet=await auditPositionWallet({vault,wallet,state:state.daily||{},block:await provider.getBlock(Math.max(0,(await provider.getBlockNumber())-Math.max(3,config.confirmations)))});
+  report.lastPaymentEvidence=[];
+  for(const credit of recentJournalProfitCredits(state)){
+   if(!credit.transactionHash)continue;
+   report.lastPaymentEvidence.push(await auditProfitReceipt({provider,target:target.target,operator:profile.release.deployer,credit,confirmations:Math.max(3,config.confirmations)}));
+  }
   phase='DAILY_READINESS';
-  const readiness=await verifyZeroStartReadiness({...targetOptions,policy,hourlyTest:policy?.periodSeconds===3600,periodStartTimestamp:policy?policy.startTimestamp+epoch*policy.periodSeconds:undefined});
+  const readiness=await verifyZeroStartReadiness({...targetOptions,policy,hourlyTest:policy?.periodSeconds===3600,periodStartTimestamp:diagnosticPeriodStart(policy,epoch)});
   report.readiness={ready:readiness.ready,blockers:readiness.blockers,archiveStatus:readiness.archive.status,fundingReady:readiness.funding.ready};
   if(policy){
    phase='DAILY_PERIOD_PLAN';
@@ -54,7 +63,7 @@ async function main(){
    // cloned index is never saved; the installed worker owns durable progress.
    const daily=structuredClone(state.daily??{epoch:0});
    const plan=await planDailyEpoch({provider,vault,policy,state:daily,epoch:daily.epoch??0,confirmations:Math.max(3,config.confirmations),maxRegistryPages:1});
-   report.period={status:plan.status,epoch:plan.epoch,registryThrough:daily.registry?.through??null,indexedMembers:Object.keys(daily.registry?.members||{}).length,batches:plan.batches?.length??0};
+   report.period={status:plan.status,epoch:plan.epoch,registryThrough:daily.registry?.through??null,indexedMembers:Object.keys(daily.registry?.members||{}).length,batches:plan.batches?.length??0,positionIndexThrough:daily.positionIndex?.through??null,positionScanTarget:daily.positionScanTarget?.number??null,completedPositionHours:Object.values(daily.positionPaid||{}).reduce((a,b)=>a+b,0)};
    if(plan.status==='ready'){
     phase='DAILY_CREDIT_EXECUTION';
     const remaining=new Map();
@@ -78,7 +87,7 @@ async function main(){
  }catch(error){
   const blocker=/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message||'')?error.message:'READ_ONLY_RPC_OR_VALIDATION_FAILED';
   console.log('ZERO_PROFIT_DIAGNOSTIC_FAILED');
-  console.log(JSON.stringify({...report,blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase,state})}));process.exitCode=1;
+  console.log(JSON.stringify({...report,blocker,diagnostic:zeroStartWorkerDiagnostic(error,{phase,state}),...(error.logProbeDiagnostic?{logProbeDiagnostic:sanitizeCompleteLogDiagnostic(error.logProbeDiagnostic)}:{})}));process.exitCode=1;
  }finally{provider?.destroy();for(const fallback of proofProviders)fallback.destroy();}
 }
 

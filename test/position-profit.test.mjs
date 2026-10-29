@@ -144,3 +144,42 @@ test('a cooperative scan yield saves only complete registration pages and never 
  const complete=await indexMembers({provider:empty,policy:q,state,through:q.deploymentBlock+500,save:()=>{saved++;},pageSize:100,maxPages:20,logOptions:{maxBlockSpan:10},shouldContinue:()=>pages++<1});
  assert.equal(complete,false);assert.equal(state.registry.through,q.deploymentBlock+99);assert.equal(saved,1);assert.equal(state.positionPaid,undefined);
 });
+
+test('read-only live audit proves exact mined credit events and rejects mismatched receipts',async()=>{
+ const {auditProfitReceipt,auditPositionWallet,diagnosticPeriodStart,recentJournalProfitCredits}=await import('../scripts/hourly-payment-audit.mjs');
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(3600);
+ const first=await plan(q,state),credits=await pay(first,state);
+ const evidence=await auditProfitReceipt({provider:p,target:v.target,operator:config.deployer,credit:credits[0],confirmations:1});
+ assert.deepEqual(recentJournalProfitCredits({transactions:{['daily-'+credits[0].id]:{hash:credits[0].transactionHash,block:evidence.block},['daily-'+'0x'+'ff'.repeat(32)]:{hash:'0x'+'ab'.repeat(32)}}}),[{id:credits[0].id,transactionHash:credits[0].transactionHash}]);
+ assert.equal(evidence.status,'verified');assert.deepEqual(evidence.credits,[{wallet:a[1],asset:token.target,amountUnits:E('0.5').toString()}]);
+ const before=JSON.stringify(state),wallet=await auditPositionWallet({vault:v,wallet:a[1],state,block:await p.getBlock('latest')});
+ assert.equal(wallet.positionCount,1);assert.equal(wallet.positions[0].completedHours,1);assert.equal(wallet.positions[0].unprocessedFullHours,0);assert.equal(wallet.profitUnits,E('0.5').toString());assert.equal(JSON.stringify(state),before);
+ assert.equal(diagnosticPeriodStart(q,20),q.startTimestamp);
+ assert.equal(diagnosticPeriodStart({...q,basis:'period-start-active-principal'},20),q.startTimestamp+20*3600);
+ for(const override of [r=>({...r,status:0}),r=>({...r,from:a[3]}),r=>({...r,blockHash:'0x'+'ab'.repeat(32)}),r=>({...r,logs:[]})]){
+  const bad=new Proxy(p,{get(t,k){if(k==='getTransactionReceipt')return async hash=>override(await t.getTransactionReceipt(hash));const x=Reflect.get(t,k);return typeof x==='function'?x.bind(t):x;}});
+  await assert.rejects(auditProfitReceipt({provider:bad,target:v.target,operator:config.deployer,credit:credits[0],confirmations:1}));
+ }
+ await assert.rejects(auditProfitReceipt({provider:p,target:v.target,operator:config.deployer,credit:{...credits[0],id:'0x'+'cd'.repeat(32)},confirmations:1}),/BATCH_MISMATCH/);
+});
+
+test('reloading a saved journal after a completed payment never pays that hour twice',async()=>{
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(3600);
+ const first=await plan(q,state);await pay(first,state);
+ const restored=JSON.parse(JSON.stringify(state));let duplicateSends=0;
+ const replay=await executeDailyPlan({provider:p,vault:v,plan:first,transact:async()=>{duplicateSends++;throw Error('DUPLICATE_PAYMENT');}});
+ assert.equal(duplicateSends,0);assert.equal(replay[0].status,'already_credited');
+ assert.equal((await plan(q,restored)).status,'not_due');await advance(3600);await pay(await plan(q,restored),restored);
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('1'));assert.equal(Object.values(restored.positionPaid)[0],2);
+});
+
+test('reloading after only the personal batch confirms resumes referrals exactly once',async()=>{
+ await tx(v.connect(s[0]).register(ZeroAddress));await tx(v.connect(owner).setCustomerStatus(a[0],true,false));
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),a[0]));await advance(3600);
+ const first=await plan(q,state);assert.equal(first.batches.length,2);
+ await executeDailyPlan({provider:p,vault:v,plan:{...first,batches:first.batches.slice(0,1)},transact:async(_,request)=>tx(op.sendTransaction(request))});
+ const restored=JSON.parse(JSON.stringify(state)),retry=await plan(q,restored);assert.deepEqual(retry.batches,first.batches);
+ const result=await pay(retry,restored);assert.equal(result[0].status,'already_credited');assert.equal(result[1].status,'credited');
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));assert.equal((await v.accounts(a[0],token.target)).profit,E('0.04'));
+ assert.equal(Object.values(restored.positionPaid)[0],1);
+});
