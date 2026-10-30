@@ -87,3 +87,7 @@ See [the 2026-10-31 preparation package](MAINNET-PREPARATION-20261031.md)
 for the new purchased-RPC historical-state/log check, reproduced artifact, local
 verification and remaining production timing/activation requirements. Public
 RPC current-state success is not accepted as an archive-readiness claim.
+
+## Production automation implementation
+
+See [PRODUCTION-AUTOMATION.md](PRODUCTION-AUTOMATION.md) for the separate chain-56 funded worker, owner-approved withdrawal execution, resumable journal, verified RPC candidates, read-only standby and cash-coverage display. Owner capital authority remains unchanged. This code package is not evidence of a live mainnet deployment or activation.

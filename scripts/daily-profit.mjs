@@ -140,8 +140,8 @@ export async function indexMembers({provider,policy,state,through,save,maxPages=
  }
  return index.through>=through;
 }
-export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3,maxRegistryPages=100}){
- if(!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1||maxRegistryPages>100)throw Error('DAILY_MEMBER_INDEX_LIMIT_INVALID');
+export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3,maxRegistryPages=100,registryPageSize=500,registryLogOptions={}}){
+ if(!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1||maxRegistryPages>100||!Number.isSafeInteger(registryPageSize)||registryPageSize<1||registryPageSize>500)throw Error('DAILY_MEMBER_INDEX_LIMIT_INVALID');
  policy=validateDailyPolicy(policy);
  if(isHourlyTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
  else await assertDailyTarget({provider,vault,policy});
@@ -151,7 +151,7 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
  const start=policy.startTimestamp+epoch*policy.periodSeconds,end=start+policy.periodSeconds;
  if(!final||final.timestamp<end)return {status:'not_due',epoch};
  const snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number);
- if(!await indexMembers({provider,policy,state,through:snapshot.number,save,maxPages:maxRegistryPages}))return {status:'indexing',epoch};
+ if(!await indexMembers({provider,policy,state,through:snapshot.number,save,maxPages:maxRegistryPages,pageSize:registryPageSize,logOptions:registryLogOptions}))return {status:'indexing',epoch};
  const options={blockTag:snapshot.number},token=await vault.usdt(options);
  const members=Object.entries(state.registry.members).filter(([,block])=>block<=snapshot.number).map(([address])=>address).sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
  const assets=[ZeroAddress,token],entries=[[],[]],principal=[0n,0n];

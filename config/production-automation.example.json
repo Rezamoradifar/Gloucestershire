@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "chainId": 56,
+  "role": "standby",
+  "deploymentTxHash": "REPLACE_WITH_VERIFIED_MAINNET_CREATION_TRANSACTION_HASH",
+  "deployer": "REPLACE_WITH_MAINNET_DEPLOYER_ADDRESS",
+  "operator": "REPLACE_WITH_APPROVED_MAINNET_REPORTER_ADDRESS",
+  "queueAddress": "REPLACE_WITH_VERIFIED_MAINNET_WITHDRAWAL_QUEUE",
+  "executionMachineId": "REPLACE_WITH_PRIMARY_ETC_MACHINE_ID_FOR_PRIMARY_ONLY",
+  "rpcFiles": [
+    "/etc/globaldroptrade/mainnet-rpc-url",
+    "/etc/globaldroptrade/mainnet-rpc-backup-url"
+  ],
+  "gasBudgetWei": "20000000000000000",
+  "policy": {
+    "version": 1,
+    "chainId": 56,
+    "vaultAddress": "REPLACE_WITH_VERIFIED_MAINNET_VAULT",
+    "runtimeHash": "REPLACE_WITH_VERIFIED_DEPLOYED_RUNTIME_HASH",
+    "deploymentBlock": 0,
+    "startTimestamp": 0,
+    "basis": "period-start-active-principal",
+    "periodSeconds": 86400,
+    "includeReinvestment": true
+  }
+}

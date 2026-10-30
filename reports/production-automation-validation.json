@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "kind": "production-automation-implementation-validation",
+  "chainId": 56,
+  "periodSeconds": 86400,
+  "ownerCapitalAuthorityChanged": false,
+  "contractSourceChanged": false,
+  "liveDeploymentPerformed": false,
+  "liveServiceActivated": false,
+  "transactionsSent": 0,
+  "validation": {
+    "calculationAndControllerTestsPassed": 67,
+    "activationProofTestsPassed": 3,
+    "sharedEntrypointAndLogTestsPassed": 20,
+    "frontendTestsPassed": 103,
+    "frontendBuild": "passed",
+    "shellSyntax": "passed"
+  },
+  "limitations": [
+    "Production contract deployment and exact activation manifest still required",
+    "Verified private mainnet archive RPC endpoints still required",
+    "Dedicated reporter governance, gas and actual funding still required",
+    "Standby host and backup transport require provisioning; no automatic writer promotion",
+    "Global period-start principal policy; not per-deposit anniversary",
+    "Owner may deploy all cash, so future liquidity is not guaranteed"
+  ]
+}
