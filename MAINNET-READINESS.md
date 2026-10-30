@@ -80,3 +80,10 @@ Use `bash ubuntu-mainnet.sh plan` for the unsigned offline report, or
 `bash ubuntu-mainnet.sh prepare --from PUBLIC_ADDRESS` for the read-only RPC
 preflight. Reports explain unresolved blockers; neither command authorizes or
 performs deployment.
+
+## Updated preparation package
+
+See [the 2026-10-31 preparation package](MAINNET-PREPARATION-20261031.md)
+for the new purchased-RPC historical-state/log check, reproduced artifact, local
+verification and remaining production timing/activation requirements. Public
+RPC current-state success is not accepted as an archive-readiness claim.

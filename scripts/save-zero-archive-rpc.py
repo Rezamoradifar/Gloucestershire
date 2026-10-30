@@ -89,7 +89,7 @@ def save_candidate(file, value):
             temporary.unlink()
 
 
-def main(file=candidate_file):
+def main(file=candidate_file, prompt='BNB Testnet 97 archive HTTPS RPC URL (hidden): '):
     handlers = {}
 
     def interrupted(signum, frame):
@@ -105,7 +105,7 @@ def main(file=candidate_file):
                 raise ValueError('INTERACTIVE_TTY_REQUIRED')
             with warnings.catch_warnings():
                 warnings.simplefilter('error', getpass.GetPassWarning)
-                value = getpass.getpass('BNB Testnet 97 archive HTTPS RPC URL (hidden): ', stream=terminal)
+                value = getpass.getpass(prompt, stream=terminal)
         save_candidate(file, value)
         print('ARCHIVE_RPC_PRIVATE_INPUT_SAVED')
         return 0

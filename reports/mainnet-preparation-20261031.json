@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "kind": "mainnet-local-preparation-evidence",
+  "checkedAtUtc": "2026-10-30T23:24:32.360288+00:00",
+  "baseCommit": "1ef7a2ed5f2d8151318e037a6d89ff338964c436",
+  "chainId": 56,
+  "artifactHash": "0x64f24990045d9ef3d268e97657ed6e6af013cb73fc8ec39b9a862929c069e8cf",
+  "initcodeHash": "0x10f0489a7077bf5d27df79e58e2d7f996796e57c5ef136ab8f42609a9a69fbd0",
+  "runtimeBytes": 24181,
+  "periodSeconds": 86400,
+  "basis": "period-start-active-principal",
+  "tests": {
+    "existingMainnet": {
+      "passed": 14,
+      "failed": 0
+    },
+    "historicalRpc": {
+      "passed": 5,
+      "failed": 0
+    },
+    "frontend": {
+      "passed": 100,
+      "failed": 0
+    },
+    "frontendBuild": "passed",
+    "artifactRebuild": "hash-reproduced"
+  },
+  "onlineObservation": {
+    "provider": "https://bsc-dataseed-public.bnbchain.org",
+    "currentPreflight": "passed",
+    "checkpointBlock": 130752315,
+    "checkpointHash": "0x571b087cd6ed2ce3d60956a0e1226972ee760e24226ea133d9b9c120551ec51d",
+    "checkpointTimestamp": 1793402556,
+    "historicalProbe": "unsupported",
+    "operation": "eth_getCode",
+    "rpcCode": -32000,
+    "independentCanonicalProof": false
+  },
+  "readyToDeploy": false,
+  "keysRead": false,
+  "transactionsSigned": 0,
+  "transactionsSent": 0,
+  "remaining": [
+    "PRIVATE_MAINNET_RPC_AND_HISTORY_PROOF_REQUIRED",
+    "LIVE_TESTNET_RECOVERY_AND_APPROVED_PAYOUT_EVIDENCE_REQUIRED",
+    "PRODUCTION_TIMING_POLICY_REVIEW_REQUIRED",
+    "RECIPIENT_AND_LIQUIDITY_AUTHORITY_REVIEW_REQUIRED",
+    "MAINNET_CREATION_CONNECTION_REPORTER_AND_FUNDING_ACTIVATION_REQUIRED"
+  ]
+}
