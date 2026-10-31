@@ -124,7 +124,11 @@ export async function blockAtTime(provider,timestamp,first,last){
 export async function indexMembers({provider,policy,state,through,save,maxPages=100,pageSize=500,logOptions={},shouldContinue=()=>true}){
  state.registry??={through:policy.deploymentBlock-1,hash:null,members:{}};
  const index=state.registry;
- if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash){state.registry={through:policy.deploymentBlock-1,hash:null,members:{}};save();return indexMembers({provider,policy,state,through,save,maxPages,pageSize,logOptions,shouldContinue});}
+ if(index.hash){
+  const checkpoint=await provider.getBlock(index.through);
+  if(checkpoint?.number!==index.through||typeof checkpoint.hash!=='string'||!/^0x[0-9a-f]{64}$/i.test(checkpoint.hash))throw Object.assign(Error('HISTORICAL_BLOCK_UNAVAILABLE'),{code:'BAD_DATA'});
+  if(checkpoint.hash.toLowerCase()!==index.hash.toLowerCase()){state.registry={through:policy.deploymentBlock-1,hash:null,members:{}};save();return indexMembers({provider,policy,state,through,save,maxPages,pageSize,logOptions,shouldContinue});}
+ }
  let pages=0;
  for(let start=index.through+1;start<=through&&pages<maxPages;pages++){
   if(!shouldContinue())return false;
