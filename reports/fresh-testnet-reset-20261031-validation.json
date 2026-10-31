@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "kind": "fresh-testnet-reset-20261031-validation",
+  "chainId": 97,
+  "expectedOldTarget": "0xfA53C3337825cDE4f760a6Fa45A87D8A7B353f75",
+  "accountsMigrated": false,
+  "contractEconomicRulesChanged": false,
+  "liveDeploymentPerformed": false,
+  "liveTransactionsSent": 0,
+  "checks": {
+    "contractAndHourlyWorkerTestsPassed": 51,
+    "newGenerationPolicyTestsPassed": 2,
+    "millionTestRewardTestsPassed": 9,
+    "sourceSyncTestsPassed": 5,
+    "newResetArchiveResumeAndRpcQuiescence": "passed",
+    "previousResetRegression": "passed",
+    "shellAndSyntax": "passed"
+  },
+  "newGeneration": {
+    "periodSeconds": 3600,
+    "basis": "position-anniversary-principal",
+    "testRewardTopup": "1000000 TestUSDT",
+    "ownerCapitalAuthority": "preserved"
+  },
+  "limitations": [
+    "Requires execution on the authorized VPS using the existing private signer",
+    "RPC receipt and historical correctness remain required; redeployment alone cannot repair a faulty endpoint",
+    "Old state is privately archived and immutable on-chain history cannot be deleted",
+    "Actual new address and connection are unverified until the VPS reports completion"
+  ]
+}
