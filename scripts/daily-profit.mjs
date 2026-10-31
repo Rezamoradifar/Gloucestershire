@@ -28,7 +28,7 @@ export const dailyAbi=[
  'function batchProfit(bytes32,address,address[],uint256[])','function withdrawalQueue() view returns(address)'
 ];
 export const approvedQueueAbi=[
- 'function APPROVAL_VERSION() view returns(uint256)','function vault() view returns(address)',
+ 'function APPROVAL_VERSION() view returns(uint256)','function vault() view returns(address)','function pending(address) view returns(uint256)',
  'function requestCount() view returns(uint256)',
  'function requests(uint256) view returns(address user,address asset,uint256 gross,uint256 fee,uint256 dueAt,uint8 status)',
  'function pay(uint256)'
@@ -238,7 +238,17 @@ export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=
  }
  return {status:'ready',chainId:policy.chainId,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,epoch,start,end,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,batches};
 }
-export async function executeDailyPlan({provider,vault,plan,transact}){
+const unsigned=v=>typeof v==='bigint'&&v>=0n;
+export function rewardFunding({rewards,cash,profit,feeReserve,pending}){
+ if(![rewards,cash,profit,feeReserve,pending].every(unsigned))throw Error('PRODUCTION_FUNDING_STATE_INVALID');
+ const priorClaims=profit+feeReserve+pending,available=cash>priorClaims?cash-priorClaims:0n,covered=available<rewards?available:rewards;
+ return {rewardBudgetUnits:rewards.toString(),treasuryCashUnits:cash.toString(),recordedProfitAndReserveUnits:priorClaims.toString(),availableForNewProfitUnits:available.toString(),cashCoveredRewardUnits:covered.toString(),rewardCashShortfallUnits:(rewards-covered).toString(),warnings:[...(rewards===0n?['REWARD_BUDGET_EMPTY']:[]),...(covered<rewards?['REWARD_CASH_SHORTFALL']:[]),...(cash<priorClaims?['EXISTING_PROFIT_CASH_SHORTFALL']:[])],principalCashProtected:false,ownerCapitalDeploymentRestricted:false};
+}
+export async function inspectDailyCashCoverage({vault,queue,asset}){
+ const [ledger,cash,pending]=await Promise.all([vault.ledgers(asset),vault.assetBalance(asset),queue.pending(asset)]);
+ return {asset,...rewardFunding({rewards:ledger.rewards,cash,profit:ledger.profit,feeReserve:ledger.feeReserve,pending})};
+}
+export async function executeDailyPlan({provider,vault,queue,plan,transact}){
  if(plan.status!=='ready')return [];
  if((await provider.getBlock(plan.snapshotBlock))?.hash!==plan.snapshotHash)throw Error('DAILY_SNAPSHOT_REORG');
  await assertDailyIdentity({...plan,provider,vault});
@@ -247,12 +257,16 @@ export async function executeDailyPlan({provider,vault,plan,transact}){
  // excluded so an interrupted period can finish without replaying its base.
  const remaining=new Map();
  for(const batch of plan.batches)if(!await vault.usedRewardBatch(batch.id))remaining.set(batch.asset,(remaining.get(batch.asset)||0n)+batch.amounts.reduce((sum,value)=>sum+BigInt(value),0n));
- for(const[asset,total]of remaining)if((await vault.ledgers(asset)).rewards<total||await vault.assetBalance(asset)<total)throw Error('DAILY_PROFIT_FUNDING_REQUIRED');
+ for(const[asset,total]of remaining){
+  if((await vault.ledgers(asset)).rewards<total||await vault.assetBalance(asset)<total)throw Error('DAILY_PROFIT_FUNDING_REQUIRED');
+  if(queue&&BigInt((await inspectDailyCashCoverage({vault,queue,asset})).availableForNewProfitUnits)<total)throw Error('DAILY_PROFIT_CASH_COVERAGE_REQUIRED');
+ }
  const completed=[];
  for(const batch of plan.batches){
   if(await vault.usedRewardBatch(batch.id)){completed.push({id:batch.id,status:'already_credited'});continue;}
   const amounts=batch.amounts.map(BigInt),total=amounts.reduce((a,b)=>a+b,0n);
   if((await vault.ledgers(batch.asset)).rewards<total||await vault.assetBalance(batch.asset)<total)throw Error('DAILY_PROFIT_FUNDING_REQUIRED');
+  if(queue&&BigInt((await inspectDailyCashCoverage({vault,queue,asset:batch.asset})).availableForNewProfitUnits)<total)throw Error('DAILY_PROFIT_CASH_COVERAGE_REQUIRED');
   if((await provider.getBlock(plan.snapshotBlock))?.hash!==plan.snapshotHash)throw Error('DAILY_SNAPSHOT_REORG');
   await assertDailyIdentity({...plan,provider,vault});
   await vault.batchProfit.staticCall(batch.id,batch.asset,batch.recipients,amounts);

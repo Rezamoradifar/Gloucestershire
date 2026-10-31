@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "kind": "existing-testnet-funded-worker-validation",
+  "chainId": 97,
+  "periodSeconds": 3600,
+  "contractDeploymentPerformed": false,
+  "accountResetPerformed": false,
+  "publicTestnetTransactionsSent": 0,
+  "checks": {
+    "newWorkerScenariosPassed": 5,
+    "relatedNodeTestsPassed": 54,
+    "sourceSyncFixtureTestsPassed": 5,
+    "releaseStageRecoveryTest": "passed",
+    "shellSyntax": "passed",
+    "diffWhitespace": "passed"
+  },
+  "sharedProductionCashCalculation": true,
+  "remaining": [
+    "Execute pinned source-sync installer on the existing VPS",
+    "Verify actual current archive RPC readiness and no pending transaction blockers",
+    "Capture two consecutive public-testnet payment receipts, reinvestment increment, referral and owner-approved withdrawal",
+    "Complete ordinary 24-hour timing acceptance before mainnet activation"
+  ]
+}

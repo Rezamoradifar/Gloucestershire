@@ -9,7 +9,7 @@ import {readConfig} from '../server/trades-api.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {verifyZeroStartReadiness,verifyZeroStartTarget} from './zero-start-readiness.mjs';
 import {createZeroStartProofProviders} from './connect-zero-start.mjs';
-import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests} from './daily-profit.mjs';
+import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests,inspectDailyCashCoverage} from './daily-profit.mjs';
 import {installHistoricalCallRetry,sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 import {maintainOracles} from './maintain-testnet-oracles.mjs';
@@ -22,7 +22,7 @@ import {makeHourlyTestPolicy,transitionHourlyTestPolicy} from './zero-start-hour
 const publicRoot='/var/www/globaldroptrade/automation-data';
 const code=e=>/^[A-Z][A-Z0-9_]{2,100}$/.test(e?.message||'')?e.message:'AUTOMATION_RPC_OR_EXECUTION_FAILED';
 const identityOf=readiness=>({version:1,chainId:97,target:readiness.target,owner:readiness.owner,operator:readiness.operator,queue:readiness.queue,hash:readiness.hash,runtimeHash:readiness.runtimeHash});
-const workerPhases=new Set(['ARGUMENT_VALIDATION','LOCAL_CONFIGURATION','TARGET_VERIFICATION','PENDING_RECONCILIATION','ORACLE_MAINTENANCE','ORACLE_INSPECTION','TEST_REWARD_SEED','TEST_REWARD_GRANT','POLICY_LOAD','DAILY_READINESS','HOURLY_POLICY_TRANSITION','APPROVED_WITHDRAWALS','NETWORK_VOLUME','POLICY_VERIFICATION','DAILY_PERIOD_PLAN','DAILY_CREDIT_EXECUTION','STATUS_PUBLICATION']);
+const workerPhases=new Set(['ARGUMENT_VALIDATION','LOCAL_CONFIGURATION','TARGET_VERIFICATION','PENDING_RECONCILIATION','ORACLE_MAINTENANCE','ORACLE_INSPECTION','TEST_REWARD_SEED','TEST_REWARD_GRANT','POLICY_LOAD','DAILY_READINESS','HOURLY_POLICY_TRANSITION','APPROVED_WITHDRAWALS','NETWORK_VOLUME','POLICY_VERIFICATION','DAILY_PERIOD_PLAN','DAILY_FUNDING','DAILY_CREDIT_EXECUTION','STATUS_PUBLICATION']);
 const ethersErrorCodes=new Set(['CALL_EXCEPTION','NETWORK_ERROR','SERVER_ERROR','TIMEOUT','BAD_DATA','UNKNOWN_ERROR','UNSUPPORTED_OPERATION','INVALID_ARGUMENT','NUMERIC_FAULT','BUFFER_OVERRUN','INSUFFICIENT_FUNDS','NONCE_EXPIRED','REPLACEMENT_UNDERPRICED','TRANSACTION_REPLACED','ACTION_REJECTED','OFFCHAIN_FAULT','CANCELLED']);
 
 // Never publish provider messages, URLs, request bodies, signed data or stacks.
@@ -191,7 +191,8 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
  if(plan.status==='ready'){
   if(!await vault.reporters(readiness.operator)){report.errors.push('AUTOMATION_SIGNER_IS_NOT_REPORTER');report.blockers=['COUNCIL_AUTHORIZED_SERVER_REPORTER_REQUIRED'];return report;}
   try{
-   const credits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,plan,transact}));
+   report.rewardFunding=await during('DAILY_FUNDING',async()=>Promise.all([ZeroAddress,await vault.usdt()].map(asset=>inspectDailyCashCoverage({vault,queue,asset}))));
+   const credits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,queue,plan,transact}));
    report.dailyCredits.push(...credits);
    if(isPositionPolicy(policy))completePositionHour(state.daily,plan);
    const completedEpoch=state.daily.epoch;state.daily.epoch++;state.daily.lastCredit={epoch:completedEpoch,credited:credits};save();

@@ -1,15 +1,10 @@
 // Funded production orchestration. Owner liquidity authority stays unchanged.
 import {getAddress,ZeroAddress,keccak256,toUtf8Bytes,Interface} from 'ethers';
-import {assertDailyTarget,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests} from './daily-profit.mjs';
+import {assertDailyTarget,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests,rewardFunding} from './daily-profit.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 const profitCall=new Interface(['function batchProfit(bytes32,address,address[],uint256[])']);
 export function productionBinding({policy,expectedOwner,operator,queue}){return keccak256(toUtf8Bytes(JSON.stringify({policy,owner:getAddress(expectedOwner),operator:getAddress(operator),queue:getAddress(queue.target)})));}
-const unsigned=v=>typeof v==='bigint'&&v>=0n;
-export function rewardFunding({rewards,cash,profit,feeReserve,pending}){
- if(![rewards,cash,profit,feeReserve,pending].every(unsigned))throw Error('PRODUCTION_FUNDING_STATE_INVALID');
- const priorClaims=profit+feeReserve+pending,available=cash>priorClaims?cash-priorClaims:0n,covered=available<rewards?available:rewards;
- return {rewardBudgetUnits:rewards.toString(),treasuryCashUnits:cash.toString(),recordedProfitAndReserveUnits:priorClaims.toString(),availableForNewProfitUnits:available.toString(),cashCoveredRewardUnits:covered.toString(),rewardCashShortfallUnits:(rewards-covered).toString(),warnings:[...(rewards===0n?['REWARD_BUDGET_EMPTY']:[]),...(covered<rewards?['REWARD_CASH_SHORTFALL']:[]),...(cash<priorClaims?['EXISTING_PROFIT_CASH_SHORTFALL']:[])],principalCashProtected:false,ownerCapitalDeploymentRestricted:false};
-}
+export {rewardFunding} from './daily-profit.mjs';
 export async function readProductionFunding({provider,vault,queue,confirmations=3}){
  const block=await provider.getBlock(Math.max(0,(await provider.getBlockNumber())-confirmations));if(!block)throw Error('PRODUCTION_FUNDING_BLOCK_REQUIRED');
  const at={blockTag:block.number},token=getAddress(await vault.usdt(at)),assets=[];
@@ -79,7 +74,7 @@ export async function runProductionAutomation({provider,vault,queue,policy,expec
     const funding=rewardFunding({rewards:ledger.rewards,cash,profit:ledger.profit,feeReserve:ledger.feeReserve,pending});
     if(ledger.rewards<amount||BigInt(funding.availableForNewProfitUnits)<amount){report.status='reward-funding-required';report.warnings.push('REWARD_FUNDING_REQUIRED');return report;}
    }
-   const credited=await executeDailyPlan({provider,vault,plan,transact:send});
+   const credited=await executeDailyPlan({provider,vault,queue,plan,transact:send});
    state.daily.lastCredit={epoch:state.daily.epoch,credited};state.daily.epoch++;save();
    report.credits.push(...credited);report.status='credited';
   }

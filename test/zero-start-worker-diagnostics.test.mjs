@@ -20,9 +20,9 @@ function harness(){
  const vault={target,getAddress:async()=>target,usdt:async()=>token,reporters:async()=>true,dailyTargetBps:async()=>100n,
   users:async()=>({registered:true,referrer:ZeroAddress,active:true,vipKyc:false}),tierOf:async()=>0n,tierConfig:async()=>({referrals:[800n,400n,200n,0n]}),
   accounts:async(who,asset)=>({principal:who===member&&asset===token?1000n:0n}),
-  ledgers:async asset=>({principal:asset===token?1000n:0n,rewards:100n}),assetBalance:async()=>100n,usedRewardBatch:async()=>credited,
+  ledgers:async asset=>({principal:asset===token?1000n:0n,rewards:100n,profit:0n,feeReserve:0n}),assetBalance:async()=>100n,usedRewardBatch:async()=>credited,
   batchProfit:{staticCall:async()=>{},populateTransaction:async()=>({to:target,data:'0x1234'})}};
- const queue={vault:async()=>target,APPROVAL_VERSION:async()=>1n,requestCount:async()=>0n};
+ const queue={pending:async()=>0n,vault:async()=>target,APPROVAL_VERSION:async()=>1n,requestCount:async()=>0n};
  const readiness={version:1,kind:'fresh-zero-daily-readiness',releaseId:'global-fresh-zero-v1',chainId:97,target,owner,operator,queue:queueAddress,hash:hash(80),runtimeHash:policy.runtimeHash,block:1,ready:true,blockers:[]};
  state.identity={version:1,chainId:97,target,owner,operator,queue:queueAddress,hash:readiness.hash,runtimeHash:policy.runtimeHash};
  const run=extra=>runZeroStartAutomation({provider,vault,queue,readiness,state,save:()=>{},loadPolicy:()=>policy,savePolicy:()=>{throw Error('EXISTING_POLICY_MUST_BE_PRESERVED');},transact:async()=>{sends++;credited=true;return {status:1,hash:hash(81)};},maintainOracles:async()=>({status:'TESTNET_ORACLES_VALID'}),processVolume:async()=>({complete:true}),onPhase:phase=>phases.push(phase),...extra});

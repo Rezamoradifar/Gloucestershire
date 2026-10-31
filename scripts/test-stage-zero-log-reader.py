@@ -11,7 +11,7 @@ spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory(prefix='zero-log-reader-stage-test-') as temporary:
     root = Path(temporary)
     source = root/'source'
-    old_files = {name: ('known installed source '+name+'\n').encode() for name in module.baseline}
+    old_files = {name: ('known installed source '+name+'\n').encode() for name in set().union(*map(set,module.roles.values())) if name!=module.helper}
     module.baseline = {name: hashlib.sha256(data).hexdigest() for name, data in old_files.items()}
     previous_helper = b'known previous complete log reader\n'
     module.previous_helper_hashes = {hashlib.sha256(previous_helper).hexdigest()}
