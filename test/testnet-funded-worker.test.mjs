@@ -5,7 +5,7 @@ import ganache from 'ganache';
 import {BrowserProvider,Contract,ContractFactory,ZeroAddress,parseEther as E,keccak256,toUtf8Bytes} from 'ethers';
 import {validateDailyPolicy,hourlyTestPolicyFields} from '../scripts/daily-profit.mjs';
 import {runZeroStartAutomation} from '../scripts/zero-start-automation.mjs';
-import {positionBasis} from '../scripts/position-profit.mjs';
+import {positionBasis,scanPositionHistory} from '../scripts/position-profit.mjs';
 const config=JSON.parse(fs.readFileSync('config/fresh-fast-testnet.json'));
 let rpc,p,owner,op,s,a,v,token,deployBlock,snapshot;
 const tx=async x=>(await x).wait();
@@ -76,4 +76,13 @@ test('personal and referral batches require combined cash coverage before the fi
  await tx(v.connect(owner).ownerWithdrawCapital(token.target,a[3],(await v.assetBalance(token.target))-E('1.52')));await advance(3600);
  const r=await worker(q,state);assert.ok(r.errors.includes('DAILY_PROFIT_CASH_COVERAGE_REQUIRED'));assert.equal(state.daily.epoch,0);
  assert.equal((await v.accounts(a[1],token.target)).profit,0n);assert.equal((await v.accounts(a[0],token.target)).profit,0n);assert.equal(r.dailyCredits.length,0);
+});
+
+test('indexed payment mode drains bounded overdue hours without scanning and resumes after a journal reload',async()=>{
+ const q=await policy(),state={transactions:{},daily:{epoch:0}};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(12*3600);
+ await scanPositionHistory({provider:p,policy:q,state:state.daily,confirmations:0});
+ const noScan=new Proxy(p,{get(t,k){if(k==='getLogs')return async()=>{throw Error('PAYMENT_MUST_NOT_SCAN');};const x=Reflect.get(t,k);return typeof x==='function'?x.bind(t):x;}});
+ await worker(q,state,{provider:noScan,indexedPayments:true});assert.equal(state.daily.epoch,8);assert.equal((await v.accounts(a[1],token.target)).profit,E('4'));
+ const restored=JSON.parse(JSON.stringify(state));await worker(q,restored,{provider:noScan,indexedPayments:true});assert.equal(restored.daily.epoch,12);assert.equal((await v.accounts(a[1],token.target)).profit,E('6'));
+ await worker(q,restored,{provider:noScan,indexedPayments:true,transact:()=>{throw Error('REPLAY');}});assert.equal(restored.daily.epoch,12);
 });

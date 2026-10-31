@@ -140,12 +140,12 @@ export async function indexMembers({provider,policy,state,through,save,maxPages=
  }
  return index.through>=through;
 }
-export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3,maxRegistryPages=100,registryPageSize=500,registryLogOptions={}}){
+export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3,maxRegistryPages=100,registryPageSize=500,registryLogOptions={},indexedOnly=false}){
  if(!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1||maxRegistryPages>100||!Number.isSafeInteger(registryPageSize)||registryPageSize<1||registryPageSize>500)throw Error('DAILY_MEMBER_INDEX_LIMIT_INVALID');
  policy=validateDailyPolicy(policy);
  if(isHourlyTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
  else await assertDailyTarget({provider,vault,policy});
- if(isPositionPolicy(policy))return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages});
+ if(isPositionPolicy(policy))return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,indexedOnly});
  if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_DAILY_EPOCH');
  const head=await provider.getBlockNumber(),final=await provider.getBlock(Math.max(0,head-confirmations));
  const start=policy.startTimestamp+epoch*policy.periodSeconds,end=start+policy.periodSeconds;

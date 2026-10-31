@@ -39,6 +39,9 @@ previous_source_hashes.setdefault('scripts/zero-start-automation.mjs', set()).ad
 previous_source_hashes.setdefault('scripts/daily-profit.mjs', set()).add('4ee19b10e371e191550ebaf381b43144e64a9e83f275a64e03fae3bfa4de0112')
 previous_source_hashes.setdefault('scripts/daily-profit.mjs', set()).add('7c609bf93cac341bae8494d3e6d0fa6c756c04bcacab0ce13a7732092399aee1')
 previous_source_hashes.setdefault('scripts/zero-start-automation.mjs', set()).add('d1b18fd6682401d0baf409dff0974afdaea3a2de29bd7d8ac05079588dd4c94e')
+previous_source_hashes.setdefault('scripts/daily-profit.mjs', set()).add('bfad405b3a608e97356bc7dddaecfeba55b357db720f1980826ae0763ee0d652')
+previous_source_hashes.setdefault('scripts/position-profit.mjs', set()).add('fea4da15bff286b43e88cec2e69dc4bc517299b2ab98227f9b107db931f8266d')
+previous_source_hashes.setdefault('scripts/zero-start-automation.mjs', set()).add('bcadd5bef47610b6eeab0153eba9b8231a0d80629abcdda43d3204762bc10fa8')
 roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper, 'scripts/position-profit.mjs']}
 
 

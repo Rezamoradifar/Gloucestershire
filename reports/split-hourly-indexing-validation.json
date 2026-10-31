@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "kind": "split-hourly-indexing-validation",
+  "chainId": 97,
+  "contractChanged": false,
+  "accountsReset": false,
+  "publicTestnetTransactionsSent": 0,
+  "vpsInstalled": false,
+  "checks": {
+    "positionAndSeparateIndexTestsPassed": 19,
+    "financialRecoveryAndReceiptTestsPassed": 28,
+    "sharedProductionAndRpcTestsPassed": 17,
+    "entrypointAndGenerationBindingTestsPassed": 3,
+    "fakeHostInstallerTestsPassed": 4,
+    "releaseStagingAndRecovery": "passed",
+    "shellSyntaxAndModuleSyntax": "passed"
+  },
+  "behavior": {
+    "indexerSignerAccess": false,
+    "indexTimerSeconds": 20,
+    "paymentTimerSeconds": 30,
+    "maxPositionHoursPerRun": 8,
+    "preservesBatchIdsAndJournal": true,
+    "paymentUsesCompleteCanonicalPrefix": true,
+    "rpcFailoverGates": "unchanged, reviewed source aligned",
+    "ownerCapitalAuthority": "unchanged"
+  },
+  "limits": [
+    "Actual VPS installation is still required",
+    "Two consecutive public-testnet credit receipts and account changes must be verified",
+    "Existing archive RPC, funding and cumulative fee-budget blockers remain blocking",
+    "Independent standby host provisioning is outside this installer"
+  ]
+}

@@ -144,7 +144,8 @@ export function lastConfirmedDailyCredit(state){
  return batches.length?{epoch,batches}:null;
 }
 
-export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,onPhase=()=>{}}){
+export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,indexedPayments=false,maxPositionHours=8,onPhase=()=>{}}){
+ if(!Number.isSafeInteger(maxPositionHours)||maxPositionHours<1||maxPositionHours>16)throw Error('POSITION_CATCHUP_LIMIT_REQUIRED');
  let phase='TARGET_VERIFICATION';
  const during=async(name,action)=>{phase=name;onPhase(name);return action();};
  const target=getAddress(await vault.getAddress());
@@ -183,8 +184,11 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   state.activation={block:checkpoint.number,blockHash:checkpoint.hash,startTimestamp:checkpoint.timestamp};save();
  }
  report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=policy.startTimestamp+policy.periodSeconds;
- for(let positionPass=0;positionPass<(isPositionPolicy(policy)?2:1);positionPass++){
- const plan=await during('DAILY_PERIOD_PLAN',()=>planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations}));
+ if(indexedPayments&&!isPositionPolicy(policy))throw Error('POSITION_INDEXED_POLICY_REQUIRED');
+ const catchupStarted=Date.now();
+ for(let positionPass=0;positionPass<(isPositionPolicy(policy)?(indexedPayments?maxPositionHours:2):1);positionPass++){
+ if(positionPass>0&&Date.now()-catchupStarted>=120000)break;
+ const plan=await during('DAILY_PERIOD_PLAN',()=>planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations,indexedOnly:indexedPayments}));
  report.dailyStatus=plan.status;
  if(isPositionPolicy(policy))report.positionSchedule={version:1,intervalSeconds:3600,nextDueAt:plan.nextDueAt??null,indexThrough:plan.indexThrough??null,indexTarget:plan.indexTarget??null};
  if(plan.status==='indexing'){report.blockers=[...new Set([...(readiness.blockers||[]),'DAILY_MEMBER_INDEX_INCOMPLETE'])];return report;}
@@ -261,10 +265,11 @@ async function main(){
  let provider,readiness,state,completedOracles,completedOracleInspection,executeRequested=false,fundOnlyRequested=false,proofProviders=[],phase='ARGUMENT_VALIDATION';
  try{
   const {profile,args}=parseZeroStartProfileArgs();
-  const seedFlags=args.filter(value=>value==='--seed-test-rewards'),oracleFlags=args.filter(value=>value==='--oracles-only'),hourlyFlags=args.filter(value=>value==='--hourly-test'),millionFlags=args.filter(value=>value==='--fund-test-million');
-  const commands=args.filter(value=>!['--seed-test-rewards','--oracles-only','--hourly-test','--fund-test-million'].includes(value));
-  if(process.getuid?.()!==0||commands.length!==1||!['--check','--execute'].includes(commands[0])||seedFlags.length>1||oracleFlags.length>1||hourlyFlags.length>1||millionFlags.length>1)throw Error('ROOT_EXPLICIT_CHECK_OR_EXECUTE_REQUIRED');
-  const execute=commands[0]==='--execute',oraclesOnly=oracleFlags.length===1,hourlyTest=hourlyFlags.length===1,fundOnly=millionFlags.length===1;
+  const seedFlags=args.filter(value=>value==='--seed-test-rewards'),oracleFlags=args.filter(value=>value==='--oracles-only'),hourlyFlags=args.filter(value=>value==='--hourly-test'),millionFlags=args.filter(value=>value==='--fund-test-million'),indexFlags=args.filter(value=>value==='--indexed-payments');
+  const commands=args.filter(value=>!['--seed-test-rewards','--oracles-only','--hourly-test','--fund-test-million','--indexed-payments'].includes(value));
+  if(process.getuid?.()!==0||commands.length!==1||!['--check','--execute'].includes(commands[0])||seedFlags.length>1||oracleFlags.length>1||hourlyFlags.length>1||millionFlags.length>1||indexFlags.length>1)throw Error('ROOT_EXPLICIT_CHECK_OR_EXECUTE_REQUIRED');
+  const execute=commands[0]==='--execute',oraclesOnly=oracleFlags.length===1,hourlyTest=hourlyFlags.length===1,fundOnly=millionFlags.length===1,indexedPayments=indexFlags.length===1;
+  if(indexedPayments&&(!profile.fast||!hourlyTest||oraclesOnly||fundOnly))throw Error('POSITION_INDEXED_EXPLICIT_FAST_HOURLY_REQUIRED');
   executeRequested=execute;
   fundOnlyRequested=fundOnly;
   if(fundOnly&&(!profile.fast||!execute||seedFlags.length||oraclesOnly||hourlyTest))throw Error('MILLION_TEST_REWARDS_EXPLICIT_FAST_EXECUTION_REQUIRED');
@@ -392,7 +397,7 @@ async function main(){
    policy=transition.policy;
    if(transition.transitioned){phase='DAILY_READINESS';readiness=await checkReadiness();}
   }
-  const result=await runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy:()=>policy,savePolicy:value=>{if(fs.existsSync(policyFile))throw Error('ZERO_START_POLICY_ALREADY_EXISTS');writePrivateJson(policyFile,value);policy=value;},transact,confirmations:Math.max(3,config.confirmations),hourlyTest,refreshReadiness:checkReadiness,maintainOracles:async()=>completedOracles,onPhase:value=>{phase=value;}});
+  const result=await runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy:()=>policy,savePolicy:value=>{if(fs.existsSync(policyFile))throw Error('ZERO_START_POLICY_ALREADY_EXISTS');writePrivateJson(policyFile,value);policy=value;},transact,confirmations:Math.max(3,config.confirmations),hourlyTest,indexedPayments,refreshReadiness:checkReadiness,maintainOracles:async()=>completedOracles,onPhase:value=>{phase=value;}});
   if(optionalSeedWarnings.length){result.warnings=optionalSeedWarnings;result.testRewardSeedStatus='OPTIONAL_TEST_FAUCET_UNAVAILABLE_VERIFIED_REWARD_BUDGET_USED';}
   if(state.seedTest?.report)result.testRewardSeed=state.seedTest.report;
   result.maxFeesReservedWei=Object.values(state.transactions).reduce((sum,t)=>sum+BigInt(t.maxFee),0n).toString();
