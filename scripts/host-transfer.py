@@ -23,6 +23,8 @@ import tempfile
 import time
 
 DESTINATION = '185.114.206.44'
+INSTALL_ROOT = '/opt/globaldroptrade'
+SITE_PORT = 8898
 REMOTE_BASE = '/var/lib/globaldroptrade-host-migration'
 LOCAL_BASE = Path('/var/lib/globaldroptrade-host-transfer')
 REPO = Path(__file__).resolve().parent.parent
@@ -374,7 +376,7 @@ if os.geteuid()!=0:die('HOST_TRANSFER_TARGET_ROOT_REQUIRED')
 if base.resolve()!=base:die('HOST_TRANSFER_TARGET_BASE_SYMLINK')
 private(base,True);p=base/'prepared.json';private(p)
 marker=json.loads(p.read_text())
-if marker.get('version')!=1 or marker.get('destinationIp')!=data['destinationIp'] or marker.get('phase')!='prepared':die('HOST_TRANSFER_TARGET_NOT_PREPARED')
+if marker.get('version')!=1 or marker.get('destinationIp')!=data['destinationIp'] or marker.get('phase')!='prepared' or marker.get('installRoot')!='/opt/globaldroptrade' or marker.get('sitePort')!=8898:die('HOST_TRANSFER_TARGET_NOT_PREPARED')
 if platform.machine()!=data['sourceArchitecture']:die('HOST_TRANSFER_ARCHITECTURE_MISMATCH')
 machine=hashlib.sha256(pathlib.Path('/etc/machine-id').read_bytes()).hexdigest()
 if machine==data['machineIdHash']:die('HOST_TRANSFER_SOURCE_EQUALS_TARGET')
@@ -436,7 +438,7 @@ class Connection:
 
     def stage_check(self):
         subprocess.run(['ssh', *self.options, 'root@'+self.target,
-            shlex.join(['python3', '/opt/globaldroptrade-host-bootstrap/scripts/host-restore.py',
+            shlex.join(['python3', INSTALL_ROOT+'/scripts/host-restore.py',
                         '--stage-check'])], check=True)
 
     def close(self):
@@ -497,7 +499,8 @@ def main(argv=None):
         refuse_unmanaged_jobs()
         api_user = pwd.getpwnam('globaldroptrade-api')
         public_config = current_config()
-        request = {**identity, 'destinationIp': args.target, 'sourceBytes': size}
+        request = {**identity, 'destinationIp': args.target, 'sourceBytes': size,
+                   'installRoot':INSTALL_ROOT, 'sitePort':SITE_PORT}
         source_release = ''
         if shutil.which('git'):
             source_release = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=REPO,
@@ -534,6 +537,7 @@ def main(argv=None):
                         'port':args.port, 'phase':'staging', 'sourceUnits':units}
                     atomic_json(state_path, state)
                 manifest = {**identity, 'version':1, 'destinationIp':args.target,
+                    'installRoot':INSTALL_ROOT, 'sitePort':SITE_PORT,
                     'phase':'staging', 'consistent':False, 'sourceFrozen':False,
                     'sourceStatePath':str(state_path), 'paths':list(map(str, paths)),
                     'apiUser':{'uid':api_user.pw_uid,'gid':api_user.pw_gid},

@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -23,21 +24,25 @@ def fixture(base):
     roots = ['/etc/globaldroptrade', '/var/lib/globaldroptrade', '/var/lib/globaldroptrade-api',
              '/opt/globaldroptrade-api', '/var/www/globaldroptrade']
     for logical in roots: m.imported(stage, logical).mkdir(parents=True, mode=0o700, exist_ok=True)
+    roots.append('/etc/systemd/system/globaldroptrade-api.service')
     files = {
         '/etc/globaldroptrade/trades.env':'TRADES_CHAIN_ID=97\nTRADES_VAULT_ADDRESS=0x'+'12'*20+'\n',
         '/etc/globaldroptrade/operator.key':'11'*32+'\n',
         '/var/lib/globaldroptrade/worker/journal.json':{'transactions':{'saved':{'raw':'signed-bytes','block':1}}},
         '/var/lib/globaldroptrade-api/community.json':{'tickets':[]},
+        '/etc/systemd/system/globaldroptrade-api.service':'[Service]\nWorkingDirectory=/opt/globaldroptrade-api/current\nExecStart=/usr/bin/node /opt/globaldroptrade-api/current/server/trades-api.mjs\n',
     }
     for logical, value in files.items(): write(m.imported(stage, logical), value)
     api = m.imported(stage, '/opt/globaldroptrade-api')
     (api/'releases/r0').mkdir(parents=True)
     write(api/'releases/r0/package.json', {'name':'test'})
     (api/'current').symlink_to('releases/r0')
-    write(base/'prepared.json', {'version':1,'destinationIp':m.DESTINATION,'phase':'prepared'})
+    write(base/'prepared.json', {'version':1,'destinationIp':m.DESTINATION,'phase':'prepared',
+                                'installRoot':str(m.INSTALL_ROOT),'sitePort':m.SITE_PORT})
     manifest = {'version':1,'destinationIp':m.DESTINATION,'sourceId':'a'*64,
                 'sourceArchitecture':'x86_64','sourceHostname':'old-test-host',
                 'phase':'copied','consistent':True,'sourceFrozen':True,'paths':roots,
+                'installRoot':str(m.INSTALL_ROOT),'sitePort':m.SITE_PORT,
                 'criticalHashes':{name:m.digest(m.imported(stage,name)) for name in files}}
     write(base/'transfer-manifest.json', manifest)
     return stage, manifest
@@ -90,6 +95,77 @@ class RestoreTests(unittest.TestCase):
                      '/etc/systemd/system/multi-user.target.wants','/etc/letsencrypt/accounts',
                      '/root/global-fresh-reset.good/../../dravon-main']:
             self.assertFalse(m.allowed_root(name), name)
+
+    def test_legacy_root_destinations_are_inside_dedicated_project(self):
+        self.assertEqual(m.destination_path('/root/global-fresh-reset.Release'),
+                         Path('/opt/globaldroptrade/legacy/root/global-fresh-reset.Release'))
+        self.assertEqual(m.destination_path('/root/global-testnet-v071/.testnet-server/deployer.key'),
+                         Path('/opt/globaldroptrade/legacy/root/global-testnet-v071/.testnet-server/deployer.key'))
+        self.assertEqual(m.destination_path('/etc/globaldroptrade/trades.env'), Path('/etc/globaldroptrade/trades.env'))
+
+    def test_legacy_archive_hashes_use_relocated_destinations(self):
+        logical = '/root/global-testnet-v071/.testnet-server/deployer.key'
+        live = Path(self.temp.name)/'live'
+        path = live/'opt/globaldroptrade/legacy/root/global-testnet-v071/.testnet-server/deployer.key'
+        write(path, '11'*32)
+        m.verify_hashes(live, {logical:m.digest(path)}, ['/root/global-testnet-v071/.testnet-server'], relocated=True)
+        with self.assertRaises(FileNotFoundError):
+            m.verify_hashes(live, {logical:m.digest(path)}, ['/root/global-testnet-v071/.testnet-server'])
+
+    def test_legacy_existing_destination_is_checked_in_dedicated_project(self):
+        install = Path(self.temp.name)/'project'
+        archive = install/'legacy/root/global-fresh-reset.Release'; archive.mkdir(parents=True)
+        with patch.object(m,'INSTALL_ROOT',install), patch.object(m,'check_live_parents'):
+            with self.assertRaisesRegex(RuntimeError,'EXISTING_GLOBAL_PATH'):
+                m.preflight_destinations(['/root/global-fresh-reset.Release'], {})
+
+    def test_legacy_copy_does_not_write_root_home(self):
+        logical = '/root/global-fresh-reset.Release'
+        source = m.imported(self.stage,logical); write(source/'saved.json',{'retained':True})
+        install = Path(self.temp.name)/'project'; calls = []
+        def rsync(args, **kw):
+            self.assertEqual(args[0],'rsync')
+            self.assertFalse(args[-1].startswith('/root/'))
+            shutil.copytree(args[-2],args[-1],dirs_exist_ok=True,symlinks=True); calls.append(args)
+        state = {'restoredPaths':[]}
+        with patch.object(m,'INSTALL_ROOT',install),patch.object(m,'check_live_parents'),patch.object(m,'call',rsync):
+            m.copy_roots(self.stage,{'paths':[logical]},state,self.base/'copy-state.json')
+        self.assertEqual(len(calls),1)
+        self.assertTrue((install/'legacy/root/global-fresh-reset.Release/saved.json').is_file())
+
+    def test_relocated_symlinks_preserve_source_import_and_resolution(self):
+        logical = '/root/global-fresh-reset.Release'
+        root = self.stage/'root/global-fresh-reset.Release'; root.mkdir(parents=True)
+        write(root/'data','fixture')
+        (root/'absolute').symlink_to(logical+'/data')
+        (root/'relative').symlink_to('data')
+        install = Path(self.temp.name)/'project'
+        live = install/'legacy/root/global-fresh-reset.Release'; live.mkdir(parents=True)
+        write(live/'data','fixture')
+        (live/'absolute').symlink_to(logical+'/data'); (live/'relative').symlink_to('data')
+        with patch.object(m,'INSTALL_ROOT',install):
+            m.relocate_symlinks(self.stage,[logical]); m.relocate_symlinks(self.stage,[logical])
+        self.assertEqual((live/'absolute').resolve(),live/'data')
+        self.assertEqual((live/'relative').resolve(),live/'data')
+        self.assertEqual((root/'absolute').readlink(), Path(logical+'/data'))
+
+    def test_fallback_key_provision_is_private_atomic_and_never_overwrites(self):
+        install = Path(self.temp.name)/'project'
+        source = install/'legacy/root/global-testnet-v071/.testnet-server/deployer.key'
+        write(source,'11'*32+'\n')
+        target = Path(self.temp.name)/'etc/migration-deployer.key'; target.parent.mkdir()
+        with patch.object(m,'INSTALL_ROOT',install), patch.object(m,'check_live_parents'):
+            m.provision_fallback_key(target)
+            self.assertEqual(target.read_bytes(),source.read_bytes())
+            self.assertEqual(target.stat().st_mode&0o777,0o600)
+            target.write_text('22'*32+'\n')
+            m.provision_fallback_key(target)
+            self.assertEqual(target.read_text(),'22'*32+'\n')
+
+    def test_active_api_cannot_depend_on_root_home(self):
+        path = m.imported(self.stage,'/etc/systemd/system/globaldroptrade-api.service')
+        write(path,'[Service]\nWorkingDirectory=/root/global-fresh-reset.Release\n')
+        with self.assertRaisesRegex(RuntimeError,'API_ROOT_RUNTIME'):m.load_snapshot(self.base,'x86_64')
 
     def test_exact_global_renewal_account_root_allowed(self):
         base = '/etc/letsencrypt/accounts/acme-v02.api.letsencrypt.org/directory/'
@@ -177,7 +253,7 @@ class RestoreTests(unittest.TestCase):
 
     def test_api_start_failure_has_write_ahead_resume_phase(self):
         manifest = self.manifest
-        state = {'version':1,'manifestSha256':m.digest(self.base/'transfer-manifest.json'),
+        state = {'version':1,'layoutVersion':m.LAYOUT_VERSION,'manifestSha256':m.digest(self.base/'transfer-manifest.json'),
                  'sourceId':manifest['sourceId'],'phase':'verified','restoredPaths':manifest['paths']}
         write(self.base/'restore-state.json', state)
         def invoke(args, **kw):
@@ -190,11 +266,18 @@ class RestoreTests(unittest.TestCase):
         self.assertEqual(json.loads((self.base/'restore-state.json').read_text())['phase'],'api-started')
 
     def test_completed_session_never_restarts_units(self):
-        write(self.base/'restore-state.json', {'version':1,'manifestSha256':m.digest(self.base/'transfer-manifest.json'),
+        write(self.base/'restore-state.json', {'version':1,'layoutVersion':m.LAYOUT_VERSION,'manifestSha256':m.digest(self.base/'transfer-manifest.json'),
               'sourceId':self.manifest['sourceId'],'phase':'complete','restoredPaths':self.manifest['paths']})
         with patch.object(m,'BASE',self.base),patch.object(m.platform,'machine',lambda:'x86_64'), \
              patch.object(m,'call',side_effect=AssertionError('called host command')):
             m.main(['--execute'])
+
+    def test_old_root_layout_session_is_not_resumed(self):
+        write(self.base/'restore-state.json', {'version':1,'manifestSha256':m.digest(self.base/'transfer-manifest.json'),
+              'sourceId':self.manifest['sourceId'],'phase':'copying','restoredPaths':[]})
+        with patch.object(m,'BASE',self.base),patch.object(m.platform,'machine',lambda:'x86_64'), \
+             patch.object(m,'call',side_effect=AssertionError('called host command')):
+            with self.assertRaisesRegex(RuntimeError,'RESTORE_SESSION_MISMATCH'):m.main(['--execute'])
 
 
 if __name__ == '__main__': unittest.main()

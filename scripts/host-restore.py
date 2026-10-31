@@ -19,6 +19,9 @@ import time
 
 BASE = Path('/var/lib/globaldroptrade-host-migration')
 DESTINATION = '185.114.206.44'
+INSTALL_ROOT = Path('/opt/globaldroptrade')
+SITE_PORT = 8898
+LAYOUT_VERSION = 2
 FIXED_ROOTS = {
     '/etc/globaldroptrade', '/var/lib/globaldroptrade',
     '/var/lib/globaldroptrade-api', '/var/www/globaldroptrade',
@@ -82,6 +85,14 @@ def imported(import_root, logical):
     return import_root/str(PurePosixPath(logical)).lstrip('/')
 
 
+def destination_path(logical):
+    """Keep legacy source checkouts out of the destination root home."""
+    p = PurePosixPath(logical)
+    if PurePosixPath('/root') in p.parents:
+        return INSTALL_ROOT/'legacy/root'/str(p.relative_to('/root'))
+    return Path(logical)
+
+
 def resolve_import(import_root, logical, paths):
     """Resolve absolute source symlinks inside the import, never on this host."""
     current = posixpath.normpath(str(logical))
@@ -132,12 +143,12 @@ def digest(path):
     return h.hexdigest()
 
 
-def verify_hashes(root, hashes, paths):
+def verify_hashes(root, hashes, paths, relocated=False):
     for name, expected in hashes.items():
         if not isinstance(name, str) or not covered(name, paths) or str(PurePosixPath(name)) != name:
             fail('HASH_PATH_INVALID')
         if not isinstance(expected, str) or not re.fullmatch('[0-9a-f]{64}', expected): fail('HASH_INVALID')
-        path = imported(root, name)
+        path = imported(root, str(destination_path(name)) if relocated else name)
         for parent in path.parents:
             if parent == root: break
             if parent.is_symlink(): fail('CRITICAL_PATH_SYMLINK_PARENT')
@@ -162,15 +173,32 @@ def validate_renewal_accounts(stage, paths):
         if not imported(stage, directory+'/regr.json').is_file(): fail('RENEWAL_REGISTRATION_REQUIRED')
 
 
+def validate_api_runtime(stage):
+    unit = imported(stage, '/etc/systemd/system/globaldroptrade-api.service')
+    if not unit.is_file() or unit.is_symlink(): fail('GLOBAL_API_UNIT_REQUIRED')
+    files = [unit]
+    dropins = unit.with_name(unit.name+'.d')
+    if dropins.is_dir(): files += sorted(dropins.glob('*.conf'))
+    for path in files:
+        if not path.is_file() or path.is_symlink(): fail('GLOBAL_API_UNIT_REQUIRED')
+        for line in path.read_text().splitlines():
+            if '=' not in line or line.lstrip().startswith(('#',';')): continue
+            key, value = line.split('=',1)
+            if key.strip().startswith('Exec') or key.strip() in ('WorkingDirectory','EnvironmentFile','RootDirectory'):
+                if '/root/' in value or value.strip() == '/root': fail('API_ROOT_RUNTIME_REVIEW_REQUIRED')
+
+
 def load_snapshot(base, architecture=None, stage_check=False):
     private(base, True)
     prepared = read_private_json(base/'prepared.json')
-    if prepared.get('version') != 1 or prepared.get('destinationIp') != DESTINATION:
+    if (prepared.get('version') != 1 or prepared.get('destinationIp') != DESTINATION or
+        prepared.get('installRoot') != str(INSTALL_ROOT) or prepared.get('sitePort') != SITE_PORT):
         fail('DESTINATION_NOT_PREPARED')
     m = read_private_json(base/'transfer-manifest.json')
     phase_valid = (m.get('phase') == 'staged-live' and m.get('consistent') is False and m.get('sourceFrozen') is False
                    if stage_check else m.get('phase') == 'copied' and m.get('consistent') is True and m.get('sourceFrozen') is True)
-    if m.get('version') != 1 or m.get('destinationIp') != DESTINATION or not phase_valid:
+    if (m.get('version') != 1 or m.get('destinationIp') != DESTINATION or not phase_valid or
+        m.get('installRoot') != str(INSTALL_ROOT) or m.get('sitePort') != SITE_PORT):
         fail('CONSISTENT_FENCED_SNAPSHOT_REQUIRED')
     if m.get('sourceArchitecture') != (architecture or platform.machine()): fail('ARCHITECTURE_MISMATCH')
     if not isinstance(m.get('sourceId'), str) or not re.fullmatch('[0-9a-f]{64}', m['sourceId']): fail('SOURCE_ID_REQUIRED')
@@ -187,6 +215,7 @@ def load_snapshot(base, architecture=None, stage_check=False):
         fail('CRITICAL_HASHES_REQUIRED')
     stage = base/'import'; private(stage, True)
     validate_tree(stage, paths)
+    validate_api_runtime(stage)
     validate_renewal_accounts(stage, paths)
     if not stage_check:
         critical_roots = ['/etc/globaldroptrade', '/var/lib/globaldroptrade',
@@ -235,7 +264,7 @@ def preflight_destinations(paths, state):
     owned = set(state.get('restoredPaths', []))
     if state.get('currentPath'): owned.add(state['currentPath'])
     for logical in paths:
-        p = Path(logical); check_live_parents(p)
+        p = destination_path(logical); check_live_parents(p)
         if (p.exists() or p.is_symlink()) and logical not in owned: fail('EXISTING_GLOBAL_PATH_REVIEW_REQUIRED')
 
 
@@ -282,7 +311,7 @@ def rpc_probe(stage, paths):
 def copy_roots(stage, manifest, state, state_file):
     for logical in sorted(manifest['paths'], key=lambda x: (len(PurePosixPath(x).parts), x)):
         state['currentPath'] = logical; save(state_file, state)
-        source, target = imported(stage, logical), Path(logical)
+        source, target = imported(stage, logical), destination_path(logical)
         check_live_parents(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.is_dir() and not source.is_symlink():
@@ -292,6 +321,64 @@ def copy_roots(stage, manifest, state, state_file):
             call(['rsync', '-aHAX', '--numeric-ids', '--', str(source), str(target)])
         if logical not in state['restoredPaths']: state['restoredPaths'].append(logical)
         state.pop('currentPath', None); save(state_file, state)
+
+
+def relocate_symlinks(stage, paths):
+    """Rewrite only copied links whose original resolution changed with relocation."""
+    for logical in paths:
+        source = imported(stage, logical)
+        entries = [source]
+        if source.is_dir() and not source.is_symlink():
+            for directory, dirs, files in os.walk(source, followlinks=False):
+                entries += [Path(directory)/name for name in dirs+files]
+        for entry in entries:
+            if not entry.is_symlink(): continue
+            name = '/'+str(entry.relative_to(stage))
+            old_link = os.readlink(entry)
+            logical_target = posixpath.normpath(old_link if old_link.startswith('/') else
+                                               posixpath.join(posixpath.dirname(name), old_link))
+            target = destination_path(logical_target)
+            live = destination_path(name)
+            new_link = str(target) if old_link.startswith('/') else os.path.relpath(target, live.parent)
+            if old_link == new_link: continue
+            if not live.is_symlink() or os.readlink(live) not in (old_link, new_link):
+                fail('RELOCATED_LINK_REVIEW_REQUIRED')
+            if os.readlink(live) == new_link: continue
+            fd, name = tempfile.mkstemp(prefix='.host-relocation-', dir=live.parent)
+            os.close(fd); temporary = Path(name); temporary.unlink()
+            try:
+                temporary.symlink_to(new_link)
+                os.replace(temporary, live)
+                directory = os.open(live.parent, os.O_DIRECTORY)
+                try: os.fsync(directory)
+                finally: os.close(directory)
+            finally:
+                if temporary.is_symlink(): temporary.unlink()
+
+
+def provision_fallback_key(target=None):
+    """Preserve the verified legacy deployer without creating a new /root tree."""
+    target = Path('/etc/globaldroptrade/migration-deployer.key') if target is None else Path(target)
+    if target.exists() or target.is_symlink():
+        private(target)
+        return
+    source = destination_path('/root/global-testnet-v071/.testnet-server/deployer.key')
+    if not source.exists(): return
+    private(source)
+    value = source.read_bytes()
+    if not re.fullmatch(rb'(?:0x)?[0-9a-fA-F]{64}', value.strip()): fail('LEGACY_DEPLOYER_KEY_INVALID')
+    check_live_parents(target)
+    fd, name = tempfile.mkstemp(prefix='.migration-deployer-', dir=target.parent)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(value); f.flush(); os.fsync(f.fileno())
+        try: os.link(name, target)
+        except FileExistsError: private(target)
+        directory = os.open(target.parent, os.O_DIRECTORY)
+        try: os.fsync(directory)
+        finally: os.close(directory)
+    finally:
+        os.unlink(name)
 
 
 def disable_signers(manifest):
@@ -355,14 +442,16 @@ def main(args=None):
         state_file = BASE/'restore-state.json'
         if state_file.exists():
             state = read_private_json(state_file)
-            if state.get('version') != 1 or state.get('manifestSha256') != identity or state.get('sourceId') != manifest['sourceId']:
+            if (state.get('version') != 1 or state.get('layoutVersion') != LAYOUT_VERSION or
+                state.get('manifestSha256') != identity or state.get('sourceId') != manifest['sourceId']):
                 fail('RESTORE_SESSION_MISMATCH')
             if state.get('phase') == 'complete':
                 print('HOST_RESTORE_ALREADY_COMPLETE'); return
             if state.get('phase') not in ('copying', 'copied', 'verified', 'api-started'):
                 fail('RESTORE_PHASE_INVALID')
         else:
-            state = {'version':1, 'manifestSha256':identity, 'sourceId':manifest['sourceId'], 'phase':'copying', 'restoredPaths':[]}
+            state = {'version':1, 'layoutVersion':LAYOUT_VERSION, 'manifestSha256':identity,
+                     'sourceId':manifest['sourceId'], 'phase':'copying', 'restoredPaths':[]}
         inactive_target(allow_api=state.get('phase') == 'api-started')
         preflight_destinations(manifest['paths'], state)
         config = rpc_probe(stage, manifest['paths'])
@@ -371,9 +460,11 @@ def main(args=None):
         if not state_file.exists(): save(state_file, state)
         if state.get('phase') == 'copying':
             copy_roots(stage, manifest, state, state_file)
-            verify_hashes(Path('/'), manifest['criticalHashes'], manifest['paths'])
+            verify_hashes(Path('/'), manifest['criticalHashes'], manifest['paths'], relocated=True)
             state['phase'] = 'copied'; save(state_file, state)
         if state.get('phase') == 'copied':
+            relocate_symlinks(stage, manifest['paths'])
+            provision_fallback_key()
             user = pwd.getpwnam('globaldroptrade-api')
             call(['chown', '-R', '--no-dereference', str(user.pw_uid)+':'+str(user.pw_gid), '/var/lib/globaldroptrade-api'])
             call(['systemctl', 'daemon-reload']); disable_signers(manifest)

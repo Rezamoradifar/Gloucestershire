@@ -26,6 +26,10 @@ esac
 case "${VERSION_ID:-}" in 22.04|24.04) ;; *) echo 'HOST_INSTALL_UBUNTU_22_OR_24_REQUIRED'; exit 1;; esac
 case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) echo 'HOST_INSTALL_UNSUPPORTED_ARCHITECTURE'; exit 1;; esac
 for tool in python3 systemctl flock; do command -v "$tool" >/dev/null || { echo "HOST_INSTALL_MISSING_TOOL=$tool"; exit 1; }; done
+install_root=/opt/globaldroptrade
+[ "$PWD" = "$install_root" ] && [ ! -L "$install_root" ] || {
+  echo 'HOST_INSTALL_CHECKOUT_REQUIRED_AT_/opt/globaldroptrade'; exit 1;
+}
 
 state=/var/lib/globaldroptrade-host-migration
 python3 - "$state" <<'PY'
@@ -57,6 +61,8 @@ if [ "$mode" = --restore ] || [ "$mode" = --finish-testnet ]; then
     npm ci --omit=dev --ignore-scripts --no-audit --no-fund
     bash ubuntu-reset-fast-testnet-20261031.sh --execute
   fi
+  python3 scripts/host-site-port.py --execute
+  echo 'GLOBAL_HOST_READY http://185.114.206.44:8898'
   exit
 fi
 
@@ -71,6 +77,9 @@ if marker.exists() or marker.is_symlink():
     m = json.loads(marker.read_text())
     if m.get('version') != 1 or m.get('destinationIp') != sys.argv[2] or m.get('phase') != 'prepared':
         raise SystemExit('HOST_INSTALL_MARKER_REVIEW_REQUIRED')
+    if m.get('installRoot') != '/opt/globaldroptrade' or m.get('sitePort') != 8898:
+        if any((state/name).exists() for name in ('transfer-manifest.json', 'restore-state.json')):
+            raise SystemExit('HOST_INSTALL_LAYOUT_CHANGE_REQUIRES_REVIEW')
 roots = ['/etc/globaldroptrade', '/var/lib/globaldroptrade', '/var/lib/globaldroptrade-api',
          '/var/www/globaldroptrade', '/var/backups/globaldroptrade']
 roots += [p for p in glob.glob('/opt/globaldroptrade-*') if p != '/opt/globaldroptrade-host-bootstrap']
@@ -79,6 +88,14 @@ roots += glob.glob('/etc/nginx/sites-available/*globaldroptrade*')
 roots += glob.glob('/etc/nginx/sites-enabled/*globaldroptrade*')
 if any(os.path.lexists(p) for p in roots):
     raise SystemExit('HOST_INSTALL_EXISTING_GLOBAL_FILES_REVIEW_REQUIRED')
+PY
+
+python3 - <<'PY'
+import socket
+for address, port in [('0.0.0.0', 8898), ('127.0.0.1', 3115)]:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try: probe.bind((address, port))
+        except OSError: raise SystemExit('HOST_INSTALL_PORT_IN_USE='+str(port))
 PY
 
 [ "$(df -Pk /opt /var/lib /root | awk 'NR>1 {if ($4<4194304) bad=1} END {print bad+0}')" -eq 0 ] || {
@@ -95,13 +112,15 @@ fi
 if command -v ufw >/dev/null && LC_ALL=C ufw status | awk 'NR==1 {active=($0=="Status: active")} END {exit !active}'; then
   ufw allow 80/tcp
   ufw allow 443/tcp
+  ufw allow 8898/tcp
 fi
 python3 - "$state" "$target_ip" <<'PY'
 import json, os, platform, tempfile, sys
 from pathlib import Path
 p = Path(sys.argv[1]); path = p/'prepared.json'
 value = {'version': 1, 'destinationIp': sys.argv[2], 'phase': 'prepared',
-         'destinationArchitecture': platform.machine()}
+         'destinationArchitecture': platform.machine(),
+         'installRoot': '/opt/globaldroptrade', 'sitePort': 8898}
 fd, name = tempfile.mkstemp(prefix='.prepared-', dir=p)
 with os.fdopen(fd, 'w') as f:
     json.dump(value, f); f.flush(); os.fsync(f.fileno())
@@ -111,5 +130,6 @@ try: os.fsync(fd)
 finally: os.close(fd)
 PY
 echo "GLOBAL_NEW_HOST_PREPARED target=$target_ip"
+echo 'INSTALL_ROOT=/opt/globaldroptrade SITE_PORT=8898 SSH_PORT_UNCHANGED=true'
 echo 'The destination has no active Global signing worker. Transfer existing private configuration and journals from the old server next.'
 echo 'Do not run the legacy domain/community installers on this host: their historical IP and contract settings are fixed.'

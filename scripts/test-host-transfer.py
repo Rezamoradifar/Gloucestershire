@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -248,6 +249,40 @@ class TransferTests(unittest.TestCase):
             self.assertFalse(any(v['consistent'] for v in saved))
             self.assertEqual(state['phase'],'frozen')
             self.assertFalse(any(e[0]=='systemctl' and 'start' in e for e in events))
+
+    def test_stage_check_uses_new_install_root_and_keeps_ssh_port_22(self):
+        connection=m.Connection(m.DESTINATION,22,Path('/run/test-host-transfer'))
+        calls=[]
+        with patch.object(m.subprocess,'run',lambda args,**kw:calls.append(args)):
+            connection.stage_check()
+        command=calls[0]
+        self.assertEqual(command[command.index('-p')+1],'22')
+        self.assertEqual(shlex.split(command[-1]),
+            ['python3','/opt/globaldroptrade/scripts/host-restore.py','--stage-check'])
+        self.assertNotIn('8898',command)
+
+    def test_target_marker_requires_install_root_and_frontend_port(self):
+        with tempfile.TemporaryDirectory() as t:
+            base=Path(t);base.chmod(0o700)
+            template={'version':1,'destinationIp':m.DESTINATION,'phase':'prepared',
+                      'installRoot':'/opt/globaldroptrade','sitePort':8898}
+            script=m.REMOTE.replace("base=pathlib.Path('/var/lib/globaldroptrade-host-migration')",
+                                   'base=pathlib.Path('+repr(str(base))+')',1)
+            variants=[{k:v for k,v in template.items() if k!='installRoot'},
+                      {**template,'installRoot':'/opt/globaldroptrade-host-bootstrap'},
+                      {k:v for k,v in template.items() if k!='sitePort'},
+                      {**template,'sitePort':22},{**template,'sitePort':'8898'}]
+            for marker in variants:
+                write(base/'prepared.json',marker)
+                with patch('sys.stdin',io.StringIO(json.dumps({'destinationIp':m.DESTINATION}))), \
+                     patch('platform.machine',side_effect=AssertionError('Marker validation was bypassed')):
+                    with self.assertRaisesRegex(SystemExit,'TARGET_NOT_PREPARED'):
+                        exec(script,{})
+            write(base/'prepared.json',template)
+            with patch('sys.stdin',io.StringIO(json.dumps({'destinationIp':m.DESTINATION}))), \
+                 patch('platform.machine',side_effect=StopIteration('marker accepted')):
+                with self.assertRaisesRegex(StopIteration,'marker accepted'):
+                    exec(script,{})
 
 
 if __name__=='__main__':unittest.main()

@@ -12,3 +12,5 @@ node_modules/
 
 .mainnet-server/
 .mainnet-preparation/
+# Private migration archives are retained under the application directory.
+/legacy/
