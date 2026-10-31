@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 from pathlib import Path
 import stat
 import subprocess
@@ -148,6 +149,8 @@ def quiesce():
 
 def main():
     if sys.argv[1:] != ['--execute'] or os.getuid() != 0: raise RuntimeError('RESET_ROOT_EXPLICIT_EXECUTE_REQUIRED')
+    if socket.gethostname().split('.', 1)[0] == 'vps-titan-5320':
+        raise RuntimeError('RESET_ISOLATED_SHARED_HOST_RUNTIME_REQUIRED')
     os.umask(0o077)
     SESSION.mkdir(mode=0o700, exist_ok=True); private(SESSION, True)
     with locks([SESSION/'run.lock']):

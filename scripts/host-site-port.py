@@ -222,6 +222,8 @@ def main(args=None):
     mode.add_argument('--execute', action='store_true'); mode.add_argument('--check', action='store_true')
     options = p.parse_args(args)
     if os.geteuid() != 0: fail('ROOT_REQUIRED')
+    if socket.gethostname().split('.', 1)[0] == 'vps-titan-5320':
+        fail('ISOLATED_SHARED_HOST_RUNTIME_REQUIRED')
     os.umask(0o077)
     tool = SitePort()
     if options.check:

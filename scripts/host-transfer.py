@@ -360,7 +360,7 @@ def financial_locks(base=Path('/var/lib/globaldroptrade'), fallback=Path('/root/
 
 
 REMOTE = r'''
-import fcntl,hashlib,json,os,pathlib,platform,shutil,stat,sys,tempfile
+import fcntl,hashlib,json,os,pathlib,platform,shutil,socket,stat,sys,tempfile
 base=pathlib.Path('/var/lib/globaldroptrade-host-migration')
 data=json.load(sys.stdin)
 def die(reason):raise SystemExit(reason)
@@ -373,6 +373,7 @@ def save(p,v):
  os.replace(name,p)
  fd=os.open(base,os.O_DIRECTORY);os.fsync(fd);os.close(fd)
 if os.geteuid()!=0:die('HOST_TRANSFER_TARGET_ROOT_REQUIRED')
+if socket.gethostname().split('.',1)[0]=='vps-titan-5320':die('HOST_TRANSFER_TARGET_ISOLATED_SHARED_HOST_RUNTIME_REQUIRED')
 if base.resolve()!=base:die('HOST_TRANSFER_TARGET_BASE_SYMLINK')
 private(base,True);p=base/'prepared.json';private(p)
 marker=json.loads(p.read_text())

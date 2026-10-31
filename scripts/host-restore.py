@@ -11,6 +11,7 @@ import platform
 import posixpath
 import pwd
 import re
+import socket
 import stat
 import subprocess
 import sys
@@ -428,6 +429,8 @@ def main(args=None):
     modes.add_argument('--stage-check', action='store_true')
     options = parser.parse_args(args)
     if os.geteuid() != 0: fail('ROOT_REQUIRED')
+    if socket.gethostname().split('.', 1)[0] == 'vps-titan-5320':
+        fail('ISOLATED_SHARED_HOST_RUNTIME_REQUIRED')
     os.umask(0o077)
     private(BASE, True)
     fd = os.open(BASE/'restore.lock', os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW, 0o600)

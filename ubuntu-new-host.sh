@@ -14,6 +14,9 @@ fi
 case "$mode" in --prepare|--restore|--finish-testnet) ;; *) echo 'HOST_INSTALL_MODE_REQUIRED'; exit 1;; esac
 [ "$(id -u)" -eq 0 ] || { echo 'HOST_INSTALL_ROOT_REQUIRED'; exit 1; }
 [ "$target_ip" = 185.114.206.44 ] || { echo 'HOST_INSTALL_EXPECTED_DESTINATION_REQUIRED'; exit 1; }
+[ "$(hostname -s)" != vps-titan-5320 ] || {
+  echo 'HOST_INSTALL_ISOLATED_SHARED_HOST_RUNTIME_REQUIRED'; exit 1;
+}
 [ "$(hostname -s)" != vps-cosmos-8569 ] || { echo 'HOST_INSTALL_RUN_ON_NEW_SERVER'; exit 1; }
 case " $(hostname -I) " in
   *" $target_ip "*) ;;
