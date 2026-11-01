@@ -27,6 +27,7 @@ from pathlib import Path
 r=Path(os.environ['SPLIT_FIXTURE']);a=sys.argv[1:]
 with (r/'calls').open('a') as f:f.write(' '.join(a)+'\\n')
 if a[0]=='is-active':print('active')
+elif a[0]=='show' and '--property=LoadState' in a:print('not-found' if os.environ['SPLIT_MODE']=='missing-rpc-timer' else 'loaded')
 elif a[0]=='show':print('active' if os.environ['SPLIT_MODE']=='busy' else 'inactive')
 ''')
    (source/'ubuntu-install-rpc-failover.sh').write_text('''#!/bin/bash
@@ -37,17 +38,19 @@ echo INSTALL_RPC >> "$SPLIT_FIXTURE/calls"
    result=subprocess.run(['bash',str(source/'install.sh'),'--execute']+(['--quarter-test'] if quarter else []),env=env,text=True,capture_output=True,timeout=30)
    calls=(root/'calls').read_text();self.assertEqual(journal.read_bytes(),before)
    self.assertNotIn('stop globaldroptrade-zero-daily.service',calls);self.assertNotIn('stop globaldroptrade-rpc-failover.service',calls)
-   if mode=='success':
+   if mode in ('success','missing-rpc-timer'):
     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
     new=(old.parent.parent/'current').resolve();self.assertNotEqual(new,old)
     for name in NAMES:self.assertEqual((new/'scripts'/name).read_text(),'reviewed '+name)
     self.assertIn('--indexed-payments',(root/'etc/systemd/system/globaldroptrade-zero-daily.service.d/split-index.conf').read_text())
     index=(root/'etc/systemd/system/globaldroptrade-position-index.service').read_text();self.assertIn('index-zero-positions.mjs --execute --fast-testnet',index);self.assertIn('InaccessiblePaths=',index)
     self.assertIn('SPLIT_HOURLY_WORKER_INSTALLED',result.stdout)
-    self.assertLess(calls.index('--oracles-only --check'),calls.index('stop globaldroptrade-rpc-failover.timer'))
+    if mode=='success':self.assertLess(calls.index('--oracles-only --check'),calls.index('stop globaldroptrade-rpc-failover.timer'))
+    else:self.assertNotIn('stop globaldroptrade-rpc-failover.timer',calls)
    if quarter:self.assertIn('scripts/install-quarter-policy.mjs --execute --locked-fd 9',calls)
    return result,calls
  def test_success_preserves_paid_journal_and_uses_signer_free_index_and_serialized_payments(self):self.case()
+ def test_new_host_missing_rpc_timer_installs_without_losing_journal(self):self.case('missing-rpc-timer')
  def test_quarter_install_uses_the_held_financial_lock(self):self.case(quarter=True)
  def test_preflight_failure_changes_no_timers(self):
   r,c=self.case('preflight-failure');self.assertNotEqual(r.returncode,0);self.assertNotIn('stop ',c)

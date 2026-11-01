@@ -41,3 +41,21 @@ test('importing the automation library from stdin tolerates the non-file argv en
  assert.equal(result.status,0,result.stdout+result.stderr);
  assert.equal(result.stdout,'IMPORTED_FROM_STDIN\n');assert.equal(result.stderr,'');
 });
+
+for(const symlink of [false,true])test('the position indexer CLI executes through '+(symlink?'current symlink':'direct path'),()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'global-index-entrypoint-'));
+ try{
+  let root=project;
+  if(symlink){root=path.join(directory,'current');fs.symlinkSync(project,root,'dir');}
+  const result=spawnSync(process.execPath,[path.join(root,'scripts/index-zero-positions.mjs'),'--invalid'],{encoding:'utf8',timeout:15000});
+  assert.equal(result.status,1,result.stdout+result.stderr);
+  assert.match(result.stdout,/POSITION_INDEXER_WAITING/);
+  assert.equal(result.stderr,'');
+ }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
+test('importing the position indexer does not execute its CLI',()=>{
+ const source='await import('+JSON.stringify(pathToFileURL(path.join(project,'scripts/index-zero-positions.mjs')).href)+');process.stdout.write("IMPORTED\\n");';
+ const result=spawnSync(process.execPath,['--input-type=module','-'],{input:source,encoding:'utf8',timeout:15000});
+ assert.equal(result.status,0,result.stdout+result.stderr);
+ assert.equal(result.stdout,'IMPORTED\n');assert.equal(result.stderr,'');
+});

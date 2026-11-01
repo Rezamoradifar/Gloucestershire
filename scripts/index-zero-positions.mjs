@@ -46,4 +46,8 @@ async function main(){
  }catch(e){console.log('POSITION_INDEXER_WAITING '+JSON.stringify({blocker:/^(?:POSITION|ZERO_START|TESTNET|COMPLETE_LOG)_[A-Z0-9_]+$/.test(e.message||'')?e.message:'POSITION_INDEXER_RPC_OR_STATE_UNAVAILABLE',progressSaves:saves,transactionsSent:0,signerOpened:false}));process.exitCode=1;}
  finally{await provider?.destroy();for(const p of proof)await p.destroy();if(fd!==undefined)fs.closeSync(fd);}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)await main();
+let invokedUrl;
+try{
+ if(process.argv[1])invokedUrl=pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href;
+}catch{}
+if(import.meta.url===invokedUrl)await main();

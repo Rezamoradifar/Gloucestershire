@@ -13,6 +13,16 @@ flock -n 9 || { echo 'RPC_FAILOVER_INSTALL_BUSY'; exit 1; }
 case "$(systemctl show globaldroptrade-rpc-failover.service --property=ActiveState --value 2>/dev/null || true)" in
  active|activating|deactivating) echo 'RPC_FAILOVER_INSTALL_BUSY'; exit 1;;
 esac
+case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) exit 1;; esac
+node_bin="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin/node"
+[ -x "$node_bin" ] || { echo 'MANAGED_NODE_REQUIRED'; exit 1; }
+"$node_bin" --input-type=module <<'JS'
+import fs from 'node:fs';
+import {validateDailyPolicy} from './scripts/daily-profit.mjs';
+import {isPositionPolicy} from './scripts/position-profit.mjs';
+const p=validateDailyPolicy(JSON.parse(fs.readFileSync('/var/lib/globaldroptrade/fresh-fast-testnet-automation-v1/daily-policy.json')));
+if(p.chainId!==97||![3600,900].includes(p.periodSeconds)||!isPositionPolicy(p))throw Error('EXISTING_POSITION_TESTNET_POLICY_REQUIRED');
+JS
 python3 - <<'PY'
 import json,os,stat
 from pathlib import Path
@@ -22,7 +32,7 @@ with os.fdopen(fd) as f:
  s=os.fstat(f.fileno())
  if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_mode&0o077:raise SystemExit('PRIVATE_POLICY_REQUIRED')
  d=json.load(f)
-if d.get('chainId')!=97 or d.get('periodSeconds')!=3600 or d.get('basis')!='position-anniversary-principal':raise SystemExit('EXISTING_HOURLY_TESTNET_POLICY_REQUIRED')
+if d.get('chainId')!=97 or d.get('periodSeconds') not in (3600,900) or d.get('basis')!='position-anniversary-principal':raise SystemExit('EXISTING_HOURLY_TESTNET_POLICY_REQUIRED')
 PY
 umask 077
 base=/opt/globaldroptrade-rpc-failover

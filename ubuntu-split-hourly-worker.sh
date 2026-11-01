@@ -52,7 +52,9 @@ wait_idle(){
  done
  echo 'SPLIT_WORKER_BUSY_RETRY';return 75
 }
-systemctl stop globaldroptrade-rpc-failover.timer
+if [[ $(systemctl show globaldroptrade-rpc-failover.timer --property=LoadState --value) = loaded ]]; then
+ systemctl stop globaldroptrade-rpc-failover.timer
+fi
 wait_idle globaldroptrade-rpc-failover.service
 systemctl stop globaldroptrade-zero-daily.timer
 systemctl stop globaldroptrade-position-index.timer 2>/dev/null || true
