@@ -9,7 +9,7 @@ const events=new Interface([
 const hash=x=>typeof x==='string'&&/^0x[0-9a-f]{64}$/i.test(x);
 const safe=x=>Number.isSafeInteger(x)&&x>=0;
 export const positionBasis='position-anniversary-principal';
-export function isPositionPolicy(p){return p?.basis===positionBasis&&p.positionScheduleVersion===1;}
+export function isPositionPolicy(p){return p?.basis===positionBasis&&[1,2].includes(p.positionScheduleVersion);}
 
 // Bound only read work. Never race or cancel a financial send against a timer.
 export function positionReadBudget(provider,{clock=Date.now,milliseconds=90000}={}){
@@ -24,7 +24,7 @@ export function positionReadBudget(provider,{clock=Date.now,milliseconds=90000}=
 }
 
 export async function scanPositionHistory({provider,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,advanceCompletedTarget=false,milliseconds=90000,reserveMilliseconds=30000}){
- if(policy.chainId!==97||policy.periodSeconds!==3600||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
+ if(policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
  // Keep the 2,000-block scan cap, but commit smaller verified pages.
  maxRegistryPages=Math.min(maxRegistryPages,4);
  provider=positionReadBudget(provider,{milliseconds});
@@ -84,7 +84,7 @@ export async function indexedPositionCheckpoint({provider,policy,state}){
  if(!final)throw Error('POSITION_FINAL_BLOCK_REQUIRED');return final;
 }
 export async function planPositionHour({provider,vault,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,refreshDrainedTarget=true,indexedOnly=false}){
- if(policy.chainId!==97||policy.periodSeconds!==3600||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
+ if(policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
  provider=positionReadBudget(provider);
  state.positionPaid??={};state.positionClosed??={};
  let final,wasIndexed=false;
@@ -110,18 +110,31 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
  for(let i=0;i<assets.length;i++){provider.check();if((await vault.ledgers(assets[i],options)).principal!==principal[i])throw Error('POSITION_PRINCIPAL_INDEX_INCOMPLETE');}
  // Order overdue position hours by their fixed end time. The integrated
  // mode retains its target; indexed payments use the complete scanned prefix.
- const candidates=rows.map(([key,row])=>{
+ const quarter=policy.periodSeconds===900;
+ if(quarter&&(await provider.getBlock(policy.quarterCutover.block))?.hash!==policy.quarterCutover.hash)throw Error('POSITION_QUARTER_CUTOVER_REORG');
+ const hourly=rows.map(([key,row])=>{
   const paid=state.positionPaid[key]??0;if(!safe(paid))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
   const start=row.openedAt+paid*3600;if(!safe(start+3600))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
   return {key,row,paid,start,end:start+3600};
- }).filter(x=>!state.positionClosed[x.key]&&x.end<=final.timestamp).sort((a,b)=>a.end-b.end||a.key.localeCompare(b.key));
- if(!candidates.length){if(!indexedOnly){delete state.positionScanTarget;save();}if(!indexedOnly&&wasIndexed&&refreshDrainedTarget)return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,refreshDrainedTarget:false});const next=rows.filter(([key])=>!state.positionClosed[key]).map(([key,row])=>row.openedAt+((state.positionPaid[key]??0)+1)*3600);return {status:'not_due',nextDueAt:next.length?Math.min(...next):null};}
- const {key,row,paid,start,end}=candidates[0],snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number),o={blockTag:snapshot.number};
+ }).filter(x=>!state.positionClosed[x.key]&&x.end<=final.timestamp&&(!quarter||x.end<=policy.quarterCutover.timestamp));
+ const quarters=quarter?rows.map(([key,row])=>{
+  const paid=state.positionQuarterPaid?.[key]??0;if(!safe(paid))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
+  const start=Math.max(row.openedAt,policy.quarterCutover.timestamp)+paid*900;if(!safe(start+900))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
+  return {key,row,paid,start,end:start+900,quarter:true};
+ }).filter(x=>!state.positionClosed[x.key]&&!state.positionQuarterClosed?.[x.key]&&x.end<=final.timestamp):[];
+ const candidates=[...hourly,...quarters].sort((a,b)=>a.end-b.end||a.key.localeCompare(b.key));
+ if(!candidates.length){
+  if(!indexedOnly){delete state.positionScanTarget;save();}
+  if(!indexedOnly&&wasIndexed&&refreshDrainedTarget)return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,refreshDrainedTarget:false});
+  const next=rows.filter(([key])=>!state.positionClosed[key]&&(!quarter||!state.positionQuarterClosed?.[key])).map(([key,row])=>quarter?Math.max(row.openedAt,policy.quarterCutover.timestamp)+((state.positionQuarterPaid?.[key]??0)+1)*900:row.openedAt+((state.positionPaid[key]??0)+1)*3600);
+  return {status:'not_due',nextDueAt:next.length?Math.min(...next):null};
+ }
+ const chosen=candidates[0],{key,row,paid,start,end}=chosen,snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number),o={blockTag:snapshot.number};
  provider.check();
  const position=await vault.positionOf(row.member,BigInt(row.id),o);
  if(getAddress(position.asset)!==row.asset)throw Error('POSITION_ASSET_MISMATCH');
  const rate=await vault.dailyTargetBps(row.member,o);if(rate<0n||rate>1000n)throw Error('INVALID_PLAN_RATE');
- const amount=position.principal*rate/10000n,domain=['GLOBAL_POSITION_HOURLY_TEST_V1',policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
+ const amount=position.principal*rate/10000n,domain=[...(chosen.quarter?['GLOBAL_POSITION_QUARTER_TEST_V1',policy.quarterCutover.hash]:['GLOBAL_POSITION_HOURLY_TEST_V1']),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
  if(amount>0n){
   const ownId=keccak256(toUtf8Bytes(domain+':personal'));
   batches.push({id:ownId,asset:row.asset,recipients:[row.member],amounts:[amount.toString()]});
@@ -139,12 +152,12 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
   }
   if(recipients.length)batches.push({id:keccak256(toUtf8Bytes(domain+':referrals')),kind:'profit-referrals',asset:row.asset,recipients,amounts});
  }
- return {status:'ready',chainId:97,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,start,end,batches,positionCursor:{key,paid,next:paid+1,closed:position.principal===0n},nextDueAt:end};
+ return {status:'ready',chainId:97,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,start,end,batches,positionCursor:{key,paid,next:paid+1,...(chosen.quarter?{quarter:true}:{}),closed:position.principal===0n},nextDueAt:end};
 }
 
 export function completePositionHour(state,plan){
- const c=plan.positionCursor;
- if(!c||state.positionPaid?.[c.key]!==undefined&&state.positionPaid[c.key]!==c.paid||c.next!==c.paid+1)throw Error('POSITION_PAYMENT_CURSOR_CHANGED');
- state.positionPaid??={};state.positionPaid[c.key]=c.next;
- if(c.closed){state.positionClosed??={};state.positionClosed[c.key]=true;}
+ const c=plan.positionCursor,paidName=c?.quarter===true?'positionQuarterPaid':'positionPaid',closedName=c?.quarter===true?'positionQuarterClosed':'positionClosed';
+ if(!c||state[paidName]?.[c.key]!==undefined&&state[paidName][c.key]!==c.paid||c.next!==c.paid+1)throw Error('POSITION_PAYMENT_CURSOR_CHANGED');
+ state[paidName]??={};state[paidName][c.key]=c.next;
+ if(c.closed){state[closedName]??={};state[closedName][c.key]=true;}
 }

@@ -5,6 +5,7 @@ import ganache from 'ganache';
 import {BrowserProvider,Contract,ContractFactory,ZeroAddress,parseEther as E,keccak256,toUtf8Bytes} from 'ethers';
 import {validateDailyPolicy,hourlyTestPolicyFields} from '../scripts/daily-profit.mjs';
 import {runZeroStartAutomation} from '../scripts/zero-start-automation.mjs';
+import {quarterPolicyTransition} from '../scripts/install-quarter-policy.mjs';
 import {positionBasis,scanPositionHistory} from '../scripts/position-profit.mjs';
 const config=JSON.parse(fs.readFileSync('config/fresh-fast-testnet.json'));
 let rpc,p,owner,op,s,a,v,token,deployBlock,snapshot;
@@ -85,4 +86,12 @@ test('indexed payment mode drains bounded overdue hours without scanning and res
  await worker(q,state,{provider:noScan,indexedPayments:true});assert.equal(state.daily.epoch,8);assert.equal((await v.accounts(a[1],token.target)).profit,E('4'));
  const restored=JSON.parse(JSON.stringify(state));await worker(q,restored,{provider:noScan,indexedPayments:true});assert.equal(restored.daily.epoch,12);assert.equal((await v.accounts(a[1],token.target)).profit,E('6'));
  await worker(q,restored,{provider:noScan,indexedPayments:true,transact:()=>{throw Error('REPLAY');}});assert.equal(restored.daily.epoch,12);
+});
+
+test('the actual indexed worker switches to quarters without resetting old paid hours',async()=>{
+ const q=await policy(),state={transactions:{},daily:{epoch:0}};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(3600);await worker(q,state);
+ const legacy=structuredClone(state.daily.positionPaid),next=quarterPolicyTransition({policy:q,state,checkpoint:await p.getBlock('latest')});await advance(900);
+ await scanPositionHistory({provider:p,policy:next,state:state.daily,confirmations:0,advanceCompletedTarget:true});
+ const report=await worker(next,state,{indexedPayments:true});assert.equal(report.positionSchedule.intervalSeconds,900);assert.equal(report.positionSchedule.version,2);
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('1'));assert.deepEqual(state.daily.positionPaid,legacy);assert.equal(Object.values(state.daily.positionQuarterPaid)[0],1);
 });

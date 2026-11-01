@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "kind": "quarter-test-policy-validation",
+  "chainId": 97,
+  "periodSeconds": 900,
+  "positionScheduleVersion": 2,
+  "contractChanged": false,
+  "vpsActivated": false,
+  "publicTestnetTransactionsSent": 0,
+  "checks": {
+    "quarterTimingAndReferralTestsPassed": 4,
+    "functionalIndexAndWorkerTestsPassed": 14,
+    "workerDiagnosticsAndProductionRegressionTestsPassed": 37,
+    "hourlyAndGenerationRegressionTestsPassed": 17,
+    "archiveRpcTestsPassed": 20,
+    "fakeHostInstallerTestsPassed": 5,
+    "archiveRpcHostSafety": "passed",
+    "releaseStaging": "passed",
+    "syntax": "passed"
+  },
+  "preserved": [
+    "legacy paid-hour cursors",
+    "old deterministic hourly batch IDs",
+    "pending signed transaction journal",
+    "owner capital authority",
+    "withdrawal owner approval",
+    "mainnet 86400-second policy"
+  ],
+  "cutover": "canonical confirmed block; new quarters start after activation, old full hours remain owed",
+  "limitations": [
+    "Requires VPS installation and live receipts",
+    "Old partial hours are not converted to retroactive quarter credits",
+    "Existing RPC, indexing, gas-budget and reward-cash blockers can delay actual payouts"
+  ]
+}

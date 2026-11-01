@@ -1,5 +1,6 @@
 // Read-only evidence; account balances alone cannot prove historical payments.
 import {Interface,getAddress} from 'ethers';
+import {isQuarterTestPolicy} from './daily-profit.mjs';
 import {isPositionPolicy} from './position-profit.mjs';
 const abi=new Interface([
  'function batchProfit(bytes32,address,address[],uint256[])',
@@ -29,7 +30,7 @@ export async function auditProfitReceipt({provider,target,operator,credit,confir
  });
  return {status:'verified',transactionHash:credit.transactionHash,batchId:id,block:r.blockNumber,credits:rows};
 }
-export async function auditPositionWallet({vault,wallet,state,block}){
+export async function auditPositionWallet({vault,wallet,state,block,policy}){
  wallet=getAddress(wallet);const options={blockTag:block.number};
  const token=getAddress(await vault.usdt(options));
  const [count,rate,tier,account]=await Promise.all([vault.positionCount(wallet,options),vault.dailyTargetBps(wallet,options),vault.tierOf(wallet,options),vault.accounts(wallet,token,options)]);
@@ -40,8 +41,11 @@ export async function auditPositionWallet({vault,wallet,state,block}){
   const paid=state.positionPaid?.[key]??0;
   if(!Number.isSafeInteger(paid)||paid<0)throw Error('AUDIT_PAYMENT_CURSOR_INVALID');
   const known=Number.isSafeInteger(index?.openedAt)&&index.openedAt<=block.timestamp;
-  const due=known&&!state.positionClosed?.[key]&&position.principal>0n?Math.max(0,Math.floor((block.timestamp-index.openedAt)/3600)-paid):null;
-  positions.push({id,asset:getAddress(position.asset),principalUnits:position.principal.toString(),indexed:known,completedHours:paid,unprocessedFullHours:due});
+  const quarter=isQuarterTestPolicy(policy),legacyNow=quarter?Math.min(block.timestamp,policy.quarterCutover.timestamp):block.timestamp;
+  const due=known&&!state.positionClosed?.[key]&&position.principal>0n?Math.max(0,Math.floor((legacyNow-index.openedAt)/3600)-paid):null;
+  const quarterPaid=state.positionQuarterPaid?.[key]??0;if(!Number.isSafeInteger(quarterPaid)||quarterPaid<0)throw Error('AUDIT_PAYMENT_CURSOR_INVALID');
+  const quarterDue=quarter&&known&&!state.positionClosed?.[key]&&!state.positionQuarterClosed?.[key]&&position.principal>0n?Math.max(0,Math.floor((block.timestamp-Math.max(index.openedAt,policy.quarterCutover.timestamp))/900)-quarterPaid):null;
+  positions.push({id,asset:getAddress(position.asset),principalUnits:position.principal.toString(),indexed:known,completedHours:paid,unprocessedFullHours:due,...(isQuarterTestPolicy(policy)?{intervalSeconds:900,completedQuarters:quarterPaid,unprocessedFullQuarters:quarterDue}:{})});
  }
  return {wallet,block:block.number,rateBps:Number(rate),tier:Number(tier),token,principalUnits:account.principal.toString(),profitUnits:account.profit.toString(),positionCount:Number(count),positions};
 }

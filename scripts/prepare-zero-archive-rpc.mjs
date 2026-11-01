@@ -11,7 +11,7 @@ import {createZeroStartProofProviders} from './connect-zero-start.mjs';
 import {validateZeroStartRelease} from './deploy-zero-start.mjs';
 import {verifyZeroStartTarget,verifyZeroStartReadiness,sanitizeZeroStartArchiveProbeDiagnostic} from './zero-start-readiness.mjs';
 import {assertZeroStartJournalCanonical,zeroStartWorkerDiagnostic} from './zero-start-automation.mjs';
-import {isHourlyTestPolicy,planDailyEpoch,validateDailyPolicy,sanitizeDailyMemberIndexDiagnostic} from './daily-profit.mjs';
+import {isHourlyTestPolicy,isQuarterTestPolicy,planDailyEpoch,validateDailyPolicy,sanitizeDailyMemberIndexDiagnostic} from './daily-profit.mjs';
 import {isPositionPolicy} from './position-profit.mjs';
 import {publicZeroArchiveRpcUrl,readZeroArchiveCandidate,validateZeroArchiveCandidateUrl} from './zero-archive-candidate.mjs';
 import {getCompleteLogs,sanitizeCompleteLogDiagnostic,installHistoricalCallRetry} from './complete-rpc-logs.mjs';
@@ -98,7 +98,7 @@ export async function prepareZeroArchiveRpc({primary,candidate,artifact,release,
  const settings=parseEnv(original),env=renderZeroArchiveRpcEnvironment(original,candidateUrl);readConfig(settings);
  if(settings.TRADES_ZERO_START_PROFILE!==c.releaseId||settings.TRADES_CHAIN_ID!=='97')throw Error('ARCHIVE_RPC_CONNECTED_PROFILE_MISMATCH');
  const deploymentReport=JSON.parse(deploymentText),connectionReport=JSON.parse(connectionText),policy=validateDailyPolicy(JSON.parse(policyText)),state=JSON.parse(journalText);
- if(!isHourlyTestPolicy(policy))throw Error('ARCHIVE_RPC_EXISTING_HOURLY_POLICY_REQUIRED');
+ if(!isHourlyTestPolicy(policy)&&!isQuarterTestPolicy(policy))throw Error('ARCHIVE_RPC_EXISTING_HOURLY_POLICY_REQUIRED');
  requireState(state);
  const epoch=state.daily.epoch,periodStart=isPositionPolicy(policy)?policy.startTimestamp:policy.startTimestamp+epoch*policy.periodSeconds;
  if(!Number.isSafeInteger(periodStart))throw Error('INVALID_DAILY_EPOCH');

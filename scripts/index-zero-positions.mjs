@@ -17,7 +17,7 @@ function read(file){
  try{const s=fs.fstatSync(fd);if(!s.isFile()||s.uid!==0||(s.mode&0o077)||s.size>16*1024*1024)throw Error('POSITION_INDEXER_PRIVATE_FILE_REQUIRED');return fs.readFileSync(fd,'utf8');}finally{fs.closeSync(fd);}
 }
 export function assertIndexerBinding({state,policy,target}){
- if(!isPositionPolicy(policy)||policy.chainId!==97||policy.periodSeconds!==3600||policy.vaultAddress!==target.target||policy.runtimeHash!==target.runtimeHash||policy.deploymentBlock!==target.block)throw Error('POSITION_INDEXER_POLICY_MISMATCH');
+ if(!isPositionPolicy(policy)||policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||policy.vaultAddress!==target.target||policy.runtimeHash!==target.runtimeHash||policy.deploymentBlock!==target.block)throw Error('POSITION_INDEXER_POLICY_MISMATCH');
  const identity={version:1,chainId:97,target:target.target,owner:target.owner,operator:target.operator,queue:target.queue,hash:target.hash,runtimeHash:target.runtimeHash};
  if(!state.identity||Object.entries(identity).some(([k,v])=>state.identity[k]!==v)||!state.daily)throw Error('POSITION_INDEXER_JOURNAL_MISMATCH');
  if(state.pending||state.oracle?.pending||Object.values(state.transactions||{}).some(t=>!t||!Number.isSafeInteger(t.block)||t.block<1))throw Error('POSITION_INDEXER_PENDING_RECONCILIATION_REQUIRED');

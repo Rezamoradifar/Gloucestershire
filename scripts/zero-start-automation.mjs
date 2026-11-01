@@ -165,7 +165,7 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
  if(policy){
   phase='POLICY_VERIFICATION';onPhase(phase);
   policy=validateDailyPolicy(policy);if(policy.chainId!==97||policy.vaultAddress!==target||policy.runtimeHash!==readiness.runtimeHash||policy.deploymentBlock!==readiness.block)throw Error('ZERO_START_AUTOMATION_POLICY_CHANGED');
-  if(policy.periodSeconds===3600&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
+  if([3600,900].includes(policy.periodSeconds)&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
   const activation=state.activation||(policy.activationBlockHash?{block:policy.activationBlock,blockHash:policy.activationBlockHash}:null);
   if(activation&&(await provider.getBlock(activation.block))?.hash!==activation.blockHash)throw Error('ZERO_START_ACTIVATION_CHECKPOINT_REORG');
  }
@@ -183,14 +183,14 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   await savePolicy(policy);report.policyCreated=true;
   state.activation={block:checkpoint.number,blockHash:checkpoint.hash,startTimestamp:checkpoint.timestamp};save();
  }
- report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=policy.startTimestamp+policy.periodSeconds;
+ report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=(policy.quarterCutover?.timestamp??policy.startTimestamp)+policy.periodSeconds;
  if(indexedPayments&&!isPositionPolicy(policy))throw Error('POSITION_INDEXED_POLICY_REQUIRED');
  const catchupStarted=Date.now();
  for(let positionPass=0;positionPass<(isPositionPolicy(policy)?(indexedPayments?maxPositionHours:2):1);positionPass++){
  if(positionPass>0&&Date.now()-catchupStarted>=120000)break;
  const plan=await during('DAILY_PERIOD_PLAN',()=>planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations,indexedOnly:indexedPayments}));
  report.dailyStatus=plan.status;
- if(isPositionPolicy(policy))report.positionSchedule={version:1,intervalSeconds:3600,nextDueAt:plan.nextDueAt??null,indexThrough:plan.indexThrough??null,indexTarget:plan.indexTarget??null};
+ if(isPositionPolicy(policy))report.positionSchedule={version:policy.positionScheduleVersion,intervalSeconds:policy.periodSeconds,nextDueAt:plan.nextDueAt??null,indexThrough:plan.indexThrough??null,indexTarget:plan.indexTarget??null};
  if(plan.status==='indexing'){report.blockers=[...new Set([...(readiness.blockers||[]),'DAILY_MEMBER_INDEX_INCOMPLETE'])];return report;}
  if(plan.status==='ready'){
   if(!await vault.reporters(readiness.operator)){report.errors.push('AUTOMATION_SIGNER_IS_NOT_REPORTER');report.blockers=['COUNCIL_AUTHORIZED_SERVER_REPORTER_REQUIRED'];return report;}
@@ -300,13 +300,13 @@ async function main(){
   state=fs.existsSync(stateFile)?JSON.parse(readPrivate(stateFile)):{transactions:{}};
   let policy;
   const checkReadiness=()=>{
-   const current=hourlyTest&&policy?.periodSeconds!==3600?undefined:policy;
+   const current=hourlyTest&&![3600,900].includes(policy?.periodSeconds)?undefined:policy;
    return verifyZeroStartReadiness({...targetOptions,hourlyTest,policy:current,periodStartTimestamp:current?(isPositionPolicy(current)?current.startTimestamp:current.startTimestamp+(state.daily?.epoch||0)*current.periodSeconds):undefined});
   };
   const loadCurrentPolicy=()=>{
    const current=fs.existsSync(policyFile)?validateDailyPolicy(JSON.parse(readPrivate(policyFile))):undefined;
    if(current&&current.chainId!==97)throw Error('ZERO_START_AUTOMATION_POLICY_CHANGED');
-   if(current?.periodSeconds===3600&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
+   if([3600,900].includes(current?.periodSeconds)&&!hourlyTest)throw Error('HOURLY_TEST_EXPLICIT_MODE_REQUIRED');
    return current;
   };
   if(!execute){
@@ -380,14 +380,14 @@ async function main(){
   // optional test faucet cannot be inspected. Missing full readiness still waits.
   const {warnings:optionalSeedWarnings,blocking:blockingDailyReadErrors}=partitionZeroStartDailyReadErrors(dailyReadErrors,readiness);
   if(blockingDailyReadErrors.length){
-   const report={version:1,kind:'fresh-zero-server-automation',chainId:97,target:readiness.target,checkedAt:new Date().toISOString(),status:'waiting',policyCreated:false,dailyCredits:[],lastDailyCredit:lastConfirmedDailyCredit(state),...(policy?{policy,nextEpoch:state.daily?.epoch??0,firstPeriodEndsAt:policy.startTimestamp+policy.periodSeconds}:{}),oracles:completedOracles,errors:blockingDailyReadErrors,blockers:[...new Set([...(readiness.blockers||[]),...blockingDailyReadErrors])],diagnostic:dailyReadDiagnostics.at(-1),walletPrompts:0};
+   const report={version:1,kind:'fresh-zero-server-automation',chainId:97,target:readiness.target,checkedAt:new Date().toISOString(),status:'waiting',policyCreated:false,dailyCredits:[],lastDailyCredit:lastConfirmedDailyCredit(state),...(policy?{policy,nextEpoch:state.daily?.epoch??0,firstPeriodEndsAt:(policy.quarterCutover?.timestamp??policy.startTimestamp)+policy.periodSeconds}:{}),oracles:completedOracles,errors:blockingDailyReadErrors,blockers:[...new Set([...(readiness.blockers||[]),...blockingDailyReadErrors])],diagnostic:dailyReadDiagnostics.at(-1),walletPrompts:0};
    writePrivateJson(privateRoot+'/status.json',report);
    const publicReport={...readiness,ready:false,dailyAutomationActive:false,automationStatus:'waiting',blockers:report.blockers,oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,automation:report};
    if(readiness.kind!=='fresh-zero-daily-readiness'){publicReport.kind='fresh-zero-automation-error';publicReport.diagnostic=report.diagnostic;delete publicReport.automation;}
    publishZeroStartStatus(publicReport,profile.publicRoot+'/activation.json');
    console.log('ZERO_START_AUTOMATION_WAITING target='+readiness.target);console.log('BLOCKERS='+report.blockers.join(','));return;
   }
-  if(hourlyTest&&policy){
+  if(hourlyTest&&policy&&policy.periodSeconds!==900){
    phase='HOURLY_POLICY_TRANSITION';
    const oldPolicy=policy;
    const transition=await transitionHourlyTestPolicy({provider,vault,readiness,state,policy,save,

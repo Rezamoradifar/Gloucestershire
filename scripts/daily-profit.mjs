@@ -49,16 +49,21 @@ export function sanitizeDailyMemberIndexDiagnostic(value){
 }
 export function validateDailyPolicy(p){
  if(p?.version!==1||![56,97].includes(p.chainId)||!isAddress(p.vaultAddress)||getAddress(p.vaultAddress)===ZeroAddress)throw Error('INVALID_DAILY_POLICY');
- if(p.chainId===56&&(p.periodSeconds!==86400||['testMode','initialServerReporter','fastTestnetVersion','testInterval'].some(key=>Object.hasOwn(p,key))||p.releaseId===hourlyTestPolicyFields.releaseId))throw Error('MAINNET_DAILY_POLICY_REQUIRED');
- if((p.basis!=='period-start-active-principal'&&!isPositionPolicy(p))||![86400,3600].includes(p.periodSeconds)||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
- if(isPositionPolicy(p)&&(p.chainId!==97||p.periodSeconds!==3600))throw Error('POSITION_HOURLY_TEST_ONLY');
+ if(p.chainId===56&&(p.periodSeconds!==86400||['testMode','initialServerReporter','fastTestnetVersion','testInterval','quarterCutover'].some(key=>Object.hasOwn(p,key))||p.releaseId===hourlyTestPolicyFields.releaseId))throw Error('MAINNET_DAILY_POLICY_REQUIRED');
+ if((p.basis!=='period-start-active-principal'&&!isPositionPolicy(p))||![86400,3600,900].includes(p.periodSeconds)||p.includeReinvestment!==true)throw Error('UNSUPPORTED_DAILY_BASIS');
+ if(isPositionPolicy(p)&&(p.chainId!==97||!([3600,900].includes(p.periodSeconds))||p.periodSeconds===900&&!isQuarterTestPolicy(p)||p.periodSeconds===3600&&p.positionScheduleVersion!==1))throw Error('POSITION_HOURLY_TEST_ONLY');
  if((p.periodSeconds===3600&&!isHourlyTestPolicy(p))||(p.periodSeconds!==3600&&p.testInterval==='hourly'))throw Error('HOURLY_TEST_POLICY_MARKERS_REQUIRED');
+ if((p.periodSeconds===900||p.positionScheduleVersion===2||p.testInterval==='quarter-hour')&&!isQuarterTestPolicy(p))throw Error('QUARTER_TEST_POLICY_MARKERS_REQUIRED');
  if(!Number.isSafeInteger(p.startTimestamp)||p.startTimestamp<=0||!Number.isSafeInteger(p.deploymentBlock)||p.deploymentBlock<1)throw Error('INVALID_DAILY_START');
  if(!/^0x[0-9a-f]{64}$/i.test(p.runtimeHash||''))throw Error('DAILY_RUNTIME_HASH_REQUIRED');
  return {...p,vaultAddress:getAddress(p.vaultAddress)};
 }
 export function isHourlyTestPolicy(p){
  return p?.chainId===97&&p.periodSeconds===3600&&Object.entries(hourlyTestPolicyFields).every(([key,value])=>p[key]===value);
+}
+export function isQuarterTestPolicy(p){
+ const c=p?.quarterCutover;
+ return p?.chainId===97&&p.periodSeconds===900&&p.basis==='position-anniversary-principal'&&p.positionScheduleVersion===2&&p.testInterval==='quarter-hour'&&Object.entries(hourlyTestPolicyFields).filter(([k])=>k!=='testInterval').every(([k,v])=>p[k]===v)&&Number.isSafeInteger(c?.block)&&c.block>=p.deploymentBlock&&Number.isSafeInteger(c?.timestamp)&&c.timestamp>=p.startTimestamp&&/^0x[0-9a-f]{64}$/i.test(c?.hash||'');
 }
 async function assertDailyIdentity({provider,vault,chainId,vaultAddress,runtimeHash}){
  if(![56,97].includes(chainId)||!isAddress(vaultAddress)||getAddress(vaultAddress)===ZeroAddress||!/^0x[0-9a-f]{64}$/i.test(runtimeHash||''))throw Error('DAILY_PLAN_IDENTITY_REQUIRED');
@@ -105,7 +110,7 @@ export async function readDailyTargetBpsAtSnapshot({vault,member,blockTag,pageSi
 // A short interval is available only for the explicit, deployed fast test profile.
 export async function assertHourlyTestTarget({provider,vault,policy}){
  policy=validateDailyPolicy(policy);
- if(!isHourlyTestPolicy(policy))throw Error('HOURLY_TEST_POLICY_REQUIRED');
+ if(!isHourlyTestPolicy(policy)&&!isQuarterTestPolicy(policy))throw Error('HOURLY_TEST_POLICY_REQUIRED');
  if(Number(await provider.send('eth_chainId',[]))!==97)throw Error('TESTNET_ONLY');
  const address=getAddress(await vault.getAddress());
  if(address!==policy.vaultAddress||keccak256(await provider.getCode(address))!==policy.runtimeHash)throw Error('HOURLY_TEST_TARGET_MISMATCH');
@@ -143,7 +148,7 @@ export async function indexMembers({provider,policy,state,through,save,maxPages=
 export async function planDailyEpoch({provider,vault,policy,state,epoch,save=()=>{},confirmations=3,maxRegistryPages=100,registryPageSize=500,registryLogOptions={},indexedOnly=false}){
  if(!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1||maxRegistryPages>100||!Number.isSafeInteger(registryPageSize)||registryPageSize<1||registryPageSize>500)throw Error('DAILY_MEMBER_INDEX_LIMIT_INVALID');
  policy=validateDailyPolicy(policy);
- if(isHourlyTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
+ if(isHourlyTestPolicy(policy)||isQuarterTestPolicy(policy))await assertHourlyTestTarget({provider,vault,policy});
  else await assertDailyTarget({provider,vault,policy});
  if(isPositionPolicy(policy))return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,indexedOnly});
  if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_DAILY_EPOCH');

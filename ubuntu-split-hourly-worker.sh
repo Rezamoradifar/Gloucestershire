@@ -4,6 +4,8 @@ set +x
 set -Eeuo pipefail
 umask 077
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+quarter=false
+if [[ $# = 2 && $1 = --execute && $2 = --quarter-test ]]; then quarter=true; shift;set -- --execute;fi
 [[ $# = 1 && $1 = --execute && $EUID = 0 ]] || { echo 'ROOT_EXPLICIT_EXECUTE_REQUIRED';exit 1; }
 case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) exit 1;; esac
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
@@ -22,7 +24,7 @@ node scripts/zero-start-automation.mjs --oracles-only --check --fast-testnet
 node --input-type=module <<'JS'
 import fs from 'node:fs';import {validateDailyPolicy} from './scripts/daily-profit.mjs';import {isPositionPolicy} from './scripts/position-profit.mjs';
 const p=validateDailyPolicy(JSON.parse(fs.readFileSync('/var/lib/globaldroptrade/fresh-fast-testnet-automation-v1/daily-policy.json')));
-if(p.chainId!==97||!isPositionPolicy(p)||p.periodSeconds!==3600)throw Error('EXISTING_POSITION_HOURLY_POLICY_REQUIRED');
+if(p.chainId!==97||!isPositionPolicy(p)||![3600,900].includes(p.periodSeconds))throw Error('EXISTING_POSITION_HOURLY_POLICY_REQUIRED');
 JS
 phase=QUIESCING
 worker_before=$(systemctl is-active globaldroptrade-zero-daily.timer 2>/dev/null || true)
@@ -72,11 +74,12 @@ for name in globaldroptrade-position-index.service globaldroptrade-position-inde
 done
 release="$base/releases/split-index-$stamp"
 cp -a "$old" "$release"
-for name in daily-profit.mjs position-profit.mjs zero-start-automation.mjs complete-rpc-logs.mjs index-zero-positions.mjs; do
+for name in daily-profit.mjs position-profit.mjs zero-start-automation.mjs zero-start-readiness.mjs complete-rpc-logs.mjs index-zero-positions.mjs; do
  install -m 644 "scripts/$name" "$release/scripts/$name"
  "$runtime/node" --check "$release/scripts/$name"
 done
 phase=FILES_CHANGED
+if $quarter; then node scripts/install-quarter-policy.mjs --execute --locked-fd 9;fi
 install -d -m 755 /etc/systemd/system/globaldroptrade-zero-daily.service.d
 cat > /etc/systemd/system/globaldroptrade-zero-daily.service.d/split-index.conf <<UNIT
 [Service]

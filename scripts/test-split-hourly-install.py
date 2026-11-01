@@ -2,9 +2,9 @@
 from pathlib import Path
 import os,subprocess,tempfile,unittest
 REPO=Path(__file__).resolve().parents[1]
-NAMES=('daily-profit.mjs','position-profit.mjs','zero-start-automation.mjs','complete-rpc-logs.mjs','index-zero-positions.mjs')
+NAMES=('daily-profit.mjs','position-profit.mjs','zero-start-automation.mjs','zero-start-readiness.mjs','complete-rpc-logs.mjs','index-zero-positions.mjs')
 class SplitInstallTests(unittest.TestCase):
- def case(self,mode='success'):
+ def case(self,mode='success',quarter=False):
   with tempfile.TemporaryDirectory() as temp:
    root=Path(temp);source=root/'source';(source/'scripts').mkdir(parents=True);(root/'bin').mkdir()
    for name in NAMES:(source/'scripts'/name).write_text('reviewed '+name)
@@ -34,7 +34,7 @@ echo INSTALL_RPC >> "$SPLIT_FIXTURE/calls"
 [[ $SPLIT_MODE != rpc-install-failure ]]
 ''')
    env={**os.environ,'PATH':str(root/'bin')+':'+os.environ['PATH'],'SPLIT_FIXTURE':str(root),'SPLIT_MODE':mode}
-   result=subprocess.run(['bash',str(source/'install.sh'),'--execute'],env=env,text=True,capture_output=True,timeout=30)
+   result=subprocess.run(['bash',str(source/'install.sh'),'--execute']+(['--quarter-test'] if quarter else []),env=env,text=True,capture_output=True,timeout=30)
    calls=(root/'calls').read_text();self.assertEqual(journal.read_bytes(),before)
    self.assertNotIn('stop globaldroptrade-zero-daily.service',calls);self.assertNotIn('stop globaldroptrade-rpc-failover.service',calls)
    if mode=='success':
@@ -45,8 +45,10 @@ echo INSTALL_RPC >> "$SPLIT_FIXTURE/calls"
     index=(root/'etc/systemd/system/globaldroptrade-position-index.service').read_text();self.assertIn('index-zero-positions.mjs --execute --fast-testnet',index);self.assertIn('InaccessiblePaths=',index)
     self.assertIn('SPLIT_HOURLY_WORKER_INSTALLED',result.stdout)
     self.assertLess(calls.index('--oracles-only --check'),calls.index('stop globaldroptrade-rpc-failover.timer'))
+   if quarter:self.assertIn('scripts/install-quarter-policy.mjs --execute --locked-fd 9',calls)
    return result,calls
  def test_success_preserves_paid_journal_and_uses_signer_free_index_and_serialized_payments(self):self.case()
+ def test_quarter_install_uses_the_held_financial_lock(self):self.case(quarter=True)
  def test_preflight_failure_changes_no_timers(self):
   r,c=self.case('preflight-failure');self.assertNotEqual(r.returncode,0);self.assertNotIn('stop ',c)
  def test_busy_worker_is_not_killed_and_prior_timers_resume(self):

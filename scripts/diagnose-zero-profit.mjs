@@ -48,14 +48,14 @@ async function main(){
   const target=await verifyZeroStartTarget({...targetOptions,inspectSettlementLogs:false});
   Object.assign(report,{chainId:97,target:target.target,periodSeconds:policy?.periodSeconds??null,nextEpoch:epoch,pending:zeroStartWorkerDiagnostic(null,{phase,state})});
   const vault=new Contract(target.target,artifact.abi,provider);
-  if(wallet)report.wallet=await auditPositionWallet({vault,wallet,state:state.daily||{},block:await provider.getBlock(Math.max(0,(await provider.getBlockNumber())-Math.max(3,config.confirmations)))});
+  if(wallet)report.wallet=await auditPositionWallet({vault,wallet,policy,state:state.daily||{},block:await provider.getBlock(Math.max(0,(await provider.getBlockNumber())-Math.max(3,config.confirmations)))});
   report.lastPaymentEvidence=[];
   for(const credit of recentJournalProfitCredits(state)){
    if(!credit.transactionHash)continue;
    report.lastPaymentEvidence.push(await auditProfitReceipt({provider,target:target.target,operator:profile.release.deployer,credit,confirmations:Math.max(3,config.confirmations)}));
   }
   phase='DAILY_READINESS';
-  const readiness=await verifyZeroStartReadiness({...targetOptions,policy,hourlyTest:policy?.periodSeconds===3600,periodStartTimestamp:diagnosticPeriodStart(policy,epoch)});
+  const readiness=await verifyZeroStartReadiness({...targetOptions,policy,hourlyTest:[3600,900].includes(policy?.periodSeconds),periodStartTimestamp:diagnosticPeriodStart(policy,epoch)});
   report.readiness={ready:readiness.ready,blockers:readiness.blockers,archiveStatus:readiness.archive.status,fundingReady:readiness.funding.ready};
   if(policy){
    phase='DAILY_PERIOD_PLAN';
@@ -63,7 +63,7 @@ async function main(){
    // cloned index is never saved; the installed worker owns durable progress.
    const daily=structuredClone(state.daily??{epoch:0});
    const plan=await planDailyEpoch({provider,vault,policy,state:daily,epoch:daily.epoch??0,confirmations:Math.max(3,config.confirmations),maxRegistryPages:1});
-   report.period={status:plan.status,epoch:plan.epoch,registryThrough:daily.registry?.through??null,indexedMembers:Object.keys(daily.registry?.members||{}).length,batches:plan.batches?.length??0,positionIndexThrough:daily.positionIndex?.through??null,positionScanTarget:daily.positionScanTarget?.number??null,completedPositionHours:Object.values(daily.positionPaid||{}).reduce((a,b)=>a+b,0)};
+   report.period={status:plan.status,epoch:plan.epoch,registryThrough:daily.registry?.through??null,indexedMembers:Object.keys(daily.registry?.members||{}).length,batches:plan.batches?.length??0,positionIndexThrough:daily.positionIndex?.through??null,positionScanTarget:daily.positionScanTarget?.number??null,completedPositionHours:Object.values(daily.positionPaid||{}).reduce((a,b)=>a+b,0),completedPositionQuarters:Object.values(daily.positionQuarterPaid||{}).reduce((a,b)=>a+b,0)};
    if(plan.status==='ready'){
     phase='DAILY_CREDIT_EXECUTION';
     const remaining=new Map();
