@@ -46,15 +46,24 @@ export async function scanPositionHistory({provider,policy,state,save=()=>{},con
  }
  const wasIndexed=state.registry?.through===final.number&&state.positionIndex?.through===final.number;
  const indexing=()=>({status:'indexing',indexTarget:final.number,indexThrough:state.positionIndex?.through??null});
- if(!await indexMembers({provider,policy,state,through:final.number,save,maxPages:maxRegistryPages*5,pageSize:100,shouldContinue:()=>provider.remaining()>=reserveMilliseconds,logOptions:{maxTimeoutRetries:2,maxBlockSpan:10}}))return indexing();
+ // Catch positions up to the existing member prefix before extending members.
+ // Otherwise a large member backlog starves all deposit/reinvestment discovery.
+ if(!state.registry||(state.positionIndex?.through??policy.deploymentBlock-1)>=state.registry.through){
+  await indexMembers({provider,policy,state,through:final.number,save,maxPages:maxRegistryPages*5,pageSize:100,shouldContinue:()=>provider.remaining()>=Math.max(reserveMilliseconds,milliseconds/2),logOptions:{maxTimeoutRetries:2,maxBlockSpan:10}});
+ }
+ const memberThrough=state.registry?.through??policy.deploymentBlock-1;
+ if(!safe(memberThrough)||memberThrough>final.number)throw Error('POSITION_MEMBER_INDEX_INVALID');
+ const scanThrough=Math.min(final.number,memberThrough);
+ if(scanThrough<policy.deploymentBlock)return indexing();
+ if(!hash(state.registry.hash)||(await provider.getBlock(memberThrough))?.hash!==state.registry.hash)throw Error('POSITION_INDEX_REORG');
  state.positionIndex??={through:policy.deploymentBlock-1,hash:null,positions:{}};
  const index=state.positionIndex;
  if(!safe(index.through)||!index.positions||index.through>final.number)throw Error('POSITION_INDEX_INVALID');
  if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash)throw Error('POSITION_INDEX_REORG');
  let pages=0;
- for(let start=index.through+1;start<=final.number&&pages<maxRegistryPages*5;pages++){
+ for(let start=index.through+1;start<=scanThrough&&pages<maxRegistryPages*5;pages++){
   if(provider.remaining()<reserveMilliseconds)return indexing();
-  const end=Math.min(start+99,final.number),discovered={};
+  const end=Math.min(start+99,scanThrough),discovered={};
   for(const name of ['Deposited','Reinvested']){
    const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:10});
    for(const log of logs){

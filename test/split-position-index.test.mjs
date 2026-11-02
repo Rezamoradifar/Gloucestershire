@@ -36,9 +36,9 @@ test('payments consume a complete prefix while a separate scanner is still catch
  assert.equal((await scan(q,state)).status,'indexed');const prefix=state.positionIndex.through;
  await tx(v.connect(s[2]).deposit(token.target,E('1000'),ZeroAddress));await advance(3600);
  for(let i=0;i<2200;i++)await rpc.request({method:'evm_mine',params:[]});
- assert.equal((await scan(q,state,{maxRegistryPages:1})).status,'indexing');assert.equal(state.positionIndex.through,prefix);assert.ok(state.positionScanTarget.number>prefix);
+ assert.equal((await scan(q,state,{maxRegistryPages:1})).status,'indexing');assert.ok(state.positionIndex.through>prefix);assert.ok(state.positionIndex.through<=state.registry.through);assert.ok(state.registry.through<state.positionScanTarget.number);
  const first=await indexed(q,state);assert.equal(first.status,'ready');assert.deepEqual(first.batches[0].amounts,[E('0.5').toString()]);await pay(first,state);
- assert.equal((await indexed(q,state)).status,'not_due');
+ const partial=await indexed(q,state);if(partial.status==='ready')await pay(partial,state);else assert.equal(partial.status,'not_due');
  for(let i=0;i<12&&state.positionIndex.through<state.positionScanTarget.number;i++)await scan(q,state,{maxRegistryPages:1});
  for(let i=0;i<5;i++){const next=await indexed(q,state);if(next.status!=='ready')break;await pay(next,state);}
  assert.equal((await v.accounts(a[1],token.target)).profit,E('1'));assert.equal((await v.accounts(a[2],token.target)).profit,E('7'));
