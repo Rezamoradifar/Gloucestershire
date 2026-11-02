@@ -231,7 +231,15 @@ quiesce(){
  systemctl stop "$timer" || failed=1
  enabled=$(systemctl is-enabled "$timer" || true)
  case "$enabled" in enabled|enabled-runtime) systemctl disable "$timer" || failed=1;; disabled|static|indirect) ;; *) failed=1;; esac
- systemctl stop "$service" || failed=1
+ # Never terminate an in-flight financial execution during RPC maintenance.
+ local attempt
+ for attempt in {1..120};do
+  active=$(systemctl show --property=ActiveState --value "$service") || return 1
+  case "$active" in inactive|failed) break;; active|activating|deactivating|reloading) ;; *) return 1;; esac
+  echo "ZERO_ARCHIVE_WAITING_FOR_RUNNING_UNIT unit=$service"
+  sleep 5
+ done
+ case "$active" in inactive|failed) ;; *) echo 'ZERO_ARCHIVE_WORKER_BUSY_RETRY';return 75;; esac
  for worker in "$timer" "$service";do active=$(systemctl show --property=ActiveState --value "$worker") || failed=1;case "$active" in inactive|failed) ;; *) failed=1;; esac;done
  [ "$failed" -eq 0 ]
 }

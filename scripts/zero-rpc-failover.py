@@ -63,7 +63,8 @@ def main():
         def system_value(*args):
             return subprocess.run(['systemctl', *args], capture_output=True,
                                   text=True, check=False).stdout.strip()
-        if system_value('is-active', SERVICE) in ('active', 'activating', 'deactivating'):
+        if any(system_value('is-active', unit) in ('active', 'activating', 'deactivating', 'reloading')
+               for unit in (SERVICE, 'globaldroptrade-position-index.service', 'globaldroptrade-smart-worker.service')):
             print('RPC_FAILOVER_WORKER_BUSY')
             return
         try:

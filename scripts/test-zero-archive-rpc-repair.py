@@ -146,6 +146,7 @@ elif args[0]=='repair':
  (state/'journal.json').write_text(json.dumps(j));(p/'registry-repaired').write_text('yes');print('ZERO_MEMBER_INDEX_REPAIRED')
 elif args[0]=='systemctl':
  args=args[1:];command=args[0];unit=args[-1];log('systemctl '+' '.join(args));states=json.loads((p/'workers.json').read_text());row=states.get(unit,{'enabled':'disabled','active':'inactive'});new=candidate in envfile.read_text()
+ if command=='show' and '--property=ActiveState' in args and unit==@SERVICE@ and row['active']=='active' and states[@TIMER@]['active']=='inactive' and mode!='worker-busy':row['active']='inactive'
  if command=='show':print(('loaded' if unit in states else 'not-found') if '--property=LoadState' in args else row['active'])
  elif command=='is-enabled':print(row['enabled']);raise SystemExit(0 if row['enabled'].startswith('enabled') else 1)
  elif command=='is-active':raise SystemExit(0 if row['active']=='active' else 3)
@@ -235,7 +236,7 @@ else:raise AssertionError(args)
     assert envfile.read_text()==original_env+f'TRADES_RPC_URL="{candidate}"\n'
     assert json.loads((state/'journal.json').read_text())['millionTestRewardGrant']==baseline_journal['millionTestRewardGrant']
     assert json.loads((host/'workers.json').read_text())[timer]==prior[timer]
-    calls=(host/'calls').read_text();assert calls.index('systemctl stop '+timer)<calls.index('systemctl stop '+service);assert int((host/'worker-count').read_text())==1
+    calls=(host/'calls').read_text();assert 'systemctl stop '+service not in calls;assert calls.index('systemctl stop '+timer)<calls.index('systemctl show --property=ActiveState --value '+service,calls.index('systemctl stop '+timer));assert int((host/'worker-count').read_text())==1
     assert (host/'status-console').read_text()=='new'
     assert calls.index('status-console --backup-dir')<calls.index('systemctl start '+timer),'The matching funding parser must be installed before worker activation'
     for mode in ['proof-fail','fork-fail','history-fail','logs-fail']:
@@ -319,4 +320,10 @@ else:raise AssertionError(args)
     r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute'],cwd=source,env=env,text=True,capture_output=True,timeout=30);assert r.returncode!=0 and 'prepare ' not in (host/'calls').read_text()
     reset();states=copy.deepcopy(prior);states['globaldroptrade-automation.service']={'active':'active','enabled':'enabled'};(host/'workers.json').write_text(json.dumps(states))
     r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute'],cwd=source,env=env,text=True,capture_output=True,timeout=30);assert r.returncode!=0 and envfile.read_text()==original_env;assert 'systemctl stop ' not in (host/'calls').read_text()
+    reset('worker-busy')
+    r=subprocess.run(['bash',str(source/'ubuntu-zero-archive-rpc.sh'),'--execute'],cwd=source,env=env,text=True,capture_output=True,timeout=30)
+    assert r.returncode!=0 and 'ZERO_ARCHIVE_WORKER_BUSY_RETRY' in r.stdout,(r.stdout,r.stderr)
+    assert 'systemctl stop '+service not in (host/'calls').read_text()
+    assert envfile.read_text()==original_env and json.loads((state/'journal.json').read_text())==baseline_journal
+    assert json.loads((host/'workers.json').read_text())[service]['active']=='active'
 print('ZERO_ARCHIVE_RPC_HOST_CHECKS_PASSED: verified RPC-only change, locks, pending guards, safe rollback, timer-first uncertainty and bounded same-period indexing')

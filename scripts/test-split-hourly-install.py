@@ -26,8 +26,10 @@ import os,sys
 from pathlib import Path
 r=Path(os.environ['SPLIT_FIXTURE']);a=sys.argv[1:]
 with (r/'calls').open('a') as f:f.write(' '.join(a)+'\\n')
-if a[0]=='is-active':print('active')
-elif a[0]=='show' and '--property=LoadState' in a:print('not-found' if os.environ['SPLIT_MODE']=='missing-rpc-timer' else 'loaded')
+smart=any('smart-worker' in v for v in a);smart_mode=os.environ['SPLIT_MODE']=='smart'
+if a[0]=='is-active':print('active' if not smart or smart_mode else 'inactive')
+elif a[0]=='is-enabled':print('enabled' if smart and smart_mode else 'disabled')
+elif a[0]=='show' and '--property=LoadState' in a:print('not-found' if (smart and not smart_mode) or (not smart and os.environ['SPLIT_MODE']=='missing-rpc-timer') else 'loaded')
 elif a[0]=='show':print('active' if os.environ['SPLIT_MODE']=='busy' else 'inactive')
 ''')
    (source/'ubuntu-install-rpc-failover.sh').write_text('''#!/bin/bash
@@ -38,18 +40,24 @@ echo INSTALL_RPC >> "$SPLIT_FIXTURE/calls"
    result=subprocess.run(['bash',str(source/'install.sh'),'--execute']+(['--quarter-test'] if quarter else []),env=env,text=True,capture_output=True,timeout=30)
    calls=(root/'calls').read_text();self.assertEqual(journal.read_bytes(),before)
    self.assertNotIn('stop globaldroptrade-zero-daily.service',calls);self.assertNotIn('stop globaldroptrade-rpc-failover.service',calls)
-   if mode in ('success','missing-rpc-timer'):
+   if mode in ('success','missing-rpc-timer','smart'):
     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
     new=(old.parent.parent/'current').resolve();self.assertNotEqual(new,old)
     for name in NAMES:self.assertEqual((new/'scripts'/name).read_text(),'reviewed '+name)
     self.assertIn('--indexed-payments',(root/'etc/systemd/system/globaldroptrade-zero-daily.service.d/split-index.conf').read_text())
     index=(root/'etc/systemd/system/globaldroptrade-position-index.service').read_text();self.assertIn('index-zero-positions.mjs --execute --fast-testnet',index);self.assertIn('InaccessiblePaths=',index)
     self.assertIn('SPLIT_HOURLY_WORKER_INSTALLED',result.stdout)
-    if mode=='success':self.assertLess(calls.index('--oracles-only --check'),calls.index('stop globaldroptrade-rpc-failover.timer'))
+    if mode!='missing-rpc-timer':self.assertLess(calls.index('--oracles-only --check'),calls.index('stop globaldroptrade-rpc-failover.timer'))
     else:self.assertNotIn('stop globaldroptrade-rpc-failover.timer',calls)
    if quarter:self.assertIn('scripts/install-quarter-policy.mjs --execute --locked-fd 9',calls)
    return result,calls
  def test_success_preserves_paid_journal_and_uses_signer_free_index_and_serialized_payments(self):self.case()
+ def test_smart_mode_preserves_single_coordinator(self):
+  r,c=self.case('smart');self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+  self.assertIn('enable --now globaldroptrade-smart-worker.timer',c)
+  self.assertNotIn('start --no-block globaldroptrade-zero-daily.service',c)
+  self.assertNotIn('enable --now globaldroptrade-position-index.timer',c)
+  self.assertNotIn('stop globaldroptrade-smart-worker.service',c)
  def test_new_host_missing_rpc_timer_installs_without_losing_journal(self):self.case('missing-rpc-timer')
  def test_quarter_install_uses_the_held_financial_lock(self):self.case(quarter=True)
  def test_preflight_failure_changes_no_timers(self):

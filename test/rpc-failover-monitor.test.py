@@ -69,7 +69,7 @@ class MonitorIntegrationTests(unittest.TestCase):
     with patch.object(m,'STATE',state),patch.object(m,'Path',side_effect=path),patch.object(m.os,'geteuid',return_value=0),patch.object(m,'trusted_directory',side_effect=lambda p:None),patch.object(m.subprocess,'run',side_effect=run),contextlib.redirect_stdout(out):
      if interrupt:
       with self.assertRaises(OSError):m.main()
-      before=len(calls);m.main();self.assertEqual(len(calls),before+2)
+      before=len(calls);m.main();self.assertEqual(len(calls),before+4)
       self.assertIn('APPLY_RECOVERY_REQUIRED',out.getvalue())
      else:
       m.main();report=json.loads((state/'status.json').read_text())
@@ -79,6 +79,18 @@ class MonitorIntegrationTests(unittest.TestCase):
     self.assertEqual(list(state.glob('candidate-*')),[])
     self.assertNotIn('https',out.getvalue())
    finally:os.umask(old_mask)
+ def test_index_and_coordinator_busy_never_probe_or_apply(self):
+  for unit in ['globaldroptrade-position-index.service','globaldroptrade-smart-worker.service']:
+   with tempfile.TemporaryDirectory() as directory:
+    calls=[]
+    def run(args,**kwargs):
+     calls.append(args);self.assertEqual(args[0],'systemctl')
+     return SimpleNamespace(stdout='active' if args[-1]==unit else 'inactive',returncode=0)
+    out=io.StringIO()
+    with patch.object(m,'STATE',Path(directory)),patch.object(m.os,'geteuid',return_value=0),patch.object(m.subprocess,'run',side_effect=run),contextlib.redirect_stdout(out):
+     m.main()
+    self.assertIn('RPC_FAILOVER_WORKER_BUSY',out.getvalue())
+    self.assertTrue(all(args[0]=='systemctl' for args in calls))
  def test_installed_monitor_checks_then_applies_with_private_state(self):self.exercise()
  def test_interrupted_apply_suspends_future_automatic_transitions(self):self.exercise(interrupt=True)
 

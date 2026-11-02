@@ -30,6 +30,8 @@ phase=QUIESCING
 worker_before=$(systemctl is-active globaldroptrade-zero-daily.timer 2>/dev/null || true)
 rpc_before=$(systemctl is-active globaldroptrade-rpc-failover.timer 2>/dev/null || true)
 index_before=$(systemctl is-active globaldroptrade-position-index.timer 2>/dev/null || true)
+smart_before=$(systemctl is-active globaldroptrade-smart-worker.timer 2>/dev/null || true)
+smart_enabled=$(systemctl is-enabled globaldroptrade-smart-worker.timer 2>/dev/null || true)
 failed(){
  local code=$?
  if [[ $code != 0 ]]; then
@@ -38,6 +40,7 @@ failed(){
    [[ $worker_before != active ]] || systemctl start globaldroptrade-zero-daily.timer || true
    [[ $rpc_before != active ]] || systemctl start globaldroptrade-rpc-failover.timer || true
    [[ $index_before != active ]] || systemctl start globaldroptrade-position-index.timer || true
+   [[ $smart_before != active ]] || systemctl start globaldroptrade-smart-worker.timer || true
   else echo "SPLIT_REVIEW_REQUIRED backup=${backup:-unavailable}; financial journals were never restored or deleted";fi
  fi
 }
@@ -52,6 +55,10 @@ wait_idle(){
  done
  echo 'SPLIT_WORKER_BUSY_RETRY';return 75
 }
+if [[ $(systemctl show globaldroptrade-smart-worker.timer --property=LoadState --value) = loaded ]]; then
+ systemctl stop globaldroptrade-smart-worker.timer
+ wait_idle globaldroptrade-smart-worker.service
+fi
 if [[ $(systemctl show globaldroptrade-rpc-failover.timer --property=LoadState --value) = loaded ]]; then
  systemctl stop globaldroptrade-rpc-failover.timer
 fi
@@ -139,9 +146,15 @@ flock -u 9
 exec 9>&-
 # Ship this same source for any future verified RPC switch, preserving the drop-in.
 bash ubuntu-install-rpc-failover.sh --execute
-systemctl enable --now globaldroptrade-position-index.timer globaldroptrade-zero-daily.timer
-systemctl start --no-block globaldroptrade-position-index.service
-systemctl start --no-block globaldroptrade-zero-daily.service
+if [[ $smart_before = active || $smart_enabled = enabled ]]; then
+ systemctl disable --now globaldroptrade-position-index.timer globaldroptrade-zero-daily.timer
+ systemctl enable --now globaldroptrade-smart-worker.timer
+ systemctl start --no-block globaldroptrade-smart-worker.service
+else
+ systemctl enable --now globaldroptrade-position-index.timer globaldroptrade-zero-daily.timer
+ systemctl start --no-block globaldroptrade-position-index.service
+ systemctl start --no-block globaldroptrade-zero-daily.service
+fi
 phase=COMPLETE
 echo "SPLIT_HOURLY_WORKER_INSTALLED backup=$backup"
 echo 'Contract, policy, signed transactions and paid-hour cursors preserved. Inspect canonical live receipts; installation is not proof of a payout.'
