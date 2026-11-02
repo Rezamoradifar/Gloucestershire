@@ -36,9 +36,30 @@ rollback(){
 }
 trap rollback ERR
 bash "$stage/install.sh"
-curl -fsS --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$stage/served.html"
-cmp -s "$stage/site/index.html" "$stage/served.html"
-curl -fsS --max-time 20 http://127.0.0.1:3115/api/config -o "$stage/after.json"
+# Reload is asynchronous: old workers may briefly serve the previous release.
+healthy=0
+for attempt in {1..12}; do
+ if curl -fsSL --connect-timeout 3 --max-time 10 --noproxy '*' \
+  --resolve globaldroptrade.com:443:127.0.0.1 \
+  --resolve www.globaldroptrade.com:443:127.0.0.1 \
+  -H 'Cache-Control: no-cache' -H 'Connection: close' \
+  "https://globaldroptrade.com/?website_check=${backup##*/}-$attempt" \
+  -o "$stage/served.html" && cmp -s "$stage/site/index.html" "$stage/served.html"; then
+  healthy=1; break
+ fi
+ echo "WEBSITE_WAITING_FOR_RELEASE attempt=$attempt"
+ sleep 1
+done
+if [[ $healthy != 1 ]]; then
+ cp "$stage/site/index.html" "$backup/expected.html"
+ [[ ! -f "$stage/served.html" ]] || cp "$stage/served.html" "$backup/served.html"
+ echo "WEBSITE_CONTENT_MISMATCH diagnostics=$backup"
+ false
+fi
+curl -fsSL --max-time 20 --noproxy '*' \
+ --resolve globaldroptrade.com:443:127.0.0.1 \
+ --resolve www.globaldroptrade.com:443:127.0.0.1 \
+ https://globaldroptrade.com/api/config -o "$stage/after.json"
 node --input-type=module - "$stage/before.json" "$stage/after.json" <<'JS'
 import fs from 'node:fs';const [a,b]=process.argv.slice(2).map(f=>JSON.parse(fs.readFileSync(f)));
 if(a.chainId!==b.chainId||a.vaultAddress.toLowerCase()!==b.vaultAddress.toLowerCase())throw Error('API_TARGET_CHANGED');
