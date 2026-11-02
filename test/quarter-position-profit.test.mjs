@@ -60,3 +60,52 @@ test('quarter activation rejects pending signatures, mainnet, missing markers an
  await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(900);
  const bad={...next,quarterCutover:{...next.quarterCutover,hash:'0x'+'ab'.repeat(32)}};await assert.rejects(plan(bad,{}),/REORG/);
 });
+
+test('six consecutive quarter periods survive journal reloads and replay without double credit',async()=>{
+ const q=await policy();let state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));const next=await quarter(q,state);
+ for(let period=1;period<=6;period++){
+  await advance(900);
+  await scanPositionHistory({provider:p,policy:next,state,confirmations:0,advanceCompletedTarget:true});
+  const x=await planDailyEpoch({provider:p,vault:v,policy:next,state,epoch:period-1,confirmations:0,indexedOnly:true});
+  assert.equal(x.status,'ready');assert.equal(x.positionCursor.quarter,true);
+  await pay(x,state);
+  state=JSON.parse(JSON.stringify(state));
+  const replay=await executeDailyPlan({provider:p,vault:v,plan:x,transact:()=>{throw Error('DUPLICATE_SEND');}});
+  assert.ok(replay.every(b=>b.status==='already_credited'));
+  assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5')*BigInt(period));
+  assert.equal(Object.values(state.positionQuarterPaid)[0],period);
+ }
+});
+
+test('500 plus 200 reinvested earns 4.90 per quarter and three referral levels; interrupted credit resumes exactly once',async()=>{
+ await tx(v.connect(s[0]).register(ZeroAddress));
+ await tx(v.connect(s[1]).register(a[0]));await tx(v.connect(s[2]).register(a[1]));
+ for(let i=0;i<3;i++)await tx(v.connect(owner).setCustomerStatus(a[i],true,false));
+ await tx(v.connect(s[3]).deposit(token.target,E('500'),a[2]));
+ await tx(v.connect(op).batchProfit(keccak256(toUtf8Bytes('verified-test-earned-profit')),token.target,[a[3]],[E('200')]));
+ await tx(v.connect(s[3]).reinvest(token.target,E('200')));
+ assert.equal((await v.users(a[3])).capitalUsd,E('700'));
+ assert.equal(await v.dailyTargetBps(a[3]),70n);
+ const q=await policy();let state={};const next=await quarter(q,state);
+ await advance(900);
+ let interrupted=false;
+ for(let i=0;i<2;i++){
+  const x=await plan(next,state);assert.equal(x.status,'ready');
+  if(!interrupted){
+   let calls=0;
+   await assert.rejects(executeDailyPlan({provider:p,vault:v,plan:x,transact:async(_,req)=>{if(++calls===2)throw Error('SIMULATED_NETWORK_STOP');return tx(op.sendTransaction(req));}}),/SIMULATED_NETWORK_STOP/);
+   state=JSON.parse(JSON.stringify(state));interrupted=true;
+  }
+  await pay(await plan(next,state),state);
+ }
+ assert.equal((await v.accounts(a[3],token.target)).profit,E('4.9'));
+ assert.equal((await v.accounts(a[2],token.target)).profit,E('0.49'));
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('0.245'));
+ assert.equal((await v.accounts(a[0],token.target)).profit,E('0.147'));
+ await advance(900);await scanPositionHistory({provider:p,policy:next,state,confirmations:0,advanceCompletedTarget:true});
+ for(let i=0;i<2;i++)await pay(await plan(next,state),state);
+ assert.equal((await v.accounts(a[3],token.target)).profit,E('9.8'));
+ assert.equal((await v.accounts(a[2],token.target)).profit,E('0.98'));
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('0.49'));
+ assert.equal((await v.accounts(a[0],token.target)).profit,E('0.294'));
+});

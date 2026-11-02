@@ -144,6 +144,13 @@ export function lastConfirmedDailyCredit(state){
  return batches.length?{epoch,batches}:null;
 }
 
+// A scheduled worker is not evidence of a newly credited user balance.
+export function dailyCreditSummary(report){
+ const rows=Array.isArray(report?.dailyCredits)?report.dailyCredits:[];
+ const hashes=[...new Set(rows.filter(r=>r.status==='credited'&&/^0x[0-9a-f]{64}$/i.test(r.transactionHash||'')).map(r=>r.transactionHash))];
+ return {newConfirmedBatches:hashes.length,reconciledBatches:rows.filter(r=>r.status==='already_credited').length,transactionHashes:hashes,dailyStatus:report?.dailyStatus??null,positionSchedule:report?.positionSchedule??null};
+}
+
 export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,indexedPayments=false,maxPositionHours=8,onPhase=()=>{}}){
  if(!Number.isSafeInteger(maxPositionHours)||maxPositionHours<1||maxPositionHours>16)throw Error('POSITION_CATCHUP_LIMIT_REQUIRED');
  let phase='TARGET_VERIFICATION';
@@ -405,6 +412,7 @@ async function main(){
   let timerActive=false;try{execFileSync('systemctl',['is-active','--quiet',profile.timer],{stdio:'ignore',timeout:5000});timerActive=true;}catch{}
   publishZeroStartStatus({...result.readiness,automationStatus:result.status,dailyAutomationActive:timerActive&&result.status==='scheduled',timerActive,oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,automation:result},profile.publicRoot+'/activation.json');
   console.log('ZERO_START_AUTOMATION_'+result.status.toUpperCase()+' target='+readiness.target);
+  console.log('DAILY_CREDIT_RESULT '+JSON.stringify(dailyCreditSummary(result)));
   if(optionalSeedWarnings.length)console.log('WARNINGS='+optionalSeedWarnings.join(','));
   if(result.status!=='scheduled')console.log('BLOCKERS='+[...(result.blockers||[]),...result.errors].join(','));
  }catch(e){

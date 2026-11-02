@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Interface,Wallet,ZeroAddress,getAddress,keccak256} from 'ethers';
 import {dailyAbi} from '../scripts/daily-profit.mjs';
-import {runZeroStartAutomation,zeroStartWorkerDiagnostic,validateZeroStartPendingTransactions} from '../scripts/zero-start-automation.mjs';
+import {dailyCreditSummary,runZeroStartAutomation,zeroStartWorkerDiagnostic,validateZeroStartPendingTransactions} from '../scripts/zero-start-automation.mjs';
 
 const address=n=>getAddress('0x'+n.toString(16).padStart(40,'0'));
 const hash=n=>'0x'+n.toString(16).padStart(64,'0');
@@ -143,4 +143,11 @@ test('a completed period retains only journal-bound credit evidence on later che
  const mismatched=structuredClone(s.state);mismatched.transactions['daily-'+batch.id].hash=hash(999);assert.equal(lastConfirmedDailyCredit(mismatched),null);
  const pending=structuredClone(s.state);delete pending.transactions['daily-'+batch.id].block;assert.equal(lastConfirmedDailyCredit(pending),null);
  const resumed=structuredClone(s.state);resumed.daily.lastCredit.credited[0]={id:batch.id,status:'already_credited'};assert.deepEqual(lastConfirmedDailyCredit(resumed),wanted);
+});
+
+test('credit result separates new confirmed credits from scheduling and already credited periods',()=>{
+ assert.deepEqual(dailyCreditSummary({status:'scheduled',dailyCredits:[]}),{newConfirmedBatches:0,reconciledBatches:0,transactionHashes:[],dailyStatus:null,positionSchedule:null});
+ const tx=hash(501);
+ const result=dailyCreditSummary({dailyStatus:'not_due',dailyCredits:[{status:'credited',transactionHash:tx},{status:'already_credited'},{status:'credited',transactionHash:tx},{status:'credited',transactionHash:'invalid'}],positionSchedule:{intervalSeconds:900,nextDueAt:12345}});
+ assert.equal(result.newConfirmedBatches,1);assert.equal(result.reconciledBatches,1);assert.deepEqual(result.transactionHashes,[tx]);assert.equal(result.positionSchedule.intervalSeconds,900);
 });
