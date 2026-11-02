@@ -12,6 +12,7 @@ flock -n 9 || { echo 'WEBSITE_UPDATE_BUSY'; exit 1; }
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
 curl -fsS --max-time 20 http://127.0.0.1:3115/api/config -o "$stage/before.json"
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 node --input-type=module - "$stage/before.json" <<'JS'
 import fs from 'node:fs';import {isAddress,ZeroAddress} from 'ethers';
 const c=JSON.parse(fs.readFileSync(process.argv[2]));
