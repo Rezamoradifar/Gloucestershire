@@ -284,7 +284,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
             total+=amounts[i];
         }
         if(ledgers[asset].rewards<total) revert Insufficient();
-        _requireLiquidity(asset,total);
+        if(assetBalance(asset)<accounted(asset)) revert InsufficientLiquidity();
         usedDailyRewardBatch[id]=true;
         ledgers[asset].rewards-=total;
         for(uint256 i;i<recipients.length;i++) {
