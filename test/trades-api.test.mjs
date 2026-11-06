@@ -68,3 +68,42 @@ test('public browser configuration exposes only the active chain and address, ne
   assert.equal(response.status,200);assert.deepEqual(data,{version:1,chainId:97,vaultAddress:address});assert.ok(!JSON.stringify(data).includes('private-token'));
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('RPC candidates are bounded, deduplicated and never accepted as filesystem URLs',()=>{
+ const c=readConfig({TRADES_RPC_URL:'https://rpc.invalid/one',TRADES_RPC_URLS:JSON.stringify(['https://rpc.invalid/one','https://fallback.invalid/two'])});
+ assert.deepEqual(c.rpcUrls,['https://rpc.invalid/one','https://fallback.invalid/two']);
+ for(const value of ['{}','not-json','["file:///etc/passwd"]','[1]',JSON.stringify(Array.from({length:5},(_,i)=>'https://rpc.invalid/'+i))])assert.throws(()=>readConfig({TRADES_RPC_URLS:value}));
+});
+
+test('a stalled primary cannot block a complete verified fallback snapshot',async()=>{
+ const failed=fixture(),healthy=fixture();failed.provider.getNetwork=()=>new Promise(()=>{});
+ const c={...config(),rpcUrls:['https://primary.invalid/secret','https://secondary.invalid/secret']};
+ const feed=createTradeFeed(c,{providers:[failed.provider,healthy.provider],metadata:healthy.metadata});
+ const result=await Promise.race([feed.get(),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('fallback stalled')),1000);timer.unref();})]);
+ assert.equal(result.status,'live');assert.equal(result.trades.length,1);
+ assert.ok(!JSON.stringify(result).includes('secret'));feed.close();
+});
+
+test('fallback snapshots reject a wrong chain and retain an explicitly stale receipt during a total outage',async()=>{
+ let clock=0;const primary=fixture(),secondary=fixture();primary.provider.getNetwork=async()=>({chainId:56n});
+ const c={...config(),rpcUrls:['https://primary.invalid','https://secondary.invalid']};
+ const feed=createTradeFeed(c,{providers:[primary.provider,secondary.provider],metadata:secondary.metadata,now:()=>clock,ttlMs:10});
+ assert.equal((await feed.get()).status,'live');
+ secondary.provider.getCode=async()=>{throw Error('private failure');};clock=11;
+ const result=await feed.get();assert.equal(result.status,'stale');assert.equal(result.trades[0].transactionHash,hash);
+ assert.ok(!JSON.stringify(result).includes('private failure'));feed.close();
+});
+
+test('HTTP exposes unavailable automation as JSON and dispatches only the explicit signed-activity handler',async()=>{
+ const feed=createTradeFeed(readConfig({}));
+ const server=createApiServer(feed,{automationStatus:async()=>({version:1,status:'unavailable',blockers:['AUTOMATION_STATUS_UNAVAILABLE']}),dailyActivity:async(req,res)=>{
+  if(req.url!=='/api/daily-activity/check-in')return false;
+  res.writeHead(401,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'A wallet signature is required.'}));return true;
+ }});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}`;
+ try{
+  const result=await fetch(url+'/api/automation/status');assert.equal(result.status,503);assert.equal((await result.json()).status,'unavailable');
+  assert.equal((await fetch(url+'/api/daily-activity/check-in',{method:'POST'})).status,401);
+  assert.equal((await fetch(url+'/api/trades',{method:'POST'})).status,405);
+ }finally{await new Promise(resolve=>server.close(resolve));feed.close();}
+});

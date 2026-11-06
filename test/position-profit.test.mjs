@@ -183,3 +183,30 @@ test('reloading after only the personal batch confirms resumes referrals exactly
  assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));assert.equal((await v.accounts(a[0],token.target)).profit,E('0.04'));
  assert.equal(Object.values(restored.positionPaid)[0],1);
 });
+
+test('a missing activity period advances its position cursor once and cannot be backfilled by a later click',async()=>{
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));await advance(7200);
+ let active=false,sends=0;
+ const activity={binding:'position-activity-v1',activationTimestamp:q.startTimestamp,eligible:async()=>active};
+ const next=()=>planDailyEpoch({provider:p,vault:v,policy:q,state,epoch:0,confirmations:0,activity});
+ const transact=async(_,request)=>{sends++;return tx(op.sendTransaction(request));};
+ const skipped=await next();assert.deepEqual(skipped.batches,[]);
+ await executeDailyPlan({provider:p,vault:v,plan:skipped,state,activity,transact});completePositionHour(state,skipped);
+ active=true;const second=await next();assert.equal(second.start,skipped.end);assert.deepEqual(second.batches[0].amounts,[E('0.5').toString()]);
+ await executeDailyPlan({provider:p,vault:v,plan:second,state,activity,transact});completePositionHour(state,second);
+ assert.equal(sends,1);assert.equal(Object.values(state.positionPaid)[0],2);assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));
+ await assert.rejects(executeDailyPlan({provider:p,vault:v,plan:skipped,state,activity,transact}),/DAILY_EXECUTION_CURSOR_CHANGED/);assert.equal(sends,1);
+});
+
+test('a persisted position plan resumes the same referrals when historical account reads fail after personal credit',async()=>{
+ await tx(v.connect(s[0]).register(ZeroAddress));await tx(v.connect(owner).setCustomerStatus(a[0],true,false));
+ const q=await policy(),state={};await tx(v.connect(s[1]).deposit(token.target,E('100'),a[0]));await advance(3600);
+ const activity={binding:'position-activity-v1',activationTimestamp:q.startTimestamp,eligible:async()=>true};
+ const first=await planDailyEpoch({provider:p,vault:v,policy:q,state,epoch:0,confirmations:0,activity});let sent=0,durable;
+ await assert.rejects(executeDailyPlan({provider:p,vault:v,plan:first,state,activity,save:()=>{durable=structuredClone(state);},transact:async(_,request)=>{if(++sent===2)throw Error('INTERRUPTED_REFERRAL');return tx(op.sendTransaction(request));}}),/INTERRUPTED_REFERRAL/);
+ const restored=structuredClone(durable),unavailable=new Proxy(v,{get(target,key){if(key==='positionOf')return async()=>{throw Error('HISTORICAL_READ_UNAVAILABLE');};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+ const pending=await planDailyEpoch({provider:p,vault:unavailable,policy:q,state:restored,epoch:0,confirmations:0,activity});assert.deepEqual(pending,first);
+ const result=await executeDailyPlan({provider:p,vault:v,plan:pending,state:restored,activity,transact:async(_,request)=>tx(op.sendTransaction(request))});
+ assert.equal(result[0].status,'already_credited');assert.equal(result[1].status,'credited');completePositionHour(restored,pending);
+ assert.equal(restored.pendingDailyPlan,undefined);assert.equal(Object.values(restored.positionPaid)[0],1);assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));assert.equal((await v.accounts(a[0],token.target)).profit,E('0.04'));
+});

@@ -33,6 +33,19 @@ def progress(journal):
             'paidHours': sum(daily.get('positionPaid', {}).values()),
             'paidQuarters': sum(daily.get('positionQuarterPaid', {}).values())}
 
+def load_worker_state(kind):
+    if kind == 'journal':
+        return read_json(JOURNAL)
+    if kind != 'status':
+        raise ValueError('SMART_STATE_KIND_INVALID')
+    try:
+        return read_json(STATUS)
+    except FileNotFoundError:
+        # A valid journal can outlive an interrupted first report publication.
+        # Let the payment service reconcile and publish a fresh report.
+        # Invalid, public or corrupted files still stop the cycle.
+        return {}
+
 def run_cycle(control, load, previous=None, clock=time.time):
     report = {'version': 1, 'chainId': 97, 'checkedAt': int(clock()),
               'status': 'waiting', 'steps': [], 'blockers': [],
@@ -113,7 +126,7 @@ def main():
             previous = read_json(ROOT/'status.json')
         except FileNotFoundError:
             previous = {}
-        report = run_cycle(control, lambda kind: read_json(JOURNAL if kind == 'journal' else STATUS), previous)
+        report = run_cycle(control, load_worker_state, previous)
         descriptor, name = tempfile.mkstemp(dir=ROOT, prefix='status-')
         try:
             with os.fdopen(descriptor, 'w') as stream:

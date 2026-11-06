@@ -6,11 +6,12 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {Contract,FetchRequest,JsonRpcProvider,Wallet,getAddress,getCreateAddress,keccak256,parseEther} from 'ethers';
 import {planMainnet,readMainnetPreparationRpc} from './server-mainnet.mjs';
-import {validateDailyPolicy,blockAtTime} from './daily-profit.mjs';
+import {validateDailyPolicy,blockAtTime,assertDailyJournalPlan} from './daily-profit.mjs';
 import {writePrivateJson} from './migration-journal.mjs';
 import {readPrivateKey} from './migration-signers.mjs';
 import {runProductionAutomation,productionGuard,productionBinding,verifyProductionJournalAnchor} from './production-automation.mjs';
 import {journalMainnetTransaction,validateMainnetJournal} from './mainnet-automation-journal.mjs';
+import {loadDailyActivityGate} from './daily-activity-worker.mjs';
 const root='/var/lib/globaldroptrade/mainnet-automation-v1';
 const hash=x=>typeof x==='string'&&/^0x[0-9a-f]{64}$/i.test(x);
 function privateText(file){
@@ -79,17 +80,24 @@ async function main(){
    const live=fs.lstatSync(root+'/run.lock');if(!live.isFile()||live.ino!==lockIdentity.ino||live.dev!==lockIdentity.dev)throw Error('PRODUCTION_EXECUTION_LEASE_LOST');
    selected.assertCurrent();await productionGuard({provider,...verified,policy:m.policy,expectedOwner:verified.owner});await verifyProductionJournalAnchor(provider,state);
   };
-  let transact;
+  const save=()=>writePrivateJson(journal,state);
+  let activity,activityLoaded=false,transact;
+  const loadActivity=async({state:daily=state.daily,save:saveDaily=save}={})=>{
+   if(!activityLoaded){activity=await loadDailyActivityGate({provider,chainId:56,vaultAddress:m.policy.vaultAddress,state:daily,save:saveDaily});activityLoaded=true;}
+   return activity;
+  };
   if(values.execute){
    const key=readPrivateKey('/etc/globaldroptrade/mainnet-automation.key');if(!key)throw Error('PRODUCTION_OPERATOR_KEY_REQUIRED');const wallet=new Wallet(key,provider);signerOpened=true;
    if(wallet.address!==m.operator)throw Error('PRODUCTION_OPERATOR_KEY_MISMATCH');
-   const save=()=>writePrivateJson(journal,state);
-   transact=(label,request)=>journalMainnetTransaction({provider,wallet,state,save,label,request,guard:assertLease,target:m.policy.vaultAddress,queue:m.queueAddress,token:verified.token,maxTotalFee:BigInt(m.gasBudgetWei)});
+   transact=(label,request)=>journalMainnetTransaction({provider,wallet,state,save,label,request,guard:async()=>{
+    await assertLease();
+    if(label.startsWith('daily-')&&state.daily?.pendingDailyPlan)await assertDailyJournalPlan({provider,policy:m.policy,state:state.daily,label,request,activity:await loadActivity()});
+   },target:m.policy.vaultAddress,queue:m.queueAddress,token:verified.token,maxTotalFee:BigInt(m.gasBudgetWei)});
    executionStarted=true;
    for(const pending of saved.pending)await transact(pending.label,pending.request);
    verified.vault=verified.vault.connect(wallet);verified.queue=verified.queue.connect(wallet);
   }
-  const report=await runProductionAutomation({provider,...verified,policy:m.policy,expectedOwner:verified.owner,operator:m.operator,state,save:()=>writePrivateJson(journal,state),transact,assertLease,role:m.role,execute:Boolean(values.execute)});
+  const report=await runProductionAutomation({provider,...verified,policy:m.policy,expectedOwner:verified.owner,operator:m.operator,state,save,loadActivity,transact,assertLease,role:m.role,execute:Boolean(values.execute)});
   report.feeBudgetRemainingWei=(BigInt(m.gasBudgetWei)-validateMainnetJournal({state,operator:m.operator,target:m.policy.vaultAddress,queue:m.queueAddress,token:verified.token,maxTotalFee:BigInt(m.gasBudgetWei)}).total).toString();report.rpcIndex=index;report.rpcCandidateCount=m.rpcFiles.length;report.writerFailover='manual-promotion-with-synchronized-journal';
   if(m.rpcFiles.length===1)report.warnings.push('RPC_REDUNDANCY_NOT_CONFIGURED');
   if(values.execute){state.rpcCursor=report.status==='waiting'?(index+1)%m.rpcFiles.length:index;writePrivateJson(journal,state);writePrivateJson(root+'/status.json',report);}

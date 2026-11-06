@@ -46,7 +46,15 @@ previous_source_hashes.setdefault('scripts/daily-profit.mjs', set()).add('1cd084
 previous_source_hashes.setdefault('scripts/position-profit.mjs', set()).add('028967bfc86c7c63b1359402b6102fe2489e38c22854b4784421eb91e8fbb587')
 previous_source_hashes.setdefault('scripts/zero-start-automation.mjs', set()).add('c2d3106dea7ae156a030a951a316a24929b2a1756d6d80f62b9275513d9b2681')
 previous_source_hashes.setdefault('scripts/zero-start-readiness.mjs', set()).add('a2d652c69f8606cd4dd8fb0a7bbf790f63e6088b8b4b7590777b1065c0fa65ea')
-roles = {'api': ['server/trades-api.mjs', helper], 'daily': [*baseline, helper, 'scripts/position-profit.mjs']}
+# Reviewed parent release 67fde7fa4d9893523aaae4d4a111a6eae5098065.
+# Unknown local changes still require review before any pointer can move.
+previous_source_hashes.setdefault('server/trades-api.mjs', set()).add('9b42e59d99ee123231642e062900d7be702de3f1f1de43282f7b7f1477ca6a56')
+previous_source_hashes.setdefault('scripts/daily-profit.mjs', set()).add('03ab64ef6a7edb2f2708e27ca083d5b5f06393e793a251c86458c2991bb57010')
+previous_source_hashes.setdefault('scripts/position-profit.mjs', set()).add('850b8ba28776972fe34b30892d86b666dc99392009117aa1ae0cbb3ddeeb1794')
+previous_source_hashes.setdefault('scripts/zero-start-automation.mjs', set()).add('3ced51353fef6dedc031319ccedefe2c0e33432dad696cb864b5538a864bf3f8')
+api_dependencies = ['server/daily-activity.mjs', 'server/automation-status.mjs', 'scripts/daily-activity.mjs']
+roles = {'api': ['server/trades-api.mjs', helper, *api_dependencies],
+         'daily': [*baseline, helper, 'scripts/position-profit.mjs', *api_dependencies, 'scripts/daily-activity-worker.mjs']}
 
 
 def public_directory(directory):

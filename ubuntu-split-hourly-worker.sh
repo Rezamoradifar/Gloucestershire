@@ -83,10 +83,13 @@ for name in globaldroptrade-position-index.service globaldroptrade-position-inde
 done
 release="$base/releases/split-index-$stamp"
 cp -a "$old" "$release"
-for name in daily-profit.mjs position-profit.mjs zero-start-automation.mjs zero-start-readiness.mjs complete-rpc-logs.mjs index-zero-positions.mjs; do
- install -m 644 "scripts/$name" "$release/scripts/$name"
- "$runtime/node" --check "$release/scripts/$name"
+install -d -m 755 "$release/scripts" "$release/server"
+for file in scripts/*.mjs server/*.mjs; do
+ install -m 644 "$file" "$release/$file"
+ "$runtime/node" --check "$release/$file"
 done
+install -m 644 scripts/smart-worker.py "$release/scripts/smart-worker.py"
+(cd "$release" && "$runtime/node" --input-type=module -e "await import('./scripts/zero-start-automation.mjs'); await import('./scripts/daily-activity-worker.mjs'); await import('./server/daily-activity.mjs');")
 phase=FILES_CHANGED
 if $quarter; then node scripts/install-quarter-policy.mjs --execute --locked-fd 9;fi
 install -d -m 755 /etc/systemd/system/globaldroptrade-zero-daily.service.d

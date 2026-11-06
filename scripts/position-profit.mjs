@@ -1,7 +1,7 @@
 // Testnet-only anniversary allocations, one complete position-hour at a time.
 import {Interface,ZeroAddress,getAddress,keccak256,toUtf8Bytes} from 'ethers';
 import {getCompleteLogs} from './complete-rpc-logs.mjs';
-import {blockAtTime,indexMembers} from './daily-profit.mjs';
+import {blockAtTime,indexMembers,dailyProfitAmount,periodActivity,resumeDailyPlan,completeDailyPlan} from './daily-profit.mjs';
 const events=new Interface([
  'event Deposited(address indexed user,address indexed asset,uint256 indexed position,uint256 amount,uint256 usd,uint256 feeEach)',
  'event Reinvested(address indexed user,address indexed asset,uint256 amount,uint256 position)'
@@ -92,8 +92,9 @@ export async function indexedPositionCheckpoint({provider,policy,state}){
  const final=await provider.getBlock(Math.min(member.through,position.through));
  if(!final)throw Error('POSITION_FINAL_BLOCK_REQUIRED');return final;
 }
-export async function planPositionHour({provider,vault,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,refreshDrainedTarget=true,indexedOnly=false}){
+export async function planPositionHour({provider,vault,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,refreshDrainedTarget=true,indexedOnly=false,activity}){
  if(policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
+ const pending=await resumeDailyPlan({provider,policy,state,activity});if(pending)return pending;
  provider=positionReadBudget(provider);
  state.positionPaid??={};state.positionClosed??={};
  let final,wasIndexed=false;
@@ -134,39 +135,44 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
  const candidates=[...hourly,...quarters].sort((a,b)=>a.end-b.end||a.key.localeCompare(b.key));
  if(!candidates.length){
   if(!indexedOnly){delete state.positionScanTarget;save();}
-  if(!indexedOnly&&wasIndexed&&refreshDrainedTarget)return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,refreshDrainedTarget:false});
+  if(!indexedOnly&&wasIndexed&&refreshDrainedTarget)return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,refreshDrainedTarget:false,activity});
   const next=rows.filter(([key])=>!state.positionClosed[key]&&(!quarter||!state.positionQuarterClosed?.[key])).map(([key,row])=>quarter?Math.max(row.openedAt,policy.quarterCutover.timestamp)+((state.positionQuarterPaid?.[key]??0)+1)*900:row.openedAt+((state.positionPaid[key]??0)+1)*3600);
   return {status:'not_due',nextDueAt:next.length?Math.min(...next):null};
  }
  const chosen=candidates[0],{key,row,paid,start,end}=chosen,snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number),o={blockTag:snapshot.number};
+ const eligibility=periodActivity({policy,activity,start,end});
  provider.check();
  const position=await vault.positionOf(row.member,BigInt(row.id),o);
  if(getAddress(position.asset)!==row.asset)throw Error('POSITION_ASSET_MISMATCH');
- const rate=await vault.dailyTargetBps(row.member,o);if(rate<0n||rate>1000n)throw Error('INVALID_PLAN_RATE');
- const amount=position.principal*rate/10000n,domain=[...(chosen.quarter?['GLOBAL_POSITION_QUARTER_TEST_V1',policy.quarterCutover.hash]:['GLOBAL_POSITION_HOURLY_TEST_V1']),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
+ const rate=await eligibility.eligible(row.member)?await vault.dailyTargetBps(row.member,o):0n;
+ const amount=dailyProfitAmount(position.principal,rate),domain=[...(chosen.quarter?['GLOBAL_POSITION_QUARTER_TEST_V1',policy.quarterCutover.hash]:['GLOBAL_POSITION_HOURLY_TEST_V1']),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
  if(amount>0n){
   const ownId=keccak256(toUtf8Bytes(domain+':personal'));
-  batches.push({id:ownId,asset:row.asset,recipients:[row.member],amounts:[amount.toString()]});
+  batches.push({id:ownId,asset:row.asset,recipients:[row.member],amounts:[amount.toString()],rows:[{recipient:row.member,amount:amount.toString(),principal:position.principal.toString(),rateBps:rate.toString()}]});
   const source=await vault.users(row.member,o),config=await vault.tierConfig(await vault.tierOf(row.member,o),o);
   const percentages=Array.from(config.referrals);
   if(percentages.length!==4||percentages.some(x=>x<0n||x>3400n)||percentages.reduce((a,b)=>a+b,0n)>3400n)throw Error('INVALID_DAILY_REFERRAL_RATES');
-  let parent=getAddress(source.referrer);const recipients=[],amounts=[];
+  let parent=getAddress(source.referrer);const recipients=[],amounts=[],referrals=[];
   for(let level=0;level<4&&parent!==ZeroAddress;level++){
    provider.check();
    const u=await vault.users(parent,o),tier=await vault.tierOf(parent,o);
    if(!u.registered)throw Error('INVALID_DAILY_REFERRAL_USER');
    const reward=amount*percentages[level]/10000n;
-   if(u.active&&(tier!==4n||u.vipKyc)&&(level!==3||tier===4n)&&reward>0n){recipients.push(parent);amounts.push(reward.toString());}
+   if(u.active&&(tier!==4n||u.vipKyc)&&(level!==3||tier===4n)&&reward>0n&&await eligibility.eligible(parent)){
+    recipients.push(parent);amounts.push(reward.toString());
+    referrals.push({recipient:parent,amount:reward.toString(),sources:[{source:row.member,level:level+1,amount:reward.toString(),rateBps:percentages[level].toString(),personalProfit:amount.toString()}]});
+   }
    parent=getAddress(u.referrer);
   }
-  if(recipients.length)batches.push({id:keccak256(toUtf8Bytes(domain+':referrals')),kind:'profit-referrals',asset:row.asset,recipients,amounts});
+  if(recipients.length)batches.push({id:keccak256(toUtf8Bytes(domain+':referrals')),kind:'profit-referrals',asset:row.asset,recipients,amounts,rows:referrals});
  }
- return {status:'ready',chainId:97,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,start,end,batches,positionCursor:{key,paid,next:paid+1,...(chosen.quarter?{quarter:true}:{}),closed:position.principal===0n},nextDueAt:end};
+ return {status:'ready',chainId:97,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,start,end,batches,positionCursor:{key,paid,next:paid+1,...(chosen.quarter?{quarter:true}:{}),closed:position.principal===0n},nextDueAt:end,...eligibility.context,activity:eligibility.summary()};
 }
 
 export function completePositionHour(state,plan){
  const c=plan.positionCursor,paidName=c?.quarter===true?'positionQuarterPaid':'positionPaid',closedName=c?.quarter===true?'positionQuarterClosed':'positionClosed';
  if(!c||state[paidName]?.[c.key]!==undefined&&state[paidName][c.key]!==c.paid||c.next!==c.paid+1)throw Error('POSITION_PAYMENT_CURSOR_CHANGED');
+ completeDailyPlan(state,plan);
  state[paidName]??={};state[paidName][c.key]=c.next;
  if(c.closed){state[closedName]??={};state[closedName][c.key]=true;}
 }

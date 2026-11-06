@@ -53,21 +53,21 @@ wait_idle "$worker.service"
 phase=INSTALLING_WORKER
 bash ubuntu-position-hourly.sh --execute
 phase=VERIFYING_WORKER
-for name in daily-profit.mjs position-profit.mjs zero-start-automation.mjs complete-rpc-logs.mjs; do
- if ! cmp -s "scripts/$name" "/opt/globaldroptrade-zero-daily/current/scripts/$name"; then
+for file in scripts/*.mjs scripts/smart-worker.py server/*.mjs; do
+ if ! cmp -s "$file" "/opt/globaldroptrade-zero-daily/current/$file"; then
   systemctl stop "$worker.timer"
-  echo "WORKER_SYNC_SOURCE_MISMATCH file=$name";exit 1
+  echo "WORKER_SYNC_SOURCE_MISMATCH file=$file";exit 1
  fi
- echo "WORKER_SOURCE_MATCH_$name=true"
 done
+echo 'WORKER_SOURCE_DEPENDENCIES_VERIFIED'
 phase=INSTALLING_FAILOVER
 # Its future repairs must use the same reviewed source as the payment worker.
 bash ubuntu-install-rpc-failover.sh --execute
 phase=VERIFYING_FAILOVER
 monitor_source=$(systemctl show "$monitor.service" --property=WorkingDirectory --value)
 case "$monitor_source" in /opt/globaldroptrade-rpc-failover/releases/*) ;; *) echo 'MANAGED_FAILOVER_RELEASE_REQUIRED';exit 1;; esac
-for name in daily-profit.mjs position-profit.mjs zero-start-automation.mjs complete-rpc-logs.mjs zero-rpc-failover.py; do
- cmp -s "scripts/$name" "$monitor_source/scripts/$name" || { echo "FAILOVER_SOURCE_MISMATCH file=$name";exit 1; }
+for file in scripts/*.mjs scripts/smart-worker.py scripts/zero-rpc-failover.py server/*.mjs; do
+ cmp -s "$file" "$monitor_source/$file" || { echo "FAILOVER_SOURCE_MISMATCH file=$file";exit 1; }
 done
 echo 'WORKER_AND_FAILOVER_SOURCES_ALIGNED'
 phase=READ_ONLY_AUDIT

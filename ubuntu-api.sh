@@ -14,8 +14,9 @@ install -d -m 755 "$api_root" "$api_root/releases" "$release/server" /etc/global
 install -d -m 755 "$release/scripts" "$release/artifacts"
 (
  umask 022
- cp server/trades-api.mjs server/community.mjs server/marketplace.mjs server/migration-service.mjs "$release/server/"
- cp scripts/deferred-migration-core.mjs scripts/complete-rpc-logs.mjs "$release/scripts/"
+ # Retain the complete reviewed module closure across later RPC repairs.
+ cp server/*.mjs "$release/server/"
+ cp scripts/*.mjs "$release/scripts/"
  cp artifacts/TestnetDeferredMigrationVault.json "$release/artifacts/"
  cp package.json package-lock.json "$release/"
  cd "$release"

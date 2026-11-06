@@ -28,11 +28,11 @@ with tempfile.TemporaryDirectory() as directory:
     script = (repo/'ubuntu-api.sh').read_text().replace('/opt/globaldroptrade-api', str(root/'opt/api')).replace('/etc/globaldroptrade', str(root/'etc/globaldroptrade')).replace('/etc/systemd/system', str(root/'etc/systemd/system'))
     (root/'ubuntu-api.sh').write_text(script)
     copied = []
-    for name in ['trades-api.mjs', 'community.mjs', 'marketplace.mjs', 'migration-service.mjs', 'trades.env.example']:
-        destination = root/'server'/name
-        destination.write_bytes((repo/'server'/name).read_bytes())
+    for source in [*(repo/'server').glob('*.mjs'), repo/'server/trades.env.example']:
+        destination = root/'server'/source.name
+        destination.write_bytes(source.read_bytes())
         copied.append(destination)
-    for relative in ['scripts/deferred-migration-core.mjs', 'scripts/complete-rpc-logs.mjs', 'artifacts/TestnetDeferredMigrationVault.json', 'package.json', 'package-lock.json']:
+    for relative in [*('scripts/'+file.name for file in (repo/'scripts').glob('*.mjs')), 'artifacts/TestnetDeferredMigrationVault.json', 'package.json', 'package-lock.json']:
         destination = root/relative
         destination.write_bytes((repo/relative).read_bytes())
         copied.append(destination)
@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert result.returncode == 0, result.stderr
     current, unit = root/'opt/api/current', root/'etc/systemd/system/globaldroptrade-api.service'
     assert current.is_symlink() and (current/'server/trades-api.mjs').is_file()
-    for relative in ['server/marketplace.mjs', 'server/migration-service.mjs', 'scripts/deferred-migration-core.mjs', 'scripts/complete-rpc-logs.mjs', 'artifacts/TestnetDeferredMigrationVault.json']:
+    for relative in ['server/marketplace.mjs', 'server/migration-service.mjs', 'server/daily-activity.mjs', 'server/automation-status.mjs', 'scripts/daily-activity.mjs', 'scripts/deferred-migration-core.mjs', 'scripts/complete-rpc-logs.mjs', 'artifacts/TestnetDeferredMigrationVault.json']:
         assert (current/relative).is_file()
     assert envfile.stat().st_mode & 0o777 == 0o600
     assert 'User=globaldroptrade-api' in unit.read_text() and 'ProtectSystem=strict' in unit.read_text()
@@ -94,7 +94,8 @@ with tempfile.TemporaryDirectory() as directory:
         port = reservation.getsockname()[1]
     child_env = {**os.environ, 'TRADES_CHAIN_ID': '97', 'TRADES_VAULT_ADDRESS': fresh_target,
                  'TRADES_RPC_URL': 'http://127.0.0.1:1/fixture-private', 'TRADES_PORT': str(port),
-                 'GLOBAL_MIGRATION_ENABLED': 'false', 'COMMUNITY_DATA_FILE': str(data/'community.json')}
+                 'GLOBAL_MIGRATION_ENABLED': 'false', 'COMMUNITY_DATA_FILE': str(data/'community.json'),
+                 'DAILY_ACTIVITY_FILE':str(data/'daily-activity.json'), 'DAILY_ACTIVITY_ACTIVATION_TIMESTAMP':'2000000000'}
     command = [real_node, str(current/'server/trades-api.mjs')]
     if can_drop_uid:
         command = [setpriv, '--reuid='+str(service_uid), '--regid='+str(service_gid), '--clear-groups']+command
@@ -117,6 +118,9 @@ with tempfile.TemporaryDirectory() as directory:
         assert health['status'] == 'ok' and health['configured'] is True
         with urlopen('http://127.0.0.1:'+str(port)+'/api/config', timeout=1) as response:
             assert json.load(response) == {'version': 1, 'chainId': 97, 'vaultAddress': fresh_target}
+        with urlopen('http://127.0.0.1:'+str(port)+'/api/daily-activity/status?wallet='+fresh_target, timeout=1) as response:
+            activity = json.load(response)
+            assert activity['requirementEnabled'] is True and activity['activationTimestamp'] == 2000000000
     finally:
         if child.poll() is None:
             child.terminate()

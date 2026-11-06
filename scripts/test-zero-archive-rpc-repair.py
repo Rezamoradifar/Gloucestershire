@@ -49,7 +49,8 @@ else:raise AssertionError(args)
 '''
     (source/'scripts/install-zero-start-status.py').write_text(status_installer.replace('@HOST@',repr(str(host))))
     overlay = ['server/trades-api.mjs', 'scripts/connect-zero-start.mjs', 'scripts/daily-profit.mjs', 'scripts/position-profit.mjs', 'scripts/complete-rpc-logs.mjs',
-               'scripts/zero-start-automation.mjs', 'scripts/zero-start-readiness.mjs', 'scripts/zero-start-hourly-test.mjs']
+               'scripts/zero-start-automation.mjs', 'scripts/zero-start-readiness.mjs', 'scripts/zero-start-hourly-test.mjs',
+               'server/daily-activity.mjs', 'server/automation-status.mjs', 'scripts/daily-activity.mjs', 'scripts/daily-activity-worker.mjs']
     for relative in overlay:
         (source/relative).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(repo/relative, source/relative)

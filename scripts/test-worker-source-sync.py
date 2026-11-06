@@ -6,15 +6,18 @@ import tempfile
 import unittest
 
 REPO=Path(__file__).resolve().parents[1]
-NAMES=('daily-profit.mjs','position-profit.mjs','zero-start-automation.mjs','complete-rpc-logs.mjs')
+NAMES=('daily-profit.mjs','position-profit.mjs','zero-start-automation.mjs','complete-rpc-logs.mjs','daily-activity-worker.mjs','daily-activity.mjs','smart-worker.py')
 
 class SourceSyncTests(unittest.TestCase):
  def run_case(self,mode='success'):
   with tempfile.TemporaryDirectory() as directory:
-   root=Path(directory);source=root/'source';source.mkdir();(source/'scripts').mkdir()
+   root=Path(directory);source=root/'source';source.mkdir();(source/'scripts').mkdir();(source/'server').mkdir()
    (root/'bin').mkdir();worker=root/'worker/current/scripts';worker.mkdir(parents=True)
+   (worker.parent/'server').mkdir()
    monitor=root/'monitor/releases/new/scripts';monitor.mkdir(parents=True)
+   (monitor.parent/'server').mkdir()
    for name in (*NAMES,'zero-rpc-failover.py'):(source/'scripts'/name).write_text('reviewed-'+name)
+   (source/'server/daily-activity.mjs').write_text('reviewed-activity-api')
    journal=root/'journal.json';journal.write_text('{"paid":6,"pending":false}')
    script=(REPO/'ubuntu-sync-hourly-worker.sh').read_text().replace('/var/lib/globaldroptrade/worker-sync-v1',str(root/'state')).replace('/opt/globaldroptrade-zero-daily',str(root/'worker')).replace('/opt/globaldroptrade-rpc-failover',str(root/'monitor'))
    (source/'sync.sh').write_text(script)
@@ -38,13 +41,15 @@ elif args[0]=='show':
 set -eu
 echo INSTALL_WORKER >> "$SYNC_FIXTURE/calls"
 if [ "$SYNC_MODE" = install-failure ];then exit 1;fi
-cp scripts/*.mjs "$SYNC_FIXTURE/worker/current/scripts/"
+cp scripts/* "$SYNC_FIXTURE/worker/current/scripts/"
+cp server/*.mjs "$SYNC_FIXTURE/worker/current/server/"
 if [ "$SYNC_MODE" = mismatch ];then echo old > "$SYNC_FIXTURE/worker/current/scripts/position-profit.mjs";fi
 ''')
    (source/'ubuntu-install-rpc-failover.sh').write_text('''#!/bin/bash
 set -eu
 echo INSTALL_MONITOR >> "$SYNC_FIXTURE/calls"
 cp scripts/* "$SYNC_FIXTURE/monitor/releases/new/scripts/"
+cp server/*.mjs "$SYNC_FIXTURE/monitor/releases/new/server/"
 ''')
    (source/'ubuntu-check-hourly-payments.sh').write_text('''#!/bin/bash
 echo AUDIT >> "$SYNC_FIXTURE/calls"

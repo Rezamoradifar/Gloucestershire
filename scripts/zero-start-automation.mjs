@@ -9,7 +9,8 @@ import {readConfig} from '../server/trades-api.mjs';
 import {parseZeroStartProfileArgs} from './zero-start-profile.mjs';
 import {verifyZeroStartReadiness,verifyZeroStartTarget} from './zero-start-readiness.mjs';
 import {createZeroStartProofProviders} from './connect-zero-start.mjs';
-import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests,inspectDailyCashCoverage} from './daily-profit.mjs';
+import {dailyAbi,approvedQueueAbi,validateDailyPolicy,planDailyEpoch,executeDailyPlan,completeDailyPlan,assertDailyJournalPlan,payApprovedRequests,inspectDailyCashCoverage} from './daily-profit.mjs';
+import {loadDailyActivityGate} from './daily-activity-worker.mjs';
 import {installHistoricalCallRetry,sanitizeCompleteLogDiagnostic} from './complete-rpc-logs.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 import {maintainOracles} from './maintain-testnet-oracles.mjs';
@@ -22,7 +23,7 @@ import {makeHourlyTestPolicy,transitionHourlyTestPolicy} from './zero-start-hour
 const publicRoot='/var/www/globaldroptrade/automation-data';
 const code=e=>/^[A-Z][A-Z0-9_]{2,100}$/.test(e?.message||'')?e.message:'AUTOMATION_RPC_OR_EXECUTION_FAILED';
 const identityOf=readiness=>({version:1,chainId:97,target:readiness.target,owner:readiness.owner,operator:readiness.operator,queue:readiness.queue,hash:readiness.hash,runtimeHash:readiness.runtimeHash});
-const workerPhases=new Set(['ARGUMENT_VALIDATION','LOCAL_CONFIGURATION','TARGET_VERIFICATION','PENDING_RECONCILIATION','ORACLE_MAINTENANCE','ORACLE_INSPECTION','TEST_REWARD_SEED','TEST_REWARD_GRANT','POLICY_LOAD','DAILY_READINESS','HOURLY_POLICY_TRANSITION','APPROVED_WITHDRAWALS','NETWORK_VOLUME','POLICY_VERIFICATION','DAILY_PERIOD_PLAN','DAILY_FUNDING','DAILY_CREDIT_EXECUTION','STATUS_PUBLICATION']);
+const workerPhases=new Set(['ARGUMENT_VALIDATION','LOCAL_CONFIGURATION','TARGET_VERIFICATION','PENDING_RECONCILIATION','ORACLE_MAINTENANCE','ORACLE_INSPECTION','TEST_REWARD_SEED','TEST_REWARD_GRANT','POLICY_LOAD','DAILY_READINESS','HOURLY_POLICY_TRANSITION','APPROVED_WITHDRAWALS','NETWORK_VOLUME','POLICY_VERIFICATION','ACTIVITY_POLICY','DAILY_PERIOD_PLAN','DAILY_FUNDING','DAILY_CREDIT_EXECUTION','STATUS_PUBLICATION']);
 const ethersErrorCodes=new Set(['CALL_EXCEPTION','NETWORK_ERROR','SERVER_ERROR','TIMEOUT','BAD_DATA','UNKNOWN_ERROR','UNSUPPORTED_OPERATION','INVALID_ARGUMENT','NUMERIC_FAULT','BUFFER_OVERRUN','INSUFFICIENT_FUNDS','NONCE_EXPIRED','REPLACEMENT_UNDERPRICED','TRANSACTION_REPLACED','ACTION_REJECTED','OFFCHAIN_FAULT','CANCELLED']);
 
 // Never publish provider messages, URLs, request bodies, signed data or stacks.
@@ -151,8 +152,9 @@ export function dailyCreditSummary(report){
  return {newConfirmedBatches:hashes.length,reconciledBatches:rows.filter(r=>r.status==='already_credited').length,transactionHashes:hashes,dailyStatus:report?.dailyStatus??null,positionSchedule:report?.positionSchedule??null};
 }
 
-export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,indexedPayments=false,maxPositionHours=8,onPhase=()=>{}}){
+export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,indexedPayments=false,maxPositionHours=8,maxDailyPeriods=4,activity,loadActivity,onPhase=()=>{}}){
  if(!Number.isSafeInteger(maxPositionHours)||maxPositionHours<1||maxPositionHours>16)throw Error('POSITION_CATCHUP_LIMIT_REQUIRED');
+ if(!Number.isSafeInteger(maxDailyPeriods)||maxDailyPeriods<1||maxDailyPeriods>4)throw Error('DAILY_CATCHUP_LIMIT_REQUIRED');
  let phase='TARGET_VERIFICATION';
  const during=async(name,action)=>{phase=name;onPhase(name);return action();};
  const target=getAddress(await vault.getAddress());
@@ -191,11 +193,14 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   state.activation={block:checkpoint.number,blockHash:checkpoint.hash,startTimestamp:checkpoint.timestamp};save();
  }
  report.policy=policy;report.nextEpoch=state.daily.epoch;report.firstPeriodEndsAt=(policy.quarterCutover?.timestamp??policy.startTimestamp)+policy.periodSeconds;
+ if(!isPositionPolicy(policy))report.nextPeriodEndsAt=policy.startTimestamp+(state.daily.epoch+1)*policy.periodSeconds;
+ if(loadActivity)activity=await during('ACTIVITY_POLICY',()=>loadActivity({policy,state:state.daily,save}));
+ report.activity={enabled:Boolean(activity),activationTimestamp:activity?.activationTimestamp??null};
  if(indexedPayments&&!isPositionPolicy(policy))throw Error('POSITION_INDEXED_POLICY_REQUIRED');
  const catchupStarted=Date.now();
- for(let positionPass=0;positionPass<(isPositionPolicy(policy)?(indexedPayments?maxPositionHours:2):1);positionPass++){
+ for(let positionPass=0;positionPass<(isPositionPolicy(policy)?(indexedPayments?maxPositionHours:2):maxDailyPeriods);positionPass++){
  if(positionPass>0&&Date.now()-catchupStarted>=120000)break;
- const plan=await during('DAILY_PERIOD_PLAN',()=>planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations,indexedOnly:indexedPayments}));
+ const plan=await during('DAILY_PERIOD_PLAN',()=>planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations,indexedOnly:indexedPayments,activity}));
  report.dailyStatus=plan.status;
  if(isPositionPolicy(policy))report.positionSchedule={version:policy.positionScheduleVersion,intervalSeconds:policy.periodSeconds,nextDueAt:plan.nextDueAt??null,indexThrough:plan.indexThrough??null,indexTarget:plan.indexTarget??null};
  if(plan.status==='indexing'){report.blockers=[...new Set([...(readiness.blockers||[]),'DAILY_MEMBER_INDEX_INCOMPLETE'])];return report;}
@@ -203,11 +208,14 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   if(!await vault.reporters(readiness.operator)){report.errors.push('AUTOMATION_SIGNER_IS_NOT_REPORTER');report.blockers=['COUNCIL_AUTHORIZED_SERVER_REPORTER_REQUIRED'];return report;}
   try{
    report.rewardFunding=await during('DAILY_FUNDING',async()=>Promise.all([ZeroAddress,await vault.usdt()].map(asset=>inspectDailyCashCoverage({vault,queue,asset}))));
-   const credits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,queue,plan,transact}));
+   const credits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,queue,plan,transact,state:state.daily,save,activity}));
    report.dailyCredits.push(...credits);
    if(isPositionPolicy(policy))completePositionHour(state.daily,plan);
-   const completedEpoch=state.daily.epoch;state.daily.epoch++;state.daily.lastCredit={epoch:completedEpoch,credited:credits};save();
+   else completeDailyPlan(state.daily,plan);
+   const completedEpoch=state.daily.epoch;state.daily.epoch++;state.daily.lastProcessedEpoch=completedEpoch;
+   if(credits.length)state.daily.lastCredit={epoch:completedEpoch,credited:credits};save();
    report.nextEpoch=state.daily.epoch;report.lastDailyCredit=lastConfirmedDailyCredit(state);
+   if(!isPositionPolicy(policy))report.nextPeriodEndsAt=policy.startTimestamp+(state.daily.epoch+1)*policy.periodSeconds;
   }catch(e){if(Object.values(state.transactions||{}).some(entry=>!entry.block))throw e;report.errors.push(code(e));report.diagnostic=zeroStartWorkerDiagnostic(e,{phase,state});return report;}
  }
  if(plan.status!=='ready')break;
@@ -224,6 +232,13 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
   if(error.logProbeDiagnostic)report.logProbeDiagnostic=sanitizeCompleteLogDiagnostic(error.logProbeDiagnostic);
   return report;
  }
+}
+
+export function readDailyScheduling({fast=false,timer='globaldroptrade-zero-daily.timer'}={},run=execFileSync){
+ const active=unit=>{try{run('systemctl',['is-active','--quiet',unit],{stdio:'ignore',timeout:5000});return true;}catch{return false;}};
+ const ordered=fast&&active('globaldroptrade-smart-worker.timer'),legacy=active(timer);
+ if(ordered&&legacy)return {kind:'conflict',active:false,blocker:'MULTIPLE_DAILY_SCHEDULERS_ACTIVE'};
+ return {kind:ordered?'ordered':legacy?'legacy':'none',active:Boolean(ordered||legacy)};
 }
 
 function privateDirectory(directory,{create=false}={}){
@@ -326,8 +341,18 @@ async function main(){
    if(readPrivate(envFile)!==original||Number(await provider.send('eth_chainId',[]))!==97||keccak256(await provider.getCode(readiness.target))!==readiness.runtimeHash)throw Error('ZERO_START_AUTOMATION_TARGET_CHANGED');
    await assertZeroStartJournalCanonical(provider,state);
   };
-  const save=()=>writePrivateJson(stateFile,state),transact=async(label,request)=>{
-   const receipt=await journalTransaction({provider,wallet,state,save,label,request,guard,confirmations:Math.max(3,config.confirmations)+1,timeout:45000,maxTotalFee:parseEther('0.1')});
+  const save=()=>writePrivateJson(stateFile,state);
+  let activity,activityLoaded=false;
+  const loadActivity=async({state:daily=state.daily,save:saveDaily=save}={})=>{
+   if(!activityLoaded){activity=await loadDailyActivityGate({provider,chainId:97,vaultAddress:readiness.target,state:daily,save:saveDaily});activityLoaded=true;}
+   return activity;
+  };
+  const transact=async(label,request)=>{
+   const journalGuard=async()=>{
+    await guard();
+    if(label.startsWith('daily-')&&state.daily?.pendingDailyPlan)await assertDailyJournalPlan({provider,policy:loadCurrentPolicy(),state:state.daily,label,request,activity:await loadActivity()});
+   };
+   const receipt=await journalTransaction({provider,wallet,state,save,label,request,guard:journalGuard,confirmations:Math.max(3,config.confirmations)+1,timeout:45000,maxTotalFee:parseEther('0.1')});
    await assertZeroStartJournalCanonical(provider,state);return receipt;
   };
   const vault=new Contract(readiness.target,artifact.abi,wallet),queue=new Contract(readiness.queue,approvedQueueAbi,wallet);
@@ -404,20 +429,20 @@ async function main(){
    policy=transition.policy;
    if(transition.transitioned){phase='DAILY_READINESS';readiness=await checkReadiness();}
   }
-  const result=await runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy:()=>policy,savePolicy:value=>{if(fs.existsSync(policyFile))throw Error('ZERO_START_POLICY_ALREADY_EXISTS');writePrivateJson(policyFile,value);policy=value;},transact,confirmations:Math.max(3,config.confirmations),hourlyTest,indexedPayments,refreshReadiness:checkReadiness,maintainOracles:async()=>completedOracles,onPhase:value=>{phase=value;}});
+  const result=await runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy:()=>policy,savePolicy:value=>{if(fs.existsSync(policyFile))throw Error('ZERO_START_POLICY_ALREADY_EXISTS');writePrivateJson(policyFile,value);policy=value;},loadActivity,transact,confirmations:Math.max(3,config.confirmations),hourlyTest,indexedPayments,refreshReadiness:checkReadiness,maintainOracles:async()=>completedOracles,onPhase:value=>{phase=value;}});
   if(optionalSeedWarnings.length){result.warnings=optionalSeedWarnings;result.testRewardSeedStatus='OPTIONAL_TEST_FAUCET_UNAVAILABLE_VERIFIED_REWARD_BUDGET_USED';}
   if(state.seedTest?.report)result.testRewardSeed=state.seedTest.report;
   result.maxFeesReservedWei=Object.values(state.transactions).reduce((sum,t)=>sum+BigInt(t.maxFee),0n).toString();
   phase='STATUS_PUBLICATION';writePrivateJson(privateRoot+'/status.json',result);
-  let timerActive=false;try{execFileSync('systemctl',['is-active','--quiet',profile.timer],{stdio:'ignore',timeout:5000});timerActive=true;}catch{}
-  publishZeroStartStatus({...result.readiness,automationStatus:result.status,dailyAutomationActive:timerActive&&result.status==='scheduled',timerActive,oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,automation:result},profile.publicRoot+'/activation.json');
+  const scheduling=readDailyScheduling(profile),timerActive=scheduling.active;
+  publishZeroStartStatus({...result.readiness,automationStatus:result.status,dailyAutomationActive:timerActive&&result.status==='scheduled',timerActive,scheduling,blockers:[...new Set([...(result.blockers||[]),...(scheduling.blocker?[scheduling.blocker]:[])])],oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,automation:result},profile.publicRoot+'/activation.json');
   console.log('ZERO_START_AUTOMATION_'+result.status.toUpperCase()+' target='+readiness.target);
   console.log('DAILY_CREDIT_RESULT '+JSON.stringify(dailyCreditSummary(result)));
   if(optionalSeedWarnings.length)console.log('WARNINGS='+optionalSeedWarnings.join(','));
   if(result.status!=='scheduled')console.log('BLOCKERS='+[...(result.blockers||[]),...result.errors].join(','));
  }catch(e){
   const waiting=Boolean(completedOracles&&completedOracleInspection?.ready&&state&&['DAILY_READINESS','HOURLY_POLICY_TRANSITION'].includes(phase)&&retryableDailyReadFailure(e,state));
-  const failure={version:1,kind:'fresh-zero-automation-error',ready:false,dailyAutomationActive:false,automationStatus:waiting?'waiting':'blocked',blockers:[waiting?readFailureBlocker(phase):code(e)],diagnostic:zeroStartWorkerDiagnostic(e,{phase,state}),checkedAt:new Date().toISOString(),walletPrompts:0,...(completedOracles?{oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,oracleTarget:readiness?.target}:{} )};
+  const failure={version:1,kind:'fresh-zero-automation-error',chainId:97,...(readiness?.target?{target:readiness.target}:{}),ready:false,dailyAutomationActive:false,automationStatus:waiting?'waiting':'blocked',blockers:[waiting?readFailureBlocker(phase):code(e)],diagnostic:zeroStartWorkerDiagnostic(e,{phase,state}),checkedAt:new Date().toISOString(),walletPrompts:0,...(completedOracles?{oracleMaintenance:completedOracles,oracleInspection:completedOracleInspection,oracleTarget:readiness?.target}:{} )};
   if(executeRequested&&!fundOnlyRequested)try{publishZeroStartStatus(failure);}catch{}
   if(waiting){console.log('ZERO_START_AUTOMATION_WAITING target='+readiness.target);console.log('BLOCKERS='+failure.blockers.join(','));return;}
   console.error('ZERO_START_AUTOMATION_STOPPED '+code(e));process.exitCode=1;

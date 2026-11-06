@@ -71,8 +71,11 @@ JS
 base=/opt/globaldroptrade-zero-daily
 release="$base/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 755 "$release/scripts" "$release/server" "$release/artifacts" "$release/config"
-for file in index-zero-positions.mjs install-quarter-policy.mjs zero-start-automation.mjs zero-start-readiness.mjs zero-start-volume.mjs daily-profit.mjs position-profit.mjs complete-rpc-logs.mjs zero-start-hourly-test.mjs maintain-testnet-oracles.mjs refresh-testnet-oracles.mjs migration-journal.mjs migration-signers.mjs connect-zero-start.mjs deploy-zero-start.mjs zero-start-profile.mjs; do cp "scripts/$file" "$release/scripts/"; done
-cp server/trades-api.mjs server/community.mjs server/marketplace.mjs "$release/server/"
+# Copy the complete reviewed module closure. This installer is also used by
+# future RPC repairs and must retain activity checks and durable plan helpers.
+cp scripts/*.mjs "$release/scripts/"
+cp scripts/smart-worker.py "$release/scripts/"
+cp server/*.mjs "$release/server/"
 cp artifacts/AutomaticGroupVault.json artifacts/MockFeed.json "$release/artifacts/"
 cp config/fresh-zero-testnet.json "$release/config/"
 if [ "${#profile_args[@]}" -ne 0 ]; then
@@ -82,6 +85,8 @@ if [ "${#profile_args[@]}" -ne 0 ]; then
 fi
 cp package.json package-lock.json "$release/"
 (cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+# Resolve entrypoint imports before replacing a currently running release.
+(cd "$release" && node --input-type=module -e "await import('./scripts/zero-start-automation.mjs'); await import('./scripts/daily-activity-worker.mjs'); await import('./server/daily-activity.mjs');")
 node_bin=$(command -v node)
 case "$node_bin" in /root/*) echo 'System-readable Node is required'; exit 1;; esac
 backup="$state/install-$(date -u +%Y%m%dT%H%M%S)-$$"

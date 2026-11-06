@@ -6,9 +6,11 @@ node --env-file=/etc/globaldroptrade/trades.env scripts/setup-automation.mjs
 base=/opt/globaldroptrade-automation
 release="$base/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 755 "$release/scripts"
-cp scripts/daily-profit.mjs scripts/migration-journal.mjs scripts/migration-signers.mjs scripts/complete-rpc-logs.mjs "$release/scripts/"
+# Keep position plans and daily activity dependencies with the payment entrypoint.
+cp scripts/*.mjs "$release/scripts/"
 cp package.json package-lock.json "$release/"
 (cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+(cd "$release" && node --input-type=module -e "await import('./scripts/daily-profit.mjs'); await import('./scripts/daily-activity-worker.mjs');")
 install -d -m 700 /var/lib/globaldroptrade/automation-v1
 node_bin=$(command -v node)
 case "$node_bin" in /root/*) echo 'System-readable Node is required'; exit 1;; esac

@@ -10,6 +10,7 @@ import PlanEligibility from './PlanEligibility';
 import LevelVolumes from './LevelVolumes';
 import Community from './Community';
 import CustomerStatus from './CustomerStatus';
+import DailyActivity from './DailyActivity';
 import {needsReferrerWarning} from './referrer';
 import {TransactionSession,requireContractTarget,type SessionTransaction} from './transaction-session';
 import './account.css';
@@ -126,6 +127,7 @@ function App(){
  <main><section className="page-title"><div><span className="eyebrow">GLOBAL FINANCE</span><h1>{page==='overview'?'Account overview':tabs.find(x=>x.key===page)?.label}</h1><p>{page==='overview'?'Your capital, funded profit and withdrawal availability.':page==='positions'?'Every deposit creates a separate position with its own unlock date.':page==='network'?'Referral commissions come only from settled sales profit.':page==='admin'?'Fund reserves and settle real sales profit.':page==='tickets'?'Contact support and follow your private conversations.':page==='announcements'?'Latest platform updates and announcements.':'Review payment destinations and contract rules.'}</p></div><button className="refresh-button" onClick={()=>void refresh()} disabled={!who||loading||busy||!configured}><RefreshCw size={17} className={loading?'spin':''}/>{loading?'Loading':'Refresh'}</button></section>
  {(page==='tickets'||page==='announcements')&&<Community mode={page} who={who} admin={!!data?.owner}/>}
  {page==='overview'&&<AccountWelcome who={who} network={network} data={data} loading={loading} connecting={connecting} busy={busy} onConnect={connect}/>}
+ {page==='overview'&&<DailyActivity key={`${who}:${network}:${vaultAddress}`} who={who} network={network} registered={Boolean(data?.registered)} disabled={busy||connecting||loading}/>}
  {connecting&&<div className="notice neutral connection-progress" role="status"><LoaderCircle size={20} className="spin"/><span>{connectionKind==='walletconnect'?'Opening WalletConnect. On this phone, choose your wallet from the wallet list; on another device, scan the QR code. Approve the connection in your wallet, then return here.':'Open your installed wallet and approve the account connection. If the prompt is already open, finish it there.'}</span></div>}
  {warning&&<div className="notice neutral"><Info size={20}/><span>{warning}</span>{who&&network!==chainId&&configured&&<button onClick={switchNetwork}>Switch network</button>}</div>}
  {error&&<div className="notice error" role="alert"><Info size={20}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError('')}><X size={16}/></button></div>}
