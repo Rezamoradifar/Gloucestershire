@@ -55,6 +55,8 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     Tier[5] private tiers;
     mapping(bytes32 => bool) public usedSettlement;
     mapping(bytes32 => bool) public usedRewardBatch;
+    mapping(bytes32 => bool) public usedDailyRewardBatch;
+    mapping(address => uint256) public lastDailyRewardDay;
     mapping(address => bool) public isPartner;
     uint8 public constant partnerCount = 7;
     address[7] public partnerWallets;
@@ -73,6 +75,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     event Funded(address indexed sender,address indexed asset,uint256 amount,bool feeReserve);
     event Deposited(address indexed user,address indexed asset,uint256 indexed position,uint256 amount,uint256 usd,uint256 feeEach);
     event ProfitCredited(address indexed user,address indexed asset,uint256 amount,bytes32 indexed id);
+    event DailyRewardBatchSettled(bytes32 indexed id,uint256 indexed day,address indexed asset,uint256 total,uint256 recipients);
     event SaleSettled(bytes32 indexed id,address indexed seller,address indexed asset,uint256 grossProfit,uint256 salesUsd,bytes32 evidenceHash);
     event Withdrawal(address indexed user,address indexed asset,uint256 gross,uint256 fee,bool principal);
     event Reinvested(address indexed user,address indexed asset,uint256 amount,uint256 position);
@@ -147,7 +150,7 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
     }
     function tierConfig(uint256 index) external view returns(Tier memory) { return tiers[index]; }
     function tierOf(address who) public view returns(uint8 t) { for(uint8 i=1;i<5;i++) { if(users[who].capitalUsd>=tiers[i].minUsd) t=i; } }
-    function dailyTargetBps(address who) external view returns(uint16) {
+    function dailyTargetBps(address who) public view returns(uint16) {
         Tier storage t=tiers[tierOf(who)]; User storage u=users[who];
         if(u.capitalUsd<tiers[0].minUsd) return 0;
         return rankQualified(who,t.requiredDirect,t.requiredSalesUsd) ? t.maxDailyBps:t.baseDailyBps;
@@ -259,6 +262,78 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         for(uint256 i;i<recipients.length;i++) { if(!users[recipients[i]].registered||amounts[i]==0) revert Invalid(); total+=amounts[i]; }
         if(ledgers[asset].rewards<total) revert Insufficient(); ledgers[asset].rewards-=total;
         for(uint256 i;i<recipients.length;i++) _credit(recipients[i],asset,amounts[i],id);
+    }
+    /// @notice Read-only eligibility and payable ceiling for the current UTC day.
+    /// @dev This is an estimate/check only; it does not allocate or transfer funds.
+    function verifyDailyReward(address who,address asset)
+        external view
+        returns (
+            bool registered,
+            bool eligible,
+            uint16 dailyRateBps,
+            uint256 dailyProfitLimit,
+            uint256 rewardBudget,
+            uint256 maxPayableNow,
+            uint256 lastPaidDay,
+            bool alreadyPaidToday,
+            bool fullyBacked
+        )
+    {
+        _asset(asset);
+        registered = users[who].registered;
+        rewardBudget = ledgers[asset].rewards;
+        lastPaidDay = lastDailyRewardDay[who];
+        uint256 day = block.timestamp / 1 days;
+        alreadyPaidToday = registered && lastPaidDay >= day;
+        fullyBacked = assetBalance(asset) >= accounted(asset);
+
+        if (!registered) {
+            return (false, false, 0, 0, rewardBudget, 0, lastPaidDay, false, fullyBacked);
+        }
+
+        dailyRateBps = dailyTargetBps(who);
+        if (dailyRateBps > 0) {
+            uint256 targetUsd = Math.mulDiv(users[who].capitalUsd, dailyRateBps, BPS);
+            dailyProfitLimit = quoteAsset(asset, targetUsd);
+        }
+
+        maxPayableNow = Math.min(dailyProfitLimit, rewardBudget);
+        eligible = dailyRateBps > 0
+            && dailyProfitLimit > 0
+            && maxPayableNow > 0
+            && !alreadyPaidToday
+            && fullyBacked;
+    }
+
+    /// @notice Allocate daily rewards only from the separately funded rewards ledger.
+    /// @dev Reporter submits a once-per-UTC-day batch. Each amount is capped by the user's existing tier target;
+    ///      the batch is atomic, replay-protected, and requires physical liquidity before rewards become profit claims.
+    function settleDailyRewards(bytes32 id,address asset,address[] calldata recipients,uint256[] calldata amounts)
+        external reporter nonReentrant live {
+        _asset(asset);
+        uint256 day=block.timestamp/1 days;
+        if(id==bytes32(0)||usedDailyRewardBatch[id]||recipients.length==0||recipients.length>100||recipients.length!=amounts.length) revert Invalid();
+        uint256 total;
+        for(uint256 i;i<recipients.length;i++) {
+            address who=recipients[i];
+            if(!users[who].registered||amounts[i]==0||lastDailyRewardDay[who]>=day) revert Invalid();
+            uint16 bps=dailyTargetBps(who);
+            if(bps==0) revert Unauthorized();
+            uint256 targetUsd=Math.mulDiv(users[who].capitalUsd,bps,BPS);
+            uint256 maxAmount=quoteAsset(asset,targetUsd);
+            if(amounts[i]>maxAmount) revert Insufficient();
+            for(uint256 j;j<i;j++) if(recipients[j]==who) revert Invalid();
+            total+=amounts[i];
+        }
+        if(ledgers[asset].rewards<total) revert Insufficient();
+        if(assetBalance(asset)<accounted(asset)) revert InsufficientLiquidity();
+        usedDailyRewardBatch[id]=true;
+        ledgers[asset].rewards-=total;
+        for(uint256 i;i<recipients.length;i++) {
+            lastDailyRewardDay[recipients[i]]=day;
+            _credit(recipients[i],asset,amounts[i],id);
+        }
+        emit DailyRewardBatchSettled(id,day,asset,total,recipients.length);
     }
     /// @notice Gross per-withdrawal ceiling from lifetime deposits plus completed reinvestments of the same asset.
     function profitWithdrawalCap(address who,address asset) public view returns(uint256) {
