@@ -54,9 +54,105 @@ REQUIRED_CODE = ('server/trades-api.mjs', 'server/daily-activity.mjs',
                  'scripts/index-zero-positions.mjs', 'scripts/smart-worker.py',
                  'scripts/prepare-daily-reliability.mjs')
 
+# Keep these explicit values aligned with prepare-daily-reliability.mjs.
+# Provider errors and even uppercase-only strings are not trusted diagnostics.
+PREFLIGHT_PHASES = frozenset((
+    'LOCAL_INPUTS', 'RPC_VERIFICATION', 'TARGET_VERIFICATION',
+    'CONFIRMED_CHECKPOINT', 'HISTORICAL_SNAPSHOT', 'HISTORICAL_STATE',
+    'SETTLEMENT_LOGS', 'CANONICAL_VERIFICATION', 'CURRENT_PERMISSIONS',
+    'JOURNAL_VALIDATION', 'CURRENT_FUNDING', 'CONFIGURATION_STAGE', 'UNKNOWN'))
+PREFLIGHT_OPERATIONS = frozenset((
+    'runtime-import', 'configuration', 'financial-policy', 'activity-policy',
+    'financial-journal', 'rpc-candidates', 'deployment-proofs', 'verify-target',
+    'block-number', 'confirmed-block', 'checkpoint-freshness', 'block-at-time',
+    'accounts-native', 'ledgers-token', 'daily-target-bps', 'settlement-logs',
+    'confirmed-block-hash', 'snapshot-block-hash', 'runtime-hash', 'reporter',
+    'paused', 'operator-balance', 'journal-fees', 'ledgers-native',
+    'asset-balance-native', 'asset-balance-token', 'queue-pending-native',
+    'queue-pending-token', 'render-environment', 'write-stage', 'unknown'))
+PREFLIGHT_REASONS = frozenset((
+    'UNKNOWN', 'TIMEOUT', 'RATE_LIMITED', 'AUTHENTICATION_REQUIRED',
+    'TRANSPORT_UNAVAILABLE', 'METHOD_UNAVAILABLE', 'HISTORICAL_STATE_UNAVAILABLE',
+    'INVALID_RESPONSE', 'REVERTED', 'INVALID_REQUEST', 'BLOCK_RANGE_LIMIT',
+    'RESULT_LIMIT', 'REQUEST_BUDGET_EXCEEDED', 'CANONICAL_MISMATCH',
+    'CREATION_PROOF_UNAVAILABLE', 'CREATION_PROOF_INVALID',
+    'CHAIN_IDENTITY_MISMATCH', 'TARGET_IDENTITY_MISMATCH', 'STALE_CHECKPOINT',
+    'INVALID_LOCAL_CONFIGURATION', 'FINANCIAL_JOURNAL_INVALID',
+    'HISTORICAL_PERIOD_INVALID'))
+PREFLIGHT_ERROR_CODES = frozenset((
+    'CALL_EXCEPTION', 'NETWORK_ERROR', 'SERVER_ERROR', 'TIMEOUT', 'BAD_DATA',
+    'UNKNOWN_ERROR', 'UNSUPPORTED_OPERATION', 'INVALID_ARGUMENT',
+    'NUMERIC_FAULT', 'BUFFER_OVERRUN', 'OFFCHAIN_FAULT', 'CANCELLED'))
+PREFLIGHT_FAILURE_CODES = frozenset((
+    'ROOT_REQUIRED', 'RELIABILITY_ACTIVITY_POLICY_MISMATCH',
+    'RELIABILITY_CURRENT_TESTNET_REQUIRED', 'RELIABILITY_ENV_PRESERVATION_FAILED',
+    'RELIABILITY_EXISTING_POSITION_POLICY_REQUIRED',
+    'RELIABILITY_FINANCIAL_JOURNAL_INVALID',
+    'RELIABILITY_FRESH_CHAIN_CHECKPOINT_REQUIRED',
+    'RELIABILITY_JOURNAL_IDENTITY_MISMATCH', 'RELIABILITY_OPERATOR_BALANCE_REQUIRED',
+    'RELIABILITY_PREFLIGHT_ARGUMENTS_REQUIRED', 'RELIABILITY_PREFLIGHT_FAILED',
+    'RELIABILITY_PRIVATE_INPUT_REQUIRED', 'RELIABILITY_PRIVATE_STAGE_REQUIRED',
+    'RELIABILITY_RPC_ANCHOR_CHANGED', 'RELIABILITY_RPC_CANDIDATES_REQUIRED',
+    'RELIABILITY_RPC_URL_INVALID', 'RELIABILITY_RUNTIME_IDENTITY_MISMATCH',
+    'RELIABILITY_RUNTIME_REQUIRED', 'RELIABILITY_VERIFIED_RPC_REQUIRED',
+    'READ_ONLY_PREFLIGHT_FAILED'))
+
 
 class InstallError(Exception):
     """Only fixed diagnostic codes may reach the terminal."""
+
+    def __init__(self, code, safe_report=None):
+        super().__init__(code)
+        self.safe_report = safe_report
+
+
+def sanitize_preflight_failure(value):
+    """Rebuild the small public diagnostic, excluding all unrecognized fields."""
+    value = value if isinstance(value, dict) else {}
+
+    def token(candidate, allowed, fallback):
+        return candidate if isinstance(candidate, str) and candidate in allowed else fallback
+
+    def number(candidate, minimum, maximum):
+        return candidate if type(candidate) is int and minimum <= candidate <= maximum else None
+
+    def diagnostic(row):
+        return {
+            'phase':token(row.get('phase'), PREFLIGHT_PHASES, 'UNKNOWN'),
+            'operation':token(row.get('operation'), PREFLIGHT_OPERATIONS, 'unknown'),
+            'reason':token(row.get('reason'), PREFLIGHT_REASONS, 'UNKNOWN'),
+            'errorCode':token(row.get('errorCode'), PREFLIGHT_ERROR_CODES, None),
+            'rpcCode':number(row.get('rpcCode'), -2147483648, 2147483647),
+            'httpStatus':number(row.get('httpStatus'), 100, 599),
+            'block':number(row.get('block'), 0, 9007199254740991),
+            'requestedTimestamp':number(row.get('requestedTimestamp'), 0, 9007199254740991),
+        }
+
+    attempts, seen = [], set()
+    rows = value.get('attempts')
+    for row in rows[:4] if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        index = number(row.get('candidate'), 0, 3)
+        if index is None or index in seen:
+            continue
+        seen.add(index)
+        attempts.append({'candidate':index, 'verified':row.get('verified') is True,
+                         **diagnostic(row)})
+    return {'version':1, 'kind':'global-daily-reliability-preflight-failure',
+            'status':'blocked', 'error':token(value.get('error'), PREFLIGHT_FAILURE_CODES,
+                                             'READ_ONLY_PREFLIGHT_FAILED'),
+            **diagnostic(value), 'attempts':attempts,
+            'transactionsSent':0, 'signerOpened':False}
+
+
+def print_install_error(error):
+    code = str(error) if isinstance(error, InstallError) and re.fullmatch(r'[A-Z][A-Z0-9_]+', str(error)) else 'MANAGED_RELEASE_CHECK_FAILED'
+    if isinstance(error, InstallError) and error.safe_report is not None:
+        report = sanitize_preflight_failure(error.safe_report)
+        code = report['error']
+        print(json.dumps(report, indent=2))
+    print('GLOBAL_DAILY_RELEASE_STOPPED '+code)
 
 
 def digest(data):
@@ -328,9 +424,11 @@ class Installer:
             report = json.loads(result.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
             raise InstallError('READ_ONLY_PREFLIGHT_REPORT_REQUIRED') from None
+        if not isinstance(report, dict):
+            raise InstallError('READ_ONLY_PREFLIGHT_REPORT_REQUIRED')
         if result.returncode or report.get('kind') != 'global-daily-reliability-preflight':
-            error = report.get('error', '')
-            raise InstallError(error if re.fullmatch(r'[A-Z][A-Z0-9_]+', error) else 'READ_ONLY_PREFLIGHT_FAILED')
+            diagnostic = sanitize_preflight_failure(report)
+            raise InstallError(diagnostic['error'], safe_report=diagnostic)
         if report.get('chainId') != 97 or report.get('target', '').lower() != TARGET.lower() or report.get('signerOpened') is not False or report.get('transactionsSent') != 0:
             raise InstallError('READ_ONLY_PREFLIGHT_IDENTITY_REQUIRED')
         return report
@@ -838,7 +936,5 @@ if __name__ == '__main__':
     try:
         main()
     except (InstallError, OSError, ValueError, KeyError):
-        error = sys.exc_info()[1]
-        code = str(error) if isinstance(error, InstallError) and re.fullmatch(r'[A-Z][A-Z0-9_]+', str(error)) else 'MANAGED_RELEASE_CHECK_FAILED'
-        print('GLOBAL_DAILY_RELEASE_STOPPED '+code)
+        print_install_error(sys.exc_info()[1])
         raise SystemExit(1)

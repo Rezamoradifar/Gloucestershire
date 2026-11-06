@@ -1,5 +1,7 @@
 """Exercise a release against a fake host, including crashes and live-service boundaries."""
+from contextlib import redirect_stdout
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -65,6 +67,27 @@ class FakeSystem:
         return self.run(['systemctl', action, *units])
 
     def preflight(self, args):
+        if self.mode == 'preflight-diagnostic-fail':
+            secret = 'PRIVATE_RPC_KEY_MUST_NOT_LEAK'
+            return json.dumps({
+                'status':'blocked', 'error':'RELIABILITY_VERIFIED_RPC_REQUIRED',
+                'phase':'RPC_VERIFICATION', 'operation':'unknown',
+                'message':'https://provider.invalid/'+secret,
+                'environment':{'PRIVATE_KEY':secret},
+                'attempts':[
+                    {'candidate':0, 'verified':False, 'phase':'HISTORICAL_STATE',
+                     'operation':'accounts-native', 'reason':'HISTORICAL_STATE_UNAVAILABLE',
+                     'errorCode':'SERVER_ERROR', 'rpcCode':-32000, 'httpStatus':503,
+                     'block':42000, 'requestedTimestamp':1900000000,
+                     'url':'https://provider.invalid/'+secret, 'calldata':secret,
+                     'error':{'message':secret}},
+                    {'candidate':1, 'verified':False, 'phase':[secret],
+                     'operation':secret, 'reason':secret, 'errorCode':{'message':secret},
+                     'rpcCode':2147483648, 'httpStatus':True, 'block':secret,
+                     'requestedTimestamp':9007199254740992},
+                    {'candidate':True, 'verified':False, 'reason':secret},
+                    {'candidate':4, 'verified':False, 'reason':secret}],
+                'transactionsSent':0, 'signerOpened':False})
         envfile = self.root/'etc/globaldroptrade/trades.env'
         financial_policy = self.root/'var/lib/globaldroptrade/fresh-fast-testnet-automation-v1/daily-policy.json'
         activityfile = self.root/'etc/globaldroptrade/daily-activity-policy.json'
@@ -109,6 +132,8 @@ class FakeSystem:
                 output = '\0'.join(self.names)+'\0'
         elif name == 'node' and any('prepare-daily-reliability.mjs' in arg for arg in args):
             output = self.preflight(args)
+            if self.mode == 'preflight-diagnostic-fail':
+                code = 1
         elif name == 'npm':
             if self.mode == 'dependencies-fail' and args[1] == 'ci':
                 code = 1
@@ -335,6 +360,58 @@ class ReleaseTests(unittest.TestCase):
             installer.apply()
         self.assert_state_preserved(root, before, system)
         self.assertFalse(any(Path(call[0]).name == 'npm' for call in system.calls))
+        self.assertFalse(any(call[:1] == ['systemctl'] for call in system.calls))
+
+    def test_failed_preflight_prints_useful_private_safe_diagnostics_before_stopping(self):
+        installer, system, root = self.fixture('preflight-diagnostic-fail')
+        before = {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*') if p.is_file() and not p.is_symlink()}
+        links = {str(p.relative_to(root)):os.readlink(p) for p in root.rglob('*') if p.is_symlink()}
+        with self.assertRaisesRegex(M.InstallError, 'RELIABILITY_VERIFIED_RPC_REQUIRED') as caught:
+            installer.apply()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            M.print_install_error(caught.exception)
+        text = output.getvalue()
+        body, marker, code = text.partition('GLOBAL_DAILY_RELEASE_STOPPED ')
+        report = json.loads(body)
+        self.assertEqual(marker+code, 'GLOBAL_DAILY_RELEASE_STOPPED RELIABILITY_VERIFIED_RPC_REQUIRED\n')
+        self.assertEqual(report['kind'], 'global-daily-reliability-preflight-failure')
+        self.assertEqual(report['phase'], 'RPC_VERIFICATION')
+        self.assertEqual(report['attempts'][0], {
+            'candidate':0, 'verified':False, 'phase':'HISTORICAL_STATE',
+            'operation':'accounts-native', 'reason':'HISTORICAL_STATE_UNAVAILABLE',
+            'errorCode':'SERVER_ERROR', 'rpcCode':-32000, 'httpStatus':503,
+            'block':42000, 'requestedTimestamp':1900000000})
+        self.assertEqual(len(report['attempts']), 2)
+        self.assertEqual(report['attempts'][1]['reason'], 'UNKNOWN')
+        for field in ('errorCode', 'rpcCode', 'httpStatus', 'block', 'requestedTimestamp'):
+            self.assertIsNone(report['attempts'][1][field])
+        for secret in ('PRIVATE_RPC_KEY_MUST_NOT_LEAK', 'provider.invalid', 'calldata', 'environment', 'KEEP_SIGNED_NONCE'):
+            self.assertNotIn(secret, text)
+        self.assertEqual(before, {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*') if p.is_file() and not p.is_symlink()})
+        self.assertEqual(links, {str(p.relative_to(root)):os.readlink(p) for p in root.rglob('*') if p.is_symlink()})
+        self.assertFalse(any(call[:1] == ['systemctl'] or Path(call[0]).name == 'npm' for call in system.calls))
+        self.assertIsNone(installer.backup)
+        self.assertIsNone(system.log)
+
+    def test_unknown_uppercase_provider_codes_cannot_reach_the_terminal(self):
+        secret = 'PRIVATE_PROVIDER_CREDENTIAL'
+        output = io.StringIO()
+        error = M.InstallError(secret, safe_report={'error':secret, 'phase':secret,
+                              'operation':secret, 'reason':secret, 'message':secret})
+        with redirect_stdout(output):
+            M.print_install_error(error)
+        text = output.getvalue()
+        self.assertNotIn(secret, text)
+        self.assertTrue(text.endswith('GLOBAL_DAILY_RELEASE_STOPPED READ_ONLY_PREFLIGHT_FAILED\n'))
+
+    def test_non_object_preflight_output_fails_with_a_fixed_code(self):
+        installer, system, root = self.fixture()
+        before = self.state_snapshot(root)
+        with patch.object(system, 'preflight', return_value='[]'):
+            with self.assertRaisesRegex(M.InstallError, 'READ_ONLY_PREFLIGHT_REPORT_REQUIRED'):
+                installer.apply()
+        self.assert_state_preserved(root, before, system)
         self.assertFalse(any(call[:1] == ['systemctl'] for call in system.calls))
 
     def test_failed_staging_leaves_current_services_and_sources_running(self):

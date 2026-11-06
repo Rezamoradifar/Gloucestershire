@@ -108,6 +108,41 @@ configuration and the financial journal, verifies public chain state, and
 prints a sanitized report. It requires root in order to read the existing
 private files without changing their permissions.
 
+### When RPC verification stops the release
+
+`RELIABILITY_VERIFIED_RPC_REQUIRED` means that no configured candidate passed
+every required check. It does not identify the underlying failure by itself.
+The installer now prints a structured
+`global-daily-reliability-preflight-failure` report before the final
+`GLOBAL_DAILY_RELEASE_STOPPED` line, including when the initial preflight fails
+before a private installation log has been created.
+
+Each attempted candidate is identified by its zero-based index. Its `phase`,
+`operation` and fixed `reason` describe the failing check. Recognized RPC and
+HTTP status numbers, the relevant block number and the requested historical
+timestamp are retained when available. Unknown fields and unrecognized codes
+are discarded at both the Node and Python boundaries. The terminal report
+excludes endpoint URLs, provider messages, credentials, environment values,
+signed transaction bytes and calldata.
+
+| Diagnostic evidence | Interpretation |
+| --- | --- |
+| `HISTORICAL_STATE_UNAVAILABLE` during a historical account or ledger read | The candidate did not supply the historical state required by the existing policy. |
+| `AUTHENTICATION_REQUIRED` with HTTP 401 or 403 | The candidate rejected access. Verify its existing private configuration. |
+| `RATE_LIMITED` or `TIMEOUT` | A bounded request failed because of provider limits or availability. |
+| `CREATION_PROOF_UNAVAILABLE` | Required deployment transaction or receipt evidence could not be retrieved. |
+| `TARGET_IDENTITY_MISMATCH` or `CANONICAL_MISMATCH` | Target identity or chain evidence failed verification; changing a reward policy cannot resolve this. |
+| `STALE_CHECKPOINT` | The confirmed checkpoint did not satisfy the clock/freshness requirement. |
+
+Use the same pinned `--check` command above to obtain the diagnostic without
+installing anything. A failed initial preflight occurs before `STAGING`, so no
+release files or scheduler state have been changed. `--apply` still stops on
+the same verification failures. An alternative RPC must be supplied through
+the existing private configuration or explicit `--rpc-file` and must pass all
+of the same checks; this diagnostic change does not bypass any guard.
+
+### Successful preflight observations
+
 The report includes the reporter permission, pause state, aggregate asset
 budgets and cash, pending withdrawal reserves, operator gas balance, saved fee
 reservations, remaining fee budget, pending signed transaction count, verified
