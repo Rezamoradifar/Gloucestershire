@@ -263,6 +263,48 @@ contract DropshippingVault is Ownable2Step, ReentrancyGuard, ThreeLinePlan {
         if(ledgers[asset].rewards<total) revert Insufficient(); ledgers[asset].rewards-=total;
         for(uint256 i;i<recipients.length;i++) _credit(recipients[i],asset,amounts[i],id);
     }
+    /// @notice Read-only eligibility and payable ceiling for the current UTC day.
+    /// @dev This is an estimate/check only; it does not allocate or transfer funds.
+    function verifyDailyReward(address who,address asset)
+        external view
+        returns (
+            bool registered,
+            bool eligible,
+            uint16 dailyRateBps,
+            uint256 dailyProfitLimit,
+            uint256 rewardBudget,
+            uint256 maxPayableNow,
+            uint256 lastPaidDay,
+            bool alreadyPaidToday,
+            bool fullyBacked
+        )
+    {
+        _asset(asset);
+        registered = users[who].registered;
+        rewardBudget = ledgers[asset].rewards;
+        lastPaidDay = lastDailyRewardDay[who];
+        uint256 day = block.timestamp / 1 days;
+        alreadyPaidToday = registered && lastPaidDay >= day;
+        fullyBacked = assetBalance(asset) >= accounted(asset);
+
+        if (!registered) {
+            return (false, false, 0, 0, rewardBudget, 0, lastPaidDay, false, fullyBacked);
+        }
+
+        dailyRateBps = dailyTargetBps(who);
+        if (dailyRateBps > 0) {
+            uint256 targetUsd = Math.mulDiv(users[who].capitalUsd, dailyRateBps, BPS);
+            dailyProfitLimit = quoteAsset(asset, targetUsd);
+        }
+
+        maxPayableNow = Math.min(dailyProfitLimit, rewardBudget);
+        eligible = dailyRateBps > 0
+            && dailyProfitLimit > 0
+            && maxPayableNow > 0
+            && !alreadyPaidToday
+            && fullyBacked;
+    }
+
     /// @notice Allocate daily rewards only from the separately funded rewards ledger.
     /// @dev Reporter submits a once-per-UTC-day batch. Each amount is capped by the user's existing tier target;
     ///      the batch is atomic, replay-protected, and requires physical liquidity before rewards become profit claims.
