@@ -23,6 +23,7 @@ import time
 BASE = Path('/var/lib/globaldroptrade')
 SESSION = BASE/'fresh-fast-reset-20261107'
 REPO = Path(__file__).resolve().parent.parent
+SYSTEMD_ROOT = Path('/etc/systemd/system')
 ROOT_UID = 0
 NAMES = ('fresh-fast-testnet-v1', 'fresh-fast-testnet-automation-v1')
 PROFILE = 'global-fresh-fast-test-v1'
@@ -94,6 +95,26 @@ def read_private_bytes(path, maximum=16 * 1024 * 1024):
     return data
 
 
+def read_managed_bytes(path, maximum=16 * 1024 * 1024):
+    """Read a root-managed control file without treating it as private input."""
+    path = Path(path)
+    try:
+        parent = path.parent.lstat()
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except (FileNotFoundError, OSError):
+        fail('RESET_MANAGED_CONTROL_FILE_REQUIRED')
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == ROOT_UID and not parent.st_mode & 0o022,
+            'RESET_MANAGED_CONTROL_FILE_REQUIRED')
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == ROOT_UID and
+                not info.st_mode & 0o022 and info.st_size <= maximum,
+                'RESET_MANAGED_CONTROL_FILE_REQUIRED')
+        data = stream.read(maximum + 1)
+    require(len(data) <= maximum, 'RESET_MANAGED_CONTROL_FILE_REQUIRED')
+    return data
+
+
 def digest(path):
     return hashlib.sha256(read_private_bytes(path)).hexdigest()
 
@@ -131,10 +152,15 @@ def save_json(path, value):
 def copy_private_once(source, target):
     source, target = Path(source), Path(target)
     data = read_private_bytes(source)
+    return write_private_once(target, data, 'RESET_ARCHIVE_ENVIRONMENT_CHANGED')
+
+
+def write_private_once(target, data, changed_code):
+    target = Path(target)
     private(target.parent, directory=True)
     source_hash = hashlib.sha256(data).hexdigest()
     if target.exists():
-        require(digest(target) == source_hash, 'RESET_ARCHIVE_ENVIRONMENT_CHANGED')
+        require(digest(target) == source_hash, changed_code)
         return source_hash
     try:
         descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -144,6 +170,11 @@ def copy_private_once(source, target):
         stream.write(data)
         stream.flush()
         os.fsync(stream.fileno())
+    directory = os.open(target.parent, os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
     return source_hash
 
 
@@ -309,7 +340,7 @@ def plan_archive(base, session, expected, revision, environment_hash):
             private(entry)
             files.append({'path': name + '/' + entry.name, 'sha256': digest(entry)})
     state = {
-        'version': 2,
+        'version': 3,
         'kind': 'fresh-fast-testnet-reset',
         'sourceRevision': revision,
         'oldTarget': expected,
@@ -321,16 +352,18 @@ def plan_archive(base, session, expected, revision, environment_hash):
         'externalSettledJournals': external_journals,
         'files': files,
         'preservedInstallerBackups': preserved,
+        'retiredControlState': {},
     }
     save_json(session/'session.json', state)
     return state
 
 
 def validate_session(value, expected, revision):
-    require(value.get('version') == 2 and value.get('kind') == 'fresh-fast-testnet-reset' and
+    require(value.get('version') == 3 and value.get('kind') == 'fresh-fast-testnet-reset' and
             value.get('sourceRevision') == revision and value.get('oldTarget') == expected and
             value.get('profile') == PROFILE and value.get('chainId') == 97 and
             value.get('phase') in PHASES and isinstance(value.get('files'), list) and
+            isinstance(value.get('retiredControlState'), dict) and
             isinstance(value.get('environmentSha256'), str) and
             re.fullmatch(r'[0-9a-f]{64}', value['environmentSha256']) is not None,
             'RESET_SESSION_IDENTITY_MISMATCH')
@@ -355,6 +388,80 @@ def archive(base, session, state):
         os.rename(source, target)
     state['phase'] = 'archived'
     save_json(session/'session.json', state)
+
+
+def archive_started(base, session, state):
+    """Recognize a crash after a move but before the archived phase was saved."""
+    moved = False
+    for row in state['files']:
+        require(isinstance(row, dict) and isinstance(row.get('path'), str) and
+                isinstance(row.get('sha256'), str) and re.fullmatch(r'[0-9a-f]{64}', row['sha256']) is not None,
+                'RESET_ARCHIVE_MANIFEST_INVALID')
+        relative = Path(row['path'])
+        require(len(relative.parts) == 2 and relative.parts[0] in NAMES,
+                'RESET_ARCHIVE_MANIFEST_INVALID')
+        target = session/'previous-state'/relative
+        if os.path.lexists(target):
+            require(digest(target) == row['sha256'], 'RESET_ARCHIVE_CONFLICT')
+            moved = True
+    return moved
+
+
+def control_state_paths(base):
+    return (
+        ('splitDailyOverride',
+         SYSTEMD_ROOT/'globaldroptrade-zero-daily.service.d/split-index.conf',
+         Path('systemd/zero-daily-split-index.conf')),
+        ('rpcFailoverStatus', base/'rpc-failover-v1/status.json',
+         Path('rpc-failover-v1/status.json')),
+    )
+
+
+def archive_retired_control_state(base, session, state):
+    """Archive stale scheduling state before a fresh worker is bootstrapped."""
+    retired = state['retiredControlState']
+    for label, source, relative in control_state_paths(base):
+        target = session/'previous-control-state'/relative
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        private(target.parent, directory=True)
+        prior = retired.get(label)
+        source_exists = os.path.lexists(source)
+        target_exists = os.path.lexists(target)
+        if prior is not None:
+            require(isinstance(prior, dict) and
+                    ((prior.get('absent') is True and len(prior) == 1) or
+                     (isinstance(prior.get('sha256'), str) and
+                      re.fullmatch(r'[0-9a-f]{64}', prior['sha256']) is not None)),
+                    'RESET_CONTROL_STATE_MANIFEST_INVALID')
+        if prior and prior.get('absent') is True:
+            require(not source_exists and not target_exists, 'RESET_RETIRED_CONTROL_STATE_CHANGED')
+            continue
+        if source_exists:
+            data = read_managed_bytes(source)
+            source_hash = write_private_once(target, data, 'RESET_RETIRED_CONTROL_STATE_CHANGED')
+            if prior:
+                require(prior.get('sha256') == source_hash, 'RESET_RETIRED_CONTROL_STATE_CHANGED')
+            source.unlink()
+            directory = os.open(source.parent, os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+            retired[label] = {'sha256': source_hash}
+            save_json(session/'session.json', state)
+            continue
+        if target_exists:
+            target_hash = digest(target)
+            if prior:
+                require(prior.get('sha256') == target_hash, 'RESET_RETIRED_CONTROL_STATE_CHANGED')
+            else:
+                retired[label] = {'sha256': target_hash}
+                save_json(session/'session.json', state)
+            continue
+        if prior:
+            fail('RESET_RETIRED_CONTROL_STATE_CHANGED')
+        retired[label] = {'absent': True}
+        save_json(session/'session.json', state)
 
 
 @contextlib.contextmanager
@@ -536,7 +643,9 @@ def main():
         if state is None or state['phase'] == 'archiving':
             check_active_environment(expected)
             check_testnet_rpc(expected)
-            check_old_target_on_chain(expected)
+            partial_archive = state is not None and archive_started(BASE, SESSION, state)
+            if not partial_archive:
+                check_old_target_on_chain(expected)
             quiesce()
             disable_prior_smart_scheduler()
             with locks(reset_locks()):
@@ -545,6 +654,7 @@ def main():
                 if state is None:
                     environment_hash = copy_private_once('/etc/globaldroptrade/trades.env', SESSION/'trades.env')
                     state = plan_archive(BASE, SESSION, expected, revision, environment_hash)
+                archive_retired_control_state(BASE, SESSION, state)
                 archive(BASE, SESSION, state)
             print('RESET_OLD_STATE_ARCHIVED backup=' + str(SESSION), flush=True)
         if state['phase'] == 'archived':

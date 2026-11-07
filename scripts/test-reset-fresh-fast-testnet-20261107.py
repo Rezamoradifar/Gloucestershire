@@ -106,6 +106,37 @@ with tempfile.TemporaryDirectory() as temporary:
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
     base, session = fixture(root, old)
+    original_systemd = m.SYSTEMD_ROOT
+    m.SYSTEMD_ROOT = root/'etc/systemd/system'
+    override = m.SYSTEMD_ROOT/'globaldroptrade-zero-daily.service.d/split-index.conf'
+    status = base/'rpc-failover-v1/status.json'
+    write(override, {'old': 'split-index-override'})
+    write(status, {'status': 'apply-in-progress'})
+    state = m.plan_archive(base, session, old, revision, '0' * 64)
+    m.archive_retired_control_state(base, session, state)
+    assert not override.exists() and not status.exists()
+    assert (session/'previous-control-state/systemd/zero-daily-split-index.conf').exists()
+    assert (session/'previous-control-state/rpc-failover-v1/status.json').exists()
+    assert set(state['retiredControlState']) == {'splitDailyOverride', 'rpcFailoverStatus'}
+    m.archive_retired_control_state(base, session, state)
+    m.SYSTEMD_ROOT = original_systemd
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+    base, session = fixture(root, old)
+    state = m.plan_archive(base, session, old, revision, '0' * 64)
+    row = next(item for item in state['files'] if item['path'].endswith('connection-public.json'))
+    source = base/row['path']
+    target = session/'previous-state'/row['path']
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.rename(source, target)
+    assert m.archive_started(base, session, state) is True
+    m.archive(base, session, state)
+    assert state['phase'] == 'archived'
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+    base, session = fixture(root, old)
     backup = base/m.NAMES[1]/'install-20261107T042200-1'
     write(backup/'journal.json', {'transactions': {'historical': {'block': 1}}})
     inode = backup.stat().st_ino
@@ -167,12 +198,24 @@ with tempfile.TemporaryDirectory() as temporary:
     base, session = fixture(root, old)
     new = '0x' + '12' * 20
     calls = []
+    original_systemd = m.SYSTEMD_ROOT
+    m.SYSTEMD_ROOT = root/'etc/systemd/system'
+    override = m.SYSTEMD_ROOT/'globaldroptrade-zero-daily.service.d/split-index.conf'
+    failover_status = base/'rpc-failover-v1/status.json'
+    write(override, {'old': 'split-index-override'})
+    write(failover_status, {'status': 'apply-failed'})
+    staged = m.plan_archive(base, session, old, revision, '0' * 64)
+    moved = next(item for item in staged['files'] if item['path'].endswith('connection-public.json'))
+    moved_target = session/'previous-state'/moved['path']
+    moved_target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.rename(base/moved['path'], moved_target)
     m.BASE, m.SESSION = base, session
     m.os.geteuid = lambda: 0
     m.checked_source_revision = lambda: revision
     m.check_active_environment = lambda target: assert_target(target, old)
     m.check_testnet_rpc = lambda target: assert_target(target, old)
-    m.check_old_target_on_chain = lambda target: assert_target(target, old)
+    m.check_old_target_on_chain = lambda target: (_ for _ in ()).throw(
+        AssertionError('canonical verification must not reopen a partially archived report'))
     m.quiesce = lambda: None
     m.disable_prior_smart_scheduler = lambda: None
     m.reset_locks = lambda: ()
@@ -205,6 +248,9 @@ with tempfile.TemporaryDirectory() as temporary:
                 'vaultAddress': new, 'basis': 'position-anniversary-principal',
                 'positionScheduleVersion': 1,
             })
+        elif args[1] == 'ubuntu-zero-oracle.sh':
+            assert not override.exists()
+            assert not failover_status.exists()
 
     m.run = fake_run
     m.sys.argv = ['reset', '--execute', '--expected-target', old]
@@ -218,6 +264,9 @@ with tempfile.TemporaryDirectory() as temporary:
     assert not any('--fund-test-million' in call for call in calls)
     assert ('bash', 'ubuntu-split-hourly-worker.sh', '--execute') in calls
     assert ('bash', 'ubuntu-smart-worker.sh', '--execute') in calls
+    assert (session/'previous-control-state/systemd/zero-daily-split-index.conf').exists()
+    assert (session/'previous-control-state/rpc-failover-v1/status.json').exists()
+    m.SYSTEMD_ROOT = original_systemd
 
 assert '0xB5c3C0f8fc30b2FDB8b16d2325127dAe7C8DCD5B' not in Path(m.__file__).read_text()
 print('RESET_FRESH_FAST_TESTNET_20261107_OFFLINE_TESTS_PASSED: explicit target binding, chain guard, pending guard, immutable archive, preserved locks, installer backup preservation and resumable empty deployment')
