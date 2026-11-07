@@ -47,6 +47,7 @@ class FailoverTests(unittest.TestCase):
   self.assertIn('Type=oneshot',s);self.assertIn('TimeoutStartSec=infinity',s)
   self.assertIn('WantedBy=timers.target',s);self.assertIn('systemctl enable --now',s)
   self.assertIn('--no-block',s);self.assertNotIn('systemctl stop globaldroptrade-zero-daily.service',s)
+  self.assertLess(s.index('umask 077'),s.index('exec 9>/var/lib/globaldroptrade/rpc-failover-v1/install.lock'))
 
 class MonitorIntegrationTests(unittest.TestCase):
  def exercise(self, interrupt=False):
