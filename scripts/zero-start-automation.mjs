@@ -333,7 +333,7 @@ async function main(){
   };
   if(!execute){
    phase='POLICY_LOAD';policy=loadCurrentPolicy();phase='DAILY_READINESS';readiness=await checkReadiness();
-   console.log('ZERO_START_AUTOMATION_CHECKED ready='+readiness.ready);console.log('BLOCKERS='+(readiness.blockers.join(',')||'none'));return;
+   console.log('ZERO_START_AUTOMATION_CHECKED ready='+readiness.ready+' target='+readiness.target);console.log('BLOCKERS='+(readiness.blockers.join(',')||'none'));return;
   }
   const key=readPrivateKey('/etc/globaldroptrade/fresh-zero-automation.key');if(!key)throw Error('EXISTING_SERVER_OPERATOR_KEY_REQUIRED');
   const wallet=new Wallet(key,provider);if(wallet.address!==release.deployer)throw Error('EXPECTED_SERVER_OPERATOR_KEY_REQUIRED');

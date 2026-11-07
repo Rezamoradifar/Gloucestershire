@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import stat
 import subprocess
@@ -24,12 +25,16 @@ BASE = Path('/var/lib/globaldroptrade')
 SESSION = BASE/'fresh-fast-reset-20261107'
 REPO = Path(__file__).resolve().parent.parent
 SYSTEMD_ROOT = Path('/etc/systemd/system')
+CONFIG_ROOT = Path('/etc/globaldroptrade')
+ENV_FILE = CONFIG_ROOT/'trades.env'
+API_STATE_ROOT = Path('/var/lib/globaldroptrade-api')
 ROOT_UID = 0
 NAMES = ('fresh-fast-testnet-v1', 'fresh-fast-testnet-automation-v1')
 PROFILE = 'global-fresh-fast-test-v1'
 ADDRESS = re.compile(r'^0x[0-9a-fA-F]{40}$')
 REVISION = re.compile(r'^[0-9a-f]{40}$')
-PHASES = frozenset(('archiving', 'archived', 'deployed', 'connected', 'automated', 'complete'))
+PHASES = frozenset(('archiving', 'archived', 'deployed', 'connected', 'automating', 'automated', 'complete'))
+API_SERVICE = 'globaldroptrade-api.service'
 TIMER_UNITS = (
     'globaldroptrade-smart-worker.timer',
     'globaldroptrade-rpc-failover.timer',
@@ -112,6 +117,34 @@ def read_managed_bytes(path, maximum=16 * 1024 * 1024):
                 'RESET_MANAGED_CONTROL_FILE_REQUIRED')
         data = stream.read(maximum + 1)
     require(len(data) <= maximum, 'RESET_MANAGED_CONTROL_FILE_REQUIRED')
+    return data
+
+
+def api_state_uid():
+    try:
+        return pwd.getpwnam('globaldroptrade-api').pw_uid
+    except KeyError:
+        fail('RESET_API_SERVICE_ACCOUNT_REQUIRED')
+
+
+def read_api_state_bytes(path, maximum=16 * 1024 * 1024):
+    """Read the API-owned activity history without weakening its ownership checks."""
+    path = Path(path)
+    expected_uid = api_state_uid()
+    try:
+        parent = path.parent.lstat()
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except (FileNotFoundError, OSError):
+        fail('RESET_API_ACTIVITY_HISTORY_REQUIRED')
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == expected_uid and not parent.st_mode & 0o022,
+            'RESET_API_ACTIVITY_HISTORY_REQUIRED')
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == expected_uid and
+                not info.st_mode & 0o077 and info.st_size <= maximum,
+                'RESET_API_ACTIVITY_HISTORY_REQUIRED')
+        data = stream.read(maximum + 1)
+    require(len(data) <= maximum, 'RESET_API_ACTIVITY_HISTORY_REQUIRED')
     return data
 
 
@@ -218,7 +251,7 @@ def parse_private_environment(path):
 
 
 def check_active_environment(expected):
-    values = parse_private_environment('/etc/globaldroptrade/trades.env')
+    values = parse_private_environment(ENV_FILE)
     require(values.get('TRADES_CHAIN_ID') == '97' and values.get('TRADES_ZERO_START_PROFILE') == PROFILE,
             'RESET_ACTIVE_FAST_TESTNET_REQUIRED')
     require(canonical_address(values.get('TRADES_VAULT_ADDRESS'),
@@ -235,7 +268,7 @@ import {FetchRequest, JsonRpcProvider} from 'ethers';
 let provider;
 try {
   const expected = process.argv[1].toLowerCase();
-  const settings = parseEnv(fs.readFileSync('/etc/globaldroptrade/trades.env', 'utf8'));
+  const settings = parseEnv(fs.readFileSync(process.argv[2], 'utf8'));
   if (settings.TRADES_CHAIN_ID !== '97' ||
       settings.TRADES_ZERO_START_PROFILE !== 'global-fresh-fast-test-v1' ||
       String(settings.TRADES_VAULT_ADDRESS || '').toLowerCase() !== expected ||
@@ -252,13 +285,13 @@ try {
   provider?.destroy();
 }
 """
-    run('node', '--input-type=module', '-e', program, expected)
+    run('node', '--input-type=module', '-e', program, expected, str(ENV_FILE))
 
 
 def check_old_target_on_chain(expected):
     # This is read-only and verifies creation, runtime, queue, owner, reporter,
     # feeds and current Fast Testnet markers before any state is moved.
-    output = run_output('node', '--env-file=/etc/globaldroptrade/trades.env',
+    output = run_output('node', '--env-file=' + str(ENV_FILE),
                         'scripts/zero-start-automation.mjs', '--oracles-only', '--check', '--fast-testnet')
     require(('target=' + expected) in output.lower(), 'RESET_CANONICAL_TARGET_MISMATCH')
 
@@ -269,11 +302,23 @@ def checked_source_revision():
         revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=REPO, env=environment,
                                   stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                   timeout=30, check=True).stdout.strip()
-        clean = subprocess.run(['git', 'diff', '--quiet'], cwd=REPO, env=environment,
-                               stdin=subprocess.DEVNULL, timeout=30, check=False).returncode
-    except (OSError, subprocess.SubprocessError):
+        worktree_clean = subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--'], cwd=REPO, env=environment,
+                                        stdin=subprocess.DEVNULL, timeout=30, check=False).returncode
+        index_clean = subprocess.run(['git', 'diff', '--cached', '--quiet', 'HEAD', '--'], cwd=REPO,
+                                     env=environment, stdin=subprocess.DEVNULL, timeout=30,
+                                     check=False).returncode
+        untracked = subprocess.run(['git', 'ls-files', '--others', '--exclude-standard'], cwd=REPO,
+                                   env=environment, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                   timeout=30, check=True).stdout.strip()
+        script = Path(__file__).resolve().relative_to(REPO).as_posix()
+        tracked = subprocess.run(['git', 'ls-files', '--error-unmatch', '--', script,
+                                  'ubuntu-reset-fresh-testnet-20261107.sh'], cwd=REPO, env=environment,
+                                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                 timeout=30, check=True).stdout.splitlines()
+    except (OSError, ValueError, subprocess.SubprocessError):
         fail('RESET_SOURCE_REVISION_REQUIRED')
-    require(REVISION.fullmatch(revision) is not None and clean == 0,
+    require(REVISION.fullmatch(revision) is not None and worktree_clean == 0 and index_clean == 0 and
+            not untracked and set(tracked) == {script, 'ubuntu-reset-fresh-testnet-20261107.sh'},
             'RESET_SOURCE_REVISION_REQUIRED')
     return revision
 
@@ -317,6 +362,21 @@ def optional_journal_manifest(base):
     return entries
 
 
+def external_journal_rows(state):
+    rows = state.get('externalSettledJournals')
+    require(isinstance(rows, list), 'RESET_EXTERNAL_JOURNAL_MANIFEST_INVALID')
+    allowed = {name + '/journal.json' for name in OPTIONAL_JOURNALS}
+    seen = set()
+    for row in rows:
+        require(isinstance(row, dict) and isinstance(row.get('path'), str) and
+                isinstance(row.get('sha256'), str) and row['path'] in allowed and
+                re.fullmatch(r'[0-9a-f]{64}', row['sha256']) is not None and
+                row['path'] not in seen,
+                'RESET_EXTERNAL_JOURNAL_MANIFEST_INVALID')
+        seen.add(row['path'])
+    return rows
+
+
 def plan_archive(base, session, expected, revision, environment_hash):
     """Freeze the exact old generation before a single file is moved."""
     report_hashes = active_reports(base, expected)
@@ -340,7 +400,7 @@ def plan_archive(base, session, expected, revision, environment_hash):
             private(entry)
             files.append({'path': name + '/' + entry.name, 'sha256': digest(entry)})
     state = {
-        'version': 3,
+        'version': 5,
         'kind': 'fresh-fast-testnet-reset',
         'sourceRevision': revision,
         'oldTarget': expected,
@@ -359,7 +419,7 @@ def plan_archive(base, session, expected, revision, environment_hash):
 
 
 def validate_session(value, expected, revision):
-    require(value.get('version') == 3 and value.get('kind') == 'fresh-fast-testnet-reset' and
+    require(value.get('version') == 5 and value.get('kind') == 'fresh-fast-testnet-reset' and
             value.get('sourceRevision') == revision and value.get('oldTarget') == expected and
             value.get('profile') == PROFILE and value.get('chainId') == 97 and
             value.get('phase') in PHASES and isinstance(value.get('files'), list) and
@@ -367,6 +427,49 @@ def validate_session(value, expected, revision):
             isinstance(value.get('environmentSha256'), str) and
             re.fullmatch(r'[0-9a-f]{64}', value['environmentSha256']) is not None,
             'RESET_SESSION_IDENTITY_MISMATCH')
+    external_journal_rows(value)
+    if value['phase'] not in ('archiving', 'archived'):
+        require(isinstance(value.get('newTarget'), str) and ADDRESS.fullmatch(value['newTarget']) is not None,
+                'RESET_SESSION_IDENTITY_MISMATCH')
+
+
+def archive_external_journals(base, session, state):
+    """Move every settled old worker journal before a new worker can be installed."""
+    rows = external_journal_rows(state)
+    expected = {row['path']: row['sha256'] for row in rows}
+    for name in OPTIONAL_JOURNALS:
+        relative = Path(name)/'journal.json'
+        source = base/relative
+        target = session/'previous-state'/relative
+        source_exists = os.path.lexists(source)
+        target_exists = os.path.lexists(target)
+        if relative.as_posix() not in expected:
+            require(not source_exists and not target_exists, 'RESET_EXTERNAL_JOURNAL_CHANGED')
+            continue
+        digest_expected = expected[relative.as_posix()]
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        private(target.parent, directory=True)
+        if target_exists:
+            require(digest(target) == digest_expected and not source_exists,
+                    'RESET_EXTERNAL_JOURNAL_CHANGED')
+            continue
+        private(source.parent, directory=True)
+        require(source_exists and settled(source) == digest_expected,
+                'RESET_EXTERNAL_JOURNAL_CHANGED')
+        os.rename(source, target)
+
+
+def external_archive_started(base, session, state):
+    moved = False
+    for row in external_journal_rows(state):
+        relative = Path(row['path'])
+        source = base/relative
+        target = session/'previous-state'/relative
+        if os.path.lexists(target):
+            require(digest(target) == row['sha256'] and not os.path.lexists(source),
+                    'RESET_EXTERNAL_JOURNAL_CHANGED')
+            moved = True
+    return moved
 
 
 def archive(base, session, state):
@@ -412,9 +515,28 @@ def control_state_paths(base):
         ('splitDailyOverride',
          SYSTEMD_ROOT/'globaldroptrade-zero-daily.service.d/split-index.conf',
          Path('systemd/zero-daily-split-index.conf')),
+        # This is installed by install-daily-reliability.py.  It sorts after
+        # split-index.conf and can replace the fresh worker's ExecStart, so it
+        # must not survive a zero-state deployment.
+        ('dailyReliabilityOverride',
+         SYSTEMD_ROOT/'globaldroptrade-zero-daily.service.d/zz-daily-reliability.conf',
+         Path('systemd/zero-daily-zz-daily-reliability.conf')),
+        ('splitDailyTimerOverride',
+         SYSTEMD_ROOT/'globaldroptrade-zero-daily.timer.d/split-index.conf',
+         Path('systemd/zero-daily-timer-split-index.conf')),
+        ('dailyActivityPolicy', CONFIG_ROOT/'daily-activity-policy.json',
+         Path('etc/globaldroptrade/daily-activity-policy.json')),
+        ('dailyActivityHistory', API_STATE_ROOT/'daily-activity.json',
+         Path('var/lib/globaldroptrade-api/daily-activity.json')),
         ('rpcFailoverStatus', base/'rpc-failover-v1/status.json',
          Path('rpc-failover-v1/status.json')),
     )
+
+
+def read_control_state_bytes(label, source):
+    if label == 'dailyActivityHistory':
+        return read_api_state_bytes(source)
+    return read_managed_bytes(source)
 
 
 def archive_retired_control_state(base, session, state):
@@ -437,7 +559,7 @@ def archive_retired_control_state(base, session, state):
             require(not source_exists and not target_exists, 'RESET_RETIRED_CONTROL_STATE_CHANGED')
             continue
         if source_exists:
-            data = read_managed_bytes(source)
+            data = read_control_state_bytes(label, source)
             source_hash = write_private_once(target, data, 'RESET_RETIRED_CONTROL_STATE_CHANGED')
             if prior:
                 require(prior.get('sha256') == source_hash, 'RESET_RETIRED_CONTROL_STATE_CHANGED')
@@ -462,6 +584,153 @@ def archive_retired_control_state(base, session, state):
             fail('RESET_RETIRED_CONTROL_STATE_CHANGED')
         retired[label] = {'absent': True}
         save_json(session/'session.json', state)
+
+
+def verify_retired_control_state(base, session, state):
+    """Require archived control state to remain absent before a fresh deployment."""
+    retired = state['retiredControlState']
+    for label, source, relative in control_state_paths(base):
+        prior = retired.get(label)
+        target = session/'previous-control-state'/relative
+        require(isinstance(prior, dict), 'RESET_CONTROL_STATE_MANIFEST_INVALID')
+        if prior.get('absent') is True:
+            require(len(prior) == 1 and not os.path.lexists(source) and not os.path.lexists(target),
+                    'RESET_RETIRED_CONTROL_STATE_CHANGED')
+            continue
+        require(isinstance(prior.get('sha256'), str) and
+                re.fullmatch(r'[0-9a-f]{64}', prior['sha256']) is not None and
+                not os.path.lexists(source) and os.path.lexists(target) and
+                digest(target) == prior['sha256'],
+                'RESET_RETIRED_CONTROL_STATE_CHANGED')
+
+
+def replace_private_bytes(path, data):
+    """Atomically replace one root-private file without following a link."""
+    path = Path(path)
+    read_private_bytes(path)
+    parent = path.parent.lstat()
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == ROOT_UID and not parent.st_mode & 0o022,
+            'RESET_ACTIVITY_ENVIRONMENT_REQUIRED')
+    descriptor, temporary = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'wb') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+ACTIVITY_ENVIRONMENT_KEYS = frozenset((
+    'DAILY_ACTIVITY_FILE',
+    'DAILY_ACTIVITY_ORIGIN',
+    'DAILY_ACTIVITY_ACTIVATION_TIMESTAMP',
+    'GLOBAL_DAILY_ACTIVITY_POLICY',
+))
+ENVIRONMENT_ASSIGNMENT = re.compile(rb'^[ \t]*(?:export[ \t]+)?([A-Z][A-Z0-9_]*)=(.*)$')
+
+
+def strip_activity_environment(data):
+    kept, removed = [], []
+    for line in data.splitlines(keepends=True):
+        body = line.rstrip(b'\r\n')
+        match = ENVIRONMENT_ASSIGNMENT.fullmatch(body)
+        if not match or match.group(1).decode('ascii') not in ACTIVITY_ENVIRONMENT_KEYS:
+            kept.append(line)
+            continue
+        value = match.group(2).strip()
+        if value.endswith(b'\\') or (value[:1] in (b"'", b'\"') and value[-1:] != value[:1]):
+            fail('RESET_ACTIVITY_ENVIRONMENT_FORMAT_REQUIRED')
+        removed.append(match.group(1).decode('ascii'))
+    return b''.join(kept), sorted(set(removed))
+
+
+def activity_environment_reset(session, state):
+    prior = state.get('activityEnvironmentReset')
+    require(isinstance(prior, dict) and
+            isinstance(prior.get('beforeSha256'), str) and
+            isinstance(prior.get('afterSha256'), str) and
+            isinstance(prior.get('snapshotSha256'), str) and
+            all(re.fullmatch(r'[0-9a-f]{64}', prior.get(key, '')) is not None
+                for key in ('beforeSha256', 'afterSha256', 'snapshotSha256')) and
+            isinstance(prior.get('removedKeys'), list) and
+            set(prior['removedKeys']).issubset(ACTIVITY_ENVIRONMENT_KEYS),
+            'RESET_ACTIVITY_ENVIRONMENT_MANIFEST_INVALID')
+    snapshot = session/'sanitized-trades.env'
+    require(digest(snapshot) == prior['snapshotSha256'] == prior['afterSha256'],
+            'RESET_ACTIVITY_ENVIRONMENT_MANIFEST_INVALID')
+    return prior, snapshot
+
+
+def scrub_activity_environment(session, state):
+    """Remove old target-bound activity settings while retaining all credentials."""
+    current = read_private_bytes(ENV_FILE, 1024 * 1024)
+    current_hash = hashlib.sha256(current).hexdigest()
+    if state.get('activityEnvironmentReset') is not None:
+        prior, _ = activity_environment_reset(session, state)
+        require(current_hash == prior['afterSha256'], 'RESET_ACTIVITY_ENVIRONMENT_CHANGED')
+        return
+    require(current_hash == state['environmentSha256'], 'RESET_ACTIVITY_ENVIRONMENT_CHANGED')
+    cleaned, removed = strip_activity_environment(current)
+    snapshot = session/'sanitized-trades.env'
+    snapshot_hash = write_private_once(snapshot, cleaned, 'RESET_ACTIVITY_ENVIRONMENT_CHANGED')
+    if cleaned != current:
+        replace_private_bytes(ENV_FILE, cleaned)
+    after_hash = digest(ENV_FILE)
+    require(after_hash == snapshot_hash, 'RESET_ACTIVITY_ENVIRONMENT_CHANGED')
+    state['activityEnvironmentReset'] = {
+        'beforeSha256': current_hash,
+        'afterSha256': after_hash,
+        'snapshotSha256': snapshot_hash,
+        'removedKeys': removed,
+    }
+    save_json(session/'session.json', state)
+
+
+def archive_connection_retry_bytes(session, label, data):
+    """Preserve any partial connection state without letting it affect retry."""
+    digest_value = hashlib.sha256(data).hexdigest()
+    target = session/'connection-retry-state'/label/(digest_value + '.archive')
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private(target.parent, directory=True)
+    return write_private_once(target, data, 'RESET_CONNECTION_RETRY_ARCHIVE_CHANGED')
+
+
+def recover_connection_activity_state(base, session, state):
+    """Restore the safe pre-connection env and archive partial API activity state."""
+    prior, snapshot = activity_environment_reset(session, state)
+    current = read_private_bytes(ENV_FILE, 1024 * 1024)
+    current_hash = hashlib.sha256(current).hexdigest()
+    if current_hash != prior['afterSha256']:
+        values = parse_private_environment(ENV_FILE)
+        target = canonical_address(values.get('TRADES_VAULT_ADDRESS'),
+                                   'RESET_CONNECTION_ENVIRONMENT_CHANGED')
+        require(values.get('TRADES_CHAIN_ID') == '97' and
+                values.get('TRADES_ZERO_START_PROFILE') == PROFILE and
+                target in (state['oldTarget'], state['newTarget']),
+                'RESET_CONNECTION_ENVIRONMENT_CHANGED')
+        archive_connection_retry_bytes(session, 'environment', current)
+        replace_private_bytes(ENV_FILE, read_private_bytes(snapshot, 1024 * 1024))
+        require(digest(ENV_FILE) == prior['afterSha256'], 'RESET_CONNECTION_ENVIRONMENT_CHANGED')
+    for label, source, _ in control_state_paths(base):
+        if label not in ('dailyActivityPolicy', 'dailyActivityHistory') or not os.path.lexists(source):
+            continue
+        data = read_control_state_bytes(label, source)
+        archive_connection_retry_bytes(session, label, data)
+        source.unlink()
+        directory = os.open(source.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
 
 @contextlib.contextmanager
@@ -521,7 +790,32 @@ def unit_info(unit):
     return load.stdout.strip(), active.stdout.strip()
 
 
-def quiesce():
+def unit_file_state(unit):
+    result = subprocess.run(['systemctl', 'show', '--property=UnitFileState', '--value', unit],
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+    require(result.returncode == 0, 'RESET_SYSTEMD_INSPECTION_REQUIRED')
+    return result.stdout.strip()
+
+
+def disable_api_service():
+    """Keep the API from recreating old target-bound activity state during reset."""
+    safe_states = frozenset(('disabled', 'static', 'indirect', 'masked', 'masked-runtime'))
+    loaded, active = unit_info(API_SERVICE)
+    if loaded == 'not-found':
+        require(active in ('', 'inactive', 'failed'), 'RESET_UNMANAGED_API_ACTIVE')
+        return
+    require(loaded == 'loaded' and active in ('active', 'activating', 'inactive', 'failed'),
+            'RESET_API_QUIESCENCE_REQUIRED')
+    if active not in ('inactive', 'failed'):
+        run('systemctl', 'stop', API_SERVICE)
+    if unit_file_state(API_SERVICE) not in safe_states:
+        run('systemctl', 'disable', '--now', API_SERVICE)
+    _, active = unit_info(API_SERVICE)
+    require(active in ('inactive', 'failed') and unit_file_state(API_SERVICE) in safe_states,
+            'RESET_API_DISABLE_REQUIRED')
+
+
+def quiesce(disable_api=False):
     """Stop schedulers, then wait; never terminate a possible signing service."""
     for timer in TIMER_UNITS:
         loaded, active = unit_info(timer)
@@ -531,6 +825,8 @@ def quiesce():
         require(loaded == 'loaded' and active in ('active', 'activating', 'inactive', 'failed'),
                 'RESET_SYSTEMD_INSPECTION_REQUIRED')
         run('systemctl', 'stop', timer)
+    if disable_api:
+        disable_api_service()
     for attempt in range(181):
         busy = []
         for service in SERVICE_UNITS:
@@ -553,17 +849,21 @@ def quiesce():
         time.sleep(1)
 
 
-def disable_prior_smart_scheduler():
-    """Avoid handing a fresh target to the old ordered-scheduler release."""
-    loaded, active = unit_info('globaldroptrade-smart-worker.timer')
-    if loaded == 'not-found':
-        require(active in ('', 'inactive', 'failed'), 'RESET_UNMANAGED_TIMER_ACTIVE')
-        return
-    require(loaded == 'loaded' and active in ('inactive', 'failed'),
-            'RESET_SMART_SCHEDULER_QUIESCENCE_REQUIRED')
-    run('systemctl', 'disable', '--now', 'globaldroptrade-smart-worker.timer')
-    _, active = unit_info('globaldroptrade-smart-worker.timer')
-    require(active in ('inactive', 'failed'), 'RESET_SMART_SCHEDULER_QUIESCENCE_REQUIRED')
+def disable_prior_schedulers():
+    """Prevent every old timer from restarting against moved state after reboot."""
+    safe_states = frozenset(('disabled', 'static', 'indirect', 'masked', 'masked-runtime'))
+    for timer in TIMER_UNITS:
+        loaded, active = unit_info(timer)
+        if loaded == 'not-found':
+            require(active in ('', 'inactive', 'failed'), 'RESET_UNMANAGED_TIMER_ACTIVE')
+            continue
+        require(loaded == 'loaded' and active in ('inactive', 'failed'),
+                'RESET_SCHEDULER_QUIESCENCE_REQUIRED')
+        if unit_file_state(timer) not in safe_states:
+            run('systemctl', 'disable', '--now', timer)
+        _, active = unit_info(timer)
+        require(active in ('inactive', 'failed') and unit_file_state(timer) in safe_states,
+                'RESET_SCHEDULER_DISABLE_REQUIRED')
 
 
 def verify_new_deployment(base, old_target):
@@ -612,9 +912,10 @@ def verify_smart_scheduler():
 
 
 def final_readiness(target):
-    output = run_output('node', '--env-file=/etc/globaldroptrade/trades.env',
+    output = run_output('node', '--env-file=' + str(ENV_FILE),
                         'scripts/zero-start-automation.mjs', '--check', '--fast-testnet', '--hourly-test')
-    require('ZERO_START_AUTOMATION_CHECKED ready=true' in output and 'BLOCKERS=none' in output,
+    require('ZERO_START_AUTOMATION_CHECKED ready=true' in output and 'BLOCKERS=none' in output and
+            ('target=' + target) in output.lower(),
             'RESET_AUTOMATION_READINESS_WAITING')
     print('RESET_AUTOMATION_READINESS_VALID target=' + target, flush=True)
 
@@ -643,31 +944,53 @@ def main():
         if state is None or state['phase'] == 'archiving':
             check_active_environment(expected)
             check_testnet_rpc(expected)
-            partial_archive = state is not None and archive_started(BASE, SESSION, state)
+            partial_archive = state is not None and (
+                archive_started(BASE, SESSION, state) or external_archive_started(BASE, SESSION, state))
             if not partial_archive:
                 check_old_target_on_chain(expected)
-            quiesce()
-            disable_prior_smart_scheduler()
+            quiesce(disable_api=True)
+            disable_prior_schedulers()
             with locks(reset_locks()):
                 # A worker that completed while quiescing may have changed its journal.
                 check_active_environment(expected)
                 if state is None:
-                    environment_hash = copy_private_once('/etc/globaldroptrade/trades.env', SESSION/'trades.env')
+                    environment_hash = copy_private_once(ENV_FILE, SESSION/'trades.env')
                     state = plan_archive(BASE, SESSION, expected, revision, environment_hash)
                 archive_retired_control_state(BASE, SESSION, state)
+                scrub_activity_environment(SESSION, state)
+                archive_external_journals(BASE, SESSION, state)
                 archive(BASE, SESSION, state)
             print('RESET_OLD_STATE_ARCHIVED backup=' + str(SESSION), flush=True)
         if state['phase'] == 'archived':
+            quiesce(disable_api=True)
+            disable_prior_schedulers()
+            with locks(reset_locks()):
+                verify_retired_control_state(BASE, SESSION, state)
+                scrub_activity_environment(SESSION, state)
+                archive_external_journals(BASE, SESSION, state)
             run('bash', 'ubuntu-deploy-zero-start.sh', '--execute', '--fast-testnet')
             target = verify_new_deployment(BASE, expected)
             state.update(phase='deployed', newTarget=target)
             save_json(session_file, state)
         if state['phase'] == 'deployed':
+            quiesce(disable_api=True)
+            disable_prior_schedulers()
+            with locks(reset_locks()):
+                recover_connection_activity_state(BASE, SESSION, state)
+                verify_retired_control_state(BASE, SESSION, state)
+                check_active_environment(expected)
             run('bash', 'ubuntu-connect-zero-start.sh', '--fast-testnet')
             verify_new_connection(BASE, state['newTarget'])
             state['phase'] = 'connected'
             save_json(session_file, state)
         if state['phase'] == 'connected':
+            state['phase'] = 'automating'
+            save_json(session_file, state)
+        if state['phase'] == 'automating':
+            # A retry starts from a known scheduler-free state. The newly
+            # connected API remains available for the oracle installer.
+            quiesce()
+            disable_prior_schedulers()
             # The normal Fast Testnet seed is retained. A one-million Test USDT
             # top-up is a separate, explicit operator decision.
             run('bash', 'ubuntu-zero-oracle.sh', '--execute', '--hourly-test')
