@@ -16,4 +16,5 @@ for tool in git node npm python3 systemctl flock curl; do command -v "$tool" >/d
   echo 'RESET_REQUIRES_512_MIB_FREE'
   exit 1
 }
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 exec python3 scripts/reset-fresh-fast-testnet-20261107.py --execute --expected-target "$3"
