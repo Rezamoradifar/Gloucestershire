@@ -457,4 +457,7 @@ with tempfile.TemporaryDirectory() as temporary:
     m.os.geteuid = original_geteuid
 
 assert '0xB5c3C0f8fc30b2FDB8b16d2325127dAe7C8DCD5B' not in Path(m.__file__).read_text()
+wrapper = Path(m.__file__).parent.parent/'ubuntu-reset-fresh-testnet-20261107.sh'
+wrapper_source = wrapper.read_text()
+assert wrapper_source.index('npm ci --omit=dev --ignore-scripts --no-audit --no-fund') < wrapper_source.index('exec python3 scripts/reset-fresh-fast-testnet-20261107.py')
 print('RESET_FRESH_FAST_TESTNET_20261107_OFFLINE_TESTS_PASSED: explicit target binding, chain guard, pending guard, immutable archive, preserved locks, installer backup preservation and resumable empty deployment')
