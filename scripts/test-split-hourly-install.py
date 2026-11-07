@@ -2,12 +2,13 @@
 from pathlib import Path
 import os,subprocess,tempfile,unittest
 REPO=Path(__file__).resolve().parents[1]
-NAMES=('daily-profit.mjs','position-profit.mjs','zero-start-automation.mjs','zero-start-readiness.mjs','complete-rpc-logs.mjs','index-zero-positions.mjs')
+NAMES=('daily-profit.mjs','position-profit.mjs','zero-start-automation.mjs','zero-start-readiness.mjs','complete-rpc-logs.mjs','index-zero-positions.mjs','daily-activity-worker.mjs','daily-activity.mjs','smart-worker.py')
 class SplitInstallTests(unittest.TestCase):
  def case(self,mode='success',quarter=False):
   with tempfile.TemporaryDirectory() as temp:
-   root=Path(temp);source=root/'source';(source/'scripts').mkdir(parents=True);(root/'bin').mkdir()
+   root=Path(temp);source=root/'source';(source/'scripts').mkdir(parents=True);(source/'server').mkdir();(root/'bin').mkdir()
    for name in NAMES:(source/'scripts'/name).write_text('reviewed '+name)
+   (source/'server/daily-activity.mjs').write_text('reviewed activity API')
    runtime=root/'opt/globaldroptrade-node/node-v22.23.3-linux-x64/bin';runtime.mkdir(parents=True)
    old=root/'opt/globaldroptrade-zero-daily/releases/old';(old/'scripts').mkdir(parents=True)
    for name in NAMES:(old/'scripts'/name).write_text('old '+name)

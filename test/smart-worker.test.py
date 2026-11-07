@@ -1,10 +1,20 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('smart',Path(__file__).resolve().parents[1]/'scripts/smart-worker.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class SmartTests(unittest.TestCase):
+ def test_missing_report_does_not_prevent_first_reconciliation(self):
+  with patch.object(m,'read_json',side_effect=FileNotFoundError):
+   self.assertEqual(m.load_worker_state('status'),{})
+ def test_missing_journal_is_never_replaced_by_empty_state(self):
+  with patch.object(m,'read_json',side_effect=FileNotFoundError):
+   with self.assertRaises(FileNotFoundError):m.load_worker_state('journal')
+ def test_corrupt_or_unsafe_report_is_not_treated_as_a_missing_report(self):
+  with patch.object(m,'read_json',side_effect=ValueError('unsafe')):
+   with self.assertRaises(ValueError):m.load_worker_state('status')
  def harness(self,busy=False,fail=False,advance=True,fresh=True,previous=None):
   calls=[];state={'daily':{'registry':{'through':120},'positionIndex':{'through':100},'positionScanTarget':{'number':200},'positionPaid':{},'positionQuarterPaid':{}}};status={'status':'scheduled','checkedAt':'old','dailyCredits':[{'status':'credited','transactionHash':'0x'+'ab'*32}]}
   def control(action,unit):

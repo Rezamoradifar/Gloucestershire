@@ -92,3 +92,11 @@ test('voluntary reinvestment increases the next production snapshot principal wi
  assert.equal((await v.accounts(a[1],token.target)).profit,E('1.45'));
  assert.equal((await v.accounts(a[1],token.target)).principal,E('150'));
 });
+
+test('a skipped activity period advances without claiming a credit or erasing the latest confirmed payment',async()=>{
+ const state=fresh();await advance(86401);await run(state);const lastCredit=structuredClone(state.daily.lastCredit);
+ await advance(86400);const activity={binding:'prospective-production-activity-v1',activationTimestamp:policy.startTimestamp+86400,eligible:async()=>false};
+ const report=await run(state,{activity,transact:async()=>{throw Error('SKIPPED_PERIOD_MUST_NOT_BROADCAST');}});
+ assert.equal(report.status,'processed');assert.equal(report.processedPeriods,1);assert.equal(report.emptyPeriods,1);assert.deepEqual(report.credits,[]);assert.equal(state.daily.epoch,2);
+ assert.deepEqual(state.daily.lastCredit,lastCredit);assert.equal((await v.accounts(a[2],token.target)).profit,E('7'));assert.equal((await v.accounts(a[1],token.target)).profit,E('1.2'));
+});

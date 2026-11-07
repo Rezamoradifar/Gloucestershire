@@ -126,3 +126,44 @@ test('an orphaned completed journal entry stops the runner before paying another
  assert.equal((await queue.requests(0)).status,3n);assert.equal(await token.balanceOf(addresses[1]),before);
  assert.equal(s.requests.length,0);assert.equal(s.policy,undefined);
 });
+
+test('the worker catches up completed daily periods exactly once after an outage',async()=>{
+ await authorize();const s=session();await s.run();
+ await advance(3*86400+1);await s.run();
+ assert.equal(s.state.daily.epoch,3);
+ assert.equal((await vault.accounts(addresses[1],token.target)).profit,E('21'));
+ assert.equal(s.requests.filter(row=>row.name==='batchProfit').length,3);
+ assert.equal(s.state.daily.pendingDailyPlan,undefined);
+ await s.run();
+ assert.equal((await vault.accounts(addresses[1],token.target)).profit,E('21'));
+ assert.equal(s.requests.filter(row=>row.name==='batchProfit').length,3);
+});
+
+test('activity starts prospectively, skipped periods advance, and a late click cannot claim a missed day',async()=>{
+ await authorize();const s=session();await s.run();
+ let eligible=false;
+ const activity={binding:id('activity-policy'),activationTimestamp:s.policy.startTimestamp+86400,
+  eligible:async()=>eligible,assertCurrent:()=>{}};
+ await advance(2*86400+1);await s.run({activity});
+ assert.equal(s.state.daily.epoch,2);
+ assert.equal((await vault.accounts(addresses[1],token.target)).profit,E('7'));
+ assert.equal(s.requests.filter(row=>row.name==='batchProfit').length,1);
+ assert.equal(s.state.daily.lastCredit.epoch,0,'Skipped periods preserve the last actual credit');
+ eligible=true;await s.run({activity});
+ assert.equal((await vault.accounts(addresses[1],token.target)).profit,E('7'));
+ await advance(86400);await s.run({activity});
+ assert.equal((await vault.accounts(addresses[1],token.target)).profit,E('14'));
+ assert.equal(s.state.daily.epoch,3);
+});
+
+test('activity-store failure cannot cancel an already approved withdrawal or consume an earning epoch',async()=>{
+ await authorize();await tx(vault.batchProfit(id('activity-withdrawal-profit'),token.target,[addresses[1]],[E('20')]));
+ const s=session();await s.run();
+ await tx(vault.connect(signers[1]).withdrawProfit(token.target,E('10')));await tx(queue.approve(0));
+ const before=await token.balanceOf(addresses[1]);await advance(86401);
+ await assert.rejects(s.run({loadActivity:async()=>{throw Error('DAILY_ACTIVITY_HISTORY_INVALID');}}),/DAILY_ACTIVITY_HISTORY_INVALID/);
+ assert.equal((await queue.requests(0)).status,1n);
+ assert.equal(await token.balanceOf(addresses[1])-before,E('9.5'));
+ assert.equal(s.state.daily.epoch,0);
+ assert.equal(s.requests.filter(row=>row.name==='batchProfit').length,0);
+});

@@ -1,6 +1,6 @@
 // Funded production orchestration. Owner liquidity authority stays unchanged.
 import {getAddress,ZeroAddress,keccak256,toUtf8Bytes,Interface} from 'ethers';
-import {assertDailyTarget,validateDailyPolicy,planDailyEpoch,executeDailyPlan,payApprovedRequests,rewardFunding} from './daily-profit.mjs';
+import {assertDailyTarget,validateDailyPolicy,planDailyEpoch,executeDailyPlan,freezeDailyPlan,completeDailyPlan,payApprovedRequests,rewardFunding} from './daily-profit.mjs';
 import {processZeroStartVolume} from './zero-start-volume.mjs';
 const profitCall=new Interface(['function batchProfit(bytes32,address,address[],uint256[])']);
 export function productionBinding({policy,expectedOwner,operator,queue}){return keccak256(toUtf8Bytes(JSON.stringify({policy,owner:getAddress(expectedOwner),operator:getAddress(operator),queue:getAddress(queue.target)})));}
@@ -31,12 +31,12 @@ export async function productionGuard({provider,vault,queue,policy,expectedOwner
  if(getAddress(await vault.owner())!==getAddress(expectedOwner)||getAddress(await queue.vault())!==policy.vaultAddress||await queue.APPROVAL_VERSION()!==1n)throw Error('PRODUCTION_OWNER_OR_QUEUE_CHANGED');
  return policy;
 }
-export async function runProductionAutomation({provider,vault,queue,policy,expectedOwner,operator,state,save=()=>{},transact,assertLease,role='primary',execute=false,maxPeriods=2,confirmations=3}){
+export async function runProductionAutomation({provider,vault,queue,policy,expectedOwner,operator,state,save=()=>{},transact,assertLease,role='primary',execute=false,maxPeriods=2,confirmations=3,activity,loadActivity}){
  if(!['primary','standby'].includes(role)||!Number.isSafeInteger(maxPeriods)||maxPeriods<1||maxPeriods>4)throw Error('PRODUCTION_WORKER_OPTIONS_REQUIRED');
  policy=await productionGuard({provider,vault,queue,policy,expectedOwner});operator=getAddress(operator);
  const binding=productionBinding({policy,expectedOwner,operator,queue});
  if(state.binding&&state.binding!==binding||!state.binding&&Object.keys(state.transactions||{}).length)throw Error('PRODUCTION_JOURNAL_BINDING_CHANGED');
- const report={version:1,kind:'production-funded-automation',chainId:56,periodSeconds:86400,role,dryRun:!execute||role==='standby',status:'checking',checkedAt:new Date().toISOString(),transactionsSent:0,credits:[],withdrawals:null,warnings:[]};
+ const report={version:1,kind:'production-funded-automation',chainId:56,periodSeconds:86400,role,dryRun:!execute||role==='standby',status:'checking',checkedAt:new Date().toISOString(),transactionsSent:0,credits:[],processedPeriods:0,emptyPeriods:0,withdrawals:null,warnings:[]};
  report.funding=await readProductionFunding({provider,vault,queue,confirmations});
  report.reporterAuthorized=await vault.reporters(operator);
  report.operatorGasWei=(await provider.getBalance(operator)).toString();
@@ -56,6 +56,7 @@ export async function runProductionAutomation({provider,vault,queue,policy,expec
    const [ledger,cash,pending]=await Promise.all([vault.ledgers(asset),vault.assetBalance(asset),queue.pending(asset)]);
    if(ledger.rewards<total||BigInt(rewardFunding({rewards:ledger.rewards,cash,profit:ledger.profit,feeReserve:ledger.feeReserve,pending}).availableForNewProfitUnits)<total)throw Error('PRODUCTION_REWARD_CASH_REQUIRED');
   }
+  if(label.startsWith('daily-')&&activity?.assertCurrent)await activity.assertCurrent();
   const receipt=await transact(label,request);if(receipt?.status!==1)throw Error('PRODUCTION_TRANSACTION_NOT_CONFIRMED');report.transactionsSent++;return receipt;
  };
  try{
@@ -64,19 +65,25 @@ export async function runProductionAutomation({provider,vault,queue,policy,expec
   report.volume=await processZeroStartVolume({provider,vault,state,save,transact:send,maxTransactions:4,maxScans:100});
   if(!report.volume.complete){report.status='volume-backlog';return report;}
   if(!await vault.reporters(operator)){report.status='reporter-permission-required';return report;}
+  if(loadActivity){if(typeof loadActivity!=='function')throw Error('DAILY_ACTIVITY_CONFIGURATION_REQUIRED');activity=await loadActivity({state:state.daily,save});}
+  report.activity={enabled:Boolean(activity),activationTimestamp:activity?.activationTimestamp??null};
   for(let pass=0;pass<maxPeriods;pass++){
-   const plan=await planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations,maxRegistryPages:20,registryPageSize:100,registryLogOptions:{maxBlockSpan:10}});
-   report.dailyStatus=plan.status;if(plan.status!=='ready'){report.status=report.credits.length?'credited':plan.status;break;}
+   const plan=await planDailyEpoch({provider,vault,policy,state:state.daily,epoch:state.daily.epoch,save,confirmations,maxRegistryPages:20,registryPageSize:100,registryLogOptions:{maxBlockSpan:10},activity});
+   report.dailyStatus=plan.status;if(plan.status!=='ready'){report.status=report.credits.length?'credited':report.processedPeriods?'processed':plan.status;break;}
+   await freezeDailyPlan({state:state.daily,plan,save});
    const required=new Map();
-   for(const b of plan.batches)if(!await vault.usedRewardBatch(b.id))required.set(b.asset,(required.get(b.asset)||0n)+b.amounts.reduce((a,x)=>a+BigInt(x),0n));
+   for(const b of plan.batches)if(!await vault.usedRewardBatch(b.id)){const asset=getAddress(b.asset);required.set(asset,(required.get(asset)||0n)+b.amounts.reduce((a,x)=>a+BigInt(x),0n));}
    for(const [asset,amount]of required){
     const [ledger,cash,pending]=await Promise.all([vault.ledgers(asset),vault.assetBalance(asset),queue.pending(asset)]);
     const funding=rewardFunding({rewards:ledger.rewards,cash,profit:ledger.profit,feeReserve:ledger.feeReserve,pending});
     if(ledger.rewards<amount||BigInt(funding.availableForNewProfitUnits)<amount){report.status='reward-funding-required';report.warnings.push('REWARD_FUNDING_REQUIRED');return report;}
    }
-   const credited=await executeDailyPlan({provider,vault,queue,plan,transact:send});
-   state.daily.lastCredit={epoch:state.daily.epoch,credited};state.daily.epoch++;save();
-   report.credits.push(...credited);report.status='credited';
+   const credited=await executeDailyPlan({provider,vault,queue,plan,transact:send,state:state.daily,save,activity});
+   completeDailyPlan(state.daily,plan);
+   if(credited.length)state.daily.lastCredit={epoch:state.daily.epoch,credited};
+   state.daily.lastProcessedEpoch=state.daily.epoch;state.daily.epoch++;save();
+   report.processedPeriods++;if(!credited.length)report.emptyPeriods++;
+   report.credits.push(...credited);report.status=report.credits.length?'credited':'processed';
   }
   report.nextEpoch=state.daily.epoch;report.funding=await readProductionFunding({provider,vault,queue,confirmations});return report;
  }catch(e){
