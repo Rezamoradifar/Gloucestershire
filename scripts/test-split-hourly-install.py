@@ -16,7 +16,7 @@ class SplitInstallTests(unittest.TestCase):
    state=root/'var/lib/globaldroptrade/fresh-fast-testnet-automation-v1';state.mkdir(parents=True,mode=0o700)
    journal=state/'journal.json';journal.write_text('{"transactions":{"saved":{"raw":"preserve-signed-bytes","block":123}},"daily":{"positionPaid":{"a:0":11}}}');journal.chmod(0o600);before=journal.read_bytes()
    (root/'etc/systemd/system').mkdir(parents=True)
-   script=(REPO/'ubuntu-split-hourly-worker.sh').read_text().replace('/var/lib/globaldroptrade',str(root/'var/lib/globaldroptrade')).replace('/opt/globaldroptrade',str(root/'opt/globaldroptrade')).replace('/etc/systemd/system',str(root/'etc/systemd/system'))
+   script=(REPO/'ubuntu-split-hourly-worker.sh').read_text().replace('[[ $# = 1 && $1 = --execute && $EUID = 0 ]]','[[ $# = 1 && $1 = --execute ]]').replace('/var/lib/globaldroptrade',str(root/'var/lib/globaldroptrade')).replace('/opt/globaldroptrade',str(root/'opt/globaldroptrade')).replace('/etc/systemd/system',str(root/'etc/systemd/system'))
    (source/'install.sh').write_text(script)
    def executable(path,text):path.write_text(text);path.chmod(0o755)
    executable(runtime/'node',"#!/bin/bash\necho NODE \"$@\" >> \"$SPLIT_FIXTURE/calls\"\nif [[ $SPLIT_MODE = preflight-failure && $1 = scripts/zero-start-automation.mjs ]];then exit 1;fi\nexit 0\n")
@@ -37,6 +37,7 @@ elif a[0]=='show':print('active' if os.environ['SPLIT_MODE']=='busy' else 'inact
 echo INSTALL_RPC >> "$SPLIT_FIXTURE/calls"
 [[ $SPLIT_MODE != rpc-install-failure ]]
 ''')
+   (root/'calls').write_text('')
    env={**os.environ,'PATH':str(root/'bin')+':'+os.environ['PATH'],'SPLIT_FIXTURE':str(root),'SPLIT_MODE':mode}
    result=subprocess.run(['bash',str(source/'install.sh'),'--execute']+(['--quarter-test'] if quarter else []),env=env,text=True,capture_output=True,timeout=30)
    calls=(root/'calls').read_text();self.assertEqual(journal.read_bytes(),before)
