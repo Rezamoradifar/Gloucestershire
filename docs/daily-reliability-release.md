@@ -141,6 +141,51 @@ the same verification failures. An alternative RPC must be supplied through
 the existing private configuration or explicit `--rpc-file` and must pass all
 of the same checks; this diagnostic change does not bypass any guard.
 
+### Recover from a failed configured RPC
+
+A `TARGET_VERIFICATION` attempt with `TIMEOUT` means the selected candidate did
+not finish the contract identity proof. It does not establish whether DNS,
+transport availability, provider throttling or another bounded request caused
+the timeout. Receipt-only proof fallbacks cannot replace a candidate that fails
+to read the current chain, headers, runtime or contract settings.
+
+Use the guarded recovery entry point from the same pinned checkout:
+
+```bash
+sudo python3 scripts/recover-daily-reliability.py \
+  --apply --expected-revision "$GLOBAL_DAILY_RELEASE_REVISION"
+```
+
+The recovery command first checks the existing configuration. If the complete
+RPC proof fails, it checks the managed private archive candidate at
+`/etc/globaldroptrade/archive-rpc-url` when that file exists, followed by a
+bounded list of documented public BNB testnet candidates. Each attempt invokes
+the unchanged installer's complete `--check` path. Current chain ID alone is
+insufficient: deployment identity, canonical blocks, the original historical
+snapshot, event queries and financial journal checks must all pass.
+
+Candidate addresses stay out of command arguments and terminal reports.
+Temporary candidate files use private directories and mode `0600`. The managed
+archive file retains the installer's existing ownership and permission checks.
+The recovery command stops on local configuration failures and malformed
+reports. It advances only after a valid RPC verification failure.
+
+After the first successful check, `--apply` invokes the installer exactly once
+with the same candidate source. The installer repeats its verification before
+staging and again under its existing financial locks. A failed or interrupted
+apply never triggers an attempt with another provider, because scheduler
+activation may already have begun. Recovery without `--apply` only checks
+candidates. If every candidate fails, live configuration and service state
+remain unchanged, and a usable archive RPC or server connectivity repair is
+still required.
+
+Public endpoints are candidates, not proof of availability or archive retention.
+The documented sources are the [OnFinality network list](https://onfinality.io/en/networks),
+[PublicNode BSC testnet page](https://bsc.publicnode.com/?testnet), and
+[BNB Chain RPC endpoint list](https://docs.bnbchain.org/bnb-smart-chain/developers/json_rpc/json-rpc-endpoint/).
+Workspace probes do not establish reachability or historical coverage from the
+user's server; the server-side preflight remains authoritative for installation.
+
 ### Successful preflight observations
 
 The report includes the reporter permission, pause state, aggregate asset
@@ -250,6 +295,7 @@ provides no blind financial-state restore operation.
 ## Focused verification
 
 ```bash
+python3 scripts/test-daily-reliability-recovery.py
 python3 scripts/test-daily-reliability-installer.py
 node --test test/daily-reliability-config.test.mjs
 python3 test/smart-worker.test.py

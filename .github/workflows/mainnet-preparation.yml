@@ -79,6 +79,7 @@ jobs:
       - run: node scripts/server-mainnet.mjs plan
       - name: Managed staging and rollback
         run: |
+          sudo --preserve-env=PATH python3 scripts/test-daily-reliability-recovery.py
           sudo --preserve-env=PATH python3 scripts/test-daily-reliability-installer.py
           sudo --preserve-env=PATH python3 test/smart-worker.test.py
           sudo --preserve-env=PATH python3 scripts/test-support-installer.py
