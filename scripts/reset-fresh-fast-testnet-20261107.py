@@ -743,7 +743,17 @@ def locks(paths):
             private(path.parent, directory=True)
             descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
             info = os.fstat(descriptor)
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != ROOT_UID or info.st_mode & 0o077:
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != ROOT_UID:
+                os.close(descriptor)
+                fail('RESET_PRIVATE_LOCK_REQUIRED')
+            if info.st_mode & 0o077:
+                try:
+                    os.fchmod(descriptor, 0o600)
+                except OSError:
+                    os.close(descriptor)
+                    fail('RESET_PRIVATE_LOCK_REQUIRED')
+                info = os.fstat(descriptor)
+            if info.st_mode & 0o077:
                 os.close(descriptor)
                 fail('RESET_PRIVATE_LOCK_REQUIRED')
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)

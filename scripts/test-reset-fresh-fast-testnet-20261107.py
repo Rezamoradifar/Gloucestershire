@@ -73,6 +73,19 @@ with tempfile.TemporaryDirectory() as temporary:
 
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
+    lock = root/'private-locks/run.lock'
+    lock.parent.mkdir(parents=True, mode=0o700)
+    lock.write_text('legacy lock', encoding='utf-8')
+    lock.chmod(0o644)
+    inode = lock.stat().st_ino
+    with m.locks((lock,)):
+        assert lock.stat().st_ino == inode
+        assert (lock.stat().st_mode & 0o777) == 0o600
+    assert lock.stat().st_ino == inode
+    assert (lock.stat().st_mode & 0o777) == 0o600
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
     base, session = fixture(root, old)
     for kind in ({'transactions': {'p': {'raw': 'pending'}}},
                  {'pending': {'id': 1}, 'transactions': {}},

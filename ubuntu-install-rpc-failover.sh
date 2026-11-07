@@ -6,6 +6,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 [ "$#" -eq 1 ] && [ "$1" = --execute ] || { echo 'Usage: bash ubuntu-install-rpc-failover.sh --execute'; exit 1; }
 [ "$(id -u)" -eq 0 ] || { echo 'ROOT_REQUIRED'; exit 1; }
 for tool in python3 systemctl tar date flock; do command -v "$tool" >/dev/null; done
+umask 077
 install -d -m 700 /var/lib/globaldroptrade/rpc-failover-v1
 exec 9>/var/lib/globaldroptrade/rpc-failover-v1/install.lock
 flock -n 9 || { echo 'RPC_FAILOVER_INSTALL_BUSY'; exit 1; }
@@ -34,7 +35,6 @@ with os.fdopen(fd) as f:
  d=json.load(f)
 if d.get('chainId')!=97 or d.get('periodSeconds') not in (3600,900) or d.get('basis')!='position-anniversary-principal':raise SystemExit('EXISTING_HOURLY_TESTNET_POLICY_REQUIRED')
 PY
-umask 077
 base=/opt/globaldroptrade-rpc-failover
 release="$base/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -m 700 "$release"
