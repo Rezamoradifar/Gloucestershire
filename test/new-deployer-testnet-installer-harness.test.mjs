@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {afterEach,test} from 'node:test';
+import {readNewDeployerPrivateText} from '../scripts/connect-new-deployer-testnet.mjs';
 
 const rootDirectories=[];
 const target='0x1111111111111111111111111111111111111111';
@@ -57,6 +58,9 @@ if [ "\${1:-}" = scripts/connect-new-deployer-testnet.mjs ]; then
   printf 'TRADES_CHAIN_ID="97"\\nTRADES_RPC_URL="https://rpc.example.invalid"\\nTRADES_VAULT_ADDRESS="${target}"\\nTRADES_START_BLOCK="44"\\nTRADES_PORT="3115"\\nGLOBAL_MIGRATION_ENABLED="false"\\nTRADES_ZERO_START_PROFILE="global-new-deployer-testnet-v1"\\nGLOBAL_AUTOMATION_PUBLIC_STATUS="/var/www/globaldroptrade/automation-data/new-deployer-activation.json"\\n' > "\$stage/trades.env"
   printf '{"target":"${target}","queue":"0x2222222222222222222222222222222222222222","runtimeHash":"0x%s","archiveSessionSha256":"%s"}\\n' "\$(printf 1%.0s {1..64})" "\$(printf 2%.0s {1..64})" > "\$stage/new-deployer-testnet-connection.json"
  fi
+ if [ "\$mode" = publish ]; then
+  [ "$(/usr/bin/stat -c '%a' "\${FAKE_HOST:?}/etc/globaldroptrade")" = 700 ] || { echo NEW_DEPLOYER_PRIVATE_DIRECTORY_REQUIRED >&2; exit 1; }
+ fi
  exit 0
 fi
 if [ "\${1:-}" = scripts/preflight-new-deployer-testnet.mjs ]; then exit 0; fi
@@ -72,7 +76,7 @@ mkdir -p "\$out/globaldroptrade-package/site"; printf '<html>new</html>\\n' > "\
     executable(path.join(bin,'bash'),`#!/bin/bash
 case "\${1:-}" in
  scripts/unpack-website.sh) exit 0;;
- ubuntu-api.sh) [ "\${FAKE_API_FAIL:-}" = 1 ] && exit 1 || exit 0;;
+ ubuntu-api.sh) [ "\${FAKE_API_FAIL:-}" = 1 ] && exit 1 || exec /bin/bash "\${FAKE_HOST:?}/ubuntu-api.sh";;
  */globaldroptrade-package/install.sh) exit 0;;
  *) exec /bin/bash "\$@";;
 esac
@@ -80,6 +84,7 @@ esac
     executable(path.join(bin,'curl'),`#!/bin/bash
 set -eu
 out=; while [ "\$#" -gt 0 ]; do if [ "\$1" = -o ]; then out=\$2; shift 2; else shift; fi; done
+[ -n "\$out" ] || { [ "\${FAKE_API_HEALTH_FAIL:-}" = 1 ] && exit 1 || exit 0; }
 case "\$out" in
  *active.json) printf '{"version":1,"chainId":97,"vaultAddress":"${target}"}\\n' > "\$out";;
  *health.json) printf '{"status":"ok","configured":true}\\n' > "\$out";;
@@ -102,6 +107,18 @@ fi
 exit 0
 `);
     executable(path.join(bin,'sleep'),'#!/bin/bash\nexit 0\n');
+    executable(path.join(bin,'id'),'#!/bin/bash\nif [ "${1:-}" = -u ]; then echo 0; fi\nexit 0\n');
+    executable(path.join(bin,'stat'),'#!/bin/bash\nif [ "${1:-}" = -c ] && [ "${2:-}" = %u ]; then echo 0; else exec /usr/bin/stat "$@"; fi\n');
+    const apiSource=fs.readFileSync(path.join(repository,'ubuntu-api.sh'),'utf8');
+    const apiCopy=apiSource.replaceAll('/opt/globaldroptrade-api',root+'/opt/globaldroptrade-api')
+        .replaceAll('/etc/globaldroptrade',root+'/etc/globaldroptrade')
+        .replaceAll('/etc/systemd/system',root+'/etc/systemd/system');
+    write(path.join(root,'ubuntu-api.sh'),apiCopy,0o700);
+    for(const [file,contents] of Object.entries({
+        'server/fake.mjs':'export {};\n','server/trades.env.example':'TRADES_PORT=3115\n',
+        'scripts/fake.mjs':'export {};\n','artifacts/TestnetDeferredMigrationVault.json':'{}\n',
+        'package.json':'{}\n','package-lock.json':'{}\n'
+    }))write(path.join(root,file),contents);
     // The production executable stays root-only with fixed host paths. This isolated copy
     // changes only literal host roots and shortens the bounded wait for deterministic tests.
     const copied=installer
@@ -118,7 +135,7 @@ exit 0
 }
 
 function run(host,extra={}){
-    return spawnSync('/bin/bash',[host.script,'--execute'],{cwd:path.dirname(host.script),encoding:'utf8',env:{...process.env,PATH:host.bin+path.delimiter+process.env.PATH,FAKE_SYSTEMCTL_LOG:host.log,...extra}});
+    return spawnSync('/bin/bash',[host.script,'--execute'],{cwd:path.dirname(host.script),encoding:'utf8',env:{...process.env,PATH:host.bin+path.delimiter+process.env.PATH,FAKE_SYSTEMCTL_LOG:host.log,FAKE_HOST:host.root,...extra}});
 }
 
 afterEach(()=>{while(rootDirectories.length)fs.rmSync(rootDirectories.pop(),{recursive:true,force:true});});
@@ -128,6 +145,8 @@ test('happy cutover stages the new environment without stopping signer services'
     assert.equal(result.status,0,result.stderr+result.stdout);
     assert.match(fs.readFileSync(host.env,'utf8'),new RegExp('TRADES_VAULT_ADDRESS="'+target+'"'));
     assert.match(fs.readFileSync(host.env,'utf8'),/GLOBAL_AUTOMATION_PUBLIC_STATUS="\/var\/www\/globaldroptrade\/automation-data\/new-deployer-activation\.json"/);
+    assert.equal(fs.statSync(path.dirname(host.env)).mode&0o777,0o700,'actual API installer must preserve private env parent');
+    assert.match(readNewDeployerPrivateText(host.env,{expectedUid:process.getuid()}),/TRADES_CHAIN_ID="97"/);
     const calls=fs.readFileSync(host.log,'utf8');assert.doesNotMatch(calls,/stop globaldroptrade-[^ ]+\.service/);
     assert.equal(fs.existsSync(host.newWorkerLock),false,'connection must release only its own worker lock');
 });
@@ -177,6 +196,15 @@ test('cutover failure restores the previous environment and nginx configuration'
     const host=makeHost(),beforeEnv=fs.readFileSync(host.env,'utf8'),beforeConf=fs.readFileSync(host.conf,'utf8'),beforeArchive=fs.readFileSync(host.archive,'utf8'),result=run(host,{FAKE_API_FAIL:'1'});
     assert.notEqual(result.status,0);assert.equal(fs.readFileSync(host.env,'utf8'),beforeEnv);assert.equal(fs.readFileSync(host.conf,'utf8'),beforeConf);assert.equal(fs.readFileSync(host.archive,'utf8'),beforeArchive);assert.equal(fs.realpathSync(host.current),host.previous);
     assert.match(result.stdout+result.stderr,/NEW_DEPLOYER_CONNECTION_FAILED_(PREVIOUS_SITE_RESTORED|RECOVERY_REQUIRED)/);
+});
+
+test('real API installer health failure preserves private directory and connection rollback',()=>{
+    const host=makeHost(),beforeEnv=fs.readFileSync(host.env,'utf8'),beforeConf=fs.readFileSync(host.conf,'utf8');
+    const result=run(host,{FAKE_API_HEALTH_FAIL:'1'});
+    assert.notEqual(result.status,0);assert.match(result.stdout+result.stderr,/API health check failed/);
+    assert.equal(fs.readFileSync(host.env,'utf8'),beforeEnv);assert.equal(fs.readFileSync(host.conf,'utf8'),beforeConf);
+    assert.equal(fs.statSync(path.dirname(host.env)).mode&0o777,0o700);assert.equal(fs.realpathSync(host.current),host.previous);
+    assert.match(readNewDeployerPrivateText(host.env,{expectedUid:process.getuid()}),/ORIGINAL="preserve"/);
 });
 
 test('a rollback verification failure reports recovery-required without claiming restoration',()=>{
