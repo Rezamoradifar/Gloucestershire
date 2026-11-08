@@ -79,3 +79,9 @@ test('API installer refuses a non-root-owned configuration directory',()=>{
  const result=run(f,{FAKE_NONROOT_PATH:f.config});assert.notEqual(result.status,0);assert.match(result.stdout+result.stderr,/API_CONFIG_DIRECTORY_UNSAFE/);
  assert.deepEqual(fs.readdirSync(f.config),[]);assert.equal(fs.statSync(f.config).mode&0o777,0o700);
 });
+
+test('API installer refuses an environment with multiple hard links',()=>{
+ const f=fixture();fs.mkdirSync(f.config,{recursive:true,mode:0o700});const env=path.join(f.config,'trades.env');write(env,'secret\n',0o644);fs.linkSync(env,path.join(f.root,'elsewhere'));
+ const result=run(f);assert.notEqual(result.status,0);assert.match(result.stdout+result.stderr,/API_ENV_FILE_UNSAFE/);
+ assert.equal(fs.statSync(env).mode&0o777,0o644);assert.equal(fs.readFileSync(env,'utf8'),'secret\n');
+});
