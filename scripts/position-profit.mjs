@@ -1,7 +1,7 @@
 // Testnet-only anniversary allocations, one complete position-hour at a time.
 import {Interface,ZeroAddress,getAddress,keccak256,toUtf8Bytes} from 'ethers';
 import {getCompleteLogs} from './complete-rpc-logs.mjs';
-import {blockAtTime,indexMembers,dailyProfitAmount,periodActivity,resumeDailyPlan,completeDailyPlan} from './daily-profit.mjs';
+import {blockAtTime,indexMembers,dailyProfitAmount,isNewDeployerTestnetPolicy,periodActivity,resumeDailyPlan,completeDailyPlan} from './daily-profit.mjs';
 const events=new Interface([
  'event Deposited(address indexed user,address indexed asset,uint256 indexed position,uint256 amount,uint256 usd,uint256 feeEach)',
  'event Reinvested(address indexed user,address indexed asset,uint256 amount,uint256 position)'
@@ -145,7 +145,8 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
  const position=await vault.positionOf(row.member,BigInt(row.id),o);
  if(getAddress(position.asset)!==row.asset)throw Error('POSITION_ASSET_MISMATCH');
  const rate=await eligibility.eligible(row.member)?await vault.dailyTargetBps(row.member,o):0n;
- const amount=dailyProfitAmount(position.principal,rate),domain=[...(chosen.quarter?['GLOBAL_POSITION_QUARTER_TEST_V1',policy.quarterCutover.hash]:['GLOBAL_POSITION_HOURLY_TEST_V1']),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
+ const amount=dailyProfitAmount(position.principal,rate),prefix=isNewDeployerTestnetPolicy(policy)?(chosen.quarter?'GLOBAL_POSITION_QUARTER_NEW_DEPLOYER_TEST_V1':'GLOBAL_POSITION_HOURLY_NEW_DEPLOYER_TEST_V1'):(chosen.quarter?'GLOBAL_POSITION_QUARTER_TEST_V1':'GLOBAL_POSITION_HOURLY_TEST_V1');
+ const domain=[...(chosen.quarter?[prefix,policy.quarterCutover.hash]:[prefix]),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
  if(amount>0n){
   const ownId=keccak256(toUtf8Bytes(domain+':personal'));
   batches.push({id:ownId,asset:row.asset,recipients:[row.member],amounts:[amount.toString()],rows:[{recipient:row.member,amount:amount.toString(),principal:position.principal.toString(),rateBps:rate.toString()}]});

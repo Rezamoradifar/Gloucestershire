@@ -152,9 +152,11 @@ export function dailyCreditSummary(report){
  return {newConfirmedBatches:hashes.length,reconciledBatches:rows.filter(r=>r.status==='already_credited').length,transactionHashes:hashes,dailyStatus:report?.dailyStatus??null,positionSchedule:report?.positionSchedule??null};
 }
 
-export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,indexedPayments=false,maxPositionHours=8,maxDailyPeriods=4,activity,loadActivity,onPhase=()=>{}}){
+export async function runZeroStartAutomation({provider,vault,queue,readiness,state,save,loadPolicy,savePolicy,transact,refreshReadiness,maintainOracles:maintain=async()=>({status:'not-configured'}),processVolume=processZeroStartVolume,confirmations=3,hourlyTest=false,makeHourlyPolicy=makeHourlyTestPolicy,requireActivityBeforePolicy=false,indexedPayments=false,maxPositionHours=8,maxDailyPeriods=4,activity,loadActivity,onPhase=()=>{}}){
  if(!Number.isSafeInteger(maxPositionHours)||maxPositionHours<1||maxPositionHours>16)throw Error('POSITION_CATCHUP_LIMIT_REQUIRED');
  if(!Number.isSafeInteger(maxDailyPeriods)||maxDailyPeriods<1||maxDailyPeriods>4)throw Error('DAILY_CATCHUP_LIMIT_REQUIRED');
+ if(hourlyTest&&typeof makeHourlyPolicy!=='function')throw Error('HOURLY_TEST_POLICY_FACTORY_REQUIRED');
+ if(requireActivityBeforePolicy&&typeof loadActivity!=='function')throw Error('DAILY_ACTIVITY_POLICY_REQUIRED');
  let phase='TARGET_VERIFICATION';
  const during=async(name,action)=>{phase=name;onPhase(name);return action();};
  const target=getAddress(await vault.getAddress());
@@ -186,9 +188,13 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
    readiness=current;report.readiness=current;
   }
   if(!readiness.ready||!report.volume.complete||report.errors.length){report.blockers=[...readiness.blockers,...(!report.volume.complete?['NETWORK_VOLUME_BACKLOG']:[]),...report.errors];return report;}
+  if(requireActivityBeforePolicy&&!activity){
+   activity=await during('ACTIVITY_POLICY',()=>loadActivity({state:state.daily,save}));
+   if(!activity)throw Error('DAILY_ACTIVITY_POLICY_REQUIRED');
+  }
   const checkpoint=await provider.getBlock(readiness.checkpoint.block);
   if(!checkpoint||checkpoint.hash!==readiness.checkpoint.blockHash)throw Error('ZERO_START_ACTIVATION_CHECKPOINT_REORG');
-  policy=hourlyTest?makeHourlyTestPolicy(readiness):validateDailyPolicy({version:1,chainId:97,vaultAddress:target,runtimeHash:readiness.runtimeHash,deploymentBlock:readiness.block,startTimestamp:checkpoint.timestamp,activationBlock:checkpoint.number,activationBlockHash:checkpoint.hash,basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true});
+  policy=hourlyTest?makeHourlyPolicy(readiness):validateDailyPolicy({version:1,chainId:97,vaultAddress:target,runtimeHash:readiness.runtimeHash,deploymentBlock:readiness.block,startTimestamp:checkpoint.timestamp,activationBlock:checkpoint.number,activationBlockHash:checkpoint.hash,basis:'period-start-active-principal',periodSeconds:86400,includeReinvestment:true});
   await savePolicy(policy);report.policyCreated=true;
   state.activation={block:checkpoint.number,blockHash:checkpoint.hash,startTimestamp:checkpoint.timestamp};save();
  }
