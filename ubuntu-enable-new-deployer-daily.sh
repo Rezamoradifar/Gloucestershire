@@ -142,7 +142,9 @@ install -d -m 755 "$release/scripts" "$release/server" "$release/artifacts" "$re
 cp scripts/*.mjs "$release/scripts/"
 cp server/*.mjs "$release/server/"
 cp artifacts/*.json "$release/artifacts/"
-cp config/fresh-fast-testnet.json config/new-deployer-testnet.json "$release/config/"
+# The shared automation imports the default profile even for the replacement
+# signer. Keep its public configuration in the staged module closure.
+cp config/fresh-zero-testnet.json config/fresh-fast-testnet.json config/new-deployer-testnet.json "$release/config/"
 cp package.json package-lock.json "$release/"
 (cd "$release" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund && node --input-type=module -e "await import('./scripts/new-deployer-testnet-automation.mjs'); await import('./server/daily-activity.mjs')")
 node_bin=$(command -v node)
