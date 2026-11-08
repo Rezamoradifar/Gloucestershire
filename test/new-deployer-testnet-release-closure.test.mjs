@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
+import {createServer} from 'node:http';
 import {test} from 'node:test';
 
 test('the actual daily installer copy commands produce an importable worker release',()=>{
@@ -27,4 +28,34 @@ test('the actual daily installer copy commands produce an importable worker rele
   assert.equal(imported.status,0,imported.stdout+imported.stderr);
   assert.ok(fs.existsSync(path.join(directory,'config/fresh-zero-testnet.json')));
  }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
+
+test('the activity readiness request retries a transient API restart response',async()=>{
+ const source=fs.readFileSync('ubuntu-enable-new-deployer-daily.sh','utf8');
+ const line=source.match(/^curl[^\n]*\/api\/daily-activity\/status[^\n]*$/m)?.[0];
+ assert.ok(line,'expected the production activity readiness command');
+ let requests=0;
+ const server=createServer((_req,res)=>{
+  requests++;
+  res.writeHead(requests<3?502:200,{'Content-Type':'application/json'});
+  res.end(JSON.stringify({status:requests<3?'starting':'ready'}));
+ });
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'new-deployer-api-readiness-'));
+ try{
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  const address=server.address(),output=path.join(directory,'response.json');
+  const command=line.replace('--resolve globaldroptrade.com:443:127.0.0.1','')
+   .replace('"https://globaldroptrade.com/api/daily-activity/status?wallet=$owner"',`"http://127.0.0.1:${address.port}/api/daily-activity/status?wallet=test"`)
+   .replace('"$stage/activity-response.json"',JSON.stringify(output));
+  const result=await new Promise((resolve,reject)=>{
+   const child=spawn('/bin/bash',['-eu','-c',command],{stdio:['ignore','pipe','pipe']});
+   let stderr='';child.stderr.on('data',chunk=>{stderr+=chunk;});
+   child.once('error',reject);child.once('close',code=>resolve({code,stderr}));
+  });
+  assert.equal(result.code,0,result.stderr);assert.equal(requests,3);
+  assert.equal(JSON.parse(fs.readFileSync(output,'utf8')).status,'ready');
+ }finally{
+  await new Promise(resolve=>server.close(resolve));
+  fs.rmSync(directory,{recursive:true,force:true});
+ }
 });

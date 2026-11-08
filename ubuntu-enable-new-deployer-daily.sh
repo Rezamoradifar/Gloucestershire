@@ -207,7 +207,7 @@ if ! cmp -s "$stage/trades.staged" "$envfile"; then
  systemctl restart globaldroptrade-api
 fi
 systemctl is-active --quiet globaldroptrade-api
-curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 "https://globaldroptrade.com/api/daily-activity/status?wallet=$owner" -o "$stage/activity-response.json"
+curl -fsS --noproxy '*' --retry 5 --retry-delay 1 --retry-connrefused --retry-max-time 25 --max-time 5 --resolve globaldroptrade.com:443:127.0.0.1 "https://globaldroptrade.com/api/daily-activity/status?wallet=$owner" -o "$stage/activity-response.json"
 node --input-type=module - "$stage/activity-response.json" "$stage/activity-preflight.json" <<'JS'
 import fs from 'node:fs';
 const [response,expected]=process.argv.slice(2).map(file=>JSON.parse(fs.readFileSync(file)));
