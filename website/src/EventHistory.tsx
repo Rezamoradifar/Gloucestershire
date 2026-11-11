@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {Interface,zeroPadValue,type Log} from 'ethers';
 import {displayAmount} from './money';
+import FinancialInsights,{type LedgerEvent} from './FinancialInsights';
 import {Clock3,ExternalLink,History,RefreshCw} from 'lucide-react';
 import {session,errorText,type Asset} from './chain';
 import {chainId,explorer,vaultAddress} from './config';
@@ -14,7 +15,7 @@ const events=new Interface([
 const names=['Deposited','ProfitCredited','Reinvested','Withdrawal'];
 const topics=names.map(name=>events.getEvent(name)!.topicHash);
 type Kind='deposit'|'profit'|'reinvest'|'withdrawal';
-type Entry={key:string;kind:Kind;wallet:string;amount:bigint;fee:bigint;block:number;tx:string;timestamp:number|null;position?:bigint};
+type Entry=LedgerEvent;
 const label:Record<Kind,string>={deposit:'Deposit',profit:'Profit credited',reinvest:'Reinvestment',withdrawal:'Withdrawal'};
 const format=(amount:bigint,decimals:number)=>displayAmount(amount,decimals,6);
 const short=(value:string)=>value.slice(0,8)+'…'+value.slice(-6);
@@ -63,7 +64,7 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
    }
    if(id!==generation.current)return;
    collected.sort((a,b)=>b.block-a.block||b.key.localeCompare(a.key));
-   const recentBlocks=[...new Set(collected.slice(0,35).map(x=>x.block))];
+   const recentBlocks=[...new Set(collected.slice(0,80).map(x=>x.block))];
    const blockTimes=new Map<number,number>();
    for(let i=0;i<recentBlocks.length;i+=5){
     const group=recentBlocks.slice(i,i+5);
@@ -100,6 +101,7 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
   {scope==='wallet'&&<p className="ledger-note">Profit credits are allocations inside the contract, not transfers to your wallet. Withdrawals are shown separately. Figures are not an investment return guarantee.</p>}
   {scope==='global'&&<p className="ledger-note">This view lists recent public contract events for the selected asset, not every member or an accounting reconciliation.</p>}
   {error&&<p className="inline-error" role="alert">{error}</p>}
+  {connected&&scope==='wallet'&&<FinancialInsights events={entries} asset={asset} decimals={decimals} complete={complete}/>}
   {items.length?<div className="ledger-history-list">{items.slice(0,visible).map(entry=><article className="ledger-history-entry" key={entry.key}>
    <div className={'ledger-history-icon '+entry.kind}>{entry.kind==='profit'?'₮':entry.kind==='deposit'?'↓':entry.kind==='withdrawal'?'↑':'↻'}</div>
    <div className="ledger-history-main"><strong>{label[entry.kind]}</strong><small>{entry.timestamp?new Date(entry.timestamp*1000).toLocaleString('en-US'):'Block '+entry.block.toLocaleString('en-US')}{scope==='global'?' · '+short(entry.wallet):''}{entry.position!==undefined?' · Position #'+(entry.position+1n).toString():''}</small></div>
