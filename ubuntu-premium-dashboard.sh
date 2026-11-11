@@ -120,7 +120,7 @@ echo 'GLOBAL_PREMIUM_WALLETCONNECT_PRESERVED'
 
 # Existing guarded installer: build source, back up Nginx, switch only static site,
 # health-check live HTTPS and verify the public API target has not changed.
-bash ubuntu-refine-website.sh
+env -u GLOBAL_ACTIVITY_TESTNET_RELEASE -u GLOBAL_SITE_IP -u GLOBAL_SITE_PORT bash ubuntu-refine-website.sh
 systemctl is-active --quiet globaldroptrade-new-deployer-daily.timer ||
   { echo 'GLOBAL_PREMIUM_DAILY_TIMER_REVIEW_REQUIRED'; exit 1; }
 echo 'GLOBAL_PREMIUM_WEBSITE_INSTALLED_WITH_FINANCIAL_WORKERS_UNCHANGED'
