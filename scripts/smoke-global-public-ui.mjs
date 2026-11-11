@@ -68,7 +68,14 @@ try{
  console.log('GLOBAL_UI_DASHBOARD_OK');
  for(const page of ['My positions','Referral network','Profit & deposits','My profile','Announcements']){
   await visit(desktop,page);
-  if(page==='Profit & deposits')await capture(desktop,'desktop-history');
+  if(page==='Profit & deposits'){
+   await desktop.getByRole('heading',{name:'Complete history center'}).waitFor({timeout:10000});
+   await desktop.getByRole('heading',{name:'Withdrawal request history'}).waitFor({timeout:10000});
+   if(await desktop.getByRole('button',{name:'Export loaded CSV'}).isEnabled())
+    throw Error('GLOBAL_HISTORY_DISCONNECTED_EXPORT_MUST_BE_DISABLED');
+   await capture(desktop,'desktop-history');
+   console.log('GLOBAL_HISTORY_COMPLETE_UI_OK');
+  }
   if(page==='Referral network')await capture(desktop,'desktop-network');
  }
  await desktop.getByRole('button',{name:/^Notifications/}).click();
@@ -99,6 +106,7 @@ try{
  const count=await mobile.locator('.v2-mobile-bottom button').count();
  if(count!==5)throw Error('MOBILE_NAV_EXPECTED_5_FOUND_'+count);
  await mobile.locator('.v2-mobile-bottom button').filter({hasText:'History'}).click();
+ await mobile.getByRole('heading',{name:'Complete history center'}).waitFor({timeout:10000});
  await capture(mobile,'mobile-history');
  await mobile.locator('.v2-mobile-bottom button').filter({hasText:'Profile'}).click();
  await capture(mobile,'mobile-profile');
