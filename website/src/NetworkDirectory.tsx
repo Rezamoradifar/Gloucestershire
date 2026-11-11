@@ -4,6 +4,7 @@ import {ChevronDown,ChevronRight,ExternalLink,GitBranch,RefreshCw,Users} from 'l
 import {session,errorText,type Snapshot} from './chain';
 import {explorer,vaultAddress} from './config';
 import {displayAmount} from './money';
+import NetworkConstellation from './NetworkConstellation';
 
 const registry=new Interface(['event Registered(address indexed user,address indexed referrer)']);
 const topic=registry.getEvent('Registered')!.topicHash;
@@ -11,8 +12,9 @@ type Member={address:string;block:number;tx:string};
 type Profile={active:boolean;kyc:boolean;capitalUsd:bigint;salesUsd:bigint;activeDirect:bigint;registered:boolean};
 const short=(a:string)=>a.slice(0,8)+'…'+a.slice(-5);
 
-function MemberRow({root,member,depth,block}:{root:string;member:Member;depth:number;block:number}){
+function MemberRow({root,member,depth,block,selected=false}:{root:string;member:Member;depth:number;block:number;selected?:boolean}){
  const [open,setOpen]=useState(false),[profile,setProfile]=useState<Profile|null>(null),[error,setError]=useState('');
+ useEffect(()=>{if(selected)setOpen(true);},[selected]);
  useEffect(()=>{
   if(!open)return;
   let cancelled=false;setProfile(null);setError('');
@@ -44,7 +46,7 @@ function MemberRow({root,member,depth,block}:{root:string;member:Member;depth:nu
 }
 
 function Level({root,parent,block,depth}:{root:string;parent:string;block:number;depth:number}){
- const [members,setMembers]=useState<Member[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[cursor,setCursor]=useState<number|null>(null),[show,setShow]=useState(12);
+ const [members,setMembers]=useState<Member[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[cursor,setCursor]=useState<number|null>(null),[show,setShow]=useState(12),[focused,setFocused]=useState<string|null>(null);
  const cursorRef=useRef<number|null>(null),request=useRef(0),running=useRef(false);
  const load=async()=>{
   const head=cursorRef.current;
@@ -79,7 +81,7 @@ function Level({root,parent,block,depth}:{root:string;parent:string;block:number
  };
  useEffect(()=>{
   request.current++;running.current=false;cursorRef.current=Math.max(0,block-3);
-  setMembers([]);setCursor(cursorRef.current);setError('');setShow(12);
+  setMembers([]);setCursor(cursorRef.current);setError('');setShow(12);setFocused(null);
   void load();
   return()=>{request.current++;};
   // Block changes from dashboard polling must not reset the historical scan.
@@ -88,8 +90,9 @@ function Level({root,parent,block,depth}:{root:string;parent:string;block:number
  return <div className="team-level">
   <div className="team-level-heading"><strong>Level {depth} · {members.length} discovered</strong>
    <span>{cursor===null?'Scanned to genesis':cursor!==null?'Older registrations may exist':'Not scanned'}</span></div>
+  {depth===1&&<NetworkConstellation parent={parent} members={members} selected={focused} onSelect={address=>{setFocused(address);setShow(Math.max(show,members.findIndex(m=>m.address===address)+1));}}/>}
   {members.length?<ul className="team-members">{members.slice(0,show).map(member=>
-    <MemberRow key={member.address} root={root} member={member} depth={depth} block={block}/>)}</ul>:
+    <MemberRow key={member.address} root={root} member={member} depth={depth} block={block} selected={focused===member.address}/>)}</ul>:
    !busy?<p className="muted">No direct registrations found in the scanned range. Older records may exist.</p>:null}
   {error&&<p className="inline-error" role="alert">{error}</p>}
   <div className="team-footer">
