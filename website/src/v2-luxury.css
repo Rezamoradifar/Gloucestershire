@@ -133,3 +133,10 @@
 :root[data-theme='light'] .shell .v2-notice-popover,:root[data-theme='light'] .shell .v2-notice-list li,:root[data-theme='light'] .shell .v2-profile-grid>div,:root[data-theme='light'] .shell .v2-admin-found-grid>span{background:#fff;color:#183046}
 :root[data-theme='light'] .shell .v2-financial-insights,:root[data-theme='light'] .shell .v2-insights-heading h3{color:#21354c}
 :root[data-theme='light'] .shell .v2-mobile-bottom{background:#f9fbffef}
+
+/* Avoid the floating appearance switch covering cards, inputs or disclosure text. */
+body:has(.shell) .global-theme-toggle{display:none!important}
+.shell .v2-appearance-control,.shell .v2-profile-theme{display:inline-flex;gap:9px;align-items:center;justify-content:center;min-height:42px;border-radius:11px}
+.shell .v2-appearance-control{width:100%;margin:11px 0 8px}
+.shell .v2-profile-theme{margin:4px 0 17px}
+@media(max-width:960px){.shell .sidebar-bottom .v2-appearance-control{padding:12px}}
