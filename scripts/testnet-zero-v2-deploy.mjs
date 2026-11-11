@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {parseEnv} from 'node:util';
 import {pathToFileURL} from 'node:url';
-import {FetchRequest,JsonRpcProvider,Wallet,keccak256,getAddress,ZeroAddress,parseEther} from 'ethers';
+import {Contract,FetchRequest,JsonRpcProvider,Wallet,keccak256,getAddress,parseEther} from 'ethers';
 import {readConfig} from '../server/trades-api.mjs';
 import {readPrivateKey} from './migration-signers.mjs';
 import {writePrivateJson,journalTransaction} from './migration-journal.mjs';
@@ -101,6 +101,22 @@ async function review({provider,base,artifact,backupPath,report,env,oldHash}){
   provider.getCode(base.tokenFeed),provider.getBalance(base.deployer)
  ]);
  if(!head||tokenCode==='0x'||bnbFeedCode==='0x'||tokenFeedCode==='0x')fail('ZERO_V2_DEPENDENCY_CODE_REQUIRED');
+ const feedAbi=['function decimals() view returns(uint8)',
+  'function latestRoundData() view returns(uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'];
+ for(const address of [base.bnbFeed,base.tokenFeed]){
+  const feed=new Contract(address,feedAbi,provider);
+  let decimals,round;
+  try{
+   [decimals,round]=await Promise.all([
+    feed.decimals({blockTag:head.number}),feed.latestRoundData({blockTag:head.number})
+   ]);
+  }catch{fail('ZERO_V2_ORACLE_PREFLIGHT_REQUIRED');}
+  const age=BigInt(base.age),now=BigInt(head.timestamp);
+  if(decimals>18n||round.roundId===0n||round.answer<=0n||round.updatedAt===0n||
+    round.updatedAt>now||now-round.updatedAt>age||round.answeredInRound<round.roundId){
+   fail('ZERO_V2_ORACLE_PREFLIGHT_REQUIRED');
+  }
+ }
  return {old,request,head,balance:balance.toString(),oldJournalHash:oldHash};
 }
 function identity({base,request,report,backupPath,oldHash}){
