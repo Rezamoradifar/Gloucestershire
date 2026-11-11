@@ -6,7 +6,8 @@ import {pathToFileURL} from 'node:url';
 const modulePath=process.env.GLOBAL_PLAYWRIGHT_MODULE;
 if(!modulePath)throw Error('GLOBAL_PLAYWRIGHT_MODULE_REQUIRED');
 const {chromium}=await import(pathToFileURL(modulePath).href);
-const base='https://globaldroptrade.com';
+const base=(process.env.GLOBAL_SMOKE_BASE||'https://globaldroptrade.com').replace(/\/$/,'');
+const localPreview=base.startsWith('http://127.0.0.1:');
 const out=path.resolve('smoke-artifacts');
 fs.mkdirSync(out,{recursive:true});
 const errors=[],checks=[];
@@ -61,6 +62,13 @@ try{
  await capture(mobile,'mobile-history');
  await mobile.locator('.v2-mobile-bottom button').filter({hasText:'Profile'}).click();
  await capture(mobile,'mobile-profile');
+ if(localPreview){
+  const appearance=await mobile.locator('.global-theme-toggle').evaluate(element=>getComputedStyle(element).display);
+  if(appearance!=='none')throw Error('MOBILE_FLOATING_THEME_OBSCURES_CONTENT');
+  await mobile.locator('.v2-profile-theme').click();
+  await mobile.waitForFunction(()=>document.documentElement.dataset.theme==='light',{timeout:3000});
+  console.log('GLOBAL_UI_MOBILE_THEME_CONTROL_OK');
+ }
  await mobile.locator('.v2-mobile-bottom button').filter({hasText:'Home'}).click();
  await capture(mobile,'mobile-dashboard');
  console.log('GLOBAL_UI_MOBILE_OK');
