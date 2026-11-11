@@ -23,9 +23,10 @@ export function positionReadBudget(provider,{clock=Date.now,milliseconds=90000}=
  return bounded;
 }
 
-export async function scanPositionHistory({provider,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,advanceCompletedTarget=false,milliseconds=90000,reserveMilliseconds=30000,pageSize=100,logBlockSpan=10}){
+export async function scanPositionHistory({provider,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,advanceCompletedTarget=false,milliseconds=90000,reserveMilliseconds=30000,pageSize=100,logBlockSpan=10,parallelPositionEvents=false}){
  if(policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
  if(!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>1000||!Number.isSafeInteger(logBlockSpan)||logBlockSpan<1||logBlockSpan>1000||!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1)throw Error('POSITION_SCAN_LIMIT_REQUIRED');
+ if(typeof parallelPositionEvents!=='boolean'||parallelPositionEvents&&(!isNewDeployerTestnetPolicy(policy)||logBlockSpan!==10))throw Error('POSITION_PARALLEL_TESTNET_SCOPE_REQUIRED');
  // Keep the 2,000-block pass cap. The default small pages are unchanged;
  // the signer-free catch-up tool can request larger adaptively split pages.
  maxRegistryPages=Math.min(maxRegistryPages,4);
@@ -65,11 +66,20 @@ export async function scanPositionHistory({provider,policy,state,save=()=>{},con
  if(!safe(index.through)||!index.positions||index.through>final.number)throw Error('POSITION_INDEX_INVALID');
  if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash)throw Error('POSITION_INDEX_REORG');
  let pages=0;
+ let currentPageAnchor;
+ // Reuse one wrapper for this scan; all event requests share the original
+ // provider's learned RPC range, including restrictions learned from members.
+ const anchored=parallelPositionEvents?{...provider,getBlock:async number=>{
+  const block=await provider.getBlock(number);
+  if(currentPageAnchor&&number===currentPageAnchor.number&&(!block||block.number!==number||block.hash!==currentPageAnchor.hash))throw Error('POSITION_INDEX_REORG');
+  return block;
+ }}:null;
  for(let start=index.through+1;start<=scanThrough&&pages<maxPages;pages++){
   if(provider.remaining()<reserveMilliseconds)return indexing();
   const end=Math.min(start+pageSize-1,scanThrough),discovered={};
-  for(const name of ['Deposited','Reinvested']){
-   const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:logBlockSpan});
+  const names=['Deposited','Reinvested'];
+  let pageBlock;
+  const collect=async logs=>{
    for(const log of logs){
     const args=events.parseLog(log).args,member=getAddress(args.user),asset=getAddress(args.asset),id=args.position.toString(),key=member.toLowerCase()+':'+id;
     if(index.positions[key]||discovered[key]||args.amount<=0n)throw Error('POSITION_DUPLICATE_OPEN_EVENT');
@@ -77,8 +87,22 @@ export async function scanPositionHistory({provider,policy,state,save=()=>{},con
     if(!block||block.hash!==log.blockHash)throw Error('POSITION_OPEN_REORG');
     discovered[key]={member,asset,id,openedAt:block.timestamp,openedBlock:block.number,openedHash:block.hash};
    }
+  };
+  if(parallelPositionEvents){
+   // Keep the existing 10-block query windows and cap total parallel RPCs at
+   // four. Bind both event streams to one canonical page-end block.
+   pageBlock=await provider.getBlock(end);
+   if(!pageBlock||pageBlock.number!==end||!hash(pageBlock.hash))throw Error('POSITION_INDEX_BLOCK_REQUIRED');
+   currentPageAnchor=pageBlock;
+   const results=await Promise.allSettled(names.map(name=>getCompleteLogs({provider:anchored,rangeCacheKey:provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:10,maxConcurrency:2})));
+   const failed=results.find(result=>result.status==='rejected');
+   if(failed)throw failed.reason;
+   for(const result of results)await collect(result.value);
+  }else{
+   for(const name of names)await collect(await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:logBlockSpan}));
   }
   const block=await provider.getBlock(end);if(!block)throw Error('POSITION_INDEX_BLOCK_REQUIRED');
+  if(pageBlock&&(block.number!==end||block.hash!==pageBlock.hash))throw Error('POSITION_INDEX_REORG');
   Object.assign(index.positions,discovered);index.through=end;index.hash=block.hash;save();start=end+1;
  }
  if(index.through<final.number)return indexing();
@@ -106,7 +130,7 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
   final=await indexedPositionCheckpoint({provider,policy,state});
   if(!final)return {status:'indexing',indexTarget:state.positionScanTarget?.number??null,indexThrough:state.positionIndex?.through??null};
  }else{
-  const scan=await scanPositionHistory({provider,policy,state,save,confirmations,maxRegistryPages});
+  const scan=await scanPositionHistory({provider,policy,state,save,confirmations,maxRegistryPages,parallelPositionEvents:isNewDeployerTestnetPolicy(policy)});
   if(scan.status!=='indexed')return scan;
   ({final,wasIndexed}=scan);
  }
