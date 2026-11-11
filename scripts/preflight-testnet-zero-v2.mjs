@@ -36,18 +36,15 @@ export function selectBackup(root=backupRoot){
  const parent=fs.lstatSync(root);
  if(!parent.isDirectory()||parent.isSymbolicLink()||parent.uid!==0||(parent.mode&0o022)!==0)fail('ZERO_V2_BACKUP_ROOT_REQUIRED');
  const names=fs.readdirSync(root).filter(name=>/^pre-zero-[0-9]{8}T[0-9]{6}Z$/.test(name)).sort().reverse();
- for(const name of names){
-  const directory=path.join(root,name);
-  try{
-   privateStat(directory,{directory:true});
-   privateStat(path.join(directory,'new-deployer-testnet-v1'),{directory:true});
-   privateStat(path.join(directory,'new-deployer-testnet-automation-v1'),{directory:true});
-   privateStat(path.join(directory,'trades.env'));
-   privateStat(path.join(directory,'new-deployer-testnet-v1','deployment-public.json'));
-   return directory;
-  }catch{continue;}
- }
- fail('ZERO_V2_VERIFIED_BACKUP_REQUIRED');
+ if(!names.length)fail('ZERO_V2_VERIFIED_BACKUP_REQUIRED');
+ const directory=path.join(root,names[0]);
+ privateStat(directory,{directory:true});
+ privateStat(path.join(directory,'new-deployer-testnet-v1'),{directory:true});
+ privateStat(path.join(directory,'new-deployer-testnet-automation-v1'),{directory:true});
+ privateStat(path.join(directory,'trades.env'));
+ privateStat(path.join(directory,'new-deployer-testnet-v1','deployment-public.json'));
+ privateStat(path.join(directory,'new-deployer-testnet-automation-v1','journal.json'));
+ return directory;
 }
 export function verifyOldReport(current,backup,target=PREVIOUS_TESTNET_VAULT){
  if(current?.chainId!==97||backup?.chainId!==97||current?.verified!==true||backup?.verified!==true)fail('ZERO_V2_PREVIOUS_REPORT_INVALID');
@@ -113,6 +110,8 @@ async function main(){
  );
  const active=readConfig(parseEnv(fs.readFileSync(envFile,'utf8')));
  const archived=readConfig(parseEnv(fs.readFileSync(path.join(backupPath,'trades.env'),'utf8')));
+ const workerJournal=readJson(path.join(backupPath,'new-deployer-testnet-automation-v1','journal.json'));
+ if(workerJournal.identity?.chainId!==97||getAddress(workerJournal.identity.target)!==getAddress(PREVIOUS_TESTNET_VAULT))fail('ZERO_V2_BACKUP_JOURNAL_IDENTITY_REQUIRED');
  if(archived.chainId!==97||getAddress(archived.address)!==getAddress(PREVIOUS_TESTNET_VAULT))fail('ZERO_V2_BACKUP_TARGET_REQUIRED');
  const profile=JSON.parse(fs.readFileSync(new URL('../config/new-deployer-testnet.json',import.meta.url),'utf8'));
  const request=new FetchRequest(active.rpcUrl);request.timeout=15000;
