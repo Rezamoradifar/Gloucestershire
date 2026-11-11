@@ -33,7 +33,8 @@ function readJson(file){
  return value;
 }
 export function selectBackup(root=backupRoot){
- privateStat(root,{directory:true});
+ const parent=fs.lstatSync(root);
+ if(!parent.isDirectory()||parent.isSymbolicLink()||parent.uid!==0||(parent.mode&0o022)!==0)fail('ZERO_V2_BACKUP_ROOT_REQUIRED');
  const names=fs.readdirSync(root).filter(name=>/^pre-zero-[0-9]{8}T[0-9]{6}Z$/.test(name)).sort().reverse();
  for(const name of names){
   const directory=path.join(root,name);
@@ -66,7 +67,7 @@ export async function preflight({provider,config,report,token,backupPath,timerAc
  const [head,runtime]=await Promise.all([provider.getBlockNumber(),provider.getCode(PREVIOUS_TESTNET_VAULT)]);
  if(runtime==='0x'||keccak256(runtime)!==report.runtimeHash)fail('ZERO_V2_PREVIOUS_RUNTIME_CHANGED');
  const vault=new Contract(PREVIOUS_TESTNET_VAULT,[
-  'function ledgers(address) view returns(uint256 principal,uint256 rewards,uint256 profit,uint256 fees)',
+  'function ledgers(address) view returns(uint256 principal,uint256 profit,uint256 feeReserve,uint256 rewards)',
   'function assetBalance(address) view returns(uint256)',
   'function withdrawalQueue() view returns(address)'
  ],provider);
@@ -84,7 +85,7 @@ export async function preflight({provider,config,report,token,backupPath,timerAc
   assets.push({
    asset:name,principalUnits:ledger.principal.toString(),
    rewardBudgetUnits:ledger.rewards.toString(),
-   creditedProfitUnits:ledger.profit.toString(),
+   creditedProfitUnits:ledger.profit.toString(),feeReserveUnits:ledger.feeReserve.toString(),
    contractCashUnits:cash.toString(),queuedUnits:pending.toString()
   });
  }
