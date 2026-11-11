@@ -75,6 +75,49 @@ export PATH="$runtime/bin:$PATH"
 [[ $(node --version) == "$version" ]] || { echo 'GLOBAL_PREMIUM_NODE_VERSION_INVALID'; exit 1; }
 npm --version >/dev/null || { echo 'GLOBAL_PREMIUM_NPM_UNAVAILABLE'; exit 1; }
 
+# Preserve a previously configured *public* WalletConnect/Reown project ID.
+# Never publish a new frontend that silently disables working mobile wallet login.
+# The current production bundle is only read; no private key or credential is read.
+if [[ -z "${VITE_WALLETCONNECT_PROJECT_ID:-}" ]]; then
+  conf=/etc/nginx/sites-available/globaldroptrade.com
+  [[ -f "$conf" && ! -L "$conf" ]] ||
+    { echo 'GLOBAL_PREMIUM_MANAGED_SITE_CONFIG_REQUIRED'; exit 1; }
+  current_root=$(python3 - "$conf" <<'PYROOT'
+import re,sys
+from pathlib import Path
+contents=Path(sys.argv[1]).read_text()
+roots=re.findall(r'^\s*root\s+(/var/www/globaldroptrade/releases/[^;\s]+);',contents,re.M)
+if len(set(roots))!=1:raise SystemExit('GLOBAL_PREMIUM_MANAGED_SITE_ROOT_REQUIRED')
+root=Path(roots[0])
+if root.is_symlink() or root.parent!=Path('/var/www/globaldroptrade/releases') or not (root/'index.html').is_file():
+    raise SystemExit('GLOBAL_PREMIUM_MANAGED_SITE_ROOT_REQUIRED')
+print(root)
+PYROOT
+  )
+  VITE_WALLETCONNECT_PROJECT_ID=$(node --input-type=module - "$current_root" <<'JSWALLET'
+import fs from 'node:fs';
+import path from 'node:path';
+import {walletId} from './scripts/check-testnet-activity-release.mjs';
+const root=process.argv[2],assets=path.join(root,'assets');
+const ids=new Set();
+for(const filename of fs.readdirSync(assets)){
+ if(!filename.endsWith('.js'))continue;
+ const file=path.join(assets,filename),stat=fs.lstatSync(file);
+ if(!stat.isFile()||stat.size>15_000_000)continue;
+ const source=fs.readFileSync(file,'utf8');
+ if(!source.includes('projectId'))continue;
+ try{ids.add(walletId(source));}catch{}
+}
+if(ids.size!==1)throw Error('GLOBAL_PREMIUM_WALLETCONNECT_ID_UNVERIFIED_NO_INSTALL');
+process.stdout.write([...ids][0]);
+JSWALLET
+  ) || { echo 'GLOBAL_PREMIUM_WALLETCONNECT_ID_UNVERIFIED_NO_INSTALL'; exit 1; }
+fi
+[[ "$VITE_WALLETCONNECT_PROJECT_ID" =~ ^[a-fA-F0-9]{32}$ ]] ||
+  { echo 'GLOBAL_PREMIUM_WALLETCONNECT_PROJECT_ID_INVALID'; exit 1; }
+export VITE_WALLETCONNECT_PROJECT_ID
+echo 'GLOBAL_PREMIUM_WALLETCONNECT_PRESERVED'
+
 # Existing guarded installer: build source, back up Nginx, switch only static site,
 # health-check live HTTPS and verify the public API target has not changed.
 bash ubuntu-refine-website.sh
