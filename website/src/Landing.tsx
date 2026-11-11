@@ -10,6 +10,7 @@ import LiveTrades from './LiveTrades';
 import CompanyDocuments from './CompanyDocuments';
 import './responsive.css';
 import './depth-commerce.css';
+import './v2-luxury.css';
 import DepthMotion from './DepthMotion';
 import Marketplace from './Marketplace';
 
@@ -35,16 +36,16 @@ export default function Landing(){
  <a className="gdt-skip" href="#main-content">Skip to content</a>
  <header className="gdt-header"><div className="gdt-wrap gdt-nav"><a className="gdt-brand" href="#" aria-label="Global Drop Trade home"><span className="gdt-mark"><Globe2 size={24}/></span><span>GLOBAL<span className="gdt-brand-sub">DROP TRADE</span></span></a><nav id="gdt-menu" className={menu?'gdt-links open':'gdt-links'} aria-label="Main navigation">{nav.map(([label,id])=><a key={id} href={`#${id}`} onClick={()=>setMenu(false)}>{label}</a>)}</nav><CTA className="gdt-nav-cta"/><button ref={menuButton} className="gdt-menu-button" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} aria-controls="gdt-menu" onClick={()=>setMenu(!menu)}>{menu?<X/>:<Menu/>}</button></div></header>
  <main id="main-content">
- <section className="gdt-hero" aria-labelledby="hero-title">
+ <section className="gdt-hero v2-luxury-hero" aria-labelledby="hero-title"><div className="v2-hero-stars" aria-hidden="true"/>
   <div className="gdt-wrap gdt-hero-grid">
    <div className="gdt-hero-content">
     <Eyebrow>COMMERCE, REIMAGINED</Eyebrow>
     <h1 id="hero-title">A world of<br/>opportunity.<br/><em>Intelligently<br className="gdt-hero-break"/> connected.</em></h1>
     <p>Global market experience. Artificial intelligence. A smarter way to discover the potential between products, people and markets.</p>
     <div className="gdt-actions"><CTA label="Explore the platform"/><a className="gdt-text-link" href="#how-it-works">How it works <ArrowDown size={17}/></a></div>
-    <DepthMotion/><div className="gdt-preview"><span/>Platform preview · Commerce examples are illustrative.</div>
+    <DepthMotion/><div className="v2-hero-trust"><ShieldCheck size={17}/><span>Explore public contract records and verify your wallet directly on chain.</span></div><div className="gdt-preview"><span/>Platform preview · Commerce examples are illustrative.</div>
    </div>
-   <div className="gdt-hero-visual" data-depth>
+   <div className="gdt-hero-visual" data-depth><div className="v2-hero-orbit-scene" aria-hidden="true"><span className="v2-orbit v2-orbit-a"/><span className="v2-orbit v2-orbit-b"/><span className="v2-orbit v2-orbit-c"/><span className="v2-orbit-satellite v2-satellite-a"/><span className="v2-orbit-satellite v2-satellite-b"/></div>
     <figure className="gdt-hero-world"><img src="/assets/commerce-world.webp" width="1672" height="941" alt="Conceptual golden trade routes connecting Earth above a cargo port" fetchPriority="high"/><figcaption><span>GLOBAL PERSPECTIVE</span><span>01 / CONCEPT VISUAL</span></figcaption></figure>
     <div className="gdt-hero-orbit-label"><span className="gdt-orbit-dot"/>BEYOND BORDERS</div>
     <a className="gdt-hero-insight" href="#our-ai"><MediaImage name="model-ai" alt="Golden neural processor representing artificial intelligence" sizes="128px"/><div><span>INTELLIGENCE AT THE CORE</span><strong>More perspective.<br/>Better decisions.</strong><small>Explore the intended AI workflow <ArrowUpRight size={14}/></small></div></a>
