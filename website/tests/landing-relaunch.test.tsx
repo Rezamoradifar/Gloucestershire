@@ -20,7 +20,7 @@ describe('Global immersive V3 landing hero',()=>{
  });
  it('has three meaningful destination cards and truthful data disclosures',()=>{
   const html=renderToStaticMarkup(<ImmersiveHero/>);
-  expect((html.match(/v3-capability-card v3-card-/g)||[]).toHaveLength(3);
+  expect((html.match(/v3-capability-card v3-card-/g)||[])).toHaveLength(3);
   for(const target of ['#our-ai','#how-it-works','#dashboard'])expect(html).toContain('href="'+target+'"');
   expect(html).toContain('Commerce integrations are illustrative');
   expect(html).toContain('Wallet connection required');
