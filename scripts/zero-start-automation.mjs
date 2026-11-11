@@ -216,6 +216,14 @@ export async function runZeroStartAutomation({provider,vault,queue,readiness,sta
    report.rewardFunding=await during('DAILY_FUNDING',async()=>Promise.all([ZeroAddress,await vault.usdt()].map(asset=>inspectDailyCashCoverage({vault,queue,asset}))));
    const credits=await during('DAILY_CREDIT_EXECUTION',()=>executeDailyPlan({provider,vault,queue,plan,transact,state:state.daily,save,activity}));
    report.dailyCredits.push(...credits);
+   // A zero-value hour can legitimately advance without a credit. Record only
+   // aggregate reasons for this run; historical reasons cannot be recovered.
+   if(plan.positionCursor&&plan.batches.length===0){
+    const allowed=['activity_ineligible','zero_principal','zero_rate','rounds_to_zero'];
+    const reason=allowed.includes(plan.emptyReason)?plan.emptyReason:'unknown';
+    report.emptyPositionHours??={};
+    report.emptyPositionHours[reason]=(report.emptyPositionHours[reason]??0)+1;
+   }
    if(isPositionPolicy(policy))completePositionHour(state.daily,plan);
    else completeDailyPlan(state.daily,plan);
    const completedEpoch=state.daily.epoch;state.daily.epoch++;state.daily.lastProcessedEpoch=completedEpoch;

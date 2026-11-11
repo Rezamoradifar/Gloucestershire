@@ -36,11 +36,17 @@ export function summarizeAutomation(value, {chainId, vaultAddress, now = Date.no
     .slice(0,100).map(row => ({transactionHash: row.transactionHash, block: row.block, blockHash: row.blockHash})) : [];
   const lastCredit = count(saved?.epoch) !== null && batches.length ? {epoch: saved.epoch, batches} : null;
   const dailyStatus = ['ready','not_due','indexing','waiting','scheduled'].includes(report.dailyStatus) ? report.dailyStatus : null;
+  const progress=report.indexProgress;
+  const indexProgress=progress&&typeof progress==='object'&&!Array.isArray(progress)?{
+    memberThrough:count(progress.memberThrough),positionThrough:count(progress.positionThrough),target:count(progress.target),
+    memberCount:count(progress.memberCount),positionCount:count(progress.positionCount)
+  }:null;
   return {version: 1, status: !fresh ? 'stale' : blockers.length ? 'waiting' : confirmedTransactions.length ? 'credited' : 'running',
     chainId, vaultAddress, checkedAt, fresh, schedulerActive, dailyStatus,
     nextEpoch: count(report.nextEpoch), nextDueAt: count(report.positionSchedule?.nextDueAt ?? report.nextPeriodEndsAt),
     activityRequiredFrom: count(report.activity?.activationTimestamp),
-    lastCredit, confirmedTransactions, blockers: [...new Set(blockers)]};
+    lastCredit, lastCreditBlockTimestamp:lastCredit&&count(report.lastCreditBlockTimestamp)!==null&&report.lastCreditBlockTimestamp>0&&report.lastCreditBlockTimestamp<=Math.floor(now/1000)+60?report.lastCreditBlockTimestamp:null,
+    confirmedTransactions, indexProgress, blockers: [...new Set(blockers)]};
 }
 
 export function createAutomationStatusReader({file = '/var/www/globaldroptrade/automation-data/activation.json', chainId, vaultAddress, now = Date.now} = {}) {

@@ -2,6 +2,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import fs from 'node:fs';
 import {mkdir,open,lstat,rename,unlink,link} from 'node:fs/promises';
 import path from 'node:path';
+import {isIP} from 'node:net';
 import {getAddress,verifyMessage,ZeroAddress} from 'ethers';
 import {createDailyActivityState,dailyActivityIdentity,dailyActivityMessage,validateDailyActivityRecord,readDailyActivity,validateDailyActivityPolicy,createDailyActivityReader,dailyActivityChallengeLifetimeMs,dailyActivityWindowSeconds,dailyActivityMaximumFileBytes} from '../scripts/daily-activity.mjs';
 
@@ -9,6 +10,18 @@ const fail=(status,message)=>Object.assign(Error(message),{status});
 const hash=value=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
 const safe=value=>Number.isSafeInteger(value)&&value>0;
 const mutationQueues=new Map();
+
+// This is opt-in only: the reverse proxy must overwrite this header, and the
+// API must be reachable solely by trusted local processes. Never trust XFF or
+// Cloudflare headers here. Missing/malformed values retain the shared limit.
+export function activityPeer(req,trustProxy=false){
+ const peer=req.socket?.remoteAddress||'unknown';
+ if(trustProxy&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(peer)){
+  const forwarded=req.headers['x-global-client-ip'];
+  if(typeof forwarded==='string'&&isIP(forwarded))return forwarded.toLowerCase();
+ }
+ return peer;
+}
 
 async function syncDirectory(directory){const handle=await open(directory,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY);try{await handle.sync();}finally{await handle.close();}}
 async function persist(file,value,{initialize=false}={}){
@@ -26,7 +39,7 @@ async function persist(file,value,{initialize=false}={}){
 
 // The systemd service is the single history writer. Requests (including
 // multiple handler instances in this process) serialize their durable writes.
-export async function createDailyActivity({file,chainId,contract,origin='https://globaldroptrade.com',provider,vault,policy=null,now=Date.now,confirmations=3}){
+export async function createDailyActivity({file,chainId,contract,origin='https://globaldroptrade.com',provider,vault,policy=null,now=Date.now,confirmations=3,trustProxy=false}){
  const identity=dailyActivityIdentity({chainId,vaultAddress:contract,origin});
  if(typeof file!=='string'||!path.isAbsolute(file)||!Number.isSafeInteger(confirmations)||confirmations<1||confirmations>64)throw Error('DAILY_ACTIVITY_CONFIGURATION_INVALID');
  file=path.resolve(file);
@@ -36,12 +49,19 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
  const directoryStat=await lstat(directory);
  if(!directoryStat.isDirectory()||(directoryStat.mode&0o077)!==0||directoryStat.uid!==process.getuid?.())throw Error('DAILY_ACTIVITY_PRIVATE_DIRECTORY_REQUIRED');
  try{readDailyActivity({file,...identity});}catch(error){if(error.code!=='ENOENT')throw error;await persist(file,createDailyActivityState(identity),{initialize:true});readDailyActivity({file,...identity});}
- const challenges=new Map(),rates=new Map();
- function prune(){for(const map of [challenges,rates])for(const[key,value]of map)if(value.expires<=now())map.delete(key);}
+ const challenges=new Map(),rates=new Map(),challengeInflight=new Map();
+ function prune(){
+  const current=now();
+  for(const [key,value] of challenges)if(value.expiresAt<=current)challenges.delete(key);
+  for(const [key,value] of rates)if(value.expires<=current)rates.delete(key);
+ }
  function rate(key,limit,windowMs=60000){
-  prune();if(!rates.has(key)&&rates.size>=5000)throw fail(429,'Too many activity requests. Try again shortly.');
+  prune();if(!rates.has(key)&&rates.size>=5000){
+   const expiry=Math.min(...Array.from(rates.values(),entry=>entry.expires));
+   throw Object.assign(fail(429,'Too many activity requests. Try again shortly.'),{retryAfterSeconds:Math.max(1,Math.ceil((expiry-now())/1000)),rateScope:'capacity'});
+  }
   const value=rates.get(key)||{count:0,expires:now()+windowMs};value.count++;rates.set(key,value);
-  if(value.count>limit)throw fail(429,'Too many activity requests. Try again shortly.');
+  if(value.count>limit)throw Object.assign(fail(429,'Too many activity requests. Try again shortly.'),{retryAfterSeconds:Math.max(1,Math.ceil((value.expires-now())/1000)),rateScope:key.startsWith('wallet:')?'wallet':'connection'});
  }
  function originAllowed(req){
   const sent=req.headers.origin;
@@ -90,23 +110,41 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
   const send=(code,value)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
   try{
    originAllowed(req);prune();
-   const route=url.pathname.slice('/api/daily-activity/'.length),peer=req.socket.remoteAddress||'unknown';
+   const route=url.pathname.slice('/api/daily-activity/'.length),peer=activityPeer(req,trustProxy);
    rate('peer:'+peer,600);
    if(route==='status'&&req.method==='GET'){const who=wallet(url.searchParams.get('wallet'));send(200,await status(who));return true;}
    if(route==='challenge'&&req.method==='POST'){
-    const input=await body(req,['wallet']),who=wallet(input.wallet);rate('wallet:'+who,12,3600000);
-    if(challenges.size>=1000)throw fail(429,'Too many pending activity requests. Try again shortly.');
-    const at=await currentBlock();await registered(who,at);
-    const issuedAt=now(),challenge={...identity,wallet:who,nonce:randomBytes(24).toString('hex'),issuedAt,expiresAt:issuedAt+dailyActivityChallengeLifetimeMs,issuedBlock:at};
-    const message=dailyActivityMessage(challenge);challenges.set(challenge.nonce,challenge);
-    send(200,{...challenge,message,windowSeconds:dailyActivityWindowSeconds});return true;
+    const input=await body(req,['wallet']),who=wallet(input.wallet);
+    // Unauthenticated clients can know a wallet address. Reuse an unexpired
+    // request so they cannot burn that wallet's quota simply by requesting
+    // challenges. Coalesce concurrent requests before any network awaits.
+    let challenge=[...challenges.values()].find(value=>value.wallet===who&&value.expiresAt>now());
+    if(!challenge){
+     let flight=challengeInflight.get(who);
+     if(!flight){
+      if(challenges.size+challengeInflight.size>=1000)throw fail(429,'Too many pending activity requests. Try again shortly.');
+      rate('wallet:'+who,12,3600000);
+      flight=(async()=>{
+       const at=await currentBlock();await registered(who,at);
+       const issuedAt=now(),value={...identity,wallet:who,nonce:randomBytes(24).toString('hex'),issuedAt,expiresAt:issuedAt+dailyActivityChallengeLifetimeMs,issuedBlock:at};
+       challenges.set(value.nonce,value);return value;
+      })();
+      challengeInflight.set(who,flight);
+     }
+     try{challenge=await flight;}finally{if(challengeInflight.get(who)===flight)challengeInflight.delete(who);}
+    }
+    if(challenge.expiresAt<=now())throw fail(401,'Activity request expired. Try checking in again.');
+    send(200,{...challenge,message:dailyActivityMessage(challenge),windowSeconds:dailyActivityWindowSeconds});return true;
    }
    if(route==='check-in'&&req.method==='POST'){
     const input=await body(req,['nonce','signature']);
-    const challenge=challenges.get(input.nonce);challenges.delete(input.nonce);
+    const challenge=challenges.get(input.nonce);
     if(!challenge||challenge.expiresAt<=now())throw fail(401,'Activity request expired or was already used. Try checking in again.');
     let signer;try{signer=verifyMessage(dailyActivityMessage(challenge),input.signature);}catch{throw fail(401,'The activity signature is invalid.');}
     if(signer!==challenge.wallet)throw fail(401,'The activity signature does not match your wallet.');
+    // Consume synchronously after verifying ownership and before any await;
+    // concurrent submissions of one valid signature cannot both proceed.
+    challenges.delete(input.nonce);
     const at=await currentBlock();await registered(challenge.wallet,at);
     const issued=await provider.getBlock(challenge.issuedBlock.number);
     if(issued?.hash?.toLowerCase()!==challenge.issuedBlock.hash||issued?.timestamp!==challenge.issuedBlock.timestamp)throw fail(409,'The chain changed while checking in. Please try again.');
@@ -128,7 +166,11 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
    }
    if(['status','challenge','check-in'].includes(route)){res.setHeader('Allow',route==='status'?'GET':'POST');throw fail(405,'This activity method is not supported.');}
    throw fail(404,'Activity route not found.');
-  }catch(error){send(error.status||503,{error:error.status?error.message:'Daily activity is temporarily unavailable. Your previous check-ins are preserved.'});}
+  }catch(error){
+   const retry=error.status===429&&Number.isSafeInteger(error.retryAfterSeconds)&&error.retryAfterSeconds>0&&error.retryAfterSeconds<=3600?error.retryAfterSeconds:null;
+   if(retry)res.setHeader('Retry-After',String(retry));
+   send(error.status||503,{error:error.status?error.message:'Daily activity is temporarily unavailable. Your previous check-ins are preserved.',...(retry?{retryAfterSeconds:retry,rateScope:error.rateScope}:{})});
+  }
   return true;
  };
 }

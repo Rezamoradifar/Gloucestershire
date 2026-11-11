@@ -20,6 +20,17 @@ test('public automation status exposes confirmed receipts and only allowlisted f
   assert.equal(result.lastCredit.epoch,2);assert.deepEqual(result.confirmedTransactions,[transactionHash]);
   assert.ok(!JSON.stringify(result).includes('secret'));assert.ok(!JSON.stringify(result).includes('privateKey'));
 });
+test('index progress returns only numeric counts and cursors tied to the worker report',()=>{
+ const v=fixture();v.automation.indexProgress={memberThrough:100,positionThrough:98,target:105,memberCount:4,positionCount:7,secret:'private',wallet:'0xabc'};
+ const r=summarizeAutomation(v,options);
+ assert.deepEqual(r.indexProgress,{memberThrough:100,positionThrough:98,target:105,memberCount:4,positionCount:7});
+ assert.equal(r.checkedAt,v.automation.checkedAt);assert.equal(r.fresh,true);assert.ok(!JSON.stringify(r.indexProgress).includes('private'));
+ v.automation.indexProgress={memberThrough:-1,positionThrough:'98',target:Infinity,memberCount:4,positionCount:7};
+ assert.deepEqual(summarizeAutomation(v,options).indexProgress,{memberThrough:null,positionThrough:null,target:null,memberCount:4,positionCount:7});
+ v.automation.indexProgress=null;assert.equal(summarizeAutomation(v,options).indexProgress,null);
+ v.automation.lastCreditBlockTimestamp=Math.floor(now/1000)-10;assert.equal(summarizeAutomation(v,options).lastCreditBlockTimestamp,Math.floor(now/1000)-10);
+ v.automation.lastCreditBlockTimestamp=Math.floor(now/1000)+1000;assert.equal(summarizeAutomation(v,options).lastCreditBlockTimestamp,null);
+});
 test('old receipts never make a stale or unscheduled worker look live',()=>{
   const old=fixture();old.automation.checkedAt=new Date(now-3600000).toISOString();
   assert.equal(summarizeAutomation(old,options).status,'stale');

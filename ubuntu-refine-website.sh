@@ -18,8 +18,25 @@ import fs from 'node:fs';import {isAddress,ZeroAddress} from 'ethers';
 const c=JSON.parse(fs.readFileSync(process.argv[2]));
 if(c.version!==1||![56,97].includes(c.chainId)||!isAddress(c.vaultAddress)||c.vaultAddress===ZeroAddress)throw Error('ACTIVE_API_TARGET_REQUIRED');
 JS
+if [[ ${GLOBAL_ACTIVITY_TESTNET_RELEASE:-0} == 1 ]]; then
+ node scripts/check-testnet-activity-release.mjs --config "$stage/before.json"
+ curl -fsS --max-time 20 'http://127.0.0.1:3115/api/daily-activity/status?wallet=0x0000000000000000000000000000000000000001' -o "$stage/activity.json"
+ node scripts/check-testnet-activity-release.mjs --activity "$stage/activity.json"
+ # Bind the public WalletConnect project ID to the exact frontend currently
+ # served locally. Do not print the ID; stop if that frontend has changed.
+ curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$stage/live.html"
+ grep -Fq './assets/index-DOf0dSAQ.js' "$stage/live.html" || { echo 'TESTNET_ACTIVITY_LIVE_ENTRY_CHANGED'; exit 1; }
+ curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/assets/index-DOf0dSAQ.js -o "$stage/live-entry.js"
+ grep -Fq 'App-DNKw0lD3.js' "$stage/live-entry.js" || { echo 'TESTNET_ACTIVITY_LIVE_BUNDLE_CHANGED'; exit 1; }
+ curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/assets/App-DNKw0lD3.js -o "$stage/live-app.js"
+ VITE_WALLETCONNECT_PROJECT_ID=$(node scripts/check-testnet-activity-release.mjs --wallet "$stage/live-app.js")
+ export VITE_WALLETCONNECT_PROJECT_ID
+fi
 # Keep the frontend target runtime-configured by the existing API.
 (cd website && npm ci --ignore-scripts --no-audit --no-fund && VITE_CHAIN_ID=97 VITE_VAULT_ADDRESS='' npm run build)
+if [[ ${GLOBAL_ACTIVITY_TESTNET_RELEASE:-0} == 1 ]]; then
+ node scripts/check-testnet-activity-release.mjs --build website/dist
+fi
 install -d -m 755 "$stage/site"
 cp -R website/dist/. "$stage/site/"
 cp -R deployment-console "$stage/site/deploy"
@@ -60,6 +77,9 @@ curl -fsSL --max-time 20 --noproxy '*' \
  --resolve globaldroptrade.com:443:127.0.0.1 \
  --resolve www.globaldroptrade.com:443:127.0.0.1 \
  https://globaldroptrade.com/api/config -o "$stage/after.json"
+if [[ ${GLOBAL_ACTIVITY_TESTNET_RELEASE:-0} == 1 ]]; then
+ node scripts/check-testnet-activity-release.mjs --config "$stage/after.json"
+fi
 node --input-type=module - "$stage/before.json" "$stage/after.json" <<'JS'
 import fs from 'node:fs';const [a,b]=process.argv.slice(2).map(f=>JSON.parse(fs.readFileSync(f)));
 if(a.chainId!==b.chainId||a.vaultAddress.toLowerCase()!==b.vaultAddress.toLowerCase())throw Error('API_TARGET_CHANGED');

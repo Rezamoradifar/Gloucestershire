@@ -71,10 +71,27 @@ it('treats an HTML fallback as unavailable and preserves an explicit API rejecti
  await expect(dailyActivityApi('check-in','POST',{})).rejects.toMatchObject({status:401,message:'Activity signature expired'});
 });
 
+it('uses only a bounded server retry deadline, and does not invent one for an older server',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({error:'Too many activity requests. Try again shortly.',rateScope:'wallet'}),{status:429,headers:{'Retry-After':'3150'}})));
+ await expect(dailyActivityApi('challenge','POST',{})).rejects.toMatchObject({status:429,retryAfterSeconds:3150,rateScope:'wallet'});
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({error:'Too many activity requests. Try again shortly.'}),{status:429})));
+ await expect(dailyActivityApi('challenge','POST',{})).rejects.toMatchObject({status:429,retryAfterSeconds:null,rateScope:null});
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({error:'Limited',rateScope:'wallet'}),{status:429,headers:{'Retry-After':'999999'}})));
+ await expect(dailyActivityApi('challenge','POST',{})).rejects.toMatchObject({status:429,retryAfterSeconds:null,rateScope:null});
+});
+
 it('can display a dated, unavailable allocation report without labeling it a user payout',async()=>{
  const body={version:1,status:'stale',chainId:97,vaultAddress:contract,checkedAt:'2026-11-07T00:00:00Z',fresh:false,lastCredit:{epoch:4,batches:[{transactionHash:'0x'+'b'.repeat(64),block:100,blockHash:'0x'+'a'.repeat(64)}]}};
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(body),{status:503})));
  expect((await readAllocationStatus()).fresh).toBe(false);
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...body,vaultAddress:bob.address}),{status:200})));
  await expect(readAllocationStatus()).rejects.toThrow('unavailable');
+});
+
+it('validates optional index snapshot values before displaying them',async()=>{
+ const body={version:1,status:'running',chainId:97,vaultAddress:contract,checkedAt:'2026-11-07T00:00:00Z',fresh:true,lastCredit:null,indexProgress:{memberThrough:100,positionThrough:99,target:101,memberCount:1,positionCount:2},lastCreditBlockTimestamp:null};
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(body))));
+ expect((await readAllocationStatus()).indexProgress?.target).toBe(101);
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...body,indexProgress:{...body.indexProgress,target:'fake'}}))));
+ await expect(readAllocationStatus()).rejects.toThrow('Index status is unavailable');
 });

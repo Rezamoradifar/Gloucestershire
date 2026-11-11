@@ -126,7 +126,8 @@ test('the replacement target requires its own activity policy, pays approved wit
  await assert.rejects(approved.run({loadActivity:async()=>undefined,requireActivityBeforePolicy:true}),/DAILY_ACTIVITY_POLICY_REQUIRED/);
  assert.equal((await queue.requests(0)).status,1n,'an already approved withdrawal is independent from future reward eligibility');assert.equal(approved.policy,undefined);
  let active=false;const s=await session({eligible:async()=>active});await tx(token.mint(addresses[2],E('100')));await tx(token.connect(signers[2]).approve(vault.target,MaxUint256));await tx(vault.connect(signers[2]).deposit(token.target,E('100'),ZeroAddress));await runUntil(s,value=>value.status==='scheduled');
- const rate=await vault.dailyTargetBps(addresses[2]);await advance(3601);await runUntil(s,()=>Object.values(s.state.daily.positionPaid||{}).some(value=>value===1));
+ const rate=await vault.dailyTargetBps(addresses[2]);await advance(3601);const skipped=await runUntil(s,()=>Object.values(s.state.daily.positionPaid||{}).some(value=>value===1));
+ assert.equal(skipped.emptyPositionHours?.activity_ineligible,2);assert.deepEqual(skipped.dailyCredits,[]);
  assert.equal((await vault.accounts(addresses[2],token.target)).profit,0n,'inactive users receive no hourly credit');
  active=true;await advance(3601);await runUntil(s,value=>value.dailyCredits.length>0);
  assert.equal((await vault.accounts(addresses[2],token.target)).profit,E('100')*rate/10000n,'a later check-in earns only the later hour');assert.equal(Object.values(s.state.daily.positionPaid||{})[0],2);

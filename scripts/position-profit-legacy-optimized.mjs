@@ -1,0 +1,207 @@
+// Testnet-only anniversary allocations, one complete position-hour at a time.
+import {Interface,ZeroAddress,getAddress,keccak256,toUtf8Bytes} from 'ethers';
+import {getCompleteLogs} from './complete-rpc-logs.mjs';
+import {blockAtTime,indexMembers,dailyProfitAmount,isNewDeployerTestnetPolicy,periodActivity,resumeDailyPlan,completeDailyPlan} from './daily-profit.mjs';
+const events=new Interface([
+ 'event Deposited(address indexed user,address indexed asset,uint256 indexed position,uint256 amount,uint256 usd,uint256 feeEach)',
+ 'event Reinvested(address indexed user,address indexed asset,uint256 amount,uint256 position)'
+]);
+const hash=x=>typeof x==='string'&&/^0x[0-9a-f]{64}$/i.test(x);
+const safe=x=>Number.isSafeInteger(x)&&x>=0;
+export const positionBasis='position-anniversary-principal';
+export function isPositionPolicy(p){return p?.basis===positionBasis&&[1,2].includes(p.positionScheduleVersion);}
+
+// Bound only read work. Never race or cancel a financial send against a timer.
+export function positionReadBudget(provider,{clock=Date.now,milliseconds=90000}={}){
+ const deadline=clock()+milliseconds;
+ const check=()=>{if(clock()>=deadline)throw Object.assign(Error('POSITION_READ_BUDGET_EXCEEDED'),{code:'TIMEOUT'});};
+ const bounded={check,remaining:()=>Math.max(0,deadline-clock())};
+ for(const method of ['getBlockNumber','getBlock','getLogs'])bounded[method]=async(...args)=>{
+  check();
+  return provider[method](...args);
+ };
+ return bounded;
+}
+
+export async function scanPositionHistory({provider,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,advanceCompletedTarget=false,milliseconds=90000,reserveMilliseconds=30000,pageSize=100,logBlockSpan=10,parallelPositionEvents=false}){
+ if(policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
+ if(!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>1000||!Number.isSafeInteger(logBlockSpan)||logBlockSpan<1||logBlockSpan>1000||!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1)throw Error('POSITION_SCAN_LIMIT_REQUIRED');
+ if(typeof parallelPositionEvents!=='boolean'||parallelPositionEvents&&(!isNewDeployerTestnetPolicy(policy)||logBlockSpan!==10))throw Error('POSITION_PARALLEL_TESTNET_SCOPE_REQUIRED');
+ // Keep the 2,000-block pass cap. The default small pages are unchanged;
+ // the signer-free catch-up tool can request larger adaptively split pages.
+ maxRegistryPages=Math.min(maxRegistryPages,4);
+ const blockBudget=maxRegistryPages*500,maxPages=Math.ceil(blockBudget/pageSize);
+ provider=positionReadBudget(provider,{milliseconds});
+ let final;
+ if(state.positionScanTarget){
+  const fixed=state.positionScanTarget;
+  if(!safe(fixed.number)||!hash(fixed.hash))throw Error('POSITION_SCAN_TARGET_INVALID');
+  final=await provider.getBlock(fixed.number);
+  if(!final||final.number!==fixed.number||final.hash!==fixed.hash)throw Error('POSITION_SCAN_TARGET_REORG');
+ }else{
+  final=await provider.getBlock(Math.max(0,(await provider.getBlockNumber())-confirmations));
+  if(!final)throw Error('POSITION_FINAL_BLOCK_REQUIRED');
+  state.positionScanTarget={number:final.number,hash:final.hash};save();
+ }
+ if(advanceCompletedTarget&&state.registry?.through===final.number&&state.positionIndex?.through===final.number){
+  const next=await provider.getBlock(Math.max(0,(await provider.getBlockNumber())-confirmations));
+  if(!next||next.number<final.number)throw Error('POSITION_FINAL_BLOCK_REQUIRED');
+  if(next.number>final.number){final=next;state.positionScanTarget={number:final.number,hash:final.hash};save();}
+ }
+ const wasIndexed=state.registry?.through===final.number&&state.positionIndex?.through===final.number;
+ const indexing=()=>({status:'indexing',indexTarget:final.number,indexThrough:state.positionIndex?.through??null});
+ // Catch positions up to the existing member prefix before extending members.
+ // Otherwise a large member backlog starves all deposit/reinvestment discovery.
+ if(!state.registry||(state.positionIndex?.through??policy.deploymentBlock-1)>=state.registry.through){
+  const through=Math.min(final.number,(state.registry?.through??policy.deploymentBlock-1)+blockBudget);
+  await indexMembers({provider,policy,state,through,save,maxPages,pageSize,shouldContinue:()=>provider.remaining()>=Math.max(reserveMilliseconds,milliseconds/2),logOptions:{maxTimeoutRetries:2,maxBlockSpan:logBlockSpan}});
+ }
+ const memberThrough=state.registry?.through??policy.deploymentBlock-1;
+ if(!safe(memberThrough)||memberThrough>final.number)throw Error('POSITION_MEMBER_INDEX_INVALID');
+ const scanThrough=Math.min(final.number,memberThrough,(state.positionIndex?.through??policy.deploymentBlock-1)+blockBudget);
+ if(scanThrough<policy.deploymentBlock)return indexing();
+ if(!hash(state.registry.hash)||(await provider.getBlock(memberThrough))?.hash!==state.registry.hash)throw Error('POSITION_INDEX_REORG');
+ state.positionIndex??={through:policy.deploymentBlock-1,hash:null,positions:{}};
+ const index=state.positionIndex;
+ if(!safe(index.through)||!index.positions||index.through>final.number)throw Error('POSITION_INDEX_INVALID');
+ if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash)throw Error('POSITION_INDEX_REORG');
+ let pages=0;
+ let currentPageAnchor;
+ // Reuse one wrapper for this scan; all event requests share the original
+ // provider's learned RPC range, including restrictions learned from members.
+ const anchored=parallelPositionEvents?{...provider,getBlock:async number=>{
+  const block=await provider.getBlock(number);
+  if(currentPageAnchor&&number===currentPageAnchor.number&&(!block||block.number!==number||block.hash!==currentPageAnchor.hash))throw Error('POSITION_INDEX_REORG');
+  return block;
+ }}:null;
+ for(let start=index.through+1;start<=scanThrough&&pages<maxPages;pages++){
+  if(provider.remaining()<reserveMilliseconds)return indexing();
+  const end=Math.min(start+pageSize-1,scanThrough),discovered={};
+  const names=['Deposited','Reinvested'];
+  let pageBlock;
+  const collect=async logs=>{
+   for(const log of logs){
+    const args=events.parseLog(log).args,member=getAddress(args.user),asset=getAddress(args.asset),id=args.position.toString(),key=member.toLowerCase()+':'+id;
+    if(index.positions[key]||discovered[key]||args.amount<=0n)throw Error('POSITION_DUPLICATE_OPEN_EVENT');
+    const block=await provider.getBlock(log.blockNumber);
+    if(!block||block.hash!==log.blockHash)throw Error('POSITION_OPEN_REORG');
+    discovered[key]={member,asset,id,openedAt:block.timestamp,openedBlock:block.number,openedHash:block.hash};
+   }
+  };
+  if(parallelPositionEvents){
+   // Keep the existing 10-block query windows and cap total parallel RPCs at
+   // four. Bind both event streams to one canonical page-end block.
+   pageBlock=await provider.getBlock(end);
+   if(!pageBlock||pageBlock.number!==end||!hash(pageBlock.hash))throw Error('POSITION_INDEX_BLOCK_REQUIRED');
+   currentPageAnchor=pageBlock;
+   const results=await Promise.allSettled(names.map(name=>getCompleteLogs({provider:anchored,rangeCacheKey:provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:10,maxConcurrency:2})));
+   const failed=results.find(result=>result.status==='rejected');
+   if(failed)throw failed.reason;
+   for(const result of results)await collect(result.value);
+  }else{
+   for(const name of names)await collect(await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:logBlockSpan}));
+  }
+  const block=await provider.getBlock(end);if(!block)throw Error('POSITION_INDEX_BLOCK_REQUIRED');
+  if(pageBlock&&(block.number!==end||block.hash!==pageBlock.hash))throw Error('POSITION_INDEX_REORG');
+  Object.assign(index.positions,discovered);index.through=end;index.hash=block.hash;save();start=end+1;
+ }
+ if(index.through<final.number)return indexing();
+ return {status:"indexed",final,wasIndexed};
+}
+
+// The payment worker consumes a fully scanned canonical prefix, even while
+// the separate indexer is catching up to a newer fixed target.
+export async function indexedPositionCheckpoint({provider,policy,state}){
+ const member=state.registry,position=state.positionIndex;
+ if(!member||!position)return null;
+ if(!safe(member.through)||!safe(position.through))throw Error('POSITION_INDEX_INVALID');
+ if(Math.min(member.through,position.through)<policy.deploymentBlock)return null;
+ for(const index of [member,position])if(!hash(index.hash)||(await provider.getBlock(index.through))?.hash!==index.hash)throw Error('POSITION_INDEX_REORG');
+ const final=await provider.getBlock(Math.min(member.through,position.through));
+ if(!final)throw Error('POSITION_FINAL_BLOCK_REQUIRED');return final;
+}
+export async function planPositionHour({provider,vault,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,refreshDrainedTarget=true,indexedOnly=false,activity}){
+ if(policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
+ const pending=await resumeDailyPlan({provider,policy,state,activity});if(pending)return pending;
+ provider=positionReadBudget(provider);
+ state.positionPaid??={};state.positionClosed??={};
+ let final,wasIndexed=false;
+ if(indexedOnly){
+  final=await indexedPositionCheckpoint({provider,policy,state});
+  if(!final)return {status:'indexing',indexTarget:state.positionScanTarget?.number??null,indexThrough:state.positionIndex?.through??null};
+ }else{
+  const scan=await scanPositionHistory({provider,policy,state,save,confirmations,maxRegistryPages,parallelPositionEvents:isNewDeployerTestnetPolicy(policy)});
+  if(scan.status!=='indexed')return scan;
+  ({final,wasIndexed}=scan);
+ }
+ const index=state.positionIndex;
+ const options={blockTag:final.number},token=getAddress(await vault.usdt(options)),assets=[ZeroAddress,token],principal=[0n,0n],counts=new Map();
+ const rows=Object.entries(index.positions).filter(([,row])=>{if(!safe(row.openedBlock))throw Error('POSITION_INDEX_INVALID');return row.openedBlock<=final.number;});
+ for(const [key,row]of rows){
+  if(key!==row.member.toLowerCase()+':'+row.id||!safe(row.openedAt)||!safe(row.openedBlock)||!hash(row.openedHash)||!/^(0|[1-9][0-9]*)$/.test(row.id))throw Error('POSITION_INDEX_INVALID');
+  provider.check();
+  const p=await vault.positionOf(row.member,BigInt(row.id),options),asset=getAddress(p.asset),i=assets.indexOf(asset);
+  if(i<0||asset!==row.asset)throw Error('POSITION_ASSET_MISMATCH');
+  principal[i]+=p.principal;counts.set(row.member,(counts.get(row.member)||0n)+1n);
+ }
+ for(const member of Object.keys(state.registry.members)){provider.check();if(await vault.positionCount(member,options)!==(counts.get(getAddress(member))||0n))throw Error('POSITION_INDEX_INCOMPLETE');}
+ for(let i=0;i<assets.length;i++){provider.check();if((await vault.ledgers(assets[i],options)).principal!==principal[i])throw Error('POSITION_PRINCIPAL_INDEX_INCOMPLETE');}
+ // Order overdue position hours by their fixed end time. The integrated
+ // mode retains its target; indexed payments use the complete scanned prefix.
+ const quarter=policy.periodSeconds===900;
+ if(quarter&&(await provider.getBlock(policy.quarterCutover.block))?.hash!==policy.quarterCutover.hash)throw Error('POSITION_QUARTER_CUTOVER_REORG');
+ const hourly=rows.map(([key,row])=>{
+  const paid=state.positionPaid[key]??0;if(!safe(paid))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
+  const start=row.openedAt+paid*3600;if(!safe(start+3600))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
+  return {key,row,paid,start,end:start+3600};
+ }).filter(x=>!state.positionClosed[x.key]&&x.end<=final.timestamp&&(!quarter||x.end<=policy.quarterCutover.timestamp));
+ const quarters=quarter?rows.map(([key,row])=>{
+  const paid=state.positionQuarterPaid?.[key]??0;if(!safe(paid))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
+  const start=Math.max(row.openedAt,policy.quarterCutover.timestamp)+paid*900;if(!safe(start+900))throw Error('POSITION_PAYMENT_CURSOR_INVALID');
+  return {key,row,paid,start,end:start+900,quarter:true};
+ }).filter(x=>!state.positionClosed[x.key]&&!state.positionQuarterClosed?.[x.key]&&x.end<=final.timestamp):[];
+ const candidates=[...hourly,...quarters].sort((a,b)=>a.end-b.end||a.key.localeCompare(b.key));
+ if(!candidates.length){
+  if(!indexedOnly){delete state.positionScanTarget;save();}
+  if(!indexedOnly&&wasIndexed&&refreshDrainedTarget)return planPositionHour({provider,vault,policy,state,save,confirmations,maxRegistryPages,refreshDrainedTarget:false,activity});
+  const next=rows.filter(([key])=>!state.positionClosed[key]&&(!quarter||!state.positionQuarterClosed?.[key])).map(([key,row])=>quarter?Math.max(row.openedAt,policy.quarterCutover.timestamp)+((state.positionQuarterPaid?.[key]??0)+1)*900:row.openedAt+((state.positionPaid[key]??0)+1)*3600);
+  return {status:'not_due',nextDueAt:next.length?Math.min(...next):null};
+ }
+ const chosen=candidates[0],{key,row,paid,start,end}=chosen,snapshot=await blockAtTime(provider,start,policy.deploymentBlock,final.number),o={blockTag:snapshot.number};
+ const eligibility=periodActivity({policy,activity,start,end});
+ provider.check();
+ const position=await vault.positionOf(row.member,BigInt(row.id),o);
+ if(getAddress(position.asset)!==row.asset)throw Error('POSITION_ASSET_MISMATCH');
+ const rate=await eligibility.eligible(row.member)?await vault.dailyTargetBps(row.member,o):0n;
+ const amount=dailyProfitAmount(position.principal,rate),prefix=isNewDeployerTestnetPolicy(policy)?(chosen.quarter?'GLOBAL_POSITION_QUARTER_NEW_DEPLOYER_TEST_V1':'GLOBAL_POSITION_HOURLY_NEW_DEPLOYER_TEST_V1'):(chosen.quarter?'GLOBAL_POSITION_QUARTER_TEST_V1':'GLOBAL_POSITION_HOURLY_TEST_V1');
+ const domain=[...(chosen.quarter?[prefix,policy.quarterCutover.hash]:[prefix]),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
+ if(amount>0n){
+  const ownId=keccak256(toUtf8Bytes(domain+':personal'));
+  batches.push({id:ownId,asset:row.asset,recipients:[row.member],amounts:[amount.toString()],rows:[{recipient:row.member,amount:amount.toString(),principal:position.principal.toString(),rateBps:rate.toString()}]});
+  const source=await vault.users(row.member,o),config=await vault.tierConfig(await vault.tierOf(row.member,o),o);
+  const percentages=Array.from(config.referrals);
+  if(percentages.length!==4||percentages.some(x=>x<0n||x>3400n)||percentages.reduce((a,b)=>a+b,0n)>3400n)throw Error('INVALID_DAILY_REFERRAL_RATES');
+  let parent=getAddress(source.referrer);const recipients=[],amounts=[],referrals=[];
+  for(let level=0;level<4&&parent!==ZeroAddress;level++){
+   provider.check();
+   const u=await vault.users(parent,o),tier=await vault.tierOf(parent,o);
+   if(!u.registered)throw Error('INVALID_DAILY_REFERRAL_USER');
+   const reward=amount*percentages[level]/10000n;
+   if(u.active&&(tier!==4n||u.vipKyc)&&(level!==3||tier===4n)&&reward>0n&&await eligibility.eligible(parent)){
+    recipients.push(parent);amounts.push(reward.toString());
+    referrals.push({recipient:parent,amount:reward.toString(),sources:[{source:row.member,level:level+1,amount:reward.toString(),rateBps:percentages[level].toString(),personalProfit:amount.toString()}]});
+   }
+   parent=getAddress(u.referrer);
+  }
+  if(recipients.length)batches.push({id:keccak256(toUtf8Bytes(domain+':referrals')),kind:'profit-referrals',asset:row.asset,recipients,amounts,rows:referrals});
+ }
+ return {status:'ready',chainId:97,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,start,end,batches,positionCursor:{key,paid,next:paid+1,...(chosen.quarter?{quarter:true}:{}),closed:position.principal===0n},nextDueAt:end,...eligibility.context,activity:eligibility.summary()};
+}
+
+export function completePositionHour(state,plan){
+ const c=plan.positionCursor,paidName=c?.quarter===true?'positionQuarterPaid':'positionPaid',closedName=c?.quarter===true?'positionQuarterClosed':'positionClosed';
+ if(!c||state[paidName]?.[c.key]!==undefined&&state[paidName][c.key]!==c.paid||c.next!==c.paid+1)throw Error('POSITION_PAYMENT_CURSOR_CHANGED');
+ completeDailyPlan(state,plan);
+ state[paidName]??={};state[paidName][c.key]=c.next;
+ if(c.closed){state[closedName]??={};state[closedName][c.key]=true;}
+}
