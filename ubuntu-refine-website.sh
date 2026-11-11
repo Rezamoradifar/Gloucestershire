@@ -25,10 +25,10 @@ if [[ ${GLOBAL_ACTIVITY_TESTNET_RELEASE:-0} == 1 ]]; then
  # Bind the public WalletConnect project ID to the exact frontend currently
  # served locally. Do not print the ID; stop if that frontend has changed.
  curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$stage/live.html"
- grep -Fq './assets/index-wpBUvXyw.js' "$stage/live.html" || { echo 'TESTNET_ACTIVITY_LIVE_ENTRY_CHANGED'; exit 1; }
- curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/assets/index-wpBUvXyw.js -o "$stage/live-entry.js"
- grep -Fq 'App-D-Ua812y.js' "$stage/live-entry.js" || { echo 'TESTNET_ACTIVITY_LIVE_BUNDLE_CHANGED'; exit 1; }
- curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/assets/App-D-Ua812y.js -o "$stage/live-app.js"
+ grep -Fq './assets/index-DOf0dSAQ.js' "$stage/live.html" || { echo 'TESTNET_ACTIVITY_LIVE_ENTRY_CHANGED'; exit 1; }
+ curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/assets/index-DOf0dSAQ.js -o "$stage/live-entry.js"
+ grep -Fq 'App-DNKw0lD3.js' "$stage/live-entry.js" || { echo 'TESTNET_ACTIVITY_LIVE_BUNDLE_CHANGED'; exit 1; }
+ curl -fsSL --max-time 20 --noproxy '*' --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/assets/App-DNKw0lD3.js -o "$stage/live-app.js"
  VITE_WALLETCONNECT_PROJECT_ID=$(node scripts/check-testnet-activity-release.mjs --wallet "$stage/live-app.js")
  export VITE_WALLETCONNECT_PROJECT_ID
 fi

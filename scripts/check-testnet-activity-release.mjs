@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 
 const target='0x4c0f6141b18971db4b14e45c0be8cddb09febc14';
-const liveBundleHash='165e3203f3ca64db676064a678253f27f862ee7113d5b11dfd354088cbca2fc8';
+const liveBundleHash='9a7ef0c9c0d3565ef4bfb786b5d7b218dc8e49b94667964c4b1f3e2fb2a616fd';
 export function walletId(body,expectedHash){
  if(expectedHash&&crypto.createHash('sha256').update(body).digest('hex')!==expectedHash)throw Error('TESTNET_ACTIVITY_LIVE_BUNDLE_CHANGED');
  const uses=[...body.matchAll(/\.init\(\{projectId:([A-Za-z_$][A-Za-z0-9_$]*)/g)];
