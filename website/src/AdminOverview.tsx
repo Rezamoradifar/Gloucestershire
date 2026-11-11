@@ -27,7 +27,7 @@ export default function AdminOverview({data,asset,onNavigate}:{data:Snapshot;ass
   <div className="admin-metrics">
    <article><small>Recorded principal · {asset}</small><strong>{money(data.totalPrincipal)}</strong><span>Ledger liability; not cash</span></article>
    <article><small>Recorded profit · {asset}</small><strong>{money(data.totalProfit)}</strong><span>Credits do not prove wallet settlement</span></article>
-   <article><small>Available contract cash · {asset}</small><strong>{money(data.liquidBalance)}</strong><span>Changes with on-chain activity</span></article>
+   <article><small>Contract asset balance · {asset}</small><strong>{money(data.liquidBalance)}</strong><span>Shared cash; not all is withdrawable</span></article>
    <article><small>Reported liquidity shortfall · {asset}</small><strong>{money(data.shortfall)}</strong><span>{data.shortfall>0n?'Funding review required':'No shortfall at snapshot'}</span></article>
    <article><small>Owner capital outstanding</small><strong>{money(data.ownerOutstanding)}</strong><span>Not available for user withdrawal</span></article>
    <article><small>Reward ledger · {asset}</small><strong>{money(data.rewards)}</strong><span>Check funding before new allocation</span></article>
