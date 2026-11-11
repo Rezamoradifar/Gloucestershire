@@ -4,7 +4,7 @@ export type HistoryKind='deposit'|'profit'|'withdrawal'|'reinvest'|'networkRewar
 export type HistoryFilter={kind:'all'|HistoryKind;query:string;from:string;to:string;sort:'newest'|'oldest'};
 export type LedgerEvent={
  key:string;kind:HistoryKind;wallet:string;amount:bigint;fee:bigint;block:number;index:number;tx:string;timestamp:number|null;
- position?:bigint;principal?:boolean;creditId?:string;depositUsd?:bigint;volumeUsd?:bigint;
+ position?:bigint;principal?:boolean;creditId?:string;depositUsd?:bigint;volumeUsd?:bigint;group?:bigint;stage?:number;
 };
 
 export const historyLabels:Record<HistoryKind,string>={
@@ -37,7 +37,7 @@ export function parseFinancialLog(log:Log):LedgerEvent|null{
   ...(kind==='profit'?{creditId:String(args.id)}:{}),
   ...(kind==='deposit'?{depositUsd:BigInt(args.usd),position:BigInt(args.position)}:{}),
   ...(kind==='reinvest'?{position:BigInt(args.position)}:{}),
-  ...(kind==='networkReward'?{volumeUsd:BigInt(args.volumeUsd)}:{})
+  ...(kind==='networkReward'?{volumeUsd:BigInt(args.volumeUsd),group:BigInt(args.group),stage:Number(args.stage)}:{})
  };
 }
 
@@ -70,7 +70,7 @@ function safeCsv(value:unknown):string{
 }
 export function historyCsv(records:LedgerEvent[],asset:'BNB'|'USDT',decimals:number,chain:number,contract:string,complete:boolean):string{
  const header=['timestamp_utc','block','event_type','description','asset','amount_exact','fee_exact','net_withdrawal_exact',
-  'wallet','transaction_hash','event_index','position_number','batch_id','deposit_value_usd','network_volume_usd','contract','chain_id','history_scan_complete'];
+  'wallet','transaction_hash','event_index','position_number','batch_id','deposit_value_usd','network_volume_usd','reward_group','reward_stage','contract','chain_id','history_scan_complete'];
  const rows=[header,...records.map(row=>{
   const precision=row.kind==='networkReward'?18:decimals;
   const amt=formatUnits(row.amount,precision),fee=formatUnits(row.fee,precision);
@@ -80,7 +80,7 @@ export function historyCsv(records:LedgerEvent[],asset:'BNB'|'USDT',decimals:num
    row.kind==='networkReward'?'USD':asset,amt,fee,net,row.wallet,row.tx,row.index,
    row.position===undefined?'':(row.position+1n).toString(),row.creditId??'',
    row.depositUsd===undefined?'':formatUnits(row.depositUsd,18),
-   row.volumeUsd===undefined?'':formatUnits(row.volumeUsd,18),contract,chain,complete?'yes':'no'];
+   row.volumeUsd===undefined?'':formatUnits(row.volumeUsd,18),row.group===undefined?'':(row.group+1n).toString(),row.stage??'',contract,chain,complete?'yes':'no'];
  })];
  return '\ufeff'+rows.map(row=>row.map(safeCsv).join(',')).join('\r\n')+'\r\n';
 }
