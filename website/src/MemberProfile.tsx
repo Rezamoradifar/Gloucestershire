@@ -30,7 +30,7 @@ export default function MemberProfile({who,data,asset}:{who:string;data:Snapshot
  return <section className="panel v2-profile" aria-label="Member profile">
  <div className="v2-profile-hero">
   <div className="v2-avatar">{profile.avatar?<img src={profile.avatar} alt="Local profile avatar"/>:<UserRound size={42}/>}<button type="button" aria-label="Upload profile picture" disabled={!who} onClick={()=>fileRef.current?.click()}><Camera size={16}/></button><input ref={fileRef} type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={e=>void loadAvatar(e.target.files?.[0])}/></div>
-  <div><span className="detail-kicker">YOUR GLOBAL IDENTITY</span><h2>{profile.nickname||'Member profile'}</h2><p>Linked to your connected blockchain wallet · {chainName}</p><div className="v2-profile-label"><ShieldCheck size={16}/>{data?(names[data.tier]??'Member')+' tier':'Wallet not connected'}{data?.kyc?' · VIP KYC verified on chain':''}</div></div>
+  <div><span className="detail-kicker">YOUR GLOBAL IDENTITY</span><h2>{profile.nickname||'Member profile'}</h2><p>{who?'Linked to '+chainName+' via your wallet':'Connect a wallet to view on-chain account details.'}</p><div className="v2-profile-label"><ShieldCheck size={16}/>{data?(names[data.tier]??'Member')+' tier':'Wallet not connected'}{data?.kyc?' · VIP KYC verified on chain':''}</div></div>
  </div>
  <div className="v2-profile-fields"><label>Display name (only on this browser)<input value={profile.nickname} maxLength={36} disabled={!who} placeholder="Choose a display name" onChange={e=>setProfile(p=>({...p,nickname:e.target.value}))}/></label><button type="button" className="small-button" disabled={!who} onClick={()=>save({...profile,nickname:profile.nickname.trim()})}><Check size={16}/> Save locally</button>{profile.avatar&&<button type="button" className="small-button" onClick={()=>save({...profile,avatar:''})}>Remove photo</button>}</div>
  {feedback&&<p className="muted" role="status">{feedback}</p>}
@@ -44,6 +44,7 @@ export default function MemberProfile({who,data,asset}:{who:string;data:Snapshot
   <div><small>Account status</small><strong>{data?(data.active?'Reported active':'Not verified active'):'—'}</strong></div>
   <div><small>Referrer</small><bdi>{data?.referrer||'—'}</bdi></div>
  </div>
+ <button type="button" className="small-button v2-profile-theme" onClick={()=>window.dispatchEvent(new Event('global-theme-toggle'))}>Change light / dark appearance</button>
  {who&&<a className="v2-profile-explorer" href={explorer+'/address/'+who} target="_blank" rel="noopener noreferrer"><Wallet size={16}/> Review wallet on BscScan <ExternalLink size={16}/></a>}
  <p className="ledger-note"><Users size={15}/> A display name and photo are private to this browser and are not account verification or an on-chain identity. Only contract data is used for balances, roles and KYC status.</p>
  </section>;
