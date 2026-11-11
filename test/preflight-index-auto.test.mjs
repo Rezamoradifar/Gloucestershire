@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {getAddress,keccak256,toUtf8Bytes} from 'ethers';
-import {probeIndexSnapshot} from '../scripts/preflight-index-auto.mjs';
+import {probeIndexSnapshot,countDuePositionHours,suppressUnstableBacklog} from '../scripts/preflight-index-auto.mjs';
 
 const h=value=>keccak256(toUtf8Bytes(String(value)));
 const block=number=>({number,hash:h('block-'+number),timestamp:1700000000+number});
@@ -52,4 +52,89 @@ test('target identity mismatch is rejected without exposing the other address',a
  const f=fixture();f.state.identity.target=getAddress('0x4444444444444444444444444444444444444444');
  await assert.rejects(probeIndexSnapshot(f.options),/INDEX_PROBE_INPUT_MISMATCH/);
  assert.equal(f.operations.length,0);
+});
+
+test('probe counts only due position-hours within a fully indexed canonical target',async()=>{
+ const f=fixture(),target=block(1000).timestamp;
+ f.state.daily.registry={through:1000,hash:block(1000).hash,members:{}};
+ f.state.daily.positionIndex={through:1000,hash:block(1000).hash,positions:{
+  alpha:{openedAt:target-3*3600,openedBlock:700},
+  beta:{openedAt:target-2*3600,openedBlock:800},
+  closed:{openedAt:target-3*3600,openedBlock:900}
+ }};
+ f.state.daily.positionPaid={alpha:1,beta:1};f.state.daily.positionClosed={closed:true};
+ const result=await probeIndexSnapshot({...f.options,intervalSeconds:3600});
+ assert.deepEqual(result.scheduledBacklog,{positionCount:2,positionHours:3,eligibilityAndAmountsChecked:false});
+ assert.equal(result.targetTimestamp,target);assert.equal(result.financialDistinctBlocks,1);
+ assert.doesNotMatch(JSON.stringify(result),/alpha|beta|closed|later/);
+ f.setReorg(1000);const reorg=await probeIndexSnapshot({...f.options,intervalSeconds:3600});
+ assert.equal(reorg.scheduledBacklog,null);
+});
+
+test('incomplete indexes, invalid entries and unsupported schedules never claim a backlog',async()=>{
+ const f=fixture();f.state.daily.positionIndex.positions={p:{openedAt:1,openedBlock:1}};
+ assert.equal((await probeIndexSnapshot({...f.options,intervalSeconds:3600})).scheduledBacklog,null);
+ f.state.daily.positionIndex.through=1000;f.state.daily.positionIndex.hash=block(1000).hash;
+ f.state.daily.registry.through=1000;f.state.daily.registry.hash=block(1000).hash;
+ f.state.daily.positionPaid={p:-1};
+ assert.equal((await probeIndexSnapshot({...f.options,intervalSeconds:3600})).scheduledBacklog,null);
+ assert.equal((await probeIndexSnapshot({...f.options,intervalSeconds:900})).scheduledBacklog,null);
+});
+
+test('suppress backlog when journal changes, runtime differs, financial state is pending, or confirmed head is behind target',async()=>{
+ const f=fixture(),target=block(1000);
+ f.state.daily.registry={through:1000,hash:target.hash,members:{}};
+ f.state.daily.positionIndex={through:1000,hash:target.hash,positions:{p:{openedAt:target.timestamp-3600,openedBlock:999}}};
+ const result=await probeIndexSnapshot({...f.options,intervalSeconds:3600});
+ assert.equal(result.scheduledBacklog.positionHours,1);
+ assert.equal(suppressUnstableBacklog(result,false,true).scheduledBacklog,null);
+ assert.equal(suppressUnstableBacklog(result,true,false).scheduledBacklog,null);
+ assert.equal(suppressUnstableBacklog(result,true,undefined).scheduledBacklog,null);
+ assert.equal(suppressUnstableBacklog(result,true,true).scheduledBacklog.positionHours,1);
+ f.setCode('0x4321');assert.equal((await probeIndexSnapshot({...f.options,intervalSeconds:3600})).scheduledBacklog,null);
+ f.setCode(runtime);f.setReorg(700);assert.equal((await probeIndexSnapshot({...f.options,intervalSeconds:3600})).scheduledBacklog,null);
+ f.setReorg(null);f.state.transactions.pending={hash:h('pending')};assert.equal((await probeIndexSnapshot({...f.options,intervalSeconds:3600})).scheduledBacklog,null);
+ delete f.state.transactions.pending;f.setHead(1002);assert.equal((await probeIndexSnapshot({...f.options,intervalSeconds:3600})).scheduledBacklog,null);
+});
+
+test('malformed closed marker or positions beyond the snapshot suppress backlog',()=>{
+ const daily={positionIndex:{positions:{p:{openedAt:100,openedBlock:99}}},positionPaid:{p:0},positionClosed:{p:'false'}};
+ assert.equal(countDuePositionHours(daily,100,4000,3600),null);
+ daily.positionClosed.p=false;daily.positionIndex.positions.p.openedBlock=101;
+ assert.equal(countDuePositionHours(daily,100,4000,3600),null);
+ daily.positionIndex.positions.p.openedBlock=99;daily.positionIndex.positions.p.openedAt=0;
+ assert.equal(countDuePositionHours(daily,100,4000,3600),null);
+});
+
+test('pending plans or malformed transaction journals suppress the due-hour aggregate',async()=>{
+ const f=fixture(),target=block(1000);
+ f.state.daily.registry={through:1000,hash:target.hash,members:{}};
+ f.state.daily.positionIndex={through:1000,hash:target.hash,positions:{p:{openedAt:target.timestamp-3600,openedBlock:999}}};
+ const options={...f.options,intervalSeconds:3600};
+ assert.equal((await probeIndexSnapshot(options)).scheduledBacklog.positionHours,1);
+ f.state.daily.pendingDailyPlan={version:1};
+ let result=await probeIndexSnapshot(options);
+ assert.equal(result.pendingFinancial,true);assert.equal(result.scheduledBacklog,null);
+ delete f.state.daily.pendingDailyPlan;
+ const original=f.state.transactions;
+ for(const invalid of [null,[],{bad:{block:700,blockHash:block(700).hash}}]){
+  f.state.transactions=invalid;
+  result=await probeIndexSnapshot(options);
+  assert.equal(result.pendingFinancial,true);assert.equal(result.scheduledBacklog,null);
+ }
+ f.state.transactions=original;
+ assert.equal((await probeIndexSnapshot(options)).pendingFinancial,false);
+});
+
+test('each required canonical index checkpoint is checked before reporting due-hour aggregate',async()=>{
+ const f=fixture(),target=block(1000);
+ f.state.daily.registry={through:1000,hash:target.hash,members:{}};
+ f.state.daily.positionIndex={through:1000,hash:target.hash,positions:{p:{openedAt:target.timestamp-3600,openedBlock:999}}};
+ const options={...f.options,intervalSeconds:3600};
+ for(const key of ['registry','positionIndex']){
+  const old=f.state.daily[key].hash;f.state.daily[key].hash=h('bad');
+  assert.equal((await probeIndexSnapshot(options)).scheduledBacklog,null);
+  f.state.daily[key].hash=old;
+ }
+ assert.equal((await probeIndexSnapshot(options)).scheduledBacklog.positionHours,1);
 });
