@@ -153,6 +153,23 @@ archive reads and live credit/approved-payout evidence are still required.
 See [MAINNET-READINESS.md](MAINNET-READINESS.md) for the exact financial model and
 what has and has not been verified. Do not fund a deployer based on this preview.
 
+### Final mainnet launch gate
+
+The final read-only launch gate is documented in
+[MAINNET-FINAL-LAUNCH-20261111.md](MAINNET-FINAL-LAUNCH-20261111.md). Run:
+
+```bash
+bash ubuntu-mainnet-final-gate.sh \\
+  --from 0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632 \\
+  --rpc-file /etc/globaldroptrade/mainnet-rpc-url
+```
+
+Before deployment it intentionally stops at
+`MAINNET_DEPLOYMENT_AND_ACTIVATION_MANIFEST_REQUIRED`. After a separately
+reviewed deployment, add `--activation-file /etc/globaldroptrade/mainnet-automation.json`
+to run the production worker's read-only chain/role/funding check. This gate
+never installs the production timer or sends a transaction.
+
 ## Run the updated release
 
 ```bash
