@@ -28,7 +28,7 @@ export default function DailyActivity({who,network,registered,disabled}:{who:str
   const visible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',visible);
   return()=>{generation.current++;request.current++;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
  },[who,network,connected]);
- useEffect(()=>{if(retryUntil<=clock)return;const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer);},[retryUntil,clock>=retryUntil]);
+ useEffect(()=>{const timer=setInterval(()=>{if(document.visibilityState==='visible')setClock(Date.now());},1000);return()=>clearInterval(timer);},[]);
  async function checkIn(){
   if(!connected||!registered||disabled||running.current)return;
   const id=generation.current,valid=()=>generation.current===id;request.current++;running.current=true;setBusy(true);setLoading(false);setError('');
@@ -40,11 +40,24 @@ export default function DailyActivity({who,network,registered,disabled}:{who:str
   finally{if(valid()){running.current=false;setBusy(false);}}
  }
  const active=Boolean(status?.activityCurrent&&status.activeUntil&&status.activeUntil*1000>clock);
+ const remaining=active&&status?.activeUntil?Math.max(0,Math.ceil((status.activeUntil*1000-clock)/1000)):null;
+ const progress=remaining===null?0:Math.min(100,Math.max(0,remaining/86400*100));
+ const remainingText=remaining===null?'--:--:--':[Math.floor(remaining/3600),Math.floor((remaining%3600)/60),remaining%60].map(value=>String(value).padStart(2,'0')).join(':');
  const retrySeconds=Math.max(0,Math.ceil((retryUntil-clock)/1000));
  const recentlyRecorded=Boolean(active&&status?.nextCheckInAt&&status.nextCheckInAt*1000>clock);
  const latestBatch=allocation?.lastCredit?.batches[0]?.transactionHash;
  return <section className="panel daily-activity" aria-labelledby="daily-activity-heading" aria-busy={busy||loading}>
-  <div className="panel-title"><div><h2 id="daily-activity-heading">Daily activity</h2><p>Check in with one wallet signature to keep your activity current for 24 hours.</p></div><span className="round-icon"><Clock3 size={22}/></span></div>
+  <div className="panel-title"><div><span className="detail-kicker">24-HOUR ACTIVITY WINDOW</span><h2 id="daily-activity-heading">Daily activation</h2><p>One verified wallet signature records activity for a 24-hour period. This is separate from payment eligibility.</p></div><span className="round-icon"><Clock3 size={22}/></span></div>
+  <div className="activity-countdown">
+   <div className="activity-clock-face" style={{background:`conic-gradient(#dbbf77 ${progress}%,rgba(219,191,119,.12) 0)`}}>
+    <div className="activity-clock-inner"><Clock3 size={19}/><strong aria-label={active?'Time remaining '+remainingText:'No active countdown'}>{remainingText}</strong><small>{active?'Remaining':'Not activated'}</small></div>
+   </div>
+   <div className="activity-countdown-copy"><span className={'activity-pill '+(active?'live':'idle')}>{active?'ACTIVITY VERIFIED':'ACTIVATION REQUIRED'}</span>
+    <h3>{active?'Your 24-hour activity window is active':'Activate your daily activity'}</h3>
+    <p>{active&&status?.activeUntil?'This window ends '+time(status.activeUntil)+'.':status?.lastCheckInAt?'Your previous check-in has expired; renew when permitted.':'Connect and check in to start a verifiable 24-hour activity window.'}</p>
+    <small>{status?.requirementActive?'The activity condition is enabled for applicable earning periods.':status?'The payout activity rule is not currently enforced.':'Waiting for the activity service status.'}</small>
+   </div>
+  </div>
   <div className="daily-activity-action"><button className="primary-button" type="button" disabled={!connected||!registered||disabled||busy||recentlyRecorded||retrySeconds>0} onClick={()=>void checkIn()}>{busy?<LoaderCircle className="spin" size={18}/>:active?<Check size={18}/>:<RefreshCw size={18}/>}<span>{busy?'Confirm the message in your wallet':recentlyRecorded?'Check-in recorded':'Check in for 24 hours'}</span></button><span className="muted">No gas fee or funds transfer.</span></div>
   {!connected?<p>Connect your wallet on the configured network to check in.</p>:!registered?<p>Register your account before checking in.</p>:null}
   <div className="daily-activity-state" role="status" aria-live="polite">
