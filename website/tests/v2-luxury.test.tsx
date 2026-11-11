@@ -5,7 +5,7 @@ import {financialSeries,type LedgerEvent} from '../src/FinancialInsights';
 import VIPAccountCard from '../src/VIPAccountCard';
 import NetworkConstellation from '../src/NetworkConstellation';
 const seconds=(value:string)=>Math.round(new Date(value).getTime()/1000);
-const base={key:'e',wallet:'0x1111111111111111111111111111111111111111',fee:0n,block:100,tx:'0x'+'a'.repeat(64),position:undefined};
+const base={key:'e',wallet:'0x1111111111111111111111111111111111111111',fee:0n,block:100,index:0,tx:'0x'+'a'.repeat(64),position:undefined};
 const event=(kind:LedgerEvent['kind'],timestamp:string,amount:bigint):LedgerEvent=>({...base,kind,amount,timestamp:seconds(timestamp)});
 describe('GLOBAL V2 live data and transparent analytics',()=>{
  it('bins exact integer amounts by UTC days without turning credits into withdrawals',()=>{

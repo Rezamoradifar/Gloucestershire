@@ -5,6 +5,7 @@ on:
     branches:
       - codex/global-v2-runtime-stability-20261111
       - codex/global-landing-relaunch-20261111
+      - codex/global-complete-history-20261111
   workflow_dispatch:
 
 permissions:

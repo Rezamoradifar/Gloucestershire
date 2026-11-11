@@ -1,5 +1,6 @@
 import {BrowserProvider,Contract,ZeroAddress,isAddress} from 'ethers';
 import abi from './vault-abi.json';
+import {deferredAbi} from './reward-mode';
 import {chainId,configured,vaultAddress} from './config';
 import {getWalletProvider} from './wallet';
 
@@ -16,6 +17,6 @@ export async function readOnlySession(expectedWallet:string){
  if(!Array.isArray(accounts)||!accounts.some((value:unknown)=>typeof value==='string'&&value.toLowerCase()===expectedWallet.toLowerCase()))
   throw Error('The connected wallet has changed. Reconnect before reading records.');
  const provider=new BrowserProvider(wallet);
- const vault=new Contract(vaultAddress,abi,provider);
+ const vault=new Contract(vaultAddress,[...abi,...deferredAbi],provider);
  return {provider,vault};
 }

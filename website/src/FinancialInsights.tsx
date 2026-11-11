@@ -1,9 +1,11 @@
 import {useMemo,useState} from 'react';
-import {BarChart3,Coins,Download,TrendingUp} from 'lucide-react';
+import {BarChart3,Coins,TrendingUp} from 'lucide-react';
+import type {LedgerEvent} from './history-ledger';
+export type {LedgerEvent} from './history-ledger';
 import {displayAmount} from './money';
 import type {Asset} from './chain';
 
-export type LedgerEvent={key:string;kind:'deposit'|'profit'|'reinvest'|'withdrawal';wallet:string;amount:bigint;fee:bigint;block:number;tx:string;timestamp:number|null;position?:bigint};
+
 type Category='deposit'|'profit'|'withdrawal';
 type Range='week'|'month'|'halfyear';
 const labels:Record<Category,string>={deposit:'Deposits',profit:'Profit credited',withdrawal:'Withdrawals'};
