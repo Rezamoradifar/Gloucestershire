@@ -3,7 +3,9 @@ import {Interface,zeroPadValue,type Log} from 'ethers';
 import {displayAmount} from './money';
 import FinancialInsights,{type LedgerEvent} from './FinancialInsights';
 import {Clock3,ExternalLink,History,RefreshCw} from 'lucide-react';
-import {session,errorText,type Asset} from './chain';
+import {errorText,type Asset} from './chain';
+import {readOnlySession} from './read-only-session';
+import {readEventPage} from './adaptive-event-logs';
 import {chainId,explorer,vaultAddress} from './config';
 
 const events=new Interface([
@@ -43,23 +45,18 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
   if(!connected||!who||!token||startCursor===null||running.current)return;
   const id=generation.current;running.current=true;setBusy(true);setError('');
   try{
-   const {provider}=await session(who);
+   const {provider}=await readOnlySession(who);
    if(id!==generation.current)return;
    const checked=await provider.getBlock('latest');
    if(!checked||checked.number<startCursor)throw Error('Chain head changed; refresh the history.');
-   const from=Math.max(0,startCursor-15999);
+   const from=Math.max(0,startCursor-2047);
    const collected:Entry[]=[];
    let current=startCursor,queries=0;
    const filterTopics=[topics,scope==='wallet'?zeroPadValue(who,32):null,zeroPadValue(token,32)];
-   while(current>=from&&queries<40){
+   while(current>=from&&queries<24){
     if(id!==generation.current)return;
-    let span=2000,part:Log[]|null=null,first=0;
-    while(part===null){
-     first=Math.max(from,current-span+1);
-     try{part=await provider.getLogs({address:vaultAddress,fromBlock:first,toBlock:current,topics:filterTopics});}
-     catch(err){if(span<=125)throw err;span=Math.max(125,Math.floor(span/2));}
-    }
-    for(const log of part){const entry=parseFinancialLog(log);if(entry)collected.push(entry);}
+    const {logs,first}=await readEventPage(provider,{address:vaultAddress,topics:filterTopics},from,current,64);
+    for(const log of logs){const entry=parseFinancialLog(log);if(entry)collected.push(entry);}
     current=first-1;queries++;
    }
    if(id!==generation.current)return;
