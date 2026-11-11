@@ -9,7 +9,7 @@ export type WithdrawalHistoryRow={
 };
 export type WithdrawalHistoryPage={
  supported:boolean;count:bigint;page:number;rows:WithdrawalHistoryRow[];
- approvalRequired:boolean;checkedAtBlock:number;queueAddress:string|null
+ approvalRequired:boolean;checkedAtBlock:number;blockTime:number;queueAddress:string|null
 };
 
 export function withdrawalState(status:number,dueAt:number,blockTime:number,approvalRequired:boolean):string{
@@ -31,7 +31,7 @@ export async function readWithdrawalHistory(who:string,page=0,pageSize=8):Promis
  if(!block)throw Error('Latest block is unavailable.');
  const confirmed=Math.max(0,block.number-3),options={blockTag:confirmed};
  if(!await hasDeferredRewards(vault,options))
-  return {supported:false,count:0n,page,rows:[],approvalRequired:false,checkedAtBlock:confirmed,queueAddress:null};
+  return {supported:false,count:0n,page,rows:[],approvalRequired:false,checkedAtBlock:confirmed,blockTime:block.timestamp,queueAddress:null};
  const queueAddress=getAddress(await vault.withdrawalQueue(options));
  const queue=new Contract(queueAddress,queueAbi,provider);
  if(getAddress(await queue.vault(options))!==getAddress(vaultAddress))
@@ -40,7 +40,7 @@ export async function readWithdrawalHistory(who:string,page=0,pageSize=8):Promis
  const count=BigInt(await queue.userRequestCount(who,options));
  const start=BigInt(page)*BigInt(pageSize);
  const rows:WithdrawalHistoryRow[]=[];
- if(start>=count)return {supported:true,count,page,rows,approvalRequired,checkedAtBlock:confirmed,queueAddress};
+ if(start>=count)return {supported:true,count,page,rows,approvalRequired,checkedAtBlock:confirmed,blockTime:block.timestamp,queueAddress};
  const decimals=Number(await vault.tokenDecimals(options));
  for(let i=start;i<count&&i<start+BigInt(pageSize);i++){
   const index=count-1n-i,id=BigInt(await queue.userRequestId(who,index,options));
@@ -55,5 +55,5 @@ export async function readWithdrawalHistory(who:string,page=0,pageSize=8):Promis
   rows.push({id,user:getAddress(row.user),asset,gross,fee,net:gross-fee,
    dueAt:Number(row.dueAt),status:status as 0|1|2|3,principal,decimals:asset==='BNB'?18:decimals,block:confirmed});
  }
- return {supported:true,count,page,rows,approvalRequired,checkedAtBlock:confirmed,queueAddress};
+ return {supported:true,count,page,rows,approvalRequired,checkedAtBlock:confirmed,blockTime:block.timestamp,queueAddress};
 }
