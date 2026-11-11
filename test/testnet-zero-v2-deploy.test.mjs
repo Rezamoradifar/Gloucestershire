@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import {loadNewDeployerRelease} from '../scripts/new-deployer-testnet-profile.mjs';
-import {oldWriterQuiescent,validateV2Profile,validateV2Report} from '../scripts/testnet-zero-v2-deploy.mjs';
+import {oldWriterQuiescent,validateV2Profile,validateV2Report,validateV2Archive} from '../scripts/testnet-zero-v2-deploy.mjs';
 import {PREVIOUS_TESTNET_VAULT} from '../scripts/preflight-testnet-zero-v2.mjs';
 
 const file='scripts/testnet-zero-v2-deploy.mjs';
@@ -37,6 +37,14 @@ test('V2 requires a stopped old writer and disabled timer',()=>{
  assert.equal(oldWriterQuiescent((unit,property)=>unit.endsWith('.timer')&&property==='UnitFileState'?'enabled':disabled(unit,property)),false);
  assert.equal(oldWriterQuiescent((unit,property)=>unit.endsWith('.service')&&property==='ActiveState'?'active':disabled(unit,property)),false);
  assert.throws(()=>oldWriterQuiescent(()=>{throw Error('cannot inspect');}),/cannot inspect/);
+});
+
+test('deployment refuses a missing or changed verified archive',()=>{
+ const archive={sha256:'a'.repeat(64),oldTarget:'0x1111111111111111111111111111111111111111'};
+ assert.equal(validateV2Archive(archive),archive);
+ assert.throws(()=>validateV2Archive(null),/ZERO_V2_LEGACY_ARCHIVE_CHANGED/);
+ assert.throws(()=>validateV2Archive({...archive,sha256:'b'.repeat(64)},archive),/ZERO_V2_LEGACY_ARCHIVE_CHANGED/);
+ assert.throws(()=>validateV2Archive({...archive,oldTarget:'0x2222222222222222222222222222222222222222'},archive),/ZERO_V2_LEGACY_ARCHIVE_CHANGED/);
 });
 
 test('deployment CLI is syntax-valid with separate V2 journal, no V1 mutation or automatic cutover',()=>{

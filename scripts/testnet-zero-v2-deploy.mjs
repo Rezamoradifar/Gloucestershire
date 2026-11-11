@@ -90,6 +90,13 @@ export function validateV2Report(verified,previous=PREVIOUS_TESTNET_VAULT){
     verified.accountsMigrated!==false||address===getAddress(previous))fail('ZERO_V2_EMPTY_DEPLOYMENT_REQUIRED');
  return verified;
 }
+export function validateV2Archive(current,expected=current){
+ if(!current||!expected||!/^[0-9a-f]{64}$/.test(current.sha256||'')||
+    current.sha256!==expected.sha256||current.oldTarget!==expected.oldTarget){
+  fail('ZERO_V2_LEGACY_ARCHIVE_CHANGED');
+ }
+ return current;
+}
 async function review({provider,base,artifact,backupPath,report,env,oldHash}){
  const config=readConfig(parseEnv(env));
  const old=await preflight({provider,config,report,token:base.token,backupPath,
@@ -145,6 +152,9 @@ async function main(){
   const base=loadNewDeployerRelease();
   const v2=validateV2Profile(JSON.parse(fs.readFileSync(configFile,'utf8')),base);
   const artifact=loadNewDeployerArtifact(NEW_DEPLOYER_ARTIFACT_FILE);
+  // Deployment verification depends on this archive. Check it before signing,
+  // then recheck its digest in every transaction guard to fail before broadcast.
+  const archive=validateV2Archive(loadArchivedLegacySession());
   const originalEnv=privateFile(envFile);
   const oldJournalBytes=privateFile(oldJournal),oldHash=hash(oldJournalBytes);
   requireSettledJournal(JSON.parse(oldJournalBytes.toString('utf8')));
@@ -182,6 +192,7 @@ async function main(){
   if(!state.identity){state.identity=expected;writePrivateJson(journalFile,state);}
   const guard=async()=>{
    if(!oldWriterQuiescent())fail('ZERO_V2_OLD_WORKER_RESTARTED');
+   validateV2Archive(loadArchivedLegacySession(),archive);
    if(!privateFile(envFile).equals(originalEnv)||hash(privateFile(oldJournal))!==oldHash)
     fail('ZERO_V2_PREVIOUS_STATE_CHANGED');
    if(Number(await provider.send('eth_chainId',[]))!==97)fail('ZERO_V2_TESTNET_ONLY');
@@ -194,7 +205,7 @@ async function main(){
    maxTotalFee:parseEther('0.1'),log:message=>console.log(message)
   });
   const verified=validateV2Report(await verifyNewDeployerDeployment({
-   provider,artifact,release:base,archive:loadArchivedLegacySession(),
+   provider,artifact,release:base,archive,
    hash:receipt.hash,confirmations:3
   }));
   const result={...verified,kind:'testnet-zero-v2-deployment',releaseId:v2.releaseId,
