@@ -2,7 +2,7 @@ import {useEffect,useState} from 'react';
 type Theme='dark'|'light';
 const readTheme=():Theme=>{
  try {const stored=localStorage.getItem('global-theme');if(stored==='dark'||stored==='light')return stored;}catch{}
- return typeof window!=='undefined'&&window.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light';
+ return 'dark'; // Premium dark by default; explicit saved light preference remains respected.
 };
 export default function ThemeSwitch(){
  const [theme,setTheme]=useState<Theme>(readTheme);
