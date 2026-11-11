@@ -1,7 +1,9 @@
 import {useEffect,useRef,useState} from 'react';
 import {Interface,zeroPadValue,getAddress,type Log} from 'ethers';
 import {ChevronDown,ChevronRight,ExternalLink,GitBranch,RefreshCw,Users} from 'lucide-react';
-import {session,errorText,type Snapshot} from './chain';
+import {errorText,type Snapshot} from './chain';
+import {readOnlySession} from './read-only-session';
+import {readEventPage} from './adaptive-event-logs';
 import {explorer,vaultAddress} from './config';
 import {displayAmount} from './money';
 import NetworkConstellation from './NetworkConstellation';
@@ -18,7 +20,7 @@ function MemberRow({root,member,depth,block,selected=false}:{root:string;member:
  useEffect(()=>{
   if(!open)return;
   let cancelled=false;setProfile(null);setError('');
-  session(root).then(({vault})=>vault.users(member.address,{blockTag:block})).then(user=>{
+  readOnlySession(root).then(({vault})=>vault.users(member.address,{blockTag:block})).then(user=>{
    if(!cancelled)setProfile({registered:Boolean(user.registered),active:Boolean(user.active),kyc:Boolean(user.vipKyc),
     capitalUsd:BigInt(user.capitalUsd),salesUsd:BigInt(user.salesUsd),activeDirect:BigInt(user.activeDirect)});
   }).catch(reason=>{if(!cancelled)setError(errorText(reason));});
@@ -53,19 +55,14 @@ function Level({root,parent,block,depth}:{root:string;parent:string;block:number
   if(head===null||running.current)return;
   const id=request.current;running.current=true;setBusy(true);setError('');
   try{
-   const {provider}=await session(root);
+   const {provider}=await readOnlySession(root);
    if(id!==request.current)return;
-   const target=Math.max(0,head-19999);
+   const target=Math.max(0,head-2047);
    const found:Member[]=[];let current=head,attempts=0;
-   while(current>=target&&attempts<48){
+   while(current>=target&&attempts<24){
     if(id!==request.current)return;
-    let span=2500,records:Log[]|null=null,first=0;
-    while(records===null){
-     first=Math.max(target,current-span+1);
-     try{records=await provider.getLogs({address:vaultAddress,fromBlock:first,toBlock:current,topics:[topic,null,zeroPadValue(parent,32)]});}
-     catch(reason){if(span<=125)throw reason;span=Math.max(125,Math.floor(span/2));}
-    }
-    for(const record of records){
+    const {logs,first}=await readEventPage(provider,{address:vaultAddress,topics:[topic,null,zeroPadValue(parent,32)]},target,current,64);
+    for(const record of logs){
      const parsed=registry.parseLog(record);
      if(parsed&&parsed.name==='Registered')found.push({address:getAddress(String(parsed.args.user)),block:record.blockNumber,tx:record.transactionHash});
     }
