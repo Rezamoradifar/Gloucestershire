@@ -11,11 +11,13 @@ import {readPrivateKey} from './migration-signers.mjs';
 import {writePrivateJson,journalTransaction} from './migration-journal.mjs';
 import {loadNewDeployerRelease,NEW_DEPLOYER_KEY_FILE,NEW_DEPLOYER_ARTIFACT_FILE} from './new-deployer-testnet-profile.mjs';
 import {loadNewDeployerArtifact,loadArchivedLegacySession,newDeployerRequest,verifyNewDeployerDeployment} from './deploy-new-deployer-testnet.mjs';
+import {acquireCatchupLock,releaseCatchupLock} from './index-new-deployer-catchup.mjs';
 import {PREVIOUS_TESTNET_VAULT,ZERO_V2_STATE_DIR,selectBackup,verifyOldReport,preflight} from './preflight-testnet-zero-v2.mjs';
 
 const releaseId='global-testnet-zero-v2';
 const oldState='/var/lib/globaldroptrade/new-deployer-testnet-v1';
-const oldJournal='/var/lib/globaldroptrade/new-deployer-testnet-automation-v1/journal.json';
+const oldWorkerState='/var/lib/globaldroptrade/new-deployer-testnet-automation-v1';
+const oldJournal=path.join(oldWorkerState,'journal.json');
 const envFile='/etc/globaldroptrade/trades.env';
 const reportFile=path.join(ZERO_V2_STATE_DIR,'deployment-public.json');
 const journalFile=path.join(ZERO_V2_STATE_DIR,'journal.json');
@@ -116,7 +118,7 @@ function validateJournal(state,expected){
  }
 }
 async function main(){
- let provider;
+ let provider,lock;
  try{
   const [mode,...extra]=process.argv.slice(2);
   if(process.getuid?.()!==0||!['--plan','--execute'].includes(mode)||extra.length)
@@ -148,6 +150,8 @@ async function main(){
    return;
   }
   if(!stopped)fail('ZERO_V2_OLD_WORKER_MUST_BE_STOPPED_AND_TIMER_DISABLED');
+  // Shared PID lock also blocks a manually launched V1 signer during this deployment.
+  lock=await acquireCatchupLock(oldWorkerState,{waitMilliseconds:0});
   requireNoExistingReport();
   if(fs.existsSync(ZERO_V2_STATE_DIR))privateDirectory(ZERO_V2_STATE_DIR);
   else privateDirectory(ZERO_V2_STATE_DIR,{create:true});
@@ -192,6 +196,9 @@ async function main(){
  }catch(error){
   console.error('ZERO_V2_STOPPED '+(/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message||'')?error.message:'ZERO_V2_REVIEW_REQUIRED'));
   process.exitCode=1;
- }finally{provider?.destroy();}
+ }finally{
+  try{releaseCatchupLock(lock);}catch{console.error('ZERO_V2_OLD_WORKER_LOCK_CLEANUP_REQUIRED');process.exitCode=1;}
+  provider?.destroy();
+ }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)await main();
