@@ -58,26 +58,14 @@ function unitActive(name){
  try{execFileSync('systemctl',['is-active','--quiet',name],{timeout:5000,stdio:'ignore'});return true;}
  catch{return false;}
 }
-export async function preflight({provider,config,report,token,backupPath,timerActive}){
- if(config.chainId!==97||getAddress(config.address)!==getAddress(PREVIOUS_TESTNET_VAULT))fail('ZERO_V2_ACTIVE_TARGET_REQUIRED');
- if(Number(await provider.send('eth_chainId',[]))!==97)fail('ZERO_V2_CHAIN_97_REQUIRED');
- const [head,runtime]=await Promise.all([provider.getBlockNumber(),provider.getCode(PREVIOUS_TESTNET_VAULT)]);
- if(runtime==='0x'||keccak256(runtime)!==report.runtimeHash)fail('ZERO_V2_PREVIOUS_RUNTIME_CHANGED');
- const vault=new Contract(PREVIOUS_TESTNET_VAULT,[
-  'function ledgers(address) view returns(uint256 principal,uint256 profit,uint256 feeReserve,uint256 rewards)',
-  'function assetBalance(address) view returns(uint256)',
-  'function withdrawalQueue() view returns(address)'
- ],provider);
- const queueAddress=getAddress(await vault.withdrawalQueue());
- if(queueAddress!==getAddress(report.queue))fail('ZERO_V2_PREVIOUS_QUEUE_CHANGED');
- const queue=new Contract(queueAddress,[
-  'function requestCount() view returns(uint256)',
-  'function pending(address) view returns(uint256)'
- ],provider);
- const assets=[];
+// A review must describe one actual chain state: never mix "latest" reads from
+// different blocks while the old signer may still be processing rewards.
+export async function readOldLiabilities({vault,queue,token,blockNumber}){
+ if(!Number.isSafeInteger(blockNumber)||blockNumber<0)fail('ZERO_V2_SNAPSHOT_BLOCK_REQUIRED');
+ const options={blockTag:blockNumber},assets=[];
  for(const [name,address] of [['BNB',ZeroAddress],['TEST_USDT',token]]){
   const [ledger,cash,pending]=await Promise.all([
-   vault.ledgers(address),vault.assetBalance(address),queue.pending(address)
+   vault.ledgers(address,options),vault.assetBalance(address,options),queue.pending(address,options)
   ]);
   assets.push({
    asset:name,principalUnits:ledger.principal.toString(),
@@ -86,12 +74,34 @@ export async function preflight({provider,config,report,token,backupPath,timerAc
    contractCashUnits:cash.toString(),queuedUnits:pending.toString()
   });
  }
- const requests=(await queue.requestCount()).toString();
+ return {assets,requests:(await queue.requestCount(options)).toString()};
+}
+export async function preflight({provider,config,report,token,backupPath,timerActive}){
+ if(config.chainId!==97||getAddress(config.address)!==getAddress(PREVIOUS_TESTNET_VAULT))fail('ZERO_V2_ACTIVE_TARGET_REQUIRED');
+ if(Number(await provider.send('eth_chainId',[]))!==97)fail('ZERO_V2_CHAIN_97_REQUIRED');
+ const head=await provider.getBlockNumber();
+ const checkpoint=await provider.getBlock(head);
+ if(!checkpoint?.hash)fail('ZERO_V2_SNAPSHOT_BLOCK_REQUIRED');
+ const runtime=await provider.getCode(PREVIOUS_TESTNET_VAULT,head);
+ if(runtime==='0x'||keccak256(runtime)!==report.runtimeHash)fail('ZERO_V2_PREVIOUS_RUNTIME_CHANGED');
+ const vault=new Contract(PREVIOUS_TESTNET_VAULT,[
+  'function ledgers(address) view returns(uint256 principal,uint256 profit,uint256 feeReserve,uint256 rewards)',
+  'function assetBalance(address) view returns(uint256)',
+  'function withdrawalQueue() view returns(address)'
+ ],provider);
+ const queueAddress=getAddress(await vault.withdrawalQueue({blockTag:head}));
+ if(queueAddress!==getAddress(report.queue))fail('ZERO_V2_PREVIOUS_QUEUE_CHANGED');
+ const queue=new Contract(queueAddress,[
+  'function requestCount() view returns(uint256)',
+  'function pending(address) view returns(uint256)'
+ ],provider);
+ const {assets,requests}=await readOldLiabilities({vault,queue,token,blockNumber:head});
+ if((await provider.getBlock(head))?.hash!==checkpoint.hash)fail('ZERO_V2_SNAPSHOT_REORG');
  return {
   version:1,kind:'testnet-zero-v2-readonly-preflight',
   status:'CURRENT_VAULT_ARCHIVE_REVIEW_REQUIRED',
   chainId:97,oldVault:PREVIOUS_TESTNET_VAULT,
-  oldDeploymentBlock:report.block,readBlock:head,
+  oldDeploymentBlock:report.block,readBlock:head,readBlockHash:checkpoint.hash,
   backupPath,
   oldWorkerTimerActive:timerActive,
   queueRequestCount:requests,

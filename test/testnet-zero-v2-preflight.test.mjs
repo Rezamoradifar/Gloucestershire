@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
-import {PREVIOUS_TESTNET_VAULT,ZERO_V2_STATE_DIR,verifyOldReport} from '../scripts/preflight-testnet-zero-v2.mjs';
+import {PREVIOUS_TESTNET_VAULT,ZERO_V2_STATE_DIR,verifyOldReport,readOldLiabilities} from '../scripts/preflight-testnet-zero-v2.mjs';
 
 const file='scripts/preflight-testnet-zero-v2.mjs';
 const source=fs.readFileSync(file,'utf8');
@@ -34,8 +34,23 @@ test('the read-only review covers on-chain liabilities and blocks silent reuse o
  assert.match(source,/function pending\(address\) view returns\(uint256\)/);
  assert.match(source,/queueRequestCount/);
  assert.match(source,/getBlockNumber/);
- assert.match(source,/getCode\(PREVIOUS_TESTNET_VAULT\)/);
+ assert.match(source,/getCode\(PREVIOUS_TESTNET_VAULT,head\)/);
  assert.match(source,/oldWorkerTimerActive/);
  assert.match(source,/nextVaultDeployed:false,cutoverPerformed:false/);
  assert.doesNotMatch(source,/writePrivateJson|fs\.writeFile|systemctl.*(stop|disable|enable|restart)/);
+});
+
+test('all liability and queue reads use the same explicitly pinned block',async()=>{
+ const calls=[];
+ const record=(name,value)=>async(...args)=>{calls.push({name,args});return value;};
+ const vault={ledgers:record('ledgers',{principal:1n,profit:2n,feeReserve:3n,rewards:4n}),assetBalance:record('cash',5n)};
+ const queue={pending:record('pending',6n),requestCount:record('requests',7n)};
+ const result=await readOldLiabilities({vault,queue,token:'0x1111111111111111111111111111111111111111',blockNumber:123});
+ assert.equal(calls.length,7);
+ assert.ok(calls.every(({args})=>args.at(-1).blockTag===123));
+ assert.equal(result.assets.length,2);
+ assert.equal(result.assets[0].principalUnits,'1');
+ assert.equal(result.assets[1].queuedUnits,'6');
+ assert.equal(result.requests,'7');
+ await assert.rejects(()=>readOldLiabilities({vault,queue,token:'0x1111111111111111111111111111111111111111',blockNumber:NaN}),/ZERO_V2_SNAPSHOT_BLOCK_REQUIRED/);
 });

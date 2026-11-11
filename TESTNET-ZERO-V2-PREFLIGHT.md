@@ -27,6 +27,11 @@ followed by on-chain accounting balances in smallest token units. It requires:
 - canonical old runtime hash and withdrawal queue;
 - live chain-97 RPC code and read-only ledger, queue and cash information.
 
+The reported balances and queue are read at `readBlock` and `readBlockHash`.
+The check stops if that block changes while the snapshot is read. The values
+are a snapshot, not proof that the previous worker has stopped or that claims
+have been settled; review the obligations again after quiescing the worker.
+
 A missing/incomplete latest backup is a hard failure. No older backup is
 silently chosen instead.
 
