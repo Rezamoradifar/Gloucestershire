@@ -64,6 +64,26 @@ test('larger catch-up requests still adapt to a strict ten-block RPC limit',asyn
  assert.ok(fixture.requests.some(filter=>filter.toBlock-filter.fromBlock+1<=10));
 });
 
+test('a previously completed target advances to the confirmed head observed at start',async()=>{
+ const state=stateFor(1999);
+ await catchUpNewDeployerIndex({provider:history(1999).provider,policy,state,save:()=>{}});
+ const before=structuredClone({transactions:state.transactions,paid:state.daily.positionPaid,epoch:state.daily.epoch});
+ const result=await catchUpNewDeployerIndex({provider:history(5000).provider,policy,state,save:()=>{}});
+ assert.equal(result.status,'indexed');assert.equal(result.initialConfirmedHead,4997);
+ assert.equal(result.indexThrough,4997);assert.equal(result.memberThrough,4997);
+ assert.deepEqual({transactions:state.transactions,paid:state.daily.positionPaid,epoch:state.daily.epoch},before);
+});
+
+test('catch-up first finishes a stale partial target, then advances without skipping history',async()=>{
+ const state=stateFor(1999),fixture=history(5000);
+ const bounded=await catchUpNewDeployerIndex({provider:fixture.provider,policy,state,save:()=>{},maxPasses:1});
+ assert.equal(bounded.status,'indexing');assert.equal(bounded.indexThrough,1999);
+ assert.equal(bounded.indexTarget,1999);assert.equal(bounded.initialConfirmedHead,4997);
+ const result=await catchUpNewDeployerIndex({provider:fixture.provider,policy,state,save:()=>{}});
+ assert.equal(result.status,'indexed');assert.equal(result.indexThrough,4997);
+ assert.equal(result.positions,1);assert.equal(state.daily.registry.members[member],1001);
+});
+
 test('a failed later position page persists complete pages and resumes without skipping a deposit',async()=>{
  const state=stateFor(3999),fixture=history(3999);fixture.setBroken(true);let saved;
  await assert.rejects(catchUpNewDeployerIndex({provider:fixture.provider,policy,state,save:()=>{saved=structuredClone(state);}}));

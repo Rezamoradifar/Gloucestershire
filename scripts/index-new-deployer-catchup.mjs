@@ -31,8 +31,14 @@ function financialState(state){
 }
 
 export async function catchUpNewDeployerIndex({provider,policy,state,save,guard=async()=>{},confirmations=3,maxPasses=50,milliseconds=180000,clock=Date.now,onProgress=()=>{}}){
- if(!isNewDeployerTestnetPolicy(policy)||!isPositionPolicy(policy)||!state.daily||typeof save!=='function'||!Number.isSafeInteger(maxPasses)||maxPasses<1||maxPasses>50||!Number.isSafeInteger(milliseconds)||milliseconds<10000||milliseconds>180000)fail('INDEX_CATCHUP_LIMIT_REQUIRED');
+ if(!isNewDeployerTestnetPolicy(policy)||!isPositionPolicy(policy)||!state.daily||typeof save!=='function'||!Number.isSafeInteger(confirmations)||confirmations<1||!Number.isSafeInteger(maxPasses)||maxPasses<1||maxPasses>50||!Number.isSafeInteger(milliseconds)||milliseconds<10000||milliseconds>180000)fail('INDEX_CATCHUP_LIMIT_REQUIRED');
  const start=clock(),beforeFinancial=financialState(state);
+ await guard();
+ const head=await provider.getBlockNumber();
+ if(!Number.isSafeInteger(head)||head<0)fail('INDEX_CATCHUP_HEAD_REQUIRED');
+ // A fixed initial goal makes completion meaningful without chasing a moving chain.
+ // Existing partial targets must still finish and be verified before advancing.
+ const goal=Math.max(0,head-confirmations);
  let passes=0,last='indexing';
  const checkedSave=()=>{
   if(financialState(state)!==beforeFinancial)fail('INDEX_CATCHUP_FINANCIAL_STATE_CHANGED');
@@ -47,17 +53,18 @@ export async function catchUpNewDeployerIndex({provider,policy,state,save,guard=
   const oldPosition=state.daily.positionIndex?.through??policy.deploymentBlock-1;
   const result=await scanPositionHistory({
    provider,policy,state:state.daily,save:checkedSave,confirmations,
-   maxRegistryPages:4,pageSize:1000,logBlockSpan:1000,
+   maxRegistryPages:4,pageSize:1000,logBlockSpan:1000,advanceCompletedTarget:true,
    milliseconds:Math.min(90000,milliseconds-(clock()-start)),reserveMilliseconds:5000
   });
   passes++;last=result.status;
   onProgress({passes,memberThrough:state.daily.registry?.through??null,indexThrough:state.daily.positionIndex?.through??null,indexTarget:state.daily.positionScanTarget?.number??null});
-  if(last==='indexed')break;
+  if(last==='indexed'&&(state.daily.positionIndex?.through??-1)>=goal)break;
+  if(last==='indexed'){last='indexing';continue;}
   if((state.daily.registry?.through??policy.deploymentBlock-1)===oldMember&&(state.daily.positionIndex?.through??policy.deploymentBlock-1)===oldPosition)break;
  }
  if(financialState(state)!==beforeFinancial)fail('INDEX_CATCHUP_FINANCIAL_STATE_CHANGED');
  await guard();
- return {version:1,chainId:97,target:policy.vaultAddress,status:last,passes,memberThrough:state.daily.registry?.through??null,indexThrough:state.daily.positionIndex?.through??null,indexTarget:state.daily.positionScanTarget?.number??null,positions:Object.keys(state.daily.positionIndex?.positions||{}).length,transactionsSent:0,signerOpened:false};
+ return {version:1,chainId:97,target:policy.vaultAddress,status:last,passes,memberThrough:state.daily.registry?.through??null,indexThrough:state.daily.positionIndex?.through??null,indexTarget:state.daily.positionScanTarget?.number??null,initialConfirmedHead:goal,positions:Object.keys(state.daily.positionIndex?.positions||{}).length,transactionsSent:0,signerOpened:false};
 }
 
 export async function acquireCatchupLock(directory,{pid=process.pid,expectedUid=0,waitMilliseconds=120000,pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),clock=Date.now,onWait=()=>{}}={}){
