@@ -47,6 +47,9 @@ test('deployment CLI is syntax-valid with separate V2 journal, no V1 mutation or
  assert.match(source,/label:'zero-v2-vault'/);
  assert.match(source,/maxTotalFee:parseEther\('0\.1'\)/);
  assert.match(source,/journalTransaction/);
+ assert.match(source,/acquireCatchupLock\(oldWorkerState,\{waitMilliseconds:0\}\)/);
+ assert.match(source,/releaseCatchupLock\(lock\)/);
+ assert.match(source,/ZERO_V2_ORACLE_PREFLIGHT_REQUIRED/);
  assert.match(source,/verifyNewDeployerDeployment/);
  assert.match(source,/signerOpened:false,transactionsSigned:0,transactionsSent:0/);
  assert.match(source,/siteConnected:false,automationActive:false/);
