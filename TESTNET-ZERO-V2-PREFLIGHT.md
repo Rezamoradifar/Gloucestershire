@@ -30,15 +30,52 @@ followed by on-chain accounting balances in smallest token units. It requires:
 A missing/incomplete latest backup is a hard failure. No older backup is
 silently chosen instead.
 
+## Staged independent V2 deployment
+
+The separate contract-deployment tool is prepared, but **the existing site
+remains connected to the old vault** and this release does not automate an
+API/worker cutover.
+
+After completing the read-only archive check, run the no-signer plan:
+
+```bash
+node scripts/testnet-zero-v2-deploy.mjs --plan
+```
+
+It reviews the active chain-97 vault, backup and settled old worker journal,
+rechecks the unchanged contract build and prints whether the previous signer
+worker/timer is quiescent. The plan opens no signing key and sends no
+transactions.
+
+The deployment code has a distinct, root-only state directory:
+`/var/lib/globaldroptrade/testnet-zero-v2`. It binds to the pinned V2
+release profile, the old deployment identity and the old worker journal
+digest, and stores any signed raw deployment transaction *before* broadcast.
+It uses the existing verified FastNewDeployerTestnetVault artifact and
+separately checks the exact on-chain genesis state before reporting success.
+
+**Do not run the following live deployment mode until the entire V2
+cutover/rollback path is reviewed and the previous users' testnet claims
+are accounted for.**
+
+```bash
+# Explicit operation, only after quiescing the old signer and disabling its timer:
+# node scripts/testnet-zero-v2-deploy.mjs --execute
+```
+
+The signer refuses execution while the previous worker is running or its
+timer remains enabled. It has a cumulative fee ceiling of 0.1 test BNB and
+does not fund rewards, connect the website, or activate automation.
+
 ## Cutover safety and explicit remaining work
 
 1. Review open position/principal/credited-profit/queued-withdrawal
    obligations on the old vault. A new empty vault does not make old users'
    assets, approved requests or claims disappear.
-2. Stage a **distinct V2 deployment**, journal, canonical creation proof,
-   activation policy, API/site and worker configuration. Never rerun the
-   existing new-deployer V1 deployment command or delete/recreate its journal
-   to force an address change.
+2. Use the distinct V2 deployment and journal, then separately implement
+   and verify a V2-specific API/site cutover and V2 activity/worker policy.
+   Never rerun the V1 deployment command or delete its journal to force a
+   different address.
 3. Before any signer use, quiesce the previous signer worker, disable its
    timer, ensure no pending operator transaction or ambiguous lock, and capture
    a final consistent archive.
