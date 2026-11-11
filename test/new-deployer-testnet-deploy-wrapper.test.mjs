@@ -34,14 +34,14 @@ test('key setup installs runtime dependencies before it can prompt for a secret'
 
 test('invalid, wrong-address, and failed key writes never print or retain supplied key material',()=>{
     const secret='0x'+'01'.repeat(32),invalid='0x'+'00'.repeat(32),overflow='0x'+'ff'.repeat(32);
-    const run=({input,expected,readOnly=false,preserved=false,tempCollision=false})=>{
+    const run=({input,expected,writeFailure=false,preserved=false,tempCollision=false})=>{
         const root=fs.mkdtempSync(path.join(os.tmpdir(),'new-deployer-secret-'));
         try{
             const state=path.join(root,'state'),keys=path.join(root,'keys'),script=path.join(root,'deploy.sh'),bin=path.join(root,'bin');
             fs.mkdirSync(bin);
             fs.writeFileSync(path.join(bin,'npm'),'#!/bin/sh\nexit 0\n',{mode:0o755});
             fs.symlinkSync(path.resolve('node_modules'),path.join(root,'node_modules'));
-            if(readOnly||preserved||tempCollision)fs.mkdirSync(keys,{mode:readOnly?0o500:0o700});
+            if(writeFailure||preserved||tempCollision)fs.mkdirSync(keys,{mode:0o700});
             if(preserved)fs.writeFileSync(path.join(keys,'deployer.key'),'preserved\n',{mode:0o600});
             let source=fs.readFileSync(sourceFile,'utf8');
             source=source.replace('[ "$(id -u)" -eq 0 ] || { echo \'ROOT_REQUIRED\'; exit 1; }','[ "0" -eq 0 ] || { echo \'ROOT_REQUIRED\'; exit 1; }');
@@ -49,6 +49,7 @@ test('invalid, wrong-address, and failed key writes never print or retain suppli
             source=source.replace('/var/lib/globaldroptrade/new-deployer-testnet-v1',state);
             source=source.replace('/etc/globaldroptrade/new-deployer-testnet-v1',keys);
             if(expected)source=source.replace('expected=0xCf6Eb63ba4D2174CA2759eff57a720a54416b71d','expected='+expected);
+            if(writeFailure)source=source.replace('fs.linkSync(temporary,target);','throw Error("SIMULATED_KEY_WRITE_FAILURE");');
             if(tempCollision){
                 source=source.replace('".deployer.key."+process.pid+"."+Date.now()','".deployer.key.collision"');
                 fs.writeFileSync(path.join(keys,'.deployer.key.collision'),'sentinel\n',{mode:0o600});
@@ -67,7 +68,7 @@ test('invalid, wrong-address, and failed key writes never print or retain suppli
     run({input:invalid});
     run({input:overflow});
     run({input:secret});
-    run({input:secret,expected:new Wallet(secret).address,readOnly:true});
+    run({input:secret,expected:new Wallet(secret).address,writeFailure:true});
     run({input:secret,expected:new Wallet(secret).address,tempCollision:true});
     run({input:secret,preserved:true});
 });
