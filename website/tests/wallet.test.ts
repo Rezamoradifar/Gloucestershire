@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {WalletConnection,wallets,switchWalletNetwork,selectInjectedWalletProvider,type WalletProvider} from '../src/wallet';
+import {WalletConnection,wallets,switchWalletNetwork,selectInjectedWalletProvider,walletConnectOptionalMethods,type WalletProvider} from '../src/wallet';
 import {session} from '../src/chain';
 
 vi.mock('../src/config',()=>({chainId:97,chainName:'BNB Testnet',explorer:'https://testnet.bscscan.com',configured:true,vaultAddress:'0x7f19354B765920B9b17003d0840EEaA133883DcA',feeWallets:[]}));
@@ -16,6 +16,19 @@ function provider(){
 }
 afterEach(async()=>{await wallets.disconnect();vi.unstubAllGlobals();});
 describe('wallet connection boundaries',()=>{
+ it('proposes personal_sign for optional-chain WalletConnect sessions',async()=>{
+  // WalletConnect 2.26 uses no required-method defaults when no required
+  // chains are configured; the optional list must request message signing.
+  const {EthereumProvider}=await import('@walletconnect/ethereum-provider');
+  const p=new EthereumProvider();
+  const config=(p as any).getRpcConfig({projectId:'a'.repeat(32),optionalChains:[97],
+   optionalMethods:[...walletConnectOptionalMethods],rpcMap:{97:'https://example.invalid'}});
+  expect(config.chains).toEqual([]);
+  expect(config.methods).toEqual([]);
+  expect(config.optionalChains).toEqual(['eip155:97']);
+  expect(config.optionalMethods).toContain('personal_sign');
+  expect(config.optionalMethods).toContain('eth_sendTransaction');
+ });
  it('does not contact wallets until the user chooses a connection',()=>{
   const injected=provider(),mobile=vi.fn();const connection=new WalletConnection(()=>injected,mobile);
   expect(connection.getProvider()).toBeNull();expect(injected.request).not.toHaveBeenCalled();expect(mobile).not.toHaveBeenCalled();

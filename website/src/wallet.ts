@@ -15,6 +15,9 @@ export function selectInjectedWalletProvider(scope:InjectedWalletScope):WalletPr
 }
 export const walletConnectProjectId=String(import.meta.env.VITE_WALLETCONNECT_PROJECT_ID||'').trim();
 export const walletConnectReady=/^[a-f0-9]{32}$/i.test(walletConnectProjectId);
+// Optional chains do not inherit the provider's required-method defaults.
+// Check-in and support both sign messages, so request that permission explicitly.
+export const walletConnectOptionalMethods=['personal_sign','eth_sendTransaction','wallet_switchEthereumChain','wallet_addEthereumChain'] as const;
 
 export function walletConnectionError(error:unknown){
  const e=error as {code?:number|string;message?:string;shortMessage?:string}|null;
@@ -88,7 +91,7 @@ async function loadMobileProvider():Promise<MobileProvider>{
   return EthereumProvider.init({
    projectId:walletConnectProjectId,
    optionalChains:[chainId],
-   optionalMethods:['eth_sendTransaction','wallet_switchEthereumChain','wallet_addEthereumChain'],
+   optionalMethods:[...walletConnectOptionalMethods],
    showQrModal:true,
    rpcMap:{[chainId]:chainId===97?'https://bsc-testnet-dataseed.bnbchain.org':'https://bsc-dataseed.bnbchain.org'},
    metadata:{name:'Global Drop Trade',description:'Global Drop Trade wallet connection',url:window.location.origin,icons:[new URL('/favicon.svg',window.location.origin).href]},
