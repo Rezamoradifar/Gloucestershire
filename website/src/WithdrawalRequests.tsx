@@ -6,7 +6,7 @@ export default function WithdrawalRequests({who,block,owner,busy,onExecute}:{who
  const [start,setStart]=useState(0n),[all,setAll]=useState(false),[reload,setReload]=useState(0),[data,setData]=useState<Awaited<ReturnType<typeof readQueue>>|null>(null),[error,setError]=useState('');
  useEffect(()=>{setStart(0n);setAll(false);},[who]);
  useEffect(()=>{let stopped=false;setData(null);setError('');readQueue(who,start,owner&&all).then(d=>{if(!stopped)setData(d);}).catch(e=>{if(!stopped)setError(errorText(e));});return()=>{stopped=true;};},[who,start,owner,all,block,reload]);
- return <section className="panel"><div className="panel-title"><h2>Withdrawal requests</h2><button className="small-button" disabled={busy} onClick={()=>setReload(n=>n+1)}>Refresh requests</button></div>
+ return <section id="global-withdrawal-queue" className="panel"><div className="panel-title"><h2>Withdrawal requests</h2><button className="small-button" disabled={busy} onClick={()=>setReload(n=>n+1)}>Refresh requests</button></div>
  <p className="muted">Submit your request once. The administrator approves it, then the contract pays the recorded recipient when funded. The payment deadline is 72 hours after your request. Reserved amounts cannot be used twice. You may cancel an overdue request to restore its original balance.</p>
  {owner&&<label><input type="checkbox" checked={all} disabled={busy} onChange={e=>{setAll(e.target.checked);setStart(0n);}}/> Show all customer requests</label>}
  {error?<p className="inline-error" role="alert">{error}</p>:!data?<p role="status">Loading requests…</p>:<>
