@@ -72,6 +72,8 @@ try{
    if(localPreview){
     await desktop.getByRole('heading',{name:'Complete history center'}).waitFor({timeout:10000});
     await desktop.getByRole('heading',{name:'Withdrawal request history'}).waitFor({timeout:10000});
+    const coverage=await desktop.locator('.history-coverage').innerText();
+    if(coverage.includes('Scanned back to genesis'))throw Error('GLOBAL_HISTORY_DISCONNECTED_FALSE_GENESIS_COVERAGE');
     if(await desktop.getByRole('button',{name:'Export loaded CSV'}).isEnabled())
      throw Error('GLOBAL_HISTORY_DISCONNECTED_EXPORT_MUST_BE_DISABLED');
    }
