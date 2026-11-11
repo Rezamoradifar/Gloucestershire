@@ -52,7 +52,7 @@ export default function DailyActivity({who,network,registered,disabled}:{who:str
    <div className="activity-clock-face" style={{background:`conic-gradient(#dbbf77 ${progress}%,rgba(219,191,119,.12) 0)`}}>
     <div className="activity-clock-inner"><Clock3 size={19}/><strong aria-label={active?'Time remaining '+remainingText:'No active countdown'}>{remainingText}</strong><small>{active?'Remaining':'Not activated'}</small></div>
    </div>
-   <div className="activity-countdown-copy"><span className={'activity-pill '+(active?'live':'idle')}>{active?'ACTIVITY VERIFIED':'ACTIVATION REQUIRED'}</span>
+   <div className="activity-countdown-copy"><span className={'activity-pill '+(active?'live':'idle')}>{active?'ACTIVITY VERIFIED':status?.requirementActive?'ACTIVATION REQUIRED':'CHECK-IN AVAILABLE'}</span>
     <h3>{active?'Your 24-hour activity window is active':'Activate your daily activity'}</h3>
     <p>{active&&status?.activeUntil?'This window ends '+time(status.activeUntil)+'.':status?.lastCheckInAt?'Your previous check-in has expired; renew when permitted.':'Connect and check in to start a verifiable 24-hour activity window.'}</p>
     <small>{status?.requirementActive?'The activity condition is enabled for applicable earning periods.':status?'The payout activity rule is not currently enforced.':'Waiting for the activity service status.'}</small>
