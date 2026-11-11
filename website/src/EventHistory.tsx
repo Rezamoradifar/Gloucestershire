@@ -165,7 +165,7 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
      <h2 id={scope==='global'?'global-network-ledger-title':'global-ledger-title'}><History size={23}/> {scope==='global'?'Platform event explorer':'Complete history center'}</h2>
      <p>Deposits · profit credits · withdrawals · reinvestment{scope==='wallet'?' · network milestones':''} · {asset} · {chainId===97?'BNB Testnet':'BNB Smart Chain'}</p>
     </div>
-    <div className="history-header-actions"><button className="small-button" type="button" disabled={!connected||loading!==null} onClick={refresh}><RefreshCw size={16} className={loading?'spin':''}/> Refresh latest</button>
+    <div className="history-header-actions"><button className="small-button" type="button" disabled={!connected||loading!==null} onClick={refresh} title="Restart history from the latest confirmed block; previously loaded pages in this tab are cleared"><RefreshCw size={16} className={loading?'spin':''}/> Restart scan</button>
      <button className="small-button history-export" type="button" disabled={!filterRows.length||invalidDates} onClick={download}><Download size={16}/> Export loaded CSV</button>
     </div>
    </div>
