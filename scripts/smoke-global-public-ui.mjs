@@ -57,6 +57,8 @@ try{
   console.log('GLOBAL_LANDING_V3_VISUAL_ELEMENTS_OK');
   await desktop.locator('#capabilities').scrollIntoViewIfNeeded();
   await capture(desktop,'desktop-capabilities');
+  await desktop.evaluate(()=>window.scrollTo(0,0));
+  await desktop.waitForTimeout(120);
  }
  await capture(desktop,'desktop-landing');
  console.log('GLOBAL_UI_LANDING_OK');
