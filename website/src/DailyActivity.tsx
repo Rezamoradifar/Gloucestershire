@@ -3,6 +3,7 @@ import {Check,Clock3,ExternalLink,LoaderCircle,RefreshCw} from 'lucide-react';
 import {chainId,configured,explorer} from './config';
 import {errorText} from './chain';
 import {readDailyActivityStatus,signDailyActivity,readAllocationStatus,type DailyActivityStatus,type AllocationStatus} from './daily-activity-client';
+import IndexStatus from './IndexStatus';
 import './daily-activity.css';
 
 const time=(seconds:number)=>new Date(seconds*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});
@@ -49,5 +50,6 @@ export default function DailyActivity({who,network,registered,disabled}:{who:str
   <div className="daily-activity-payment">
    {latestBatch?<p><a href={`${explorer}/tx/${latestBatch}`} target="_blank" rel="noreferrer">Latest confirmed system allocation <ExternalLink size={14}/></a><span className="muted">{allocation?.checkedAt?' · status checked '+new Date(allocation.checkedAt).toLocaleString('en-US'):''}{allocation&&!allocation.fresh?' · update pending':''}</span></p>:<p className="muted">{allocation?.fresh?allocation.status==='waiting'?'The allocation service is waiting.':'No confirmed allocation batch is reported yet.':'Current allocation status is unavailable.'}</p>}
   </div>
+  <IndexStatus allocation={allocation}/>
  </section>;
 }

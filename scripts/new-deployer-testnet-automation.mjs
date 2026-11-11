@@ -1,6 +1,7 @@
 // Isolated signer worker for the replacement-deployer testnet target.
 // It never reads a V1 key, V1 policy, or V1 journal.
 import fs from 'node:fs';
+import {indexProgressSnapshot,creditBlockTimestamp} from './index-progress-snapshot.mjs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {parseEnv} from 'node:util';
@@ -255,7 +256,7 @@ export async function runNewDeployerAutomation({provider,wallet,artifact,release
   transact,refreshReadiness:read,maintainOracles:maintain,hourlyTest:true,makeHourlyPolicy:makeNewDeployerHourlyTestPolicy,requireActivityBeforePolicy:true,confirmations,loadActivity:activityGate,onPhase
  });
  const reserved=Object.values(state.transactions||{}).reduce((sum,row)=>sum+BigInt(row.maxFee||0),0n);
- return {...result,kind:'new-deployer-testnet-automation',releaseId:release.releaseId,testMode:true,initialServerReporter:true,newDeployerTestnetVersion:1,fastNewDeployerTestnetVersion:1,feeBudget:{maxWei:parseEther('0.1').toString(),reservedWei:reserved.toString(),renewal:'manual-new-release-required; pending state is never rotated'}};
+ return {...result,indexProgress:indexProgressSnapshot(state.daily),lastCreditBlockTimestamp:await creditBlockTimestamp(provider,result.lastDailyCredit,readiness.target),kind:'new-deployer-testnet-automation',releaseId:release.releaseId,testMode:true,initialServerReporter:true,newDeployerTestnetVersion:1,fastNewDeployerTestnetVersion:1,feeBudget:{maxWei:parseEther('0.1').toString(),reservedWei:reserved.toString(),renewal:'manual-new-release-required; pending state is never rotated'}};
 }
 
 function acquireLock(directory){

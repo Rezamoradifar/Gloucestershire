@@ -78,3 +78,11 @@ it('can display a dated, unavailable allocation report without labeling it a use
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...body,vaultAddress:bob.address}),{status:200})));
  await expect(readAllocationStatus()).rejects.toThrow('unavailable');
 });
+
+it('validates optional index snapshot values before displaying them',async()=>{
+ const body={version:1,status:'running',chainId:97,vaultAddress:contract,checkedAt:'2026-11-07T00:00:00Z',fresh:true,lastCredit:null,indexProgress:{memberThrough:100,positionThrough:99,target:101,memberCount:1,positionCount:2},lastCreditBlockTimestamp:null};
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(body))));
+ expect((await readAllocationStatus()).indexProgress?.target).toBe(101);
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...body,indexProgress:{...body.indexProgress,target:'fake'}}))));
+ await expect(readAllocationStatus()).rejects.toThrow('Index status is unavailable');
+});

@@ -4,7 +4,8 @@ import {getWalletProvider} from './wallet';
 
 export type DailyActivityStatus={version:1;chainId:number;vaultAddress:string;wallet:string;windowSeconds:number;requirementEnabled:boolean;requirementActive:boolean;activationTimestamp:number|null;activityCurrent:boolean;lastCheckInAt:number|null;activeUntil:number|null;nextCheckInAt:number|null;checkedAt:string;recorded?:boolean;alreadyRecorded?:boolean};
 type ActivityChallenge={chainId:number;vaultAddress:string;origin:string;wallet:string;nonce:string;issuedAt:number;expiresAt:number;issuedBlock:{number:number;hash:string;timestamp:number};windowSeconds:number;message:string};
-export type AllocationStatus={version:1;status:'unavailable'|'stale'|'waiting'|'credited'|'running';chainId:number;vaultAddress:string;checkedAt:string|null;fresh:boolean;lastCredit:null|{epoch:number;batches:{transactionHash:string;block:number;blockHash:string}[]}};
+export type IndexProgress={memberThrough:number|null;positionThrough:number|null;target:number|null;memberCount:number|null;positionCount:number|null};
+export type AllocationStatus={version:1;status:'unavailable'|'stale'|'waiting'|'credited'|'running';chainId:number;vaultAddress:string;checkedAt:string|null;fresh:boolean;dailyStatus?:string|null;indexProgress?:IndexProgress|null;lastCreditBlockTimestamp?:number|null;lastCredit:null|{epoch:number;batches:{transactionHash:string;block:number;blockHash:string}[]}};
 export class DailyActivityApiError extends Error{constructor(message:string,public status:number){super(message);}}
 
 export async function dailyActivityApi<T>(route:string,method='GET',body?:unknown):Promise<T>{
@@ -74,6 +75,12 @@ export async function readAllocationStatus():Promise<AllocationStatus>{
  const response=await fetch('/api/automation/status',{cache:'no-store',signal:AbortSignal.timeout(20000)});
  const value=await response.json();
  if(!value||value.version!==1||value.chainId!==chainId||!same(value.vaultAddress,vaultAddress)||!['unavailable','stale','waiting','credited','running'].includes(value.status)||typeof value.fresh!=='boolean'||value.checkedAt!==null&&(typeof value.checkedAt!=='string'||!Number.isFinite(Date.parse(value.checkedAt))))throw Error('Allocation status is unavailable.');
- if(value.lastCredit!==null&&(!Array.isArray(value.lastCredit?.batches)||!value.lastCredit.batches.every((row:{transactionHash?:unknown})=>typeof row.transactionHash==='string'&&/^0x[0-9a-f]{64}$/i.test(row.transactionHash))))throw Error('Allocation status is incomplete.');
+ if(value.lastCredit!==null&&(!Number.isSafeInteger(value.lastCredit?.epoch)||value.lastCredit.epoch<0||!Array.isArray(value.lastCredit?.batches)||!value.lastCredit.batches.every((row:{transactionHash?:unknown;block?:unknown})=>typeof row.transactionHash==='string'&&/^0x[0-9a-f]{64}$/i.test(row.transactionHash)&&Number.isSafeInteger(row.block)&&Number(row.block)>=0)))throw Error('Allocation status is incomplete.');
+ if(value.lastCreditBlockTimestamp!==undefined&&value.lastCreditBlockTimestamp!==null&&!timestamp(value.lastCreditBlockTimestamp))throw Error('Allocation status is incomplete.');
+ if(value.indexProgress!==undefined&&value.indexProgress!==null){
+  if(typeof value.indexProgress!=='object'||Array.isArray(value.indexProgress)||!['memberThrough','positionThrough','target','memberCount','positionCount'].every(key=>{
+   const field=value.indexProgress[key];return field===null||(Number.isSafeInteger(field)&&field>=0);
+  }))throw Error('Index status is unavailable.');
+ }
  return value;
 }
