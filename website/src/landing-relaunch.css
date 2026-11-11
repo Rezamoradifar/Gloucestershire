@@ -96,3 +96,18 @@
 :root[data-theme='light'] .gdt-page .v3-capabilities-intro>p{color:#475c6c}
 :root[data-theme='light'] .gdt-page .v3-capabilities-kicker{color:#8e6d34}
 :root[data-theme='light'] .gdt-page .v3-capability-card{color:#f4eee5}
+
+/* Mobile first fold: move the globe immediately after the primary calls to action.
+   Keep on-chain/marketing disclosures and motion control immediately below the visual. */
+@media(max-width:600px){
+ .gdt-page .v3-hero-layout{display:flex;flex-direction:column;align-items:stretch;gap:0}
+ .v3-hero-copy{display:contents}
+ .v3-status-kicker{order:1;align-self:flex-start;margin-top:18px}
+ .gdt-page .v3-hero h1{order:2}
+ .gdt-page .v3-hero .v3-hero-lead{order:3}
+ .v3-hero-actions{order:4}
+ .v3-hero-art{order:5;margin-top:6px;margin-bottom:6px}
+ .v3-hero-highlights{order:6;margin:7px 0 0}
+ .gdt-page .v3-hero .gdt-motion-control{order:7;align-self:flex-start;margin-top:21px}
+ .v3-hero-disclaimer{order:8;margin-top:10px;margin-bottom:22px}
+}
