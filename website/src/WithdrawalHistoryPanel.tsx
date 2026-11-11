@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useState} from 'react';
 import {ArrowLeft,ArrowRight,Clock3,ExternalLink,FileClock,RefreshCw} from 'lucide-react';
 import {readWithdrawalHistory,withdrawalState,type WithdrawalHistoryPage} from './history-queue';
 import {displayAmount} from './money';
@@ -33,7 +33,7 @@ export default function WithdrawalHistoryPanel({who,connected}:{who:string;conne
   {history?.supported&&<>
    <div className="history-queue-summary"><span>Total requests in queue <strong>{total.toString()}</strong></span><span>Displayed <strong>{shown}</strong></span><span>Snapshot block <strong>{history.checkedAtBlock.toLocaleString('en-US')}</strong></span></div>
    {rows.length?<div className="history-queue-list">{rows.map(row=><article key={row.id.toString()} className="history-queue-row">
-    <div className="history-queue-row-head"><strong>Request #{(row.id+1n).toString()} · {row.principal?'Principal':'Profit'}</strong><span className={'history-queue-status status-'+row.status}>{withdrawalState(row.status,row.dueAt,Math.floor(Date.now()/1000),history.approvalRequired)}</span></div>
+    <div className="history-queue-row-head"><strong>Request #{(row.id+1n).toString()} · {row.principal?'Principal':'Profit'}</strong><span className={'history-queue-status status-'+row.status}>{withdrawalState(row.status,row.dueAt,history.blockTime,history.approvalRequired)}</span></div>
     <div className="history-queue-row-body"><span>Requested <bdi>{displayAmount(row.gross,row.decimals,6)} {row.asset}</bdi></span><span>Fee <bdi>{displayAmount(row.fee,row.decimals,6)} {row.asset}</bdi></span><span>Net requested <bdi>{displayAmount(row.net,row.decimals,6)} {row.asset}</bdi></span></div>
     <div className="history-queue-row-foot"><span><Clock3 size={15}/> Deadline: <time dateTime={new Date(row.dueAt*1000).toISOString()}>{new Date(row.dueAt*1000).toLocaleString()}</time></span>
     {history.queueAddress&&<a href={explorer+'/address/'+history.queueAddress} target="_blank" rel="noopener noreferrer">View queue contract <ExternalLink size={14}/></a>}</div>
