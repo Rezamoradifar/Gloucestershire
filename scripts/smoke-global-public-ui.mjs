@@ -36,6 +36,30 @@ try{
  attach(desktop);
  await desktop.goto(base+'/',{waitUntil:'domcontentloaded',timeout:30000});
  await desktop.locator('.gdt-page').waitFor({timeout:20000});
+ if(localPreview&&process.env.GLOBAL_EXPECT_LANDING_V3==='1'){
+  const hero=desktop.locator('[data-landing-release="global-immersive-v3"]');
+  await hero.waitFor({timeout:10000});
+  const headline=await desktop.locator('#hero-title').innerText();
+  if(!headline.includes('possibility.'))throw Error('GLOBAL_LANDING_V3_NEW_HEADLINE_MISSING');
+  const cards=await desktop.locator('.v3-capability-card').count();
+  if(cards!==3)throw Error('GLOBAL_LANDING_V3_THREE_CARDS_REQUIRED found='+cards);
+  await desktop.locator('.v3-world-figure img').evaluate(image=>{
+   if(!(image instanceof HTMLImageElement)||!image.complete||image.naturalWidth===0)
+    throw Error('GLOBAL_LANDING_V3_EARTH_IMAGE_MISSING');
+  });
+  const floating=await desktop.locator('.global-theme-toggle').evaluate(el=>getComputedStyle(el).display);
+  if(floating!=='none')throw Error('GLOBAL_LANDING_V3_FLOATING_THEME_OBSCURES_HERO');
+  await desktop.locator('.v3-header-theme').click();
+  await desktop.waitForFunction(()=>document.documentElement.dataset.theme==='light',{timeout:4000});
+  await desktop.locator('.v3-header-theme').click();
+  await desktop.waitForFunction(()=>document.documentElement.dataset.theme==='dark',{timeout:4000});
+  console.log('GLOBAL_LANDING_V3_THEME_SWITCH_OK');
+  console.log('GLOBAL_LANDING_V3_VISUAL_ELEMENTS_OK');
+  await desktop.locator('#capabilities').scrollIntoViewIfNeeded();
+  await capture(desktop,'desktop-capabilities');
+  await desktop.evaluate(()=>window.scrollTo(0,0));
+  await desktop.waitForTimeout(120);
+ }
  await capture(desktop,'desktop-landing');
  console.log('GLOBAL_UI_LANDING_OK');
  await desktop.goto(base+'/#dashboard',{waitUntil:'domcontentloaded',timeout:30000});
@@ -54,6 +78,22 @@ try{
  await desktop.close();
  const mobile=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
  attach(mobile);
+ if(localPreview&&process.env.GLOBAL_EXPECT_LANDING_V3==='1'){
+  await mobile.goto(base+'/',{waitUntil:'domcontentloaded',timeout:30000});
+  await mobile.locator('[data-landing-release="global-immersive-v3"]').waitFor({timeout:15000});
+  const floating=await mobile.locator('.global-theme-toggle').evaluate(el=>getComputedStyle(el).display);
+  if(floating!=='none')throw Error('GLOBAL_LANDING_V3_MOBILE_FLOATING_THEME');
+  await mobile.locator('.v3-header-theme').click();
+  await mobile.waitForFunction(()=>document.documentElement.dataset.theme==='light',{timeout:4000});
+  await mobile.locator('.v3-header-theme').click();
+  await mobile.waitForFunction(()=>document.documentElement.dataset.theme==='dark',{timeout:4000});
+  await capture(mobile,'mobile-landing');
+  const dimensions=await mobile.evaluate(()=>({scroll:document.documentElement.scrollWidth,width:window.innerWidth}));
+  if(dimensions.scroll>dimensions.width+2)throw Error('GLOBAL_LANDING_V3_MOBILE_OVERFLOW '+JSON.stringify(dimensions));
+  await mobile.locator('#capabilities').scrollIntoViewIfNeeded();
+  await capture(mobile,'mobile-capabilities');
+  console.log('GLOBAL_LANDING_V3_MOBILE_OK');
+ }
  await mobile.goto(base+'/#dashboard',{waitUntil:'domcontentloaded',timeout:30000});
  await mobile.locator('.v2-mobile-bottom button').first().waitFor({timeout:20000});
  const count=await mobile.locator('.v2-mobile-bottom button').count();
