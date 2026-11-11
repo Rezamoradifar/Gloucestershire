@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
-import {Interface,zeroPadValue,formatUnits,type Log} from 'ethers';
+import {Interface,zeroPadValue,type Log} from 'ethers';
+import {displayAmount} from './money';
 import {Clock3,ExternalLink,History,RefreshCw} from 'lucide-react';
 import {session,errorText,type Asset} from './chain';
 import {chainId,explorer,vaultAddress} from './config';
@@ -15,7 +16,7 @@ const topics=names.map(name=>events.getEvent(name)!.topicHash);
 type Kind='deposit'|'profit'|'reinvest'|'withdrawal';
 type Entry={key:string;kind:Kind;wallet:string;amount:bigint;fee:bigint;block:number;tx:string;timestamp:number|null;position?:bigint};
 const label:Record<Kind,string>={deposit:'Deposit',profit:'Profit credited',reinvest:'Reinvestment',withdrawal:'Withdrawal'};
-const format=(amount:bigint,decimals:number)=>Number(formatUnits(amount,decimals)).toLocaleString('en-US',{maximumFractionDigits:6});
+const format=(amount:bigint,decimals:number)=>displayAmount(amount,decimals,6);
 const short=(value:string)=>value.slice(0,8)+'…'+value.slice(-6);
 
 export function parseFinancialLog(log:Log):Entry|null{
