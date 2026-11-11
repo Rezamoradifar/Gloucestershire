@@ -37,7 +37,11 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
  if(!directoryStat.isDirectory()||(directoryStat.mode&0o077)!==0||directoryStat.uid!==process.getuid?.())throw Error('DAILY_ACTIVITY_PRIVATE_DIRECTORY_REQUIRED');
  try{readDailyActivity({file,...identity});}catch(error){if(error.code!=='ENOENT')throw error;await persist(file,createDailyActivityState(identity),{initialize:true});readDailyActivity({file,...identity});}
  const challenges=new Map(),rates=new Map();
- function prune(){for(const map of [challenges,rates])for(const[key,value]of map)if(value.expires<=now())map.delete(key);}
+ function prune(){
+  const current=now();
+  for(const [key,value] of challenges)if(value.expiresAt<=current)challenges.delete(key);
+  for(const [key,value] of rates)if(value.expires<=current)rates.delete(key);
+ }
  function rate(key,limit,windowMs=60000){
   prune();if(!rates.has(key)&&rates.size>=5000)throw fail(429,'Too many activity requests. Try again shortly.');
   const value=rates.get(key)||{count:0,expires:now()+windowMs};value.count++;rates.set(key,value);

@@ -65,6 +65,21 @@ test('rejects nonce replay, wrong signers, expired signatures, unknown origins a
  }finally{await f.cleanup();}
 });
 
+test('expired unused challenges do not exhaust the pending challenge limit',async()=>{
+ const f=await fixture();try{
+  const expired=await f.challenge();
+  // More than the pending capacity, each after the previous challenge and
+  // wallet rate window have expired. No signatures or history writes occur.
+  for(let i=0;i<1000;i++){
+   f.advance(3601);
+   await f.challenge();
+  }
+  const old=await f.call('check-in','POST',{nonce:expired.nonce,signature:await f.alice.signMessage(expired.message)});
+  assert.equal(old.status,401);
+  assert.equal(readDailyActivity({file:f.file,...f.identity}).records.length,0);
+ }finally{await f.cleanup();}
+});
+
 test('registered identity and configured chain are checked before accepting activity',async()=>{
  const f=await fixture();try{
   assert.equal((await f.call('challenge','POST',{wallet:f.stranger.address})).status,409);
