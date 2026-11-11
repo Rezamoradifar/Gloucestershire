@@ -43,9 +43,12 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
   for(const [key,value] of rates)if(value.expires<=current)rates.delete(key);
  }
  function rate(key,limit,windowMs=60000){
-  prune();if(!rates.has(key)&&rates.size>=5000)throw fail(429,'Too many activity requests. Try again shortly.');
+  prune();if(!rates.has(key)&&rates.size>=5000){
+   const expiry=Math.min(...Array.from(rates.values(),entry=>entry.expires));
+   throw Object.assign(fail(429,'Too many activity requests. Try again shortly.'),{retryAfterSeconds:Math.max(1,Math.ceil((expiry-now())/1000)),rateScope:'capacity'});
+  }
   const value=rates.get(key)||{count:0,expires:now()+windowMs};value.count++;rates.set(key,value);
-  if(value.count>limit)throw fail(429,'Too many activity requests. Try again shortly.');
+  if(value.count>limit)throw Object.assign(fail(429,'Too many activity requests. Try again shortly.'),{retryAfterSeconds:Math.max(1,Math.ceil((value.expires-now())/1000)),rateScope:key.startsWith('wallet:')?'wallet':'connection'});
  }
  function originAllowed(req){
   const sent=req.headers.origin;
@@ -132,7 +135,11 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
    }
    if(['status','challenge','check-in'].includes(route)){res.setHeader('Allow',route==='status'?'GET':'POST');throw fail(405,'This activity method is not supported.');}
    throw fail(404,'Activity route not found.');
-  }catch(error){send(error.status||503,{error:error.status?error.message:'Daily activity is temporarily unavailable. Your previous check-ins are preserved.'});}
+  }catch(error){
+   const retry=error.status===429&&Number.isSafeInteger(error.retryAfterSeconds)&&error.retryAfterSeconds>0&&error.retryAfterSeconds<=3600?error.retryAfterSeconds:null;
+   if(retry)res.setHeader('Retry-After',String(retry));
+   send(error.status||503,{error:error.status?error.message:'Daily activity is temporarily unavailable. Your previous check-ins are preserved.',...(retry?{retryAfterSeconds:retry,rateScope:error.rateScope}:{})});
+  }
   return true;
  };
 }

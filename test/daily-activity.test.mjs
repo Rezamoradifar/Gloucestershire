@@ -80,6 +80,19 @@ test('expired unused challenges do not exhaust the pending challenge limit',asyn
  }finally{await f.cleanup();}
 });
 
+test('wallet rate limit returns an accurate retry time without extending its window',async()=>{
+ const f=await fixture();try{
+  for(let i=0;i<12;i++)await f.challenge();
+  const limited=await f.call('challenge','POST',{wallet:f.alice.address});
+  assert.equal(limited.status,429);assert.equal(limited.headers.get('retry-after'),'3600');
+  assert.equal(limited.data.retryAfterSeconds,3600);assert.equal(limited.data.rateScope,'wallet');
+  f.advance(300);
+  const repeated=await f.call('challenge','POST',{wallet:f.alice.address});
+  assert.equal(repeated.status,429);assert.equal(repeated.headers.get('retry-after'),'3300');
+  f.advance(3300);assert.equal((await f.call('challenge','POST',{wallet:f.alice.address})).status,200);
+ }finally{await f.cleanup();}
+});
+
 test('registered identity and configured chain are checked before accepting activity',async()=>{
  const f=await fixture();try{
   assert.equal((await f.call('challenge','POST',{wallet:f.stranger.address})).status,409);

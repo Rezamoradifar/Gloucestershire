@@ -6,13 +6,18 @@ export type DailyActivityStatus={version:1;chainId:number;vaultAddress:string;wa
 type ActivityChallenge={chainId:number;vaultAddress:string;origin:string;wallet:string;nonce:string;issuedAt:number;expiresAt:number;issuedBlock:{number:number;hash:string;timestamp:number};windowSeconds:number;message:string};
 export type IndexProgress={memberThrough:number|null;positionThrough:number|null;target:number|null;memberCount:number|null;positionCount:number|null};
 export type AllocationStatus={version:1;status:'unavailable'|'stale'|'waiting'|'credited'|'running';chainId:number;vaultAddress:string;checkedAt:string|null;fresh:boolean;dailyStatus?:string|null;indexProgress?:IndexProgress|null;lastCreditBlockTimestamp?:number|null;lastCredit:null|{epoch:number;batches:{transactionHash:string;block:number;blockHash:string}[]}};
-export class DailyActivityApiError extends Error{constructor(message:string,public status:number){super(message);}}
+export class DailyActivityApiError extends Error{constructor(message:string,public status:number,public retryAfterSeconds:number|null=null,public rateScope:string|null=null){super(message);}}
 
 export async function dailyActivityApi<T>(route:string,method='GET',body?:unknown):Promise<T>{
  const response=await fetch('/api/daily-activity/'+route,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store',signal:AbortSignal.timeout(20000)});
  let data;try{data=await response.json();}catch{throw new DailyActivityApiError('Daily activity is unavailable. Please try again later.',503);}
  if(!data||typeof data!=='object'||Array.isArray(data))throw new DailyActivityApiError('Invalid activity service response.',503);
- if(!response.ok)throw new DailyActivityApiError(typeof data.error==='string'?data.error:'Daily activity is unavailable.',response.status);
+ if(!response.ok){
+  const raw=response.headers.get('Retry-After'),seconds=raw&&/^\d+$/.test(raw)?Number(raw):null;
+  const retry=response.status===429&&Number.isSafeInteger(seconds)&&Number(seconds)>0&&Number(seconds)<=3600?seconds:null;
+  const scope=retry&&['wallet','connection','capacity'].includes(data.rateScope)?data.rateScope:null;
+  throw new DailyActivityApiError(typeof data.error==='string'?data.error:'Daily activity is unavailable.',response.status,retry,scope);
+ }
  return data;
 }
 
