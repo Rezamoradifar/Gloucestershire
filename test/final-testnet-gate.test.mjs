@@ -2,31 +2,30 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
+import {id} from 'ethers';
+import {validateLiveStatus,verifyCreditReceipts} from '../scripts/final-testnet-receipt-gate.mjs';
 
-const file='ubuntu-final-testnet-e2e.sh';
-const source=fs.readFileSync(file,'utf8');
+const script='ubuntu-final-testnet-e2e.sh', source=fs.readFileSync(script,'utf8');
+const target='0x4C0F6141b18971db4b14e45c0bE8CddB09febc14', tx='0x'+'ab'.repeat(32), blockHash='0x'+'cd'.repeat(32);
+const now=Date.now(),config={chainId:97,vaultAddress:target};
+const status=()=>({chainId:97,vaultAddress:target,fresh:true,checkedAt:new Date(now).toISOString(),schedulerActive:true,status:'running',dailyStatus:'ready',blockers:[],lastCredit:{epoch:96,batches:[{transactionHash:tx,blockHash,block:100}]}});
+const provider=()=>({getNetwork:async()=>({chainId:97n}),getBlockNumber:async()=>103,getBlock:async()=>({hash:blockHash}),getTransactionReceipt:async()=>({status:1,blockNumber:100,blockHash,logs:[{address:target,topics:[id('ProfitCredited(address,address,uint256,bytes32)')]}]})});
 
-test('final testnet gate is syntax-valid and never broadcasts public-chain user transactions',()=>{
-  assert.equal(spawnSync('bash',['-n',file],{encoding:'utf8'}).status,0);
-  assert.match(source,/--local\|--live-readonly\|--all/);
-  assert.match(source,/test\/new-deployer-testnet-automation\.test\.mjs/);
-  assert.match(source,/test\/new-deployer-testnet-index-catchup\.test\.mjs/);
-  assert.match(source,/test\/split-position-index\.test\.mjs/);
-  assert.match(source,/FINAL_TESTNET_GATE_PASS/);
-  assert.doesNotMatch(source,/--execute/);
-  assert.doesNotMatch(source,/sendTransaction|eth_sendRawTransaction|eth_sendTransaction/);
+test('shell gate does not send transactions, and requires systemd and timer',()=>{
+ assert.equal(spawnSync('bash',['-n',script],{encoding:'utf8'}).status,0);
+ assert.match(source,/FINAL_TESTNET_SYSTEMD_UNAVAILABLE/);assert.match(source,/FINAL_TESTNET_TIMER_NOT_ACTIVE/);
+ assert.doesNotMatch(source,/sendTransaction|eth_sendRawTransaction|eth_sendTransaction/);
+ assert.match(source,/Manual public-chain smoke tests remain required/);
 });
-
-test('live gate is pinned to chain 97 and the current replacement testnet target',()=>{
-  assert.match(source,/expected_target="0x4C0F6141b18971db4b14e45c0bE8CddB09febc14"/);
-  assert.match(source,/config\.get\('chainId'\) != 97/);
-  assert.match(source,/status\.get\('chainId'\) != 97/);
-  assert.match(source,/FINAL_TESTNET_CATCHUP_NOT_COMPLETE/);
-  assert.match(source,/globaldroptrade-new-deployer-daily\.timer/);
+test('status gate rejects blockers, stale, indexing, inactive scheduler, and absent credit',()=>{
+ const good=status();assert.equal(validateLiveStatus(config,good,target,now).length,1);
+ for(const patch of [{blockers:['DAILY_MEMBER_INDEX_INCOMPLETE']},{blockers:null},{fresh:false},{checkedAt:new Date(now-900001).toISOString()},{dailyStatus:'indexing'},{schedulerActive:false},{lastCredit:null}]) {
+  assert.throws(()=>validateLiveStatus(config,{...status(),...patch},target,now),/FINAL_TESTNET_/);
+ }
+ assert.throws(()=>validateLiveStatus({...config,chainId:56},good,target,now),/FINAL_TESTNET_CONFIG_IDENTITY_REQUIRED/);
 });
-
-test('live gate requires structured credit evidence when a latest credit is reported',()=>{
-  assert.match(source,/lastCreditPresent/);
-  assert.match(source,/transactionHash/);
-  assert.match(source,/FINAL_TESTNET_LAST_CREDIT_INVALID/);
+test('receipt gate verifies chain, confirmations, canonical block and vault profit event',async()=>{
+ const batches=validateLiveStatus(config,status(),target,now); await verifyCreditReceipts(provider(),batches,target);
+ const bad=[{getNetwork:async()=>({chainId:56n})},{getBlockNumber:async()=>102},{getBlock:async()=>({hash:'0x'+'ef'.repeat(32)})},{getTransactionReceipt:async()=>null},{getTransactionReceipt:async()=>({status:0,blockNumber:100,blockHash,logs:[]})},{getTransactionReceipt:async()=>({status:1,blockNumber:100,blockHash,logs:[]})}];
+ for(const patch of bad) await assert.rejects(verifyCreditReceipts({...provider(),...patch},batches,target),/FINAL_TESTNET_/);
 });

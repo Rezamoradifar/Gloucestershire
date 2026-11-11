@@ -35,9 +35,12 @@ deterministic EVM coverage for:
 - private-key wrapper failure handling.
 
 The live phase is read-only. It validates the public API configuration,
-automation identity, reported credit hashes, the completed signer-free catch-up
-file and the active isolated testnet timer. It does not open a wallet or send a
-transaction.
+automation identity and freshness, absence of blockers, and a prior profit credit
+receipt on the configured chain-97 RPC. Each receipt must be successful,
+canonical, sufficiently confirmed and contain a ProfitCredited event from the
+expected vault. The completed signer-free catch-up file and active isolated
+testnet timer are also required. It does not open a wallet or send a transaction.
+A previous receipt does not prove that a new credit was made during this test.
 
 Required final output:
 
@@ -46,7 +49,8 @@ FINAL_TESTNET_LOCAL_E2E_PASS
 FINAL_TESTNET_INDEX_CATCHUP_PASS
 FINAL_TESTNET_TIMER_ACTIVE
 FINAL_TESTNET_LIVE_READ_ONLY_PASS
-FINAL_TESTNET_GATE_PASS
+FINAL_TESTNET_CREDIT_RECEIPTS_VERIFIED
+FINAL_TESTNET_AUTOMATED_GATE_PASS
 ```
 
 ## Public-chain smoke test after the automated gate
@@ -74,7 +78,8 @@ operator or owner private key in a browser.
 
 ## Pass criteria
 
-Mainnet preparation may continue only when all of these are true:
+A successful automated gate alone is not a completed end-to-end test. Mainnet
+preparation may continue only when all of these are true:
 
 - automated gate reports PASS;
 - live catch-up status is `indexed`;

@@ -38,44 +38,9 @@ live_gate(){
   curl --fail-with-body --silent --show-error --max-time 20 \
     https://globaldroptrade.com/api/automation/status > "$temporary/automation.json"
 
-  python3 - "$temporary/config.json" "$temporary/automation.json" "$expected_target" <<'PY'
-import json,sys
-config_file,status_file,expected=sys.argv[1:]
-with open(config_file) as f: config=json.load(f)
-with open(status_file) as f: status=json.load(f)
-if not isinstance(config,dict) or config.get('chainId') != 97:
-    raise SystemExit('FINAL_TESTNET_CONFIG_CHAIN_REQUIRED')
-target=config.get('vaultAddress') or config.get('address') or config.get('target')
-if not isinstance(target,str) or target.lower()!=expected.lower():
-    raise SystemExit('FINAL_TESTNET_CONFIG_TARGET_REQUIRED')
-if not isinstance(status,dict) or status.get('chainId') != 97:
-    raise SystemExit('FINAL_TESTNET_AUTOMATION_CHAIN_REQUIRED')
-status_target=status.get('vaultAddress') or status.get('address') or status.get('target')
-if not isinstance(status_target,str) or status_target.lower()!=expected.lower():
-    raise SystemExit('FINAL_TESTNET_AUTOMATION_TARGET_REQUIRED')
-allowed={'waiting','running','credited','ready','indexing','scheduled','not_due','processed'}
-if status.get('status') not in allowed:
-    raise SystemExit('FINAL_TESTNET_AUTOMATION_STATUS_REQUIRED')
-blockers=status.get('blockers',[])
-if not isinstance(blockers,list) or any(not isinstance(x,str) for x in blockers):
-    raise SystemExit('FINAL_TESTNET_BLOCKERS_INVALID')
-last=status.get('lastCredit')
-if last is not None:
-    if not isinstance(last,dict) or not isinstance(last.get('batches'),list):
-        raise SystemExit('FINAL_TESTNET_LAST_CREDIT_INVALID')
-    for row in last['batches']:
-        h=row.get('transactionHash') if isinstance(row,dict) else None
-        if not isinstance(h,str) or len(h)!=66 or not h.startswith('0x'):
-            raise SystemExit('FINAL_TESTNET_LAST_CREDIT_INVALID')
-print(json.dumps({
-  'version':1,
-  'chainId':97,
-  'target':target,
-  'automationStatus':status.get('status'),
-  'blockers':blockers,
-  'lastCreditPresent':last is not None
-},separators=(',',':')))
-PY
+  command -v node >/dev/null
+  node scripts/final-testnet-receipt-gate.mjs \
+    "$temporary/config.json" "$temporary/automation.json" "$expected_target"
 
   catchup=/var/lib/globaldroptrade/new-deployer-testnet-automation-v1/index-catchup-status.json
   if [ -f "$catchup" ]; then
@@ -96,13 +61,15 @@ PY
     exit 1
   fi
 
-  if command -v systemctl >/dev/null && [ -d /run/systemd/system ]; then
-    systemctl is-active --quiet globaldroptrade-new-deployer-daily.timer || {
-      echo 'FINAL_TESTNET_TIMER_NOT_ACTIVE'
-      exit 1
-    }
-    echo 'FINAL_TESTNET_TIMER_ACTIVE'
+  if ! command -v systemctl >/dev/null || [ ! -d /run/systemd/system ]; then
+    echo 'FINAL_TESTNET_SYSTEMD_UNAVAILABLE'
+    exit 1
   fi
+  systemctl is-active --quiet globaldroptrade-new-deployer-daily.timer || {
+    echo 'FINAL_TESTNET_TIMER_NOT_ACTIVE'
+    exit 1
+  }
+  echo 'FINAL_TESTNET_TIMER_ACTIVE' 
   echo 'FINAL_TESTNET_LIVE_READ_ONLY_PASS'
 }
 
@@ -112,5 +79,8 @@ case "$mode" in
   --all) local_gate; live_gate;;
 esac
 
-echo 'FINAL_TESTNET_GATE_PASS'
+if [ "$mode" = '--all' ]; then
+  echo 'FINAL_TESTNET_AUTOMATED_GATE_PASS'
+fi
+echo 'Manual public-chain smoke tests remain required.'
 echo 'No public-chain user transaction was signed or sent by this gate.'
