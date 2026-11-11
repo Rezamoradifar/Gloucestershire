@@ -49,7 +49,7 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
  const directoryStat=await lstat(directory);
  if(!directoryStat.isDirectory()||(directoryStat.mode&0o077)!==0||directoryStat.uid!==process.getuid?.())throw Error('DAILY_ACTIVITY_PRIVATE_DIRECTORY_REQUIRED');
  try{readDailyActivity({file,...identity});}catch(error){if(error.code!=='ENOENT')throw error;await persist(file,createDailyActivityState(identity),{initialize:true});readDailyActivity({file,...identity});}
- const challenges=new Map(),rates=new Map();
+ const challenges=new Map(),rates=new Map(),challengeInflight=new Map();
  function prune(){
   const current=now();
   for(const [key,value] of challenges)if(value.expiresAt<=current)challenges.delete(key);
@@ -114,19 +114,37 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
    rate('peer:'+peer,600);
    if(route==='status'&&req.method==='GET'){const who=wallet(url.searchParams.get('wallet'));send(200,await status(who));return true;}
    if(route==='challenge'&&req.method==='POST'){
-    const input=await body(req,['wallet']),who=wallet(input.wallet);rate('wallet:'+who,12,3600000);
-    if(challenges.size>=1000)throw fail(429,'Too many pending activity requests. Try again shortly.');
-    const at=await currentBlock();await registered(who,at);
-    const issuedAt=now(),challenge={...identity,wallet:who,nonce:randomBytes(24).toString('hex'),issuedAt,expiresAt:issuedAt+dailyActivityChallengeLifetimeMs,issuedBlock:at};
-    const message=dailyActivityMessage(challenge);challenges.set(challenge.nonce,challenge);
-    send(200,{...challenge,message,windowSeconds:dailyActivityWindowSeconds});return true;
+    const input=await body(req,['wallet']),who=wallet(input.wallet);
+    // Unauthenticated clients can know a wallet address. Reuse an unexpired
+    // request so they cannot burn that wallet's quota simply by requesting
+    // challenges. Coalesce concurrent requests before any network awaits.
+    let challenge=[...challenges.values()].find(value=>value.wallet===who&&value.expiresAt>now());
+    if(!challenge){
+     let flight=challengeInflight.get(who);
+     if(!flight){
+      if(challenges.size+challengeInflight.size>=1000)throw fail(429,'Too many pending activity requests. Try again shortly.');
+      rate('wallet:'+who,12,3600000);
+      flight=(async()=>{
+       const at=await currentBlock();await registered(who,at);
+       const issuedAt=now(),value={...identity,wallet:who,nonce:randomBytes(24).toString('hex'),issuedAt,expiresAt:issuedAt+dailyActivityChallengeLifetimeMs,issuedBlock:at};
+       challenges.set(value.nonce,value);return value;
+      })();
+      challengeInflight.set(who,flight);
+     }
+     try{challenge=await flight;}finally{if(challengeInflight.get(who)===flight)challengeInflight.delete(who);}
+    }
+    if(challenge.expiresAt<=now())throw fail(401,'Activity request expired. Try checking in again.');
+    send(200,{...challenge,message:dailyActivityMessage(challenge),windowSeconds:dailyActivityWindowSeconds});return true;
    }
    if(route==='check-in'&&req.method==='POST'){
     const input=await body(req,['nonce','signature']);
-    const challenge=challenges.get(input.nonce);challenges.delete(input.nonce);
+    const challenge=challenges.get(input.nonce);
     if(!challenge||challenge.expiresAt<=now())throw fail(401,'Activity request expired or was already used. Try checking in again.');
     let signer;try{signer=verifyMessage(dailyActivityMessage(challenge),input.signature);}catch{throw fail(401,'The activity signature is invalid.');}
     if(signer!==challenge.wallet)throw fail(401,'The activity signature does not match your wallet.');
+    // Consume synchronously after verifying ownership and before any await;
+    // concurrent submissions of one valid signature cannot both proceed.
+    challenges.delete(input.nonce);
     const at=await currentBlock();await registered(challenge.wallet,at);
     const issued=await provider.getBlock(challenge.issuedBlock.number);
     if(issued?.hash?.toLowerCase()!==challenge.issuedBlock.hash||issued?.timestamp!==challenge.issuedBlock.timestamp)throw fail(409,'The chain changed while checking in. Please try again.');

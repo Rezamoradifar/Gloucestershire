@@ -82,7 +82,9 @@ test('expired unused challenges do not exhaust the pending challenge limit',asyn
 
 test('wallet rate limit returns an accurate retry time without extending its window',async()=>{
  const f=await fixture();try{
-  for(let i=0;i<12;i++)await f.challenge();
+  // Each request is consumed with an authentic signature before another is
+  // issued. Repeated unauthenticated requests must not exhaust this quota.
+  for(let i=0;i<12;i++)await f.checkIn();
   const limited=await f.call('challenge','POST',{wallet:f.alice.address});
   assert.equal(limited.status,429);assert.equal(limited.headers.get('retry-after'),'3600');
   assert.equal(limited.data.retryAfterSeconds,3600);assert.equal(limited.data.rateScope,'wallet');
@@ -90,6 +92,31 @@ test('wallet rate limit returns an accurate retry time without extending its win
   const repeated=await f.call('challenge','POST',{wallet:f.alice.address});
   assert.equal(repeated.status,429);assert.equal(repeated.headers.get('retry-after'),'3300');
   f.advance(3300);assert.equal((await f.call('challenge','POST',{wallet:f.alice.address})).status,200);
+ }finally{await f.cleanup();}
+});
+
+test('concurrent unauthenticated challenge retries share one request and cannot exhaust the wallet quota',async()=>{
+ const f=await fixture();try{
+  const replies=await Promise.all(Array.from({length:30},()=>f.call('challenge','POST',{wallet:f.alice.address})));
+  assert.ok(replies.every(row=>row.status===200));
+  assert.equal(new Set(replies.map(row=>row.data.nonce)).size,1);
+  const c=replies[0].data;
+  const saved=await f.call('check-in','POST',{nonce:c.nonce,signature:await f.alice.signMessage(c.message)});
+  assert.equal(saved.status,201);
+  assert.equal((await f.call('challenge','POST',{wallet:f.alice.address})).status,200);
+ }finally{await f.cleanup();}
+});
+
+test('invalid signature cannot consume another wallet challenge and a valid signature is accepted only once',async()=>{
+ const f=await fixture();try{
+  const c=await f.challenge();
+  const wrong=await f.call('check-in','POST',{nonce:c.nonce,signature:await f.bob.signMessage(c.message)});
+  assert.equal(wrong.status,401);
+  const again=await f.challenge();assert.equal(again.nonce,c.nonce);
+  const signature=await f.alice.signMessage(c.message);
+  const results=await Promise.all(Array.from({length:2},()=>f.call('check-in','POST',{nonce:c.nonce,signature})));
+  assert.deepEqual(results.map(row=>row.status).sort(),[201,401]);
+  assert.equal(readDailyActivity({file:f.file,...f.identity}).records.length,1);
  }finally{await f.cleanup();}
 });
 
