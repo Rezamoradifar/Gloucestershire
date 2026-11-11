@@ -51,7 +51,8 @@ export async function probeIndexSnapshot({provider,state,confirmations,expectedR
  const validTransactions=state.transactions&&typeof state.transactions==='object'&&!Array.isArray(state.transactions);
  const transactions=validTransactions?Object.values(state.transactions):[];
  const completed=transactions.filter(row=>Number.isSafeInteger(row?.block)&&row.block>0&&hash(row.blockHash)&&hash(row.hash)).sort((a,b)=>b.block-a.block).slice(0,3);
- const pendingFinancial=Boolean(!validTransactions||state.pending||state.oracle?.pending||daily.pendingDailyPlan||transactions.some(row=>!Number.isSafeInteger(row?.block)||row.block<1||!hash(row.blockHash)||!hash(row.hash)));
+ const invalidOracle=Object.hasOwn(state,'oracle')&&(!state.oracle||typeof state.oracle!=='object'||Array.isArray(state.oracle));
+ const pendingFinancial=Boolean(!validTransactions||invalidOracle||state.pending||state.oracle?.pending||Object.hasOwn(daily,'pendingDailyPlan')||transactions.some(row=>!Number.isSafeInteger(row?.block)||row.block<1||!hash(row.blockHash)||!hash(row.hash)));
  const [chain,head,runtime,prefixBlocks,financialBlocks]=await Promise.all([
   timed('chain',()=>provider.send('eth_chainId',[])),
   timed('head',()=>provider.getBlockNumber()),

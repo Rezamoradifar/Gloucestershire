@@ -112,10 +112,22 @@ test('pending plans or malformed transaction journals suppress the due-hour aggr
  f.state.daily.positionIndex={through:1000,hash:target.hash,positions:{p:{openedAt:target.timestamp-3600,openedBlock:999}}};
  const options={...f.options,intervalSeconds:3600};
  assert.equal((await probeIndexSnapshot(options)).scheduledBacklog.positionHours,1);
- f.state.daily.pendingDailyPlan={version:1};
- let result=await probeIndexSnapshot(options);
- assert.equal(result.pendingFinancial,true);assert.equal(result.scheduledBacklog,null);
+ let result;
+ for(const pending of [{version:1},null,false,0]){
+  f.state.daily.pendingDailyPlan=pending;
+  result=await probeIndexSnapshot(options);
+  assert.equal(result.pendingFinancial,true);assert.equal(result.scheduledBacklog,null);
+ }
  delete f.state.daily.pendingDailyPlan;
+ for(const invalidOracle of [null,false,0,'invalid',[]]){
+  f.state.oracle=invalidOracle;
+  result=await probeIndexSnapshot(options);
+  assert.equal(result.pendingFinancial,true);assert.equal(result.scheduledBacklog,null);
+ }
+ delete f.state.oracle;
+ f.state.oracle={};assert.equal((await probeIndexSnapshot(options)).pendingFinancial,false);
+ f.state.oracle={pending:{}};assert.equal((await probeIndexSnapshot(options)).pendingFinancial,true);
+ delete f.state.oracle;
  const original=f.state.transactions;
  for(const invalid of [null,[],{bad:{block:700,blockHash:block(700).hash}}]){
   f.state.transactions=invalid;
