@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/global-v2-runtime-stability-20261111
+      - codex/global-landing-relaunch-20261111
   workflow_dispatch:
 
 permissions:
@@ -74,6 +75,7 @@ jobs:
         env:
           GLOBAL_PLAYWRIGHT_MODULE: /tmp/global-browser/node_modules/playwright/index.mjs
           GLOBAL_SMOKE_BASE: http://127.0.0.1:4173
+          GLOBAL_EXPECT_LANDING_V3: '1'
         run: node scripts/smoke-global-public-ui.mjs
       - name: Save local preview screenshots
         if: always()
