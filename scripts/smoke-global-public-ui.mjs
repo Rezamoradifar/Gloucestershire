@@ -48,6 +48,8 @@ try{
     throw Error('GLOBAL_LANDING_V3_EARTH_IMAGE_MISSING');
   });
   console.log('GLOBAL_LANDING_V3_VISUAL_ELEMENTS_OK');
+  await desktop.locator('#capabilities').scrollIntoViewIfNeeded();
+  await capture(desktop,'desktop-capabilities');
  }
  await capture(desktop,'desktop-landing');
  console.log('GLOBAL_UI_LANDING_OK');
@@ -67,6 +69,16 @@ try{
  await desktop.close();
  const mobile=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
  attach(mobile);
+ if(localPreview&&process.env.GLOBAL_EXPECT_LANDING_V3==='1'){
+  await mobile.goto(base+'/',{waitUntil:'domcontentloaded',timeout:30000});
+  await mobile.locator('[data-landing-release="global-immersive-v3"]').waitFor({timeout:15000});
+  await capture(mobile,'mobile-landing');
+  const dimensions=await mobile.evaluate(()=>({scroll:document.documentElement.scrollWidth,width:window.innerWidth}));
+  if(dimensions.scroll>dimensions.width+2)throw Error('GLOBAL_LANDING_V3_MOBILE_OVERFLOW '+JSON.stringify(dimensions));
+  await mobile.locator('#capabilities').scrollIntoViewIfNeeded();
+  await capture(mobile,'mobile-capabilities');
+  console.log('GLOBAL_LANDING_V3_MOBILE_OK');
+ }
  await mobile.goto(base+'/#dashboard',{waitUntil:'domcontentloaded',timeout:30000});
  await mobile.locator('.v2-mobile-bottom button').first().waitFor({timeout:20000});
  const count=await mobile.locator('.v2-mobile-bottom button').count();
