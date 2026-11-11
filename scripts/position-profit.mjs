@@ -148,8 +148,10 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
  provider.check();
  const position=await vault.positionOf(row.member,BigInt(row.id),o);
  if(getAddress(position.asset)!==row.asset)throw Error('POSITION_ASSET_MISMATCH');
- const rate=await eligibility.eligible(row.member)?await vault.dailyTargetBps(row.member,o):0n;
+ const memberEligible=await eligibility.eligible(row.member);
+ const rate=memberEligible?await vault.dailyTargetBps(row.member,o):0n;
  const amount=dailyProfitAmount(position.principal,rate),prefix=isNewDeployerTestnetPolicy(policy)?(chosen.quarter?'GLOBAL_POSITION_QUARTER_NEW_DEPLOYER_TEST_V1':'GLOBAL_POSITION_HOURLY_NEW_DEPLOYER_TEST_V1'):(chosen.quarter?'GLOBAL_POSITION_QUARTER_TEST_V1':'GLOBAL_POSITION_HOURLY_TEST_V1');
+ const emptyReason=amount>0n?null:!memberEligible?'activity_ineligible':position.principal===0n?'zero_principal':rate===0n?'zero_rate':'rounds_to_zero';
  const domain=[...(chosen.quarter?[prefix,policy.quarterCutover.hash]:[prefix]),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
  if(amount>0n){
   const ownId=keccak256(toUtf8Bytes(domain+':personal'));
@@ -171,7 +173,7 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
   }
   if(recipients.length)batches.push({id:keccak256(toUtf8Bytes(domain+':referrals')),kind:'profit-referrals',asset:row.asset,recipients,amounts,rows:referrals});
  }
- return {status:'ready',chainId:97,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,start,end,batches,positionCursor:{key,paid,next:paid+1,...(chosen.quarter?{quarter:true}:{}),closed:position.principal===0n},nextDueAt:end,...eligibility.context,activity:eligibility.summary()};
+ return {status:'ready',chainId:97,vaultAddress:policy.vaultAddress,runtimeHash:policy.runtimeHash,snapshotBlock:snapshot.number,snapshotHash:snapshot.hash,start,end,batches,positionCursor:{key,paid,next:paid+1,...(chosen.quarter?{quarter:true}:{}),closed:position.principal===0n},nextDueAt:end,...eligibility.context,activity:eligibility.summary(),...(emptyReason?{emptyReason}:{})};
 }
 
 export function completePositionHour(state,plan){
