@@ -65,3 +65,22 @@ test('an indexer cannot write across target bindings or resume a pending signed 
  for(const patch of [{pending:{raw:'saved'}},{oracle:{pending:{}}},{transactions:{a:{raw:'saved'}}},{identity:{...identity,hash:'0x'+'cd'.repeat(32)}}])assert.throws(()=>assertIndexerBinding({state:{...state,...patch},policy:q,target}));
  assert.throws(()=>assertIndexerBinding({state,policy:{...q,chainId:56},target}));
 });
+
+test('larger verified catch-up pages preserve the real contract hourly amount and never replay it',async()=>{
+ const q=await policy(),state={};
+ await tx(v.connect(s[1]).deposit(token.target,E('100'),ZeroAddress));
+ await advance(3600);
+ for(let i=0;i<2200;i++)await rpc.request({method:'evm_mine',params:[]});
+ let result;
+ for(let i=0;i<4;i++){
+  result=await scan(q,state,{pageSize:1000,logBlockSpan:1000});
+  if(result.status==='indexed')break;
+ }
+ assert.equal(result.status,'indexed');assert.equal(state.positionPaid,undefined);
+ const first=await indexed(q,state);assert.equal(first.status,'ready');
+ await pay(first,state);
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));
+ assert.equal((await indexed(q,state)).status,'not_due');
+ assert.equal((await v.accounts(a[1],token.target)).profit,E('0.5'));
+ assert.equal(Object.values(state.positionPaid)[0],1);
+});

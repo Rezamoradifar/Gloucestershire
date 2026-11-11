@@ -1,7 +1,7 @@
 // Testnet-only anniversary allocations, one complete position-hour at a time.
 import {Interface,ZeroAddress,getAddress,keccak256,toUtf8Bytes} from 'ethers';
 import {getCompleteLogs} from './complete-rpc-logs.mjs';
-import {blockAtTime,indexMembers,dailyProfitAmount,periodActivity,resumeDailyPlan,completeDailyPlan} from './daily-profit.mjs';
+import {blockAtTime,indexMembers,dailyProfitAmount,isNewDeployerTestnetPolicy,periodActivity,resumeDailyPlan,completeDailyPlan} from './daily-profit.mjs';
 const events=new Interface([
  'event Deposited(address indexed user,address indexed asset,uint256 indexed position,uint256 amount,uint256 usd,uint256 feeEach)',
  'event Reinvested(address indexed user,address indexed asset,uint256 amount,uint256 position)'
@@ -23,10 +23,13 @@ export function positionReadBudget(provider,{clock=Date.now,milliseconds=90000}=
  return bounded;
 }
 
-export async function scanPositionHistory({provider,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,advanceCompletedTarget=false,milliseconds=90000,reserveMilliseconds=30000}){
+export async function scanPositionHistory({provider,policy,state,save=()=>{},confirmations=3,maxRegistryPages=4,advanceCompletedTarget=false,milliseconds=90000,reserveMilliseconds=30000,pageSize=100,logBlockSpan=10}){
  if(policy.chainId!==97||![3600,900].includes(policy.periodSeconds)||!isPositionPolicy(policy))throw Error('POSITION_HOURLY_TEST_ONLY');
- // Keep the 2,000-block scan cap, but commit smaller verified pages.
+ if(!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>1000||!Number.isSafeInteger(logBlockSpan)||logBlockSpan<1||logBlockSpan>1000||!Number.isSafeInteger(maxRegistryPages)||maxRegistryPages<1)throw Error('POSITION_SCAN_LIMIT_REQUIRED');
+ // Keep the 2,000-block pass cap. The default small pages are unchanged;
+ // the signer-free catch-up tool can request larger adaptively split pages.
  maxRegistryPages=Math.min(maxRegistryPages,4);
+ const blockBudget=maxRegistryPages*500,maxPages=Math.ceil(blockBudget/pageSize);
  provider=positionReadBudget(provider,{milliseconds});
  let final;
  if(state.positionScanTarget){
@@ -49,11 +52,12 @@ export async function scanPositionHistory({provider,policy,state,save=()=>{},con
  // Catch positions up to the existing member prefix before extending members.
  // Otherwise a large member backlog starves all deposit/reinvestment discovery.
  if(!state.registry||(state.positionIndex?.through??policy.deploymentBlock-1)>=state.registry.through){
-  await indexMembers({provider,policy,state,through:final.number,save,maxPages:maxRegistryPages*5,pageSize:100,shouldContinue:()=>provider.remaining()>=Math.max(reserveMilliseconds,milliseconds/2),logOptions:{maxTimeoutRetries:2,maxBlockSpan:10}});
+  const through=Math.min(final.number,(state.registry?.through??policy.deploymentBlock-1)+blockBudget);
+  await indexMembers({provider,policy,state,through,save,maxPages,pageSize,shouldContinue:()=>provider.remaining()>=Math.max(reserveMilliseconds,milliseconds/2),logOptions:{maxTimeoutRetries:2,maxBlockSpan:logBlockSpan}});
  }
  const memberThrough=state.registry?.through??policy.deploymentBlock-1;
  if(!safe(memberThrough)||memberThrough>final.number)throw Error('POSITION_MEMBER_INDEX_INVALID');
- const scanThrough=Math.min(final.number,memberThrough);
+ const scanThrough=Math.min(final.number,memberThrough,(state.positionIndex?.through??policy.deploymentBlock-1)+blockBudget);
  if(scanThrough<policy.deploymentBlock)return indexing();
  if(!hash(state.registry.hash)||(await provider.getBlock(memberThrough))?.hash!==state.registry.hash)throw Error('POSITION_INDEX_REORG');
  state.positionIndex??={through:policy.deploymentBlock-1,hash:null,positions:{}};
@@ -61,11 +65,11 @@ export async function scanPositionHistory({provider,policy,state,save=()=>{},con
  if(!safe(index.through)||!index.positions||index.through>final.number)throw Error('POSITION_INDEX_INVALID');
  if(index.hash&&(await provider.getBlock(index.through))?.hash!==index.hash)throw Error('POSITION_INDEX_REORG');
  let pages=0;
- for(let start=index.through+1;start<=scanThrough&&pages<maxRegistryPages*5;pages++){
+ for(let start=index.through+1;start<=scanThrough&&pages<maxPages;pages++){
   if(provider.remaining()<reserveMilliseconds)return indexing();
-  const end=Math.min(start+99,scanThrough),discovered={};
+  const end=Math.min(start+pageSize-1,scanThrough),discovered={};
   for(const name of ['Deposited','Reinvested']){
-   const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:10});
+   const logs=await getCompleteLogs({provider,filter:{address:policy.vaultAddress,topics:[events.getEvent(name).topicHash],fromBlock:start,toBlock:end},maxTimeoutRetries:2,maxBlockSpan:logBlockSpan});
    for(const log of logs){
     const args=events.parseLog(log).args,member=getAddress(args.user),asset=getAddress(args.asset),id=args.position.toString(),key=member.toLowerCase()+':'+id;
     if(index.positions[key]||discovered[key]||args.amount<=0n)throw Error('POSITION_DUPLICATE_OPEN_EVENT');
@@ -145,7 +149,8 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
  const position=await vault.positionOf(row.member,BigInt(row.id),o);
  if(getAddress(position.asset)!==row.asset)throw Error('POSITION_ASSET_MISMATCH');
  const rate=await eligibility.eligible(row.member)?await vault.dailyTargetBps(row.member,o):0n;
- const amount=dailyProfitAmount(position.principal,rate),domain=[...(chosen.quarter?['GLOBAL_POSITION_QUARTER_TEST_V1',policy.quarterCutover.hash]:['GLOBAL_POSITION_HOURLY_TEST_V1']),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
+ const amount=dailyProfitAmount(position.principal,rate),prefix=isNewDeployerTestnetPolicy(policy)?(chosen.quarter?'GLOBAL_POSITION_QUARTER_NEW_DEPLOYER_TEST_V1':'GLOBAL_POSITION_HOURLY_NEW_DEPLOYER_TEST_V1'):(chosen.quarter?'GLOBAL_POSITION_QUARTER_TEST_V1':'GLOBAL_POSITION_HOURLY_TEST_V1');
+ const domain=[...(chosen.quarter?[prefix,policy.quarterCutover.hash]:[prefix]),policy.chainId,policy.vaultAddress.toLowerCase(),row.member.toLowerCase(),row.id,paid,row.asset.toLowerCase()].join(':'),batches=[];
  if(amount>0n){
   const ownId=keccak256(toUtf8Bytes(domain+':personal'));
   batches.push({id:ownId,asset:row.asset,recipients:[row.member],amounts:[amount.toString()],rows:[{recipient:row.member,amount:amount.toString(),principal:position.principal.toString(),rateBps:rate.toString()}]});
