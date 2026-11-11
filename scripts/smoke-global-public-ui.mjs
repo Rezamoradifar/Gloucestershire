@@ -36,6 +36,19 @@ try{
  attach(desktop);
  await desktop.goto(base+'/',{waitUntil:'domcontentloaded',timeout:30000});
  await desktop.locator('.gdt-page').waitFor({timeout:20000});
+ if(localPreview&&process.env.GLOBAL_EXPECT_LANDING_V3==='1'){
+  const hero=desktop.locator('[data-landing-release="global-immersive-v3"]');
+  await hero.waitFor({timeout:10000});
+  const headline=await desktop.locator('#hero-title').innerText();
+  if(!headline.includes('possibility.'))throw Error('GLOBAL_LANDING_V3_NEW_HEADLINE_MISSING');
+  const cards=await desktop.locator('.v3-capability-card').count();
+  if(cards!==3)throw Error('GLOBAL_LANDING_V3_THREE_CARDS_REQUIRED found='+cards);
+  await desktop.locator('.v3-world-figure img').evaluate(image=>{
+   if(!(image instanceof HTMLImageElement)||!image.complete||image.naturalWidth===0)
+    throw Error('GLOBAL_LANDING_V3_EARTH_IMAGE_MISSING');
+  });
+  console.log('GLOBAL_LANDING_V3_VISUAL_ELEMENTS_OK');
+ }
  await capture(desktop,'desktop-landing');
  console.log('GLOBAL_UI_LANDING_OK');
  await desktop.goto(base+'/#dashboard',{waitUntil:'domcontentloaded',timeout:30000});
