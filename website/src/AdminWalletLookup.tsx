@@ -1,7 +1,8 @@
 import {useEffect,useState,type FormEvent} from 'react';
 import {ExternalLink,Search,ShieldCheck,Users} from 'lucide-react';
 import {getAddress,isAddress} from 'ethers';
-import {session,errorText,type Snapshot} from './chain';
+import {errorText,type Snapshot} from './chain';
+import {readOnlySession} from './read-only-session';
 import {explorer} from './config';
 import {displayAmount} from './money';
 type Result={who:string;registered:boolean;active:boolean;kyc:boolean;tier:number;direct:bigint;capitalUsd:bigint;salesUsd:bigint;principal:bigint;profit:bigint;positions:bigint;block:number};
@@ -13,7 +14,7 @@ export default function AdminWalletLookup({admin,data}:{admin:string;data:Snapsh
   if(!isAddress(value)){setError('Enter a valid wallet address.');return;}
   setBusy(true);
   try{
-   const target=getAddress(value),{vault}=await session(admin),options={blockTag:data.blockNumber};
+   const target=getAddress(value),{vault}=await readOnlySession(admin),options={blockTag:data.blockNumber};
    const [user,account,tier,positions]=await Promise.all([vault.users(target,options),vault.accounts(target,data.asset,options),vault.tierOf(target,options),vault.positionCount(target,options)]);
    setResult({who:target,registered:Boolean(user.registered),active:Boolean(user.active),kyc:Boolean(user.vipKyc),tier:Number(tier),
     direct:BigInt(user.activeDirect),capitalUsd:BigInt(user.capitalUsd),salesUsd:BigInt(user.salesUsd),principal:BigInt(account.principal),profit:BigInt(account.profit),positions:BigInt(positions),block:data.blockNumber});

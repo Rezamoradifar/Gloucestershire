@@ -3,7 +3,9 @@ import {Bell,CheckCheck,Clock3,ExternalLink,Info,ShieldCheck} from 'lucide-react
 import {Interface,zeroPadValue} from 'ethers';
 import {configured,chainId,vaultAddress,explorer} from './config';
 import {readDailyActivityStatus} from './daily-activity-client';
-import {session,type Snapshot} from './chain';
+import type {Snapshot} from './chain';
+import {readOnlySession} from './read-only-session';
+import {readEventPage} from './adaptive-event-logs';
 type Notice={id:string;title:string;detail:string;when:string;href?:string;kind:'chain'|'activity'|'announcement'|'request'};
 const activityEvents=new Interface([
  'event Deposited(address indexed user,address indexed asset,uint256 indexed position,uint256 amount,uint256 usd,uint256 feeEach)',
@@ -24,6 +26,7 @@ export default function NotificationCenter({who,data,connected}:{who:string;data
   return()=>{document.removeEventListener('keydown',dismiss);document.removeEventListener('mousedown',outside);};
  },[open]);
  useEffect(()=>{
+  if(!open)return;
   const id=++generation.current;
   async function refresh(){
    if(document.visibilityState==='hidden')return;
@@ -49,19 +52,20 @@ export default function NotificationCenter({who,data,connected}:{who:string;data
      }
     }catch{faults.push('activity');}
     try{
-     const {provider}=await session(who),head=(await provider.getBlockNumber())-3;
+     const {provider}=await readOnlySession(who),head=(await provider.getBlockNumber())-3;
      if(head>=0){
-      const min=Math.max(0,head-199),records:Notice[]=[];
-      for(let end=head;end>=min&&records.length<10;end-=50){
-       const from=Math.max(min,end-49);
-       // A bounded topic filter only for the connected wallet. No signer writes.
-       const logs=await provider.getLogs({address:vaultAddress,fromBlock:from,toBlock:end,topics:[topics,zeroPadValue(who,32)]});
+      const min=Math.max(0,head-127),records:Notice[]=[];
+      let end=head,attempts=0;
+      while(end>=min&&records.length<8&&attempts<12){
+       // Read-only account events; adapt to restrictive Testnet RPC log windows.
+       const {logs,first}=await readEventPage(provider,{address:vaultAddress,topics:[topics,zeroPadValue(who,32)]},min,end,32);
        for(const log of logs){
         const p=activityEvents.parseLog(log);
         if(!p)continue;
         const title=p.name==='ProfitCredited'?'Profit credited in contract':p.name==='Deposited'?'Deposit confirmed':'Withdrawal confirmed';
         records.push({id:'tx-'+log.transactionHash+':'+log.index,title,detail:'Confirmed event at block '+log.blockNumber.toLocaleString()+'. Open the blockchain receipt for amounts and details.',when:'',kind:'chain',href:explorer+'/tx/'+log.transactionHash});
        }
+       end=first-1;attempts++;
       }
       next.push(...records.slice(0,8));
      }
@@ -73,7 +77,7 @@ export default function NotificationCenter({who,data,connected}:{who:string;data
   void refresh();const timer=setInterval(()=>{void refresh();},120000);
   const visible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',visible);
   return()=>{generation.current++;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
- },[who,connected,data?.pendingWithdrawal]);
+ },[who,connected,data?.pendingWithdrawal,open]);
  const unseen=items.filter(x=>!seen.includes(x.id)).length;
  const markAll=()=>{const next=[...new Set([...seen,...items.map(x=>x.id)])].slice(-150);setSeen(next);try{localStorage.setItem(storageKey(who),JSON.stringify(next));}catch{setMessage('Could not save read status on this browser.');}};
  return <div className="v2-notifications" ref={root}>
