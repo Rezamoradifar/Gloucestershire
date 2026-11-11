@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {zeroPadValue} from 'ethers';
-import {ArrowDown,ArrowLeft,ArrowRight,CalendarClock,Check,Clock3,Download,ExternalLink,FileClock,History,RefreshCw,Search,ShieldCheck,StopCircle,Wallet} from 'lucide-react';
+import {ArrowDown,ArrowLeft,ArrowRight,CalendarClock,Check,Clock3,Download,ExternalLink,FileClock,History,RefreshCw,Search,ShieldCheck,Wallet} from 'lucide-react';
 import {displayAmount} from './money';
 import FinancialInsights from './FinancialInsights';
 import WithdrawalHistoryPanel from './WithdrawalHistoryPanel';
@@ -157,7 +157,7 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
   const a=document.createElement('a');a.href=url;a.download='global-'+asset.toLowerCase()+'-history-'+new Date().toISOString().slice(0,10)+'.csv';
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),500);
  };
- const coverage=financeCursor===null?'Scanned back to genesis (for this snapshot)':head!==null?'Finance events scanned down through block '+(financeCursor+1).toLocaleString('en-US')+'; older blocks remain.':'No history scanned';
+ const coverage=!connected||head===null?'No history scanned — connect your wallet':financeCursor===null?'Scanned back to genesis (for this snapshot)':'Finance events scanned down through block '+(financeCursor+1).toLocaleString('en-US')+'; older blocks remain.';
  return <div className="history-center">
   <section className="panel global-ledger history-full" aria-labelledby={scope==='global'?'global-network-ledger-title':'global-ledger-title'}>
    <div className="panel-title history-header">
@@ -171,13 +171,13 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
    </div>
    {scope==='wallet'&&<p className="ledger-note">Credited profit is recorded inside the contract, not sent to the wallet until withdrawal. Network milestones are recorded USD metrics, not USDT deposits. Values and dates below come from verified contract events.</p>}
    {scope==='global'&&<p className="ledger-note">This is a public event browser for the selected asset, not a reconciliation or a complete customer accounting statement.</p>}
-   <div className="history-coverage"><ShieldCheck size={18}/><div><strong>{coverage}</strong><span>{head!==null?'Confirmed snapshot up to block '+head.toLocaleString('en-US')+' (3-block safety buffer)':'Connect your wallet to load verified records'}</span></div><span className="history-scan-state">{loading?'SCANNING':fullLedger?'GENESIS REACHED':'PARTIAL INDEX'}</span></div>
+   <div className="history-coverage"><ShieldCheck size={18}/><div><strong>{coverage}</strong><span>{head!==null?'Confirmed snapshot up to block '+head.toLocaleString('en-US')+' (3-block safety buffer)':'Connect your wallet to load verified records'}</span></div><span className="history-scan-state">{!connected?'NOT CONNECTED':loading?'SCANNING':fullLedger?'GENESIS REACHED':'PARTIAL INDEX'}</span></div>
    <div className="history-summary" aria-label="Totals among loaded matching records">
     {([{kind:'deposit',title:'Deposits'},{kind:'profit',title:'Profit credited'},{kind:'withdrawal',title:'Withdrawals · gross'},{kind:'reinvest',title:'Reinvested'}] as const).map(({kind,title})=>
-     <div className="history-summary-card" key={kind}><small>{title}</small><strong>{money(totals[kind],decimals)} <em>{asset}</em></strong><span>Loaded matching records only</span></div>)}
-    {scope==='wallet'&&rewardStarted&&<div className="history-summary-card"><small>Network milestones</small><strong>{money(totals.networkReward,18)} <em>USD</em></strong><span>Not a wallet transfer</span></div>}
+     <div className="history-summary-card" key={kind}><small>{title}</small><strong>{connected?money(totals[kind],decimals):'—'} <em>{asset}</em></strong><span>Loaded matching records only</span></div>)}
+    {scope==='wallet'&&rewardStarted&&<div className="history-summary-card"><small>Network milestones</small><strong>{connected?money(totals.networkReward,18):'—'} <em>USD</em></strong><span>Not a wallet transfer</span></div>}
    </div>
-   {scope==='wallet'&&<FinancialInsights events={records.filter(row=>row.kind!=='networkReward')} asset={asset} decimals={decimals} complete={allFinances}/>}
+   {scope==='wallet'&&connected&&<FinancialInsights events={records.filter(row=>row.kind!=='networkReward')} asset={asset} decimals={decimals} complete={allFinances}/>}
    <div className="history-filters" aria-label="History filters">
     <label><span><Search size={14}/> Search hash, wallet, batch or position</span><input type="search" value={filter.query} placeholder="0x… or #position" onChange={event=>updateFilter({query:event.target.value})}/></label>
     <label><span>Event type</span><select value={filter.kind} onChange={event=>updateFilter({kind:event.target.value as HistoryFilter['kind']})}>
