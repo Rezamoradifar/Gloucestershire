@@ -2,6 +2,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import fs from 'node:fs';
 import {mkdir,open,lstat,rename,unlink,link} from 'node:fs/promises';
 import path from 'node:path';
+import {isIP} from 'node:net';
 import {getAddress,verifyMessage,ZeroAddress} from 'ethers';
 import {createDailyActivityState,dailyActivityIdentity,dailyActivityMessage,validateDailyActivityRecord,readDailyActivity,validateDailyActivityPolicy,createDailyActivityReader,dailyActivityChallengeLifetimeMs,dailyActivityWindowSeconds,dailyActivityMaximumFileBytes} from '../scripts/daily-activity.mjs';
 
@@ -9,6 +10,18 @@ const fail=(status,message)=>Object.assign(Error(message),{status});
 const hash=value=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
 const safe=value=>Number.isSafeInteger(value)&&value>0;
 const mutationQueues=new Map();
+
+// This is opt-in only: the reverse proxy must overwrite this header, and the
+// API must be reachable solely by trusted local processes. Never trust XFF or
+// Cloudflare headers here. Missing/malformed values retain the shared limit.
+export function activityPeer(req,trustProxy=false){
+ const peer=req.socket?.remoteAddress||'unknown';
+ if(trustProxy&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(peer)){
+  const forwarded=req.headers['x-global-client-ip'];
+  if(typeof forwarded==='string'&&isIP(forwarded))return forwarded.toLowerCase();
+ }
+ return peer;
+}
 
 async function syncDirectory(directory){const handle=await open(directory,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY);try{await handle.sync();}finally{await handle.close();}}
 async function persist(file,value,{initialize=false}={}){
@@ -26,7 +39,7 @@ async function persist(file,value,{initialize=false}={}){
 
 // The systemd service is the single history writer. Requests (including
 // multiple handler instances in this process) serialize their durable writes.
-export async function createDailyActivity({file,chainId,contract,origin='https://globaldroptrade.com',provider,vault,policy=null,now=Date.now,confirmations=3}){
+export async function createDailyActivity({file,chainId,contract,origin='https://globaldroptrade.com',provider,vault,policy=null,now=Date.now,confirmations=3,trustProxy=false}){
  const identity=dailyActivityIdentity({chainId,vaultAddress:contract,origin});
  if(typeof file!=='string'||!path.isAbsolute(file)||!Number.isSafeInteger(confirmations)||confirmations<1||confirmations>64)throw Error('DAILY_ACTIVITY_CONFIGURATION_INVALID');
  file=path.resolve(file);
@@ -97,7 +110,7 @@ export async function createDailyActivity({file,chainId,contract,origin='https:/
   const send=(code,value)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
   try{
    originAllowed(req);prune();
-   const route=url.pathname.slice('/api/daily-activity/'.length),peer=req.socket.remoteAddress||'unknown';
+   const route=url.pathname.slice('/api/daily-activity/'.length),peer=activityPeer(req,trustProxy);
    rate('peer:'+peer,600);
    if(route==='status'&&req.method==='GET'){const who=wallet(url.searchParams.get('wallet'));send(200,await status(who));return true;}
    if(route==='challenge'&&req.method==='POST'){

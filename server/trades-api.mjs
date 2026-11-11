@@ -167,7 +167,7 @@ async function configuredDailyActivity(config){
  const origin=process.env.DAILY_ACTIVITY_ORIGIN||'https://globaldroptrade.com';
  const activation=process.env.DAILY_ACTIVITY_ACTIVATION_TIMESTAMP;
  const policy=activation?{version:1,chainId:config.chainId,vaultAddress:config.address,origin,windowSeconds:86400,activationTimestamp:integer(activation,0,1,Number.MAX_SAFE_INTEGER),historyFile:file}:undefined;
- try{const handler=await createDailyActivity({file,chainId:config.chainId,contract:config.address,origin,provider,vault,policy,confirmations:Math.max(3,config.confirmations)});handler.close=()=>provider.destroy();return handler;}
+ try{const handler=await createDailyActivity({file,chainId:config.chainId,contract:config.address,origin,provider,vault,policy,confirmations:Math.max(3,config.confirmations),trustProxy:process.env.DAILY_ACTIVITY_TRUST_PROXY_IP==='1'});handler.close=()=>provider.destroy();return handler;}
  catch(error){provider.destroy();throw error;}
 }
 // Stdin and eval callers may have no filesystem entrypoint. Imports must stay inert.

@@ -89,6 +89,8 @@ location /api/ {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    # Always overwrite the client-supplied value; backend trust is opt-in.
+    proxy_set_header X-Global-Client-IP $remote_addr;
     proxy_connect_timeout 3s;
     proxy_read_timeout 15s;
     add_header Cache-Control "no-store" always;
