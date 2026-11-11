@@ -90,3 +90,9 @@
 .gdt-page[data-motion=paused] .v3-world-figure,.gdt-page[data-motion=paused] .v3-world-ring,.gdt-page[data-motion=paused] .v3-world-orbit-dot{animation:none!important}
 :root[data-theme='light'] .gdt-page .v3-hero,:root[data-theme='light'] .gdt-page .v3-hero p{color:#e9e9e4}
 :root[data-theme='light'] .gdt-page .v3-capability-card h3,:root[data-theme='light'] .gdt-page .v3-capability-card p,:root[data-theme='light'] .gdt-page .v3-capability-card{color:#f4e8d0}
+
+/* Keep the new editorial section legible when visitors select the optional light theme. */
+:root[data-theme='light'] .gdt-page .v3-capabilities h2{color:#172c3f}
+:root[data-theme='light'] .gdt-page .v3-capabilities-intro>p{color:#475c6c}
+:root[data-theme='light'] .gdt-page .v3-capabilities-kicker{color:#8e6d34}
+:root[data-theme='light'] .gdt-page .v3-capability-card{color:#f4eee5}
