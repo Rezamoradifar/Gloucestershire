@@ -10,11 +10,15 @@ import stat
 import subprocess
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 ROOT = Path('/opt/globaldroptrade-api')
 OLD_SHA = '5bfea93b6d020d6e67c2d9de074c525de4bcc5244891d39b1cc20f5b8b90ef87'
-FIX_SHA = 'b7d09dc23d2e26b39998ad52086bade59988a0f04aae83b754149a42ac9e307e'
+FIRST_SHA = 'b7d09dc23d2e26b39998ad52086bade59988a0f04aae83b754149a42ac9e307e'
+FIX_SHA = 'a96d30e8b3c0e0610a823eaaf2aee69a66c6630147e1f07250b27207bb57fa92'
+# This is the unchanged API entrypoint: it does not enable proxy-header trust.
+API_SHA = '85bf9fce73d1cfc991ce67556939671a14afd17dab01e08bc2192bb2cfadf44a'
 TARGET = '0x4c0f6141b18971db4b14e45c0be8cddb09febc14'
 SERVICE = 'globaldroptrade-api.service'
 ROOT_SOURCE = Path(__file__).resolve().parent.parent / 'server/daily-activity.mjs'
@@ -47,9 +51,15 @@ def validate_activity(value):
         raise RuntimeError('ACTIVITY_API_STATUS_MISMATCH')
 
 
-def verify_http():
+def verify_http(*, allow_limited=False):
     validate_config(fetch('/api/config'))
-    validate_activity(fetch('/api/daily-activity/status?wallet=0x0000000000000000000000000000000000000001'))
+    try:
+        validate_activity(fetch('/api/daily-activity/status?wallet=0x0000000000000000000000000000000000000001'))
+    except urllib.error.HTTPError as error:
+        # An exhausted shared peer limit can block this check. Configuration is
+        # still independently validated above, and post-restart must be HTTP 200.
+        if not allow_limited or error.code != 429:
+            raise
 
 
 def verified_path():
@@ -70,8 +80,12 @@ def verified_path():
             raise RuntimeError('ACTIVITY_API_RELEASE_UNSAFE')
     source = old / 'server/daily-activity.mjs'
     src_stat = source.lstat()
-    if not stat.S_ISREG(src_stat.st_mode) or src_stat.st_uid != 0 or src_stat.st_mode & 0o022 or sha(source) != OLD_SHA:
+    if not stat.S_ISREG(src_stat.st_mode) or src_stat.st_uid != 0 or src_stat.st_mode & 0o022 or sha(source) not in (OLD_SHA, FIRST_SHA, FIX_SHA):
         raise RuntimeError('ACTIVITY_API_VERSION_MISMATCH')
+    api = old / 'server/trades-api.mjs'
+    api_stat = api.lstat()
+    if not stat.S_ISREG(api_stat.st_mode) or api_stat.st_uid != 0 or api_stat.st_mode & 0o022 or sha(api) != API_SHA:
+        raise RuntimeError('ACTIVITY_API_ENTRYPOINT_MISMATCH')
     if sha(ROOT_SOURCE) != FIX_SHA:
         raise RuntimeError('ACTIVITY_API_PATCH_MISMATCH')
     if command('systemctl', 'is-active', SERVICE) != 'active':
@@ -81,7 +95,7 @@ def verified_path():
     expected_file = str(ROOT / 'current/server/trades-api.mjs')
     if workdir != str(ROOT / 'current') or expected_file not in executable:
         raise RuntimeError('ACTIVITY_API_UNIT_MISMATCH')
-    verify_http()
+    verify_http(allow_limited=True)
     return old
 
 
@@ -100,9 +114,15 @@ def run(mode):
     if os.geteuid() != 0:
         raise RuntimeError('ACTIVITY_API_ROOT_REQUIRED')
     old = verified_path()
+    original_sha = sha(old / 'server/daily-activity.mjs')
     print('ACTIVITY_API_PREFLIGHT_PASSED', flush=True)
     if mode == '--check':
         return
+    if original_sha == FIX_SHA:
+        print('ACTIVITY_API_ALREADY_INSTALLED')
+        return
+    if original_sha not in (OLD_SHA, FIRST_SHA):
+        raise RuntimeError('ACTIVITY_API_VERSION_MISMATCH')
     # No destructive operation: preserve the immutable old release and data.
     new = Path(tempfile.mkdtemp(prefix='activity-fix-', dir=ROOT / 'releases'))
     switched = False
@@ -110,7 +130,7 @@ def run(mode):
         shutil.copytree(old, new, symlinks=True, dirs_exist_ok=True)
         new.chmod(0o755)
         dest = new / 'server/daily-activity.mjs'
-        if dest.is_symlink() or sha(dest) != OLD_SHA:
+        if dest.is_symlink() or sha(dest) != original_sha:
             raise RuntimeError('ACTIVITY_API_COPY_MISMATCH')
         shutil.copyfile(ROOT_SOURCE, dest)
         dest.chmod(0o644)
@@ -118,7 +138,7 @@ def run(mode):
             raise RuntimeError('ACTIVITY_API_PATCH_MISMATCH')
         command('node', '--check', str(dest))
         # Recheck the service and public target immediately before switching.
-        if verified_path() != old:
+        if verified_path() != old or sha(old / 'server/daily-activity.mjs') != original_sha:
             raise RuntimeError('ACTIVITY_API_RELEASE_CHANGED')
         switch(new)
         switched = True
