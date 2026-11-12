@@ -55,3 +55,23 @@ export async function requestTeamProfile(wallet:string,block?:number,signal?:Abo
  return {referrer:profile.referrer as string,registered:profile.registered,active:profile.active,kyc:profile.kyc,
   activeDirect:BigInt(profile.activeDirect as string),capitalUsd:BigInt(profile.capitalUsd as string),salesUsd:BigInt(profile.salesUsd as string)};
 }
+
+export type VerifiedLevelVolume={level:number;members:number;volume:bigint};
+export async function requestTeamVolumes(wallet:string,block?:number,signal?:AbortSignal):Promise<{block:number;levels:VerifiedLevelVolume[]}>{
+ if(!isAddress(wallet)||(block!==undefined&&!safe(block)))throw Error('Invalid team volume request.');
+ const params=new URLSearchParams({wallet:getAddress(wallet)});
+ if(block!==undefined)params.set('block',String(block));
+ const r=await getTeam('/api/team/volume?'+params,signal);
+ verified(r);
+ if(r.kind!=='volume'||r.wallet!==getAddress(wallet)||!safe(r.block)||
+    Number(r.block)>Number(r.confirmedHead)||(block!==undefined&&r.block!==block)||
+    !Array.isArray(r.levels)||r.levels.length!==3)fail();
+ const levels=r.levels.map((entry,index)=>{
+  if(!entry||typeof entry!=='object')fail();
+  const row=entry as Record<string,unknown>;
+  if(row.level!==index+1||!safe(row.members)||typeof row.volume!=='string'||
+    !/^(0|[1-9][0-9]*)$/.test(row.volume))fail();
+  return {level:index+1,members:Number(row.members),volume:BigInt(row.volume)};
+ });
+ return {block:Number(r.block),levels};
+}
