@@ -224,20 +224,28 @@ export function createAccountHistory(config,{providers,metadata}={}){
    const key=args.wallet+':'+(args.before??'latest')+':'+args.limit;
    if(pending.has(key))return pending.get(key);
    if(pending.size>=3)fail('ACCOUNT_HISTORY_BUSY');
-   // Race complete verified pages, never mix log subsets from different RPC histories.
-   // Bound shared expensive reads: duplicate requests share one pending promise.
-   const errors=[];
-   const work=Promise.any(candidates.map(provider=>readAccountHistoryPage({
-    provider,config,...args,maxWindows:historyScanWindowsPerRequest,metadata
-   }).catch(error=>{errors.push(publicHistoryRpcReason(error));throw error;})))
-    .catch(()=>{
-     const priority=['CHAIN_REORG','WRONG_CHAIN','ARCHIVE_REQUIRED','RATE_LIMITED',
-      'RPC_TIMEOUT','RPC_BUSY','RPC_UNAVAILABLE'];
-     const error=Error('ACCOUNT_HISTORY_UNAVAILABLE');
-     error.code='ACCOUNT_HISTORY_UNAVAILABLE';
-     error.reason=priority.find(reason=>errors.includes(reason))||'RPC_UNAVAILABLE';
-     throw error;
-    });
+   // At most two RPC endpoints scan each page concurrently. Sending the
+   // same expensive historical log queries to all configured endpoints at
+   // once can exhaust public RPC quotas and cause false history outages.
+   // Each candidate must verify and return its own complete snapshot.
+   // Identical user queries still share one pending promise.
+   const work=(async()=>{
+    const errors=[];
+    for(let index=0;index<candidates.length;index+=2){
+     try{
+      return await Promise.any(candidates.slice(index,index+2).map(provider=>
+       readAccountHistoryPage({provider,config,...args,
+        maxWindows:historyScanWindowsPerRequest,metadata
+       }).catch(error=>{errors.push(publicHistoryRpcReason(error));throw error;})));
+     }catch{ /* Continue only after both candidate snapshots failed. */ }
+    }
+    const priority=['CHAIN_REORG','WRONG_CHAIN','ARCHIVE_REQUIRED','RATE_LIMITED',
+     'RPC_TIMEOUT','RPC_BUSY','RPC_UNAVAILABLE'];
+    const error=Error('ACCOUNT_HISTORY_UNAVAILABLE');
+    error.code='ACCOUNT_HISTORY_UNAVAILABLE';
+    error.reason=priority.find(reason=>errors.includes(reason))||'RPC_UNAVAILABLE';
+    throw error;
+   })();
    pending.set(key,work);
    try{return await work;}finally{if(pending.get(key)===work)pending.delete(key);}
   },
