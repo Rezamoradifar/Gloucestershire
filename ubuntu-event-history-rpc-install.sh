@@ -14,6 +14,8 @@ for tool in node npm git realpath curl cmp find install cp nginx systemctl readl
  command -v "$tool" >/dev/null || { echo "EVENT_HISTORY_TOOL_REQUIRED_$tool"; exit 1; }
 done
 node -e 'const [major,minor]=process.versions.node.split(".").map(Number);if(major<22||(major===22&&minor<12))throw Error("NODE_22_12_REQUIRED")'
+# A new immutable checkout may not have server runtime dependencies yet.
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 envfile=/etc/globaldroptrade/trades.env
 unit=/etc/systemd/system/globaldroptrade-api.service
