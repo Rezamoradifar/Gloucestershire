@@ -19,6 +19,8 @@ const privateEnv='/etc/globaldroptrade/trades.env';
 const journalFile=NEW_DEPLOYER_AUTOMATION_DIR+'/journal.json';
 const abi=[
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 nextWithdrawal)',
+ 'function users(address) view returns(address referrer,bool registered,bool active,bool vipKyc,uint32 activeDirect,uint256 capitalUsd,uint256 salesUsd)',
+ 'function positionCount(address) view returns(uint256)',
  'function positionOf(address,uint256) view returns((address asset,uint256 principal,uint256 capitalUsd,uint256 unlockAt,uint16 penaltyBps))',
  'function dailyTargetBps(address) view returns(uint16)',
  'function usedRewardBatch(bytes32) view returns(bool)',
