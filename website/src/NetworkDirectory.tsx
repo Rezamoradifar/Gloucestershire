@@ -58,7 +58,7 @@ function Level({parent,block,depth}:{parent:string;block:number;depth:number}){
   if(cursorRef.current===null||running.current)return;
   const id=request.current;
   running.current=true;setBusy(true);setError('');
-  let current=cursorRef.current;
+  let current:number|null=cursorRef.current;
   const found:Member[]=[];
   try{
    for(let n=0;n<WINDOWS_PER_CLICK&&current!==null;n++){
