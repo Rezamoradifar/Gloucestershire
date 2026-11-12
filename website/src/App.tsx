@@ -34,7 +34,7 @@ import {chainId,chainName,configured,vaultAddress,explorer,feeWallets} from './c
 import {readSnapshot,session,execute,executeCustomerStatus,errorText,actionNames,actionFee,type CustomerStatusAction,type Snapshot,type Asset,type Action} from './chain';
 import {displayAmount as fmt,parseAmount,withdrawalCap} from './money';
 const tierNames=['Starter','Basic','Growth','Pro','VIP'];
-const tabs=[{key:'overview',label:'Overview',Icon:LayoutDashboard},{key:'positions',label:'My positions',Icon:Layers},{key:'network',label:'Referral network',Icon:Users},{key:'history',label:'Profit & deposits',Icon:History},{key:'profile',label:'My profile',Icon:UserRound},{key:'transparency',label:'Contract transparency',Icon:ShieldCheck},{key:'tickets',label:'Support tickets',Icon:Info},{key:'announcements',label:'Announcements',Icon:Info},{key:'admin',label:'Funding & settlement',Icon:Settings2}];
+const tabs=[{key:'overview',label:'Overview',Icon:LayoutDashboard},{key:'positions',label:'My positions',Icon:Layers},{key:'network',label:'Team & referrals',Icon:Users},{key:'history',label:'Profit & deposits',Icon:History},{key:'profile',label:'My profile',Icon:UserRound},{key:'transparency',label:'Contract transparency',Icon:ShieldCheck},{key:'tickets',label:'Support tickets',Icon:Info},{key:'announcements',label:'Announcements',Icon:Info},{key:'admin',label:'Funding & settlement',Icon:Settings2}];
 const short=(a:string)=>a.slice(0,6)+'…'+a.slice(-4);
 const date=(v:bigint)=>new Date(Number(v)*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});
 const actionLabel=(kind:Action['kind'])=>actionNames[kind];
