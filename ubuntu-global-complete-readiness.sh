@@ -30,6 +30,7 @@ if [ "$mode" = --local ]; then
   test/testnet-zero-v2-deploy.test.mjs \
   test/testnet-zero-v2-preflight.test.mjs \
   test/testnet-zero-v2-wrapper.test.mjs \
+  test/testnet-withdrawal-audit.test.mjs \
   test/history-relay.test.mjs \
   test/event-history-rpc-installer.test.mjs
  npm ci --prefix website --ignore-scripts --no-audit --no-fund
@@ -93,6 +94,8 @@ echo 'GLOBAL_CHECK: RPC archive doctor'
 node scripts/testnet-rpc-doctor.mjs
 echo 'GLOBAL_CHECK: latest five distinct new depositors'
 node scripts/diagnose-new-user-testnet.mjs 5
+echo 'GLOBAL_CHECK: actual owner-approved withdrawal queue and cash'
+node scripts/testnet-withdrawal-audit.mjs
 echo 'GLOBAL_CHECK: V1 obligations before any V2 change'
 node scripts/preflight-testnet-zero-v2.mjs --check
 
