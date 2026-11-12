@@ -48,6 +48,7 @@ export async function catchUpNewDeployerIndex({provider,policy,state,save,guard=
   const result=await scanPositionHistory({
    provider,policy,state:state.daily,save:checkedSave,confirmations,
    maxRegistryPages:4,pageSize:1000,logBlockSpan:1000,
+   advanceCompletedTarget:true,
    milliseconds:Math.min(90000,milliseconds-(clock()-start)),reserveMilliseconds:5000
   });
   passes++;last=result.status;
