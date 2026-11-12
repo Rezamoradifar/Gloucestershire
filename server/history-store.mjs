@@ -52,14 +52,14 @@ export function createVerifiedHistoryStore(file='/var/lib/globaldroptrade-api/ve
      snapshot.asset.toLowerCase()!==query.asset.toLowerCase()||
      snapshot.scope!==query.scope||snapshot.kind!==query.kind||
      snapshot.first!==query.from||snapshot.last!==query.to||
-     !hash(snapshot.windowHash)||!Array.isArray(snapshot.logs)||snapshot.logs.length>250)
+     !hash(snapshot.windowHash)||!hash(snapshot.runtimeHash)||!Array.isArray(snapshot.logs)||snapshot.logs.length>250)
      return null;
     return snapshot;
    }catch{return null;}
   },
   put(config,query,snapshot){
    if(!safe(query?.from)||!safe(query?.to)||snapshot?.first!==query.from||
-    snapshot.last!==query.to||!hash(snapshot.windowHash)||
+    snapshot.last!==query.to||!hash(snapshot.windowHash)||!hash(snapshot.runtimeHash)||
     !Array.isArray(snapshot.logs)||snapshot.logs.length>250)
     throw Error('HISTORY_DB_VERIFIED_PAGE_REQUIRED');
    insert.run(...key(config,query),snapshot.windowHash,JSON.stringify(snapshot),Date.now());
