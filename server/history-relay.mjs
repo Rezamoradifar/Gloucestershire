@@ -1,7 +1,7 @@
 // Read-only, wallet-independent BNB Chain event history from verified server RPCs.
 // Every page is wholly verified by one candidate. Never route these reads
 // through a connected wallet, and never expose transport credentials.
-import {Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,getAddress,isAddress,zeroPadValue} from 'ethers';
+import {Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,getAddress,isAddress,keccak256,zeroPadValue} from 'ethers';
 import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 
 const eventAbi=[
@@ -51,7 +51,8 @@ export async function readHistoryRelaySnapshot({provider,config,query}){
  if(!provider||!config?.address||!isAddress(config.address)||![56,97].includes(config.chainId)||
   !Number.isSafeInteger(config.confirmations)||config.confirmations<1)fail('HISTORY_RELAY_CONFIG_INVALID');
  if(Number(await provider.send('eth_chainId',[]))!==config.chainId)fail('HISTORY_RELAY_WRONG_CHAIN');
- if(await provider.getCode(config.address)==='0x')fail('HISTORY_RELAY_VAULT_MISSING');
+ const runtime=await provider.getCode(config.address);
+ if(runtime==='0x')fail('HISTORY_RELAY_VAULT_MISSING');
  const head=await provider.getBlockNumber(),confirmedHead=head-Math.max(3,config.confirmations);
  if(!Number.isSafeInteger(confirmedHead)||confirmedHead<0)fail('HISTORY_RELAY_HEAD_UNAVAILABLE');
  const checkpoint=await provider.getBlock(confirmedHead);
@@ -97,7 +98,7 @@ export async function readHistoryRelaySnapshot({provider,config,query}){
  const end=await provider.getBlock(confirmedHead),again=await provider.getBlock(query.to);
  if(end?.hash?.toLowerCase()!==checkpoint.hash.toLowerCase()||
   again?.hash?.toLowerCase()!==at.hash.toLowerCase())fail('HISTORY_RELAY_REORG');
- return {...base,first:query.from,last:query.to,windowHash:at.hash,logs:rows,source:'rpc'};
+ return {...base,first:query.from,last:query.to,windowHash:at.hash,runtimeHash:keccak256(runtime),logs:rows,source:'rpc'};
 }
 // Database pages never override the blockchain: each cache hit is checked
 // against the current chain, deployed contract and the canonical end block.
@@ -114,7 +115,7 @@ export async function readThroughVerifiedHistory({provider,config,query,store}){
     provider.getCode(config.address),provider.getBlock(query.to)
    ]);
    const confirmedHead=head-Math.max(3,config.confirmations);
-   if(Number(chain)===config.chainId&&code!=='0x'&&Number.isSafeInteger(confirmedHead)&&
+   if(Number(chain)===config.chainId&&code!=='0x'&&keccak256(code)===cached.runtimeHash&&Number.isSafeInteger(confirmedHead)&&
       query.to<=confirmedHead&&end?.hash?.toLowerCase()===cached.windowHash.toLowerCase())
     return {...cached,confirmedHead,source:'database+rpc'};
   }catch{ /* fall back to a full live RPC scan */ }
