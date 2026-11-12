@@ -26,7 +26,7 @@ export function parseAccountHistoryPage(value:unknown,{wallet,chainId,vaultAddre
  wallet:string;chainId:number;vaultAddress:string
 }):AccountHistoryPage{
  const v=value as Record<string,any>|null;
- const invalid=()=>{throw Error('The historical transaction response was invalid. Please retry.');};
+ const invalid=():never=>{throw Error('The historical transaction response was invalid. Please retry.');};
  if(!v||v.version!==1||v.chainId!==chainId||!isAddress(v.vaultAddress)||!isAddress(v.wallet)||
   getAddress(v.vaultAddress)!==getAddress(vaultAddress)||getAddress(v.wallet)!==getAddress(wallet)||
   !validNumber(v.confirmedThrough)||!Array.isArray(v.items)||v.items.length>50||
