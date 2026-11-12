@@ -28,7 +28,7 @@ test('installer recognizes only immutable reviewed previous API releases before 
  assert.match(source,/EVENT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED/);
  assert.match(source,/694a78c8804d180780735f23abe272768e8abc5f/);
  assert.match(source,/a54cc051915a6731daa468ca4476b100abd7712c/);
- assert.match(source,/git hash-object "\\$previous_api\/server\/trades-api\\.mjs"/);
+ assert.match(source,/git hash-object "\$previous_api\/server\/trades-api\.mjs"/);
  assert.doesNotMatch(source,/EVENT_HISTORY_SKIP_VERSION|--force-version/);
 });
 
