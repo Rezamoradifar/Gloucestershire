@@ -106,7 +106,11 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
   final=await indexedPositionCheckpoint({provider,policy,state});
   if(!final)return {status:'indexing',indexTarget:state.positionScanTarget?.number??null,indexThrough:state.positionIndex?.through??null};
  }else{
-  const scan=await scanPositionHistory({provider,policy,state,save,confirmations,maxRegistryPages});
+  // New-deployer testnet must discover deposits opened after an earlier fully
+  // indexed target, even when old positions still have overdue credit hours.
+  // Updating the verified scan target never changes paid cursors or signs a transaction.
+  const scan=await scanPositionHistory({provider,policy,state,save,confirmations,maxRegistryPages,
+   advanceCompletedTarget:isNewDeployerTestnetPolicy(policy)});
   if(scan.status!=='indexed')return scan;
   ({final,wasIndexed}=scan);
  }
