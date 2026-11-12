@@ -77,6 +77,30 @@ test('member details read the same verified contract at a confirmed block withou
  await assert.rejects(readTeamSnapshot({provider:f.provider,config,query:q('wallet='+child+'&block=198')}),/NOT_CONFIRMED/);
 });
 
+test('volume endpoint reads verified contract branches, never invents earnings',async()=>{
+ const f=fixture();
+ const volumeAbi=new Interface([
+  'function volumeJobCount() view returns(uint256)',
+  'function volumeJobs(uint256) view returns(address child,address ancestor,uint256 usd)',
+  'function networkBranchCount(address) view returns(uint256)',
+  'function networkBranch(address,uint256) view returns(address)',
+  'function branchVolumeUsd(address,address) view returns(uint256)'
+ ]);
+ const original=f.provider.call;
+ f.provider.call=async tx=>{
+  const a=volumeAbi.parseTransaction({data:tx.data});
+  if(!a)return original(tx);
+  if(a.name==='volumeJobCount'||a.name==='networkBranchCount')
+   return volumeAbi.encodeFunctionResult(a.name,[0n]);
+  throw Error('Unexpected contract query '+a.name);
+ };
+ const result=await readTeamSnapshot({provider:f.provider,config,query:q('wallet='+parent+'&mode=volume')});
+ assert.equal(result.kind,'volume');assert.equal(result.block,197);
+ assert.deepEqual(result.levels,[{level:1,members:0,volume:'0'},{level:2,members:0,volume:'0'},{level:3,members:0,volume:'0'}]);
+ const wrong={...f.provider,send:async()=> '0x38'};
+ await assert.rejects(readTeamSnapshot({provider:wrong,config,query:q('wallet='+parent+'&mode=volume')}),/WRONG_CHAIN/);
+});
+
 test('API serves team data, sanitizes errors, and preserves other API paths',async()=>{
  const f=fixture(),teamRelay=createTeamRelay(config,{providers:[f.provider]});
  const feed={configured:true,publicConfig:{version:1,chainId:97,vaultAddress:vault},get:async()=>({status:'live',trades:[]})};
