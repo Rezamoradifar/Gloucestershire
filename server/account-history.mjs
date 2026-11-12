@@ -201,14 +201,21 @@ export function createAccountHistory(config,{providers,metadata}={}){
   const request=new FetchRequest(url);request.timeout=15000;
   return new JsonRpcProvider(request,config.chainId,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
  }):[]);
+ const pending=new Map();
  return {
   async get(params){
    const args=parseHistoryQuery(params);
    if(!candidates.length)fail('ACCOUNT_HISTORY_NOT_CONFIGURED');
+   const key=args.wallet+':'+(args.before??'latest')+':'+args.limit;
+   if(pending.has(key))return pending.get(key);
+   if(pending.size>=3)fail('ACCOUNT_HISTORY_BUSY');
    // Race complete verified pages, never mix log subsets from different RPC histories.
-   try{return await Promise.any(candidates.map(provider=>readAccountHistoryPage({
-    provider,config,...args,metadata
-   })));}catch{fail('ACCOUNT_HISTORY_UNAVAILABLE');}
+   // Bound shared expensive reads: duplicate requests share one pending promise.
+   const work=Promise.any(candidates.map(provider=>readAccountHistoryPage({
+    provider,config,...args,maxWindows:6,metadata
+   }))).catch(()=>fail('ACCOUNT_HISTORY_UNAVAILABLE'));
+   pending.set(key,work);
+   try{return await work;}finally{if(pending.get(key)===work)pending.delete(key);}
   },
   close(){if(owned)for(const candidate of candidates)candidate.destroy();}
  };
