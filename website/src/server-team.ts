@@ -26,10 +26,12 @@ export async function requestTeamPage(parent:string,from?:number,to?:number,sign
  if(from!==undefined&&to!==undefined){params.set('from',String(from));params.set('to',String(to));}
  const r=await getTeam('/api/team/registrations?'+params,signal);
  verified(r);
- if(r.kind!=='registrations'||r.parent!==getAddress(parent)||!Array.isArray(r.members)||r.members.length>250)fail();
- if(from===undefined){if(r.first!==null||r.last!==null||r.members.length!==0)fail();}
+ const memberRows=r.members;
+ if(!Array.isArray(memberRows))fail();
+ if(r.kind!=='registrations'||r.parent!==getAddress(parent)||memberRows.length>250)fail();
+ if(from===undefined){if(r.first!==null||r.last!==null||memberRows.length!==0)fail();}
  else if(r.first!==from||r.last!==to||Number(to)>Number(r.confirmedHead))fail();
- const members=r.members as unknown[];
+ const members=memberRows as unknown[];
  const seen=new Set<string>();
  for(const item of members){
   if(!item||typeof item!=='object')fail();
@@ -64,10 +66,12 @@ export async function requestTeamVolumes(wallet:string,block?:number,signal?:Abo
  if(block!==undefined)params.set('block',String(block));
  const r=await getTeam('/api/team/volume?'+params,signal);
  verified(r);
+ const levelRows=r.levels;
+ if(!Array.isArray(levelRows))fail();
  if(r.kind!=='volume'||r.wallet!==getAddress(wallet)||!safe(r.block)||
     Number(r.block)>Number(r.confirmedHead)||(block!==undefined&&r.block!==block)||
-    !Array.isArray(r.levels)||r.levels.length!==3)fail();
- const rawLevels=r.levels as unknown[];
+    levelRows.length!==3)fail();
+ const rawLevels=levelRows as unknown[];
  const levels=rawLevels.map((entry:unknown,index:number)=>{
   if(!entry||typeof entry!=='object')fail();
   const row=entry as Record<string,unknown>;
