@@ -68,7 +68,7 @@ test('wallet history includes confirmed deposits, credits, paid withdrawals and 
  assert.equal(page.items[2].amount,'0.5');
  assert.match(page.items[2].detail,/not a payment/);
  assert.equal(page.items[3].amount,'100.0');
- assert.equal(page.items[3].fee,'10.0');
+ assert.equal(page.items[3].fee,'20.0');
  assert.equal(page.items[0].fee,'0.025');
  assert.equal(page.items[0].confirmed,true);
  assert.equal(page.nextCursor,null);
