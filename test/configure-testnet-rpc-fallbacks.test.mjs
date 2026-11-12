@@ -75,7 +75,7 @@ test('selects only verified existing and official fallbacks, prefers archive, ne
  assert.deepEqual(results.selected,[candidate2,candidate1]);
  assert.equal(results.archives,1);
  assert.equal(results.checked,3);
- assert.equal(events[2].status,'WRONG_CHAIN');
+ assert.equal(events.find(row=>row.candidate===3)?.status,'WRONG_CHAIN');
  assert.ok(events.every(row=>Object.keys(row).sort().join(',')==='candidate,status'));
  assert.doesNotMatch(JSON.stringify(events),/private\.example|secret|publicnode/);
 });
