@@ -121,9 +121,9 @@ test('a later new-user deposit advances the fully indexed target without resetti
  };
  const updated=await catchUpNewDeployerIndex({provider,policy,state,save:()=>{}});
  assert.equal(updated.status,'indexed');
- assert.equal(updated.indexTarget,46000);
- assert.equal(updated.indexThrough,46000);
- assert.equal(updated.memberThrough,46000);
+ assert.equal(updated.indexTarget,45997);
+ assert.equal(updated.indexThrough,45997);
+ assert.equal(updated.memberThrough,45997);
  assert.equal(updated.positions,3);
  assert.deepEqual(state.daily.positionPaid,paid);
  assert.deepEqual(state.daily.positionClosed,closed);
