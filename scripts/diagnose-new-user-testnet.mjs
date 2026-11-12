@@ -52,15 +52,20 @@ export function latestUserPositions(positions,limit=2){
  }
  return selected;
 }
-export function personalBatchId({chainId,vault,member,positionId,period,asset}){
+export function personalBatchId({chainId,vault,member,positionId,period,asset,quarterCutoverHash}){
  if(chainId!==97||!Number.isSafeInteger(period)||period<0||!/^(0|[1-9][0-9]*)$/.test(String(positionId)))fail('NEW_USER_DIAGNOSTIC_PERIOD_INVALID');
- const domain=['GLOBAL_POSITION_HOURLY_NEW_DEPLOYER_TEST_V1',chainId,getAddress(vault).toLowerCase(),
+ if(quarterCutoverHash!==undefined&&(!/^0x[0-9a-f]{64}$/i.test(quarterCutoverHash)))fail('NEW_USER_DIAGNOSTIC_QUARTER_CUTOVER_REQUIRED');
+ const prefix=quarterCutoverHash===undefined?'GLOBAL_POSITION_HOURLY_NEW_DEPLOYER_TEST_V1':'GLOBAL_POSITION_QUARTER_NEW_DEPLOYER_TEST_V1';
+ const domain=[prefix,...(quarterCutoverHash===undefined?[]:[quarterCutoverHash]),chainId,getAddress(vault).toLowerCase(),
   getAddress(member).toLowerCase(),String(positionId),period,getAddress(asset).toLowerCase()].join(':');
  return keccak256(toUtf8Bytes(domain+':personal'));
 }
-export function periodTimes(openedAt,index){
- if(!Number.isSafeInteger(openedAt)||openedAt<1||!Number.isSafeInteger(index)||index<0)fail('NEW_USER_DIAGNOSTIC_PERIOD_INVALID');
- const start=openedAt+index*3600,end=start+3600;
+export function periodTimes(openedAt,index,{periodSeconds=3600,cutoverTimestamp=0}={}){
+ if(!Number.isSafeInteger(openedAt)||openedAt<1||!Number.isSafeInteger(index)||index<0||
+  ![3600,900].includes(periodSeconds)||!Number.isSafeInteger(cutoverTimestamp)||cutoverTimestamp<0||
+  periodSeconds===900&&cutoverTimestamp===0)fail('NEW_USER_DIAGNOSTIC_PERIOD_INVALID');
+ const origin=periodSeconds===900?Math.max(openedAt,cutoverTimestamp):openedAt;
+ const start=origin+index*periodSeconds,end=start+periodSeconds;
  if(!Number.isSafeInteger(end))fail('NEW_USER_DIAGNOSTIC_PERIOD_INVALID');
  return {start,end};
 }
@@ -75,7 +80,8 @@ async function main(){
  if(env.chainId!==97||getAddress(env.address)!==getAddress(expectedVault)||
   journal.identity?.chainId!==97||getAddress(journal.identity.target)!==getAddress(expectedVault)||
   !isNewDeployerTestnetPolicy(policy)||policy.vaultAddress!==getAddress(expectedVault)||
-  policy.periodSeconds!==3600||policy.basis!=='position-anniversary-principal'){
+  ![3600,900].includes(policy.periodSeconds)||policy.basis!=='position-anniversary-principal'||
+  policy.periodSeconds===900&&!policy.quarterCutover?.hash){
   fail('NEW_USER_DIAGNOSTIC_TARGET_MISMATCH');
  }
  const daily=journal.daily||{},index=daily.positionIndex||{},registry=daily.registry||{},
@@ -95,8 +101,9 @@ async function main(){
    knownMembers:Object.keys(registry.members||{}).length,
    knownPositions:Object.keys(index.positions||{}).length,activityActivation:activityPolicy.activationTimestamp,
    users:[],signerOpened:false,transactionsSigned:0,transactionsSent:0};
+  const quarter=policy.periodSeconds===900;
   for(const {key,row} of positions){
-   const paid=daily.positionPaid?.[key]??0;
+   const paid=(quarter?daily.positionQuarterPaid:daily.positionPaid)?.[key]??0;
    if(!Number.isSafeInteger(paid)||paid<0)fail('NEW_USER_DIAGNOSTIC_PAID_CURSOR_INVALID');
    const account=await vault.accounts(row.member,token,{blockTag:head.number});
    const current=await vault.positionOf(row.member,BigInt(row.id),{blockTag:head.number});
@@ -104,9 +111,11 @@ async function main(){
    const periods=[];
    // Processed periods only; one latest user need not have been eligible historically.
    for(let i=Math.max(0,paid-3);i<paid;i++){
-    const {start,end}=periodTimes(row.openedAt,i),required=start>=activityPolicy.activationTimestamp,
+    const {start,end}=periodTimes(row.openedAt,i,{periodSeconds:policy.periodSeconds,
+     cutoverTimestamp:quarter?policy.quarterCutover.timestamp:0}),required=start>=activityPolicy.activationTimestamp,
      evidence=required?await activity.evidence(row.member,end):null,eligible=!required||Boolean(evidence),
-     batchId=personalBatchId({chainId:97,vault:expectedVault,member:row.member,positionId:row.id,period:i,asset:row.asset});
+     batchId=personalBatchId({chainId:97,vault:expectedVault,member:row.member,positionId:row.id,period:i,asset:row.asset,
+     ...(quarter?{quarterCutoverHash:policy.quarterCutover.hash}:{})});
     const creditedOnChain=Boolean(await vault.usedRewardBatch(batchId,{blockTag:head.number}));
     let expectedPersonal=null,rateBps=null,snapshotBlock=null,snapshotIssue=null;
     try{
@@ -126,9 +135,10 @@ async function main(){
      activityRequired:required,activityEligible:eligible,rateBps,
      expectedPersonal,confirmedPersonalBatch:creditedOnChain,snapshotBlock,snapshotIssue});
    }
-   const nextDue=periodTimes(row.openedAt,paid).end;
+   const nextDue=periodTimes(row.openedAt,paid,{periodSeconds:policy.periodSeconds,
+    cutoverTimestamp:quarter?policy.quarterCutover.timestamp:0}).end;
    report.users.push({wallet:row.member,positionId:String(row.id),openedAt:new Date(row.openedAt*1000).toISOString(),
-    processedPeriods:paid,nextDue:new Date(nextDue*1000).toISOString(),
+    processedPeriods:paid,periodSeconds:policy.periodSeconds,nextDue:new Date(nextDue*1000).toISOString(),
     dueNow:nextDue<=head.timestamp,positionPrincipal:formatUnits(current.principal,decimals),
     walletPrincipal:formatUnits(account.principal,decimals),walletProfit:formatUnits(account.profit,decimals),
     activityCurrent:Boolean(latestCheckIn),latestEligibleCheckInAt:latestCheckIn?new Date(latestCheckIn.block.timestamp*1000).toISOString():null,
