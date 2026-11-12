@@ -159,7 +159,10 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,marketpl
      return send(400,{error:'Invalid team query.'});
     if(isVolume)params.set('mode','volume');
     return send(200,await teamRelay.get(params));
-   }catch(error){return send(error?.code==='TEAM_RELAY_BAD_REQUEST'?400:503,{error:error?.code==='TEAM_RELAY_BAD_REQUEST'?'Invalid team query.':'Verified team RPC is temporarily unavailable.'});}
+   }catch(error){
+    const invalid=error?.code==='TEAM_RELAY_BAD_REQUEST';
+    return send(invalid?400:503,{error:invalid?'Invalid team query.':'Verified team RPC is unavailable or requires a fully reconciled index.'});
+   }
   }
   if(url.pathname==='/api/config')return send(feed.configured&&feed.publicConfig?200:503,feed.configured&&feed.publicConfig?feed.publicConfig:{error:'Contract not configured'});
   if(url.pathname==='/api/health')return send(200,{status:'ok',configured:feed.configured,source});
