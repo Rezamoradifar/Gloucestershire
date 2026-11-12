@@ -11,7 +11,7 @@ type HistorySnapshot={
  version:1;chainId:number;vaultAddress:string;wallet:string;asset:string;
  scope:HistoryScanScope;kind:HistoryScanKind;confirmedHead:number;
  first:number|null;last:number|null;logs:VerifiedHistoryLog[];
- windowHash?:string;source?:'rpc'|'database+rpc'
+ windowHash?:string;runtimeHash?:string;source?:'rpc'|'database+rpc'
 };
 const validHash=(value:unknown)=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
 const validNumber=(value:unknown)=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
@@ -30,6 +30,7 @@ export function parseVerifiedHistorySnapshot(value:unknown,{
   page.scope!==scope||page.kind!==kind||!validNumber(page.confirmedHead)||
   (page.source!==undefined&&!['rpc','database+rpc'].includes(page.source))||
   (page.windowHash!==undefined&&!validHash(page.windowHash))||
+  (page.runtimeHash!==undefined&&!validHash(page.runtimeHash))||
   !Array.isArray(page.logs)||page.logs.length>250)invalid();
  if(kind==='team'&&(scope!=='wallet'||getAddress(asset)!==ZeroAddress))invalid();
  if(from===undefined||to===undefined){
