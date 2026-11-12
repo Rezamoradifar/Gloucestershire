@@ -72,6 +72,25 @@ The signer refuses execution while the previous worker is running or its
 timer remains enabled. It has a cumulative fee ceiling of 0.1 test BNB and
 does not fund rewards, connect the website, or activate automation.
 
+Use the guarded wrapper rather than manually stopping a signer timer:
+
+```bash
+bash ubuntu-testnet-zero-v2-deploy.sh --check
+# After CI and owner review:
+bash ubuntu-testnet-zero-v2-deploy.sh --execute
+```
+
+The wrapper rechecks the backup and live state, serializes the V2 deployment,
+temporarily stops/disables the old timer, **waits for the old service to exit
+without killing it**, runs the V2 deployment with its separate journal, then
+restores the original old-timer state, including on normal errors/signals.
+If the shell or machine is force-killed, check and restore the old timer
+explicitly before assuming it is active.
+
+This operation only deploys an empty contract. The existing website
+continues to show the V1 vault after it returns. No V2 funding or
+website/worker cutover is implied.
+
 ## Cutover safety and explicit remaining work
 
 1. Review open position/principal/credited-profit/queued-withdrawal
