@@ -13,19 +13,30 @@ export const TEAM_PAGE_SPAN=96;
 
 export function parseTeamQuery(params){
  const keys=[...params.keys()];
- if(keys.length!==new Set(keys).size||keys.some(k=>!['parent','wallet','from','to','block','mode'].includes(k)))fail('TEAM_RELAY_BAD_REQUEST');
+ if(keys.length!==new Set(keys).size||keys.some(k=>!['parent','wallet','from','to','block','mode','offset','limit'].includes(k)))fail('TEAM_RELAY_BAD_REQUEST');
  const isMember=params.has('wallet'),isPage=params.has('parent');
  if(isMember===isPage)fail('TEAM_RELAY_BAD_REQUEST');
  if(isPage){
-  if(params.has('block')||params.has('mode'))fail('TEAM_RELAY_BAD_REQUEST');
   const parent=address(params.get('parent'));
+  if(params.get('mode')==='branches'){
+   if(params.has('from')||params.has('to'))fail('TEAM_RELAY_BAD_REQUEST');
+   const rawOffset=params.get('offset')??'0',rawLimit=params.get('limit')??'12';
+   if(!integer(rawOffset)||!integer(rawLimit)||Number(rawOffset)>1000000||Number(rawLimit)<1||
+      Number(rawLimit)>20||(params.has('block')&&!integer(params.get('block'))))
+    fail('TEAM_RELAY_BAD_REQUEST');
+   return {kind:'branches',parent,offset:Number(rawOffset),limit:Number(rawLimit),
+    ...(params.has('block')?{block:Number(params.get('block'))}:{})};
+  }
+  if(params.has('block')||params.has('mode')||params.has('offset')||params.has('limit'))
+   fail('TEAM_RELAY_BAD_REQUEST');
   const from=params.get('from'),to=params.get('to');
   if((from===null)!==(to===null))fail('TEAM_RELAY_BAD_REQUEST');
   if(from!==null&&(!integer(from)||!integer(to)||Number(from)>Number(to)||Number(to)-Number(from)+1>TEAM_PAGE_SPAN))
    fail('TEAM_RELAY_BAD_REQUEST');
   return {kind:'registrations',parent,...(from!==null?{from:Number(from),to:Number(to)}:{})};
  }
- if(params.has('from')||params.has('to')||(params.has('block')&&!integer(params.get('block')))||
+ if(params.has('from')||params.has('to')||params.has('offset')||params.has('limit')||
+  (params.has('block')&&!integer(params.get('block')))||
   (params.has('mode')&&params.get('mode')!=='volume'))fail('TEAM_RELAY_BAD_REQUEST');
  return {kind:params.get('mode')==='volume'?'volume':'member',wallet:address(params.get('wallet')),...(params.has('block')?{block:Number(params.get('block'))}:{})};
 }
@@ -80,6 +91,32 @@ export async function verifiedVolumes(provider,address,wallet,block){
  return members.map((count,i)=>({level:i+1,members:count,volume:(subtrees[i]-subtrees[i+1]).toString()}));
 }
 
+// The contract stores the complete direct-referral roster. Read it at one
+// confirmed block instead of asking mobile clients to scan thousands of
+// historical event windows. Validate every returned edge against users().
+export async function verifiedDirectBranches(provider,contract,parent,block,offset,limit){
+ const vault=new Contract(contract,[
+  'function networkBranchCount(address) view returns(uint256)',
+  'function networkBranch(address,uint256) view returns(address)',
+  'function users(address) view returns(address referrer,bool registered,bool active,bool vipKyc,uint32 activeDirect,uint256 capitalUsd,uint256 salesUsd)'
+ ],provider);
+ const at={blockTag:block}, count=BigInt(await vault.networkBranchCount(parent,at));
+ if(count>BigInt(Number.MAX_SAFE_INTEGER)||count<0n)fail('TEAM_RELAY_MEMBER_COUNT_INVALID');
+ const total=Number(count);
+ const countToRead=Math.min(limit,Math.max(0,total-offset));
+ const indexes=Array.from({length:countToRead},(_,i)=>offset+i);
+ const members=await bounded(indexes,async index=>{
+  const child=getAddress(await vault.networkBranch(parent,index,at));
+  if(child===ZeroAddress||child===parent)fail('TEAM_RELAY_INVALID_BRANCH');
+  const user=await vault.users(child,at);
+  if(!user.registered||getAddress(user.referrer)!==parent)fail('TEAM_RELAY_INVALID_BRANCH');
+  return {address:child,branchIndex:index};
+ });
+ if(new Set(members.map(entry=>entry.address.toLowerCase())).size!==members.length)
+  fail('TEAM_RELAY_DUPLICATE_BRANCH');
+ return {total,members};
+}
+
 export async function readTeamSnapshot({provider,config,query}){
  if(!provider||!config?.address||![56,97].includes(config.chainId)||!Number.isSafeInteger(config.confirmations))fail('TEAM_RELAY_CONFIG_INVALID');
  if(Number(await provider.send('eth_chainId',[]))!==config.chainId)fail('TEAM_RELAY_WRONG_CHAIN');
@@ -96,7 +133,11 @@ export async function readTeamSnapshot({provider,config,query}){
  const at=await provider.getBlock(block);
  if(!at||at.number!==block||!hexHash(at.hash))fail('TEAM_RELAY_CHECKPOINT_INVALID');
  let result;
- if(query.kind==='volume'){
+ if(query.kind==='branches'){
+  const branch=await verifiedDirectBranches(provider,config.address,query.parent,block,query.offset,query.limit);
+  result={...base,kind:'branches',parent:query.parent,block,blockHash:at.hash,
+   offset:query.offset,limit:query.limit,...branch};
+ }else if(query.kind==='volume'){
   result={...base,kind:'volume',wallet:query.wallet,block,levels:await verifiedVolumes(provider,config.address,query.wallet,block)};
  }else if(query.kind==='member'){
   const vault=new Contract(config.address,[
@@ -140,7 +181,7 @@ export function createTeamRelay(config,{providers}={}){
  return {
   async get(params){
    const query=parseTeamQuery(params);
-   const key=[query.kind,query.parent??query.wallet,query.from??'head',query.to??'head',query.block??''].join(':');
+   const key=[query.kind,query.parent??query.wallet,query.from??'head',query.to??'head',query.block??'',query.offset??'',query.limit??''].join(':');
    if(inflight.has(key))return inflight.get(key);
    if(inflight.size>=3)fail('TEAM_RELAY_BUSY');
    const task=(async()=>{

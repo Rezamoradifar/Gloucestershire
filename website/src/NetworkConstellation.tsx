@@ -1,5 +1,5 @@
 import {GitBranch} from 'lucide-react';
-type Member={address:string;block:number;tx:string};
+type Member={address:string};
 type Node={member:Member;x:number;y:number};
 const short=(s:string)=>s.slice(0,6)+'…'+s.slice(-4);
 /** Interactive visual sample; the expandable referral list remains the complete view of loaded members. */
@@ -18,6 +18,6 @@ export default function NetworkConstellation({parent,members,selected,onSelect}:
    <div className="v2-constellation-center"><span>◎</span><strong>Your team</strong><small>{short(parent)}</small></div>
    {nodes.map((node,i)=><button type="button" key={node.member.address} className={'v2-constellation-node '+(selected?.toLowerCase()===node.member.address.toLowerCase()?'active':'')} onClick={()=>onSelect(node.member.address)} style={{left:node.x+'%',top:node.y+'%'}} aria-label={'View registered direct '+short(node.member.address)} aria-pressed={selected?.toLowerCase()===node.member.address.toLowerCase()}><span>{String(i+1).padStart(2,'0')}</span><small>{short(node.member.address)}</small></button>)}
   </div>
-  <p>Visualization uses discovered on-chain registration events only. Node position and glow are decorative, not financial performance or member activity indicators.</p>
+  <p>Visualization uses canonical contract referral membership, not a wallet log scan. Node position and glow are decorative, not financial performance or member activity indicators.</p>
  </div>;
 }

@@ -36,6 +36,6 @@ describe('GLOBAL V2 live data and transparent analytics',()=>{
   const html=renderToStaticMarkup(<NetworkConstellation parent="0x1111111111111111111111111111111111111111"
    members={[{address:'0x2222222222222222222222222222222222222222',block:100,tx:'0x'+'a'.repeat(64)}]}
    selected={null} onSelect={()=>{}}/>);
-  expect(html).toContain('Interactive preview');expect(html).toContain('1 of 1');expect(html).toContain('on-chain registration events');
+  expect(html).toContain('Interactive preview');expect(html).toContain('1 of 1');expect(html).toContain('canonical contract referral membership');
  });
 });

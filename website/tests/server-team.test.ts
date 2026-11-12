@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from 'vitest';
 import {acceptPublicConfig} from '../src/config';
-import {requestTeamPage,requestTeamProfile,requestTeamVolumes} from '../src/server-team';
+import {requestDirectBranches,requestTeamPage,requestTeamProfile,requestTeamVolumes} from '../src/server-team';
 
 const vault='0x1111111111111111111111111111111111111111';
 const parent='0x2222222222222222222222222222222222222222';
@@ -57,6 +57,41 @@ describe('verified team API client',()=>{
    const result=await requestTeamVolumes(parent);
    expect(result.levels[0].volume).toBe(1000000000000000000n);
    expect(result.levels[1].members).toBe(1);
+  }finally{globalThis.fetch=original;}
+ });
+ it('paginates registered direct contract members at one pinned canonical checkpoint',async()=>{
+  const original=globalThis.fetch;
+  const result={...base,kind:'branches',parent,block:197,blockHash:hash,
+   offset:0,limit:12,total:1,members:[{address:child,branchIndex:0}]};
+  const mock=vi.fn(async()=>new Response(JSON.stringify(result),{status:200}));
+  globalThis.fetch=mock as typeof fetch;
+  try{
+   const page=await requestDirectBranches(parent,0,12,197);
+   expect(page.total).toBe(1);
+   expect(page.members[0].address).toBe(child);
+   expect(mock.mock.calls[0][0]).toContain('/api/team/branches?');
+   expect(mock.mock.calls[0][0]).toContain('block=197');
+  }finally{globalThis.fetch=original;}
+ });
+ it('rejects forged, unconfirmed, missing or duplicate contract branch entries',async()=>{
+  const original=globalThis.fetch;
+  const member={address:child,branchIndex:0};
+  const valid={...base,kind:'branches',parent,block:197,blockHash:hash,offset:0,limit:12,total:1,members:[member]};
+  try{
+   for(const bad of [
+    {...valid,chainId:56},
+    {...valid,block:198},
+    {...valid,blockHash:'not-a-hash'},
+    {...valid,total:2},
+    {...valid,members:[member,member]},
+    {...valid,members:[{address:parent,branchIndex:0}]},
+    {...valid,members:[{address:child,branchIndex:2}]}
+   ]){
+    globalThis.fetch=(async()=>new Response(JSON.stringify(bad),{status:200})) as typeof fetch;
+    await expect(requestDirectBranches(parent,0,12,197)).rejects.toThrow();
+   }
+   await expect(requestDirectBranches(parent,-1,12)).rejects.toThrow(/Invalid direct-team page/);
+   await expect(requestDirectBranches(parent,0,100)).rejects.toThrow(/Invalid direct-team page/);
   }finally{globalThis.fetch=original;}
  });
  it('does not leak server errors or accept unbounded pages',async()=>{

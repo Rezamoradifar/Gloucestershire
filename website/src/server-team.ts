@@ -81,3 +81,39 @@ export async function requestTeamVolumes(wallet:string,block?:number,signal?:Abo
  });
  return {block:Number(r.block),levels};
 }
+
+export type DirectBranch={address:string;branchIndex:number};
+export type DirectBranchPage={
+ confirmedHead:number;block:number;blockHash:string;total:number;offset:number;limit:number;members:DirectBranch[]
+};
+/** Paginate on-chain referral storage at one canonical server-selected checkpoint. */
+export async function requestDirectBranches(
+ parent:string,offset=0,limit=12,block?:number,signal?:AbortSignal
+):Promise<DirectBranchPage>{
+ if(!isAddress(parent)||!safe(offset)||offset>1000000||!safe(limit)||limit<1||limit>20||
+    (block!==undefined&&!safe(block)))throw Error('Invalid direct-team page.');
+ const addr=getAddress(parent);
+ const params=new URLSearchParams({parent:addr,offset:String(offset),limit:String(limit)});
+ if(block!==undefined)params.set('block',String(block));
+ const r=await getTeam('/api/team/branches?'+params,signal);
+ verified(r);
+ const rows=r.members as unknown[];
+ if(!Array.isArray(rows)||r.kind!=='branches'||r.parent!==addr||
+    !safe(r.block)||!hex(r.blockHash)||Number(r.block)>Number(r.confirmedHead)||
+    (block!==undefined&&r.block!==block)||
+    r.offset!==offset||r.limit!==limit||!safe(r.total)||rows.length>limit||
+    offset+rows.length>Number(r.total)||rows.length!==Math.min(limit,Math.max(0,Number(r.total)-offset)))
+   fail();
+ const seen=new Set<string>();
+ const members=rows.map((entry,index)=>{
+  if(!entry||typeof entry!=='object')fail();
+  const value=entry as Record<string,unknown>;
+  if(!isAddress(value.address)||getAddress(value.address as string)===addr||
+     value.branchIndex!==offset+index)fail();
+  const wallet=getAddress(value.address as string);
+  if(seen.has(wallet.toLowerCase()))fail();seen.add(wallet.toLowerCase());
+  return {address:wallet,branchIndex:offset+index};
+ });
+ return {confirmedHead:Number(r.confirmedHead),block:Number(r.block),blockHash:r.blockHash as string,
+  total:Number(r.total),offset,limit,members};
+}

@@ -149,14 +149,18 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,marketpl
       'Invalid verified history query.':'Verified history is temporarily unavailable.'});
    }
   }
-  if(['/api/team/registrations','/api/team/member','/api/team/volume'].includes(url.pathname)){
+  if(['/api/team/registrations','/api/team/branches','/api/team/member','/api/team/volume'].includes(url.pathname)){
    if(!teamRelay)return send(503,{error:'Verified team service is not configured.'});
    try{
     const params=new URLSearchParams(url.searchParams);
     const isRegistrations=url.pathname.endsWith('/registrations');
+    const isBranches=url.pathname.endsWith('/branches');
     const isVolume=url.pathname.endsWith('/volume');
-    if(isRegistrations?(!params.has('parent')||params.has('wallet')):(!params.has('wallet')||params.has('parent')))
+    if(isRegistrations||isBranches){
+     if(!params.has('parent')||params.has('wallet'))return send(400,{error:'Invalid team query.'});
+    }else if(!params.has('wallet')||params.has('parent'))
      return send(400,{error:'Invalid team query.'});
+    if(isBranches)params.set('mode','branches');
     if(isVolume)params.set('mode','volume');
     return send(200,await teamRelay.get(params));
    }catch(error){

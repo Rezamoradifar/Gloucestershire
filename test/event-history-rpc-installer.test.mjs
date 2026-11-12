@@ -27,6 +27,9 @@ test('installer refuses unknown code, old UI or wrong target and tests a real se
 test('installer recognizes only immutable reviewed previous API releases before replacement',()=>{
  assert.match(source,/EVENT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED/);
  assert.match(source,/694a78c8804d180780735f23abe272768e8abc5f/);
+ assert.match(source,/c488903ba7ff6222e6e683f2a13221986bb3cac8/);
+ assert.match(source,/TEAM_BRANCHES_API_READ_ONLY_PASS/);
+ assert.match(source,/\/api\/team\/branches\?parent=/);
  assert.match(source,/a54cc051915a6731daa468ca4476b100abd7712c/);
  assert.match(source,/git hash-object "\$previous_api\/server\/trades-api\.mjs"/);
  assert.doesNotMatch(source,/EVENT_HISTORY_SKIP_VERSION|--force-version/);
