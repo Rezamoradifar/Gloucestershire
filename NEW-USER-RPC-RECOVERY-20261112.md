@@ -54,3 +54,49 @@ new-user-index refresh patch, which must pass CI and receive
 review before any live worker deployment. A missing Daily Activity
 check-in must be signed by the actual wallet owner; it cannot be
 created by an RPC repair or credited retroactively.
+
+
+## Configure several verified read-only RPCs (testnet only)
+
+The main server configuration supports **at most four RPC URLs total**:
+the unchanged primary `TRADES_RPC_URL` plus up to three fallbacks under
+`TRADES_RPC_URLS`. The primary remains the signer worker's selected
+RPC. The additional alternatives help the API and forensic diagnostics.
+
+A guarded script is included:
+
+```bash
+node scripts/configure-testnet-rpc-fallbacks.mjs --check
+node scripts/configure-testnet-rpc-fallbacks.mjs --apply
+```
+
+The script verifies the exact old vault, chain 97, recorded immutable runtime,
+a known canonical checkpoint, one bounded `eth_getLogs` probe and historical
+`eth_getCode` / `eth_call` capability. It keeps the original primary,
+selects up to three verified alternatives, and prints **only candidate indexes,
+result classifications and counts**, not private URLs or credentials.
+
+The fallback candidates come from the official BNB Chain testnet set
+`data-seed-prebsc-1-s1.bnbchain.org:8545` and
+`data-seed-prebsc-2-s1.bnbchain.org:8545`, plus the publicly listed
+`bsc-testnet-rpc.publicnode.com`. Any existing custom configured
+alternatives are evaluated before these. Invalid/wrong-network candidates
+are omitted. Public endpoints are not assumed to be archival; the result
+distinguishes `FULL_HISTORY_VERIFIED` from `RECENT_READS_ONLY`.
+
+`--check` never changes files or services; `--apply` creates a root-only
+backed-up copy under `/var/backups/globaldroptrade` and atomically replaces
+only the root-owned `/etc/globaldroptrade/trades.env`.
+It does **not** restart the API or signing worker. The new API fallbacks
+take effect after a separate, controlled API-only restart:
+
+```bash
+systemctl restart globaldroptrade-api.service
+curl -fsS --max-time 15 https://globaldroptrade.com/api/config
+```
+
+Check that chain 97 and the known vault remain unchanged. If API restart
+fails, restore the saved backup reported by the script and restart only
+the API again. Do not restart the financial worker automatically or
+change its primary RPC during an in-flight signed transaction.
+Do not share the env file, any private RPC URL or credentials.
