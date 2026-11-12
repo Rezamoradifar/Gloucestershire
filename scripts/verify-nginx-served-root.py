@@ -31,34 +31,46 @@ def candidates(config: str):
     return roots
 
 
-def find_served_root(config: str, html: bytes):
+def find_served_root(config: str, html: bytes, expected_uid=None):
+    if expected_uid is None:
+        expected_uid = os.geteuid()
     if not html:
         raise SiteRootError("EVENT_HISTORY_SERVED_HTML_EMPTY")
     configured = candidates(config)
     if not configured:
         raise SiteRootError("EVENT_HISTORY_NGINX_ROOT_DIRECTIVE_NOT_FOUND")
-    matches = []
+    matches = set()
+    # Support nginx document roots that point to a release symlink. Resolve
+    # the path now and deploy to the verified target rather than writing
+    # through a link. The caller also checks that this link does not change
+    # after the build and before switching the served index.
     for directory in configured:
-        index = directory / "index.html"
         try:
-            # We will deploy into this directory: refuse any symlink switch.
-            d = directory.lstat()
+            real = directory.resolve(strict=True)
+            index = real / "index.html"
+            d = real.stat()
             f = index.lstat()
             if not stat.S_ISDIR(d.st_mode) or not stat.S_ISREG(f.st_mode):
                 continue
-            if d.st_uid != 0 or f.st_uid != 0:
+            if d.st_uid != expected_uid or f.st_uid != expected_uid:
                 continue
             if d.st_mode & 0o022 or f.st_mode & 0o022:
                 continue
+            if any(real == forbidden or forbidden in real.parents for forbidden in
+                   (Path("/etc"), Path("/root"), Path("/proc"), Path("/sys"),
+                    Path("/dev"), Path("/var/lib/globaldroptrade"))):
+                continue
             if index.read_bytes() == html:
-                matches.append(directory)
-        except (OSError, ValueError):
+                matches.add(real)
+        except (OSError, ValueError, RuntimeError):
             continue
     if len(matches) != 1:
         if not matches:
+            print("EVENT_HISTORY_NGINX_CONFIG_ROOTS=" +
+                  "|".join(str(x) for x in configured[:12]), file=sys.stderr)
             raise SiteRootError("EVENT_HISTORY_SITE_ROOT_NOT_VERIFIED")
         raise SiteRootError("EVENT_HISTORY_AMBIGUOUS_SITE_ROOT")
-    return matches[0]
+    return matches.pop()
 
 
 def main():
