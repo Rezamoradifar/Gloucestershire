@@ -25,8 +25,8 @@ export function parseTeamQuery(params){
    fail('TEAM_RELAY_BAD_REQUEST');
   return {kind:'registrations',parent,...(from!==null?{from:Number(from),to:Number(to)}:{})};
  }
- if(params.has('from')||params.has('to')||!integer(params.get('block')))fail('TEAM_RELAY_BAD_REQUEST');
- return {kind:'member',wallet:address(params.get('wallet')),block:Number(params.get('block'))};
+ if(params.has('from')||params.has('to')||(params.has('block')&&!integer(params.get('block'))))fail('TEAM_RELAY_BAD_REQUEST');
+ return {kind:'member',wallet:address(params.get('wallet')),...(params.has('block')?{block:Number(params.get('block'))}:{})};
 }
 
 export async function readTeamSnapshot({provider,config,query}){
@@ -40,7 +40,7 @@ export async function readTeamSnapshot({provider,config,query}){
   fail('TEAM_RELAY_HEAD_UNAVAILABLE');
  const base={version:1,chainId:config.chainId,vaultAddress:getAddress(config.address),confirmedHead};
  if(query.kind==='registrations'&&query.from===undefined)return {...base,kind:'registrations',parent:query.parent,first:null,last:null,members:[]};
- const block=query.kind==='member'?query.block:query.to;
+ const block=query.kind==='member'?(query.block??confirmedHead):query.to;
  if(block>confirmedHead)fail('TEAM_RELAY_NOT_CONFIRMED');
  const at=await provider.getBlock(block);
  if(!at||at.number!==block||!hexHash(at.hash))fail('TEAM_RELAY_CHECKPOINT_INVALID');
