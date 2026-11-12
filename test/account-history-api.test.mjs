@@ -128,3 +128,27 @@ test('HTTP history endpoint has sanitized errors and no server-secret leakage',a
   assert.ok(!JSON.stringify(await bad.json()).includes('secret'));
  }finally{history.close();await new Promise(resolve=>server.close(resolve));}
 });
+
+
+test('history scans bounded block windows and reaches old deposits without large RPC queries',async()=>{
+ const f=fixture();
+ f.provider.getBlockNumber=async()=>7000;
+ const scan=f.provider.getLogs;
+ f.provider.getLogs=async filter=>{
+  assert.ok(filter.toBlock-filter.fromBlock+1<=500,'history must keep RPC log ranges bounded');
+  return scan(filter);
+ };
+ const seen=new Set();let cursor=null,pages=0;
+ do{
+  const page=await readAccountHistoryPage({provider:f.provider,metadata:f.metadata,config,wallet,before:cursor});
+  assert.ok(page.scannedTo-page.scannedFrom<1000);
+  for(const item of page.items){
+   assert.equal(seen.has(item.id),false,'a historical event was duplicated');
+   seen.add(item.id);
+  }
+  cursor=page.nextCursor;pages++;
+  assert.ok(pages<=12,'history cursor did not reach the deployed contract start');
+ }while(cursor!==null);
+ assert.equal(seen.size,6,'oldest records and newer confirmed credits must remain accessible');
+ assert.ok(pages>2,'sparse windows must page rather than invent an empty full history');
+});
