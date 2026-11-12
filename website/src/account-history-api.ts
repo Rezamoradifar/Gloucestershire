@@ -25,9 +25,10 @@ const validAmount=(v:unknown)=>v===null||(typeof v==='string'&&decimal.test(v)&&
 export function parseAccountHistoryPage(value:unknown,{wallet,chainId,vaultAddress}:{
  wallet:string;chainId:number;vaultAddress:string
 }):AccountHistoryPage{
- const v=value as Record<string,any>|null;
  const invalid=():never=>{throw Error('The historical transaction response was invalid. Please retry.');};
- if(!v||v.version!==1||v.chainId!==chainId||!isAddress(v.vaultAddress)||!isAddress(v.wallet)||
+ if(value===null||typeof value!=='object'||Array.isArray(value))invalid();
+ const v=value as Record<string,any>;
+ if(v.version!==1||v.version!==1||v.chainId!==chainId||!isAddress(v.vaultAddress)||!isAddress(v.wallet)||
   getAddress(v.vaultAddress)!==getAddress(vaultAddress)||getAddress(v.wallet)!==getAddress(wallet)||
   !validNumber(v.confirmedThrough)||!Array.isArray(v.items)||v.items.length>50||
   (v.nextCursor!==null&&(typeof v.nextCursor!=='string'||!cursor.test(v.nextCursor)))||
