@@ -32,7 +32,7 @@ export function parseTeamQuery(params){
 
 // Read the exact contract's subtree volume accounting at one canonical block.
 // Never return a partial or guessed sum when propagation is still pending.
-const MAX_MEMBERS=4096,MAX_CONCURRENCY=4;
+const MAX_MEMBERS=256,MAX_JOBS=64,MAX_CONCURRENCY=4;
 async function bounded(items,fn){
  const values=new Array(items.length);let cursor=0;
  await Promise.all(Array.from({length:Math.min(MAX_CONCURRENCY,items.length)},async()=>{
@@ -50,7 +50,7 @@ export async function verifiedVolumes(provider,address,wallet,block){
  ],provider);
  const at={blockTag:block};
  const jobs=Number(await vault.volumeJobCount(at));
- if(!Number.isSafeInteger(jobs)||jobs>MAX_MEMBERS)fail('TEAM_RELAY_INDEX_REQUIRED');
+ if(!Number.isSafeInteger(jobs)||jobs>MAX_JOBS)fail('TEAM_RELAY_INDEX_REQUIRED');
  // Pending job ancestors make reported network volumes incomplete.
  for(let start=0;start<jobs;start+=64){
   const rows=await bounded(Array.from({length:Math.min(64,jobs-start)},(_,i)=>start+i),
