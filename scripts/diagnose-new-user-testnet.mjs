@@ -140,6 +140,7 @@ async function main(){
     confirmedHead:head.number
    };
    report.requestedWallet.reasonHints=[];
+   if(!user.registered)report.requestedWallet.reasonHints.push('WALLET_NOT_REGISTERED_ON_THIS_VAULT');
    if(Number(positionCount)===0){
     report.requestedWallet.reasonHints.push('NO_POSITION_ON_THIS_VAULT');
    }else if(report.requestedWallet.positionCountInIndex<Number(positionCount)){
@@ -188,9 +189,11 @@ async function main(){
     periods});
    if(selectedWallet&&nextDue<=head.timestamp)
     report.requestedWallet.reasonHints.push('POSITION_HAS_DUE_UNPROCESSED_PERIODS');
-   if(selectedWallet&&periods.some(period=>period.expectedPersonal!=='0.0'&&
-    !period.confirmedPersonalBatch))
+   if(selectedWallet&&periods.some(period=>period.expectedPersonal!==null&&
+    Number(period.expectedPersonal)>0&&!period.confirmedPersonalBatch))
     report.requestedWallet.reasonHints.push('EXPECTED_PERSONAL_CREDIT_NOT_CONFIRMED');
+   if(selectedWallet&&paid>0&&periods.every(period=>!period.activityEligible))
+    report.requestedWallet.reasonHints.push('PROCESSED_PERIODS_NOT_ACTIVITY_ELIGIBLE');
   }
   return report;
   }
