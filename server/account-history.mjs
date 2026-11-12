@@ -91,8 +91,8 @@ function eventRow(log,parsed,head,token,decimals,timestamp,source){
    case 'CustomerStatus':
     label='Customer status changed';detail='Active: '+Boolean(args.active)+', VIP/KYC: '+Boolean(args.vipKyc);break;
    case 'NetworkRewardEarned':
-    label='Network stage achieved';asset=null;amount=formatUnits(args.rewardUsd,18)+' USD';
-    detail='Milestone amount; the associated ProfitCredited record is separate and must not be double-counted.';break;
+    label='Network stage achieved';asset=null;amount=null;
+    detail='Nominal milestone: '+formatUnits(args.rewardUsd,18)+' USD; the related ledger credit is listed separately and must not be double-counted.';break;
    case 'SaleSettled':
     label='Sales profit settled';amount=unit(args.grossProfit);
     detail='Sales settlement; the associated profit ledger credit is listed separately.';break;
