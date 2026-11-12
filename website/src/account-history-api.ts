@@ -28,7 +28,7 @@ export function parseAccountHistoryPage(value:unknown,{wallet,chainId,vaultAddre
  const invalid=():never=>{throw Error('The historical transaction response was invalid. Please retry.');};
  if(value===null||typeof value!=='object'||Array.isArray(value))invalid();
  const v=value as Record<string,any>;
- if(v.version!==1||v.version!==1||v.chainId!==chainId||!isAddress(v.vaultAddress)||!isAddress(v.wallet)||
+ if(v.version!==1||v.chainId!==chainId||!isAddress(v.vaultAddress)||!isAddress(v.wallet)||
   getAddress(v.vaultAddress)!==getAddress(vaultAddress)||getAddress(v.wallet)!==getAddress(wallet)||
   !validNumber(v.confirmedThrough)||!Array.isArray(v.items)||v.items.length>50||
   (v.nextCursor!==null&&(typeof v.nextCursor!=='string'||!cursor.test(v.nextCursor)))||
@@ -70,7 +70,30 @@ export async function fetchAccountHistory({
  const params=new URLSearchParams({wallet:getAddress(wallet),limit:String(limit)});
  if(before!==null)params.set('before',before);
  const requestSignal=signal?AbortSignal.any([signal,AbortSignal.timeout(35000)]):AbortSignal.timeout(35000);
- const response=await fetcher('/api/account-history?'+params.toString(),{cache:'no-store',signal:requestSignal});
- if(!response.ok)throw Error(response.status===400?'Invalid history request.':'History is temporarily unavailable. Please retry.');
+ let response:Response;
+ try{
+  response=await fetcher('/api/account-history?'+params.toString(),{cache:'no-store',signal:requestSignal});
+ }catch(error){
+  if(error instanceof Error&&error.name==='TimeoutError')
+   throw Error('History RPC timed out. Retry or load fewer confirmed blocks.');
+  throw error;
+ }
+ if(response.status===404)
+  throw Error('Account history API is not installed on the server. Frontend and API versions must match.');
+ if(response.status===400)throw Error('Invalid history request.');
+ if(!response.ok){
+  const payload=await response.json().catch(()=>null) as {reason?:unknown}|null;
+  const reason=payload?.reason;
+  const messages:Record<string,string>={
+   RATE_LIMITED:'History RPC is rate-limited. Retry shortly.',
+   ARCHIVE_REQUIRED:'History RPC cannot read the required older blocks. An archive-capable RPC is needed.',
+   RPC_TIMEOUT:'History RPC timed out. Retry shortly.',
+   RPC_BUSY:'History RPC is busy with other requests. Retry shortly.',
+   CHAIN_REORG:'The blockchain changed during the history scan. Retry after confirmation.',
+   WRONG_CHAIN:'History RPC returned the wrong BNB Chain network.',
+   RPC_UNAVAILABLE:'History RPC is temporarily unavailable. Retry shortly.'
+  };
+  throw Error(typeof reason==='string'&&messages[reason]?messages[reason]:'History RPC is temporarily unavailable. Retry shortly.');
+ }
  return parseAccountHistoryPage(await response.json(),{wallet,chainId,vaultAddress});
 }
