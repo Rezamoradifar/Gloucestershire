@@ -22,8 +22,11 @@ unit=/etc/systemd/system/globaldroptrade-api.service
 previous_api=$(readlink -f /opt/globaldroptrade-api/current)
 [ -d "$previous_api" ] || { echo 'ACCOUNT_HISTORY_CURRENT_API_REQUIRED'; exit 1; }
 # Refuse to overwrite an unfamiliar live API release with older source code.
-[ "$(git hash-object "$previous_api/server/trades-api.mjs")" = 13e11f9251a2434cfb8039276ce4cfc2c0aa8152 ] ||
- { echo 'ACCOUNT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED'; exit 1; }
+live_api_sha=$(git hash-object "$previous_api/server/trades-api.mjs")
+case "$live_api_sha" in
+ 13e11f9251a2434cfb8039276ce4cfc2c0aa8152|65e8fba4d20409564f7707d98808efa7aac56772|991727bce4b7ba9b5efa056e3173567b15eead91) ;;
+ *) echo 'ACCOUNT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED'; exit 1 ;;
+esac
 nginx -t
 
 node --env-file="$envfile" --input-type=module - <<'JS'
