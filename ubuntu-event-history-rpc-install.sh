@@ -60,16 +60,12 @@ if(publicConfig.version!==1||publicConfig.chainId!==current.chainId||
  throw Error('EVENT_HISTORY_API_TARGET_MISMATCH');
 JS
 
-# Find the real served static root via exact byte comparison, not assumptions.
-site_root=''
-for index in /var/www/globaldroptrade/index.html /var/www/globaldroptrade/site/index.html \
- /var/www/globaldroptrade.com/index.html /var/www/html/index.html; do
- if [ -f "$index" ] && [ ! -L "$index" ] && cmp -s "$index" "$stage/served-before.html"; then
-  [ -z "$site_root" ] || { echo 'EVENT_HISTORY_AMBIGUOUS_SITE_ROOT'; exit 1; }
-  site_root=$(dirname -- "$index")
- fi
-done
+# Derive the site's root from the active nginx configuration rather than fixed paths.
+command -v python3 >/dev/null || { echo 'EVENT_HISTORY_PYTHON_REQUIRED'; exit 1; }
+nginx -T > "$stage/nginx-verified.conf" 2>/dev/null || { echo 'EVENT_HISTORY_NGINX_CONFIG_READ_FAILED'; exit 1; }
+site_root=$(python3 scripts/verify-nginx-served-root.py --nginx-config "$stage/nginx-verified.conf" --served "$stage/served-before.html")
 [ -n "$site_root" ] || { echo 'EVENT_HISTORY_SITE_ROOT_NOT_VERIFIED'; exit 1; }
+echo "EVENT_HISTORY_VERIFIED_SITE_ROOT=$site_root"
 # Do not replace a different dashboard's assets with this UI branch.
 if ! grep -R -Fq --include='*.js' 'Deep scan older blocks' "$site_root/assets"; then
  echo 'EVENT_HISTORY_LIVE_UI_VERSION_REVIEW_REQUIRED'; exit 1

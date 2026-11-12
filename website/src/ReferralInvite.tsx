@@ -16,9 +16,9 @@ async function copyPublicText(value:string){
  finally{field.remove();}
 }
 export default function ReferralInvite({
- wallet,registered,connected,onNotice,onError
+ wallet,registered,connected,active,onNotice,onError
 }:{
- wallet:string;registered:boolean;connected:boolean;
+ wallet:string;registered:boolean;connected:boolean;active:boolean;
  onNotice:(value:string)=>void;onError:(value:string)=>void
 }){
  const [copied,setCopied]=useState<'code'|'link'|null>(null);
@@ -50,6 +50,11 @@ export default function ReferralInvite({
    <ShieldCheck size={21}/></div>
   {!connected?<p className="inline-error" role="status">Connect your wallet to the correct network to view your invitation.</p>:
    !registered?<p className="notice neutral" role="status">Register on this contract with your first valid deposit before sharing a referral link. Unregistered referrers cannot be accepted.</p>:null}
+  {connected&&registered&&!active&&<p className="notice neutral" role="status">
+   Your invitation link is valid, but referral commissions may be unavailable
+   until the authorized reporter confirms account activity and each relevant
+   24-hour check-in is eligible. Sharing alone does not create a credit.
+  </p>}
   <div className="referral-invite-fields">
    <label htmlFor="referral-code-value">Referral code (wallet address)</label>
    <div className="referral-invite-copy">

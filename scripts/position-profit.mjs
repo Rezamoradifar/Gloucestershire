@@ -130,7 +130,12 @@ export async function planPositionHour({provider,vault,policy,state,save=()=>{},
   final=await indexedPositionCheckpoint({provider,policy,state});
   if(!final)return {status:'indexing',indexTarget:state.positionScanTarget?.number??null,indexThrough:state.positionIndex?.through??null};
  }else{
-  const scan=await scanPositionHistory({provider,policy,state,save,confirmations,maxRegistryPages,parallelPositionEvents:isNewDeployerTestnetPolicy(policy)});
+  // A previously fully indexed target must advance to confirmed new deposits
+  // even when older positions still have unpaid periods. This does not change
+  // any paid cursor or authorize an additional batch.
+  const scan=await scanPositionHistory({provider,policy,state,save,confirmations,maxRegistryPages,
+   advanceCompletedTarget:isNewDeployerTestnetPolicy(policy),
+   parallelPositionEvents:isNewDeployerTestnetPolicy(policy)});
   if(scan.status!=='indexed')return scan;
   ({final,wasIndexed}=scan);
  }
