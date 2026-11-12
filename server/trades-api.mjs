@@ -149,13 +149,15 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,marketpl
       'Invalid verified history query.':'Verified history is temporarily unavailable.'});
    }
   }
-  if(url.pathname==='/api/team/registrations'||url.pathname==='/api/team/member'){
+  if(['/api/team/registrations','/api/team/member','/api/team/volume'].includes(url.pathname)){
    if(!teamRelay)return send(503,{error:'Verified team service is not configured.'});
    try{
     const params=new URLSearchParams(url.searchParams);
-    const member=url.pathname.endsWith('/member');
-    if(member&&(!params.has('wallet')||params.has('parent'))||!member&&(!params.has('parent')||params.has('wallet')))
+    const isRegistrations=url.pathname.endsWith('/registrations');
+    const isVolume=url.pathname.endsWith('/volume');
+    if(isRegistrations?(!params.has('parent')||params.has('wallet')):(!params.has('wallet')||params.has('parent')))
      return send(400,{error:'Invalid team query.'});
+    if(isVolume)params.set('mode','volume');
     return send(200,await teamRelay.get(params));
    }catch(error){return send(error?.code==='TEAM_RELAY_BAD_REQUEST'?400:503,{error:error?.code==='TEAM_RELAY_BAD_REQUEST'?'Invalid team query.':'Verified team RPC is temporarily unavailable.'});}
   }
