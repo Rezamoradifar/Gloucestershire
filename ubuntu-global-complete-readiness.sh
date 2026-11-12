@@ -31,6 +31,8 @@ if [ "$mode" = --local ]; then
   test/testnet-zero-v2-preflight.test.mjs \
   test/testnet-zero-v2-wrapper.test.mjs \
   test/testnet-withdrawal-audit.test.mjs \
+  test/check-live-worker-index.test.mjs \
+  test/global-consolidated-readiness.test.mjs \
   test/history-relay.test.mjs \
   test/event-history-rpc-installer.test.mjs
  npm ci --prefix website --ignore-scripts --no-audit --no-fund
@@ -90,6 +92,8 @@ print('GLOBAL_AUTOMATION_NO_BLOCKERS')
 print('GLOBAL_LAST_PROCESSED_CREDIT_EPOCH', (automation.get('lastCredit') or {}).get('epoch'))
 PY
 
+echo 'GLOBAL_CHECK: deployed worker code and live financial cursors'
+node scripts/check-live-worker-index.mjs
 echo 'GLOBAL_CHECK: RPC archive doctor'
 node scripts/testnet-rpc-doctor.mjs
 echo 'GLOBAL_CHECK: latest five distinct new depositors'
