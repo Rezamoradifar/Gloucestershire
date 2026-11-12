@@ -161,3 +161,22 @@ test('history errors disclose only public-safe RPC failure reasons',()=>{
  assert.equal(publicHistoryRpcReason({code:'ACCOUNT_HISTORY_REORG'}),'CHAIN_REORG');
  assert.equal(publicHistoryRpcReason(Error('private URL https://secret.invalid/key')),'RPC_UNAVAILABLE');
 });
+
+test('multi-RPC history limits fanout and only tries later providers after a whole-page failure',async()=>{
+ const f=fixture();
+ let unexpectedCalls=0;
+ const unavailable={send:async()=>{throw Error('private secret')}};
+ const unused={...f.provider,send:async()=>{unexpectedCalls++;return '0x61'}};
+ const first=createAccountHistory(config,{providers:[f.provider,unavailable,unused],metadata:f.metadata});
+ try{
+  const page=await first.get(new URLSearchParams('wallet='+wallet));
+  assert.equal(page.items.length,5);
+  assert.equal(unexpectedCalls,0,'a working first RPC pair must not fan out to all configured endpoints');
+ }finally{first.close();}
+ const second=createAccountHistory(config,{providers:[unavailable,unavailable,f.provider],metadata:f.metadata});
+ try{
+  const page=await second.get(new URLSearchParams('wallet='+wallet));
+  assert.equal(page.items.length,5,'a fully failing first pair must permit a safe second-pair fallback');
+  assert.ok(!JSON.stringify(page).includes('private secret'));
+ }finally{second.close();}
+});
