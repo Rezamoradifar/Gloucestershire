@@ -173,6 +173,7 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
    </div>
    {scope==='wallet'&&<p className="ledger-note">Credited profit is recorded inside the contract, not sent to the wallet until withdrawal. Network milestones are recorded USD metrics, not USDT deposits. Values and dates below come from verified contract events.</p>}
    {scope==='global'&&<p className="ledger-note">This is a public event browser for the selected asset, not a reconciliation or a complete customer accounting statement.</p>}
+   <p className="ledger-note">Source: confirmed contract events from the Global server RPC. When available, database-indexed pages are rechecked against the canonical blockchain before display. Missing RPC history is shown as unavailable, never as zero activity.</p>
    <div className="history-coverage"><ShieldCheck size={18}/><div><strong>{coverage}</strong><span>{head!==null?'Confirmed snapshot up to block '+head.toLocaleString('en-US')+' (3-block safety buffer)':'Connect your wallet to load verified records'}</span></div><span className="history-scan-state">{!connected?'NOT CONNECTED':loading?'SCANNING':fullLedger?'GENESIS REACHED':'PARTIAL INDEX'}</span></div>
    <div className="history-summary" aria-label="Totals among loaded matching records">
     {([{kind:'deposit',title:'Deposits'},{kind:'profit',title:'Profit credited'},{kind:'withdrawal',title:'Withdrawals · gross'},{kind:'reinvest',title:'Reinvested'}] as const).map(({kind,title})=>
