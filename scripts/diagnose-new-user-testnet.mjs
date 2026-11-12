@@ -5,8 +5,9 @@ import {parseEnv} from 'node:util';
 import {pathToFileURL} from 'node:url';
 import path from 'node:path';
 import {
- Contract,FetchRequest,JsonRpcProvider,formatUnits,getAddress,keccak256,toUtf8Bytes
+ Contract,formatUnits,getAddress,keccak256,toUtf8Bytes
 } from 'ethers';
+import {withVerifiedDiagnosticRpc} from './new-user-diagnostic-rpc.mjs';
 import {readConfig} from '../server/trades-api.mjs';
 import {validateDailyPolicy,isNewDeployerTestnetPolicy} from './daily-profit.mjs';
 import {blockAtTime} from './daily-profit.mjs';
@@ -79,12 +80,11 @@ async function main(){
  }
  const daily=journal.daily||{},index=daily.positionIndex||{},registry=daily.registry||{},
   positions=latestUserPositions(index.positions||{},limit);
- const request=new FetchRequest(env.rpcUrl);request.timeout=16000;
- const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
- try{
-  if(Number(await provider.send('eth_chainId',[]))!==97)fail('NEW_USER_DIAGNOSTIC_WRONG_CHAIN');
-  const head=await provider.getBlock(Math.max(0,(await provider.getBlockNumber())-Math.max(3,env.confirmations)));
-  if(!head)fail('NEW_USER_DIAGNOSTIC_HEAD_UNAVAILABLE');
+ const verified=await withVerifiedDiagnosticRpc({
+  config:env,expectedVault,runtimeHash:journal.identity.runtimeHash,
+  deploymentBlock:policy.deploymentBlock,
+  onAttempt:entry=>console.error('NEW_USER_RPC_CANDIDATE '+JSON.stringify(entry)),
+  read:async(provider,head)=>{
   const vault=new Contract(expectedVault,abi,provider),token=getAddress(await vault.usdt()),
    decimals=Number(await vault.tokenDecimals());
   const activity=createDailyActivityReader({provider,file:activityPolicy.historyFile,
@@ -129,12 +129,17 @@ async function main(){
     activityCurrent:Boolean(latestCheckIn),latestEligibleCheckInAt:latestCheckIn?new Date(latestCheckIn.block.timestamp*1000).toISOString():null,
     periods});
   }
-  console.log(JSON.stringify(report,null,2));
- }finally{provider.destroy();}
+  return report;
+  }
+ });
+ console.log('NEW_USER_RPC_SELECTED='+verified.usedCandidate);
+ console.log(JSON.stringify(verified.output,null,2));
 }
 let invoked;
 try{if(process.argv[1])invoked=pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href;}catch{}
 if(invoked===import.meta.url)main().catch(e=>{
- console.error(/^NEW_USER_DIAGNOSTIC_[A-Z0-9_]+$/.test(e?.message||'')?e.message:'NEW_USER_DIAGNOSTIC_REVIEW_REQUIRED');
+ const label=/^NEW_USER_DIAGNOSTIC_[A-Z0-9_]+$/.test(e?.message||'')?e.message:'NEW_USER_DIAGNOSTIC_REVIEW_REQUIRED';
+ console.error(label);
+ if(Array.isArray(e?.statuses))console.error('NEW_USER_RPC_SUMMARY '+JSON.stringify(e.statuses));
  process.exitCode=1;
 });
