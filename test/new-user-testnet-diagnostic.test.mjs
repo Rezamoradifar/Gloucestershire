@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import {getAddress,keccak256,toUtf8Bytes} from 'ethers';
-import {latestUserPositions,periodTimes,personalBatchId,expectedVault} from '../scripts/diagnose-new-user-testnet.mjs';
+import {latestUserPositions,positionsForWallet,periodTimes,personalBatchId,expectedVault} from '../scripts/diagnose-new-user-testnet.mjs';
 
 const memberA=getAddress('0x1111111111111111111111111111111111111111');
 const memberB=getAddress('0x2222222222222222222222222222222222222222');
@@ -42,4 +42,29 @@ test('diagnosis has no signer, journal write, status publication or financial se
  assert.match(source,/usedRewardBatch/);
  assert.match(source,/expectedPersonal/);
  assert.match(source,/transactionsSent:0/);
+});
+
+test('exact wallet diagnostic filters every indexed position of the requested wallet',()=>{
+ const rows={
+  [memberA.toLowerCase()+':0']:{member:memberA,id:'0',openedAt:1000},
+  [memberA.toLowerCase()+':1']:{member:memberA,id:'1',openedAt:3000},
+  [memberB.toLowerCase()+':0']:{member:memberB,id:'0',openedAt:4000}
+ };
+ const selected=positionsForWallet(rows,memberA,10);
+ assert.deepEqual(selected.map(x=>x.row.id),['1','0']);
+ assert.ok(selected.every(x=>x.row.member===memberA));
+ assert.deepEqual(positionsForWallet(rows,'0x3333333333333333333333333333333333333333'),[]);
+ assert.throws(()=>positionsForWallet(rows,'not-a-wallet'),/WALLET_REQUIRED/);
+ assert.throws(()=>positionsForWallet({'bad-key':{member:memberA,id:'0',openedAt:1000}},memberA),/IDENTITY_CHANGED/);
+ assert.throws(()=>positionsForWallet(rows,memberA,11),/WALLET_REQUIRED/);
+});
+test('wallet diagnosis has no financial writes or signer and never exposes RPC candidate addresses',()=>{
+ const source=fs.readFileSync('scripts/diagnose-new-user-testnet.mjs','utf8');
+ assert.match(source,/selectedWallet\?positionsForWallet/);
+ assert.match(source,/requestedWallet/);
+ assert.match(source,/positionCountOnChain/);
+ assert.match(source,/currentCheckIn/);
+ assert.match(source,/confirmedPersonalBatch/);
+ for(const phrase of ['sendTransaction(','broadcastTransaction(','new Wallet(','readPrivateKey('])
+  assert.equal(source.includes(phrase),false,phrase);
 });

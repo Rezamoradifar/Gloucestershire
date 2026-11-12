@@ -19,6 +19,8 @@ const privateEnv='/etc/globaldroptrade/trades.env';
 const journalFile=NEW_DEPLOYER_AUTOMATION_DIR+'/journal.json';
 const abi=[
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 nextWithdrawal)',
+ 'function users(address) view returns(address referrer,bool registered,bool active,bool vipKyc,uint32 activeDirect,uint256 capitalUsd,uint256 salesUsd)',
+ 'function positionCount(address) view returns(uint256)',
  'function positionOf(address,uint256) view returns((address asset,uint256 principal,uint256 capitalUsd,uint256 unlockAt,uint16 penaltyBps))',
  'function dailyTargetBps(address) view returns(uint16)',
  'function usedRewardBatch(bytes32) view returns(bool)',
@@ -52,6 +54,25 @@ export function latestUserPositions(positions,limit=2){
  }
  return selected;
 }
+export function positionsForWallet(positions,wallet,limit=10){
+ if(typeof wallet!=='string'||!/^0x[0-9a-fA-F]{40}$/.test(wallet)||
+  !Number.isSafeInteger(limit)||limit<1||limit>10)fail('NEW_USER_DIAGNOSTIC_WALLET_REQUIRED');
+ const who=getAddress(wallet.toLowerCase());
+ if(!positions||typeof positions!=='object'||Array.isArray(positions))
+  fail('NEW_USER_DIAGNOSTIC_POSITIONS_REQUIRED');
+ const entries=Object.entries(positions).filter(([,row])=>
+  typeof row?.member==='string'&&row.member.toLowerCase()===who.toLowerCase());
+ for(const [key,row] of entries){
+  if(!/^(0|[1-9][0-9]*)$/.test(String(row.id))||
+   key.toLowerCase()!==who.toLowerCase()+':'+row.id||
+   !Number.isSafeInteger(row.openedAt)||row.openedAt<1)
+   fail('NEW_USER_DIAGNOSTIC_POSITION_IDENTITY_CHANGED');
+ }
+ return entries.sort((a,b)=>b[1].openedAt-a[1].openedAt||
+  a[0].localeCompare(b[0])).slice(0,limit).map(([key,row])=>
+  ({key,row:{...row,member:who}}));
+}
+
 export function personalBatchId({chainId,vault,member,positionId,period,asset}){
  if(chainId!==97||!Number.isSafeInteger(period)||period<0||!/^(0|[1-9][0-9]*)$/.test(String(positionId)))fail('NEW_USER_DIAGNOSTIC_PERIOD_INVALID');
  const domain=['GLOBAL_POSITION_HOURLY_NEW_DEPLOYER_TEST_V1',chainId,getAddress(vault).toLowerCase(),
@@ -65,8 +86,14 @@ export function periodTimes(openedAt,index){
  return {start,end};
 }
 async function main(){
- if(process.getuid?.()!==0||process.argv.slice(2).length>1)fail('NEW_USER_DIAGNOSTIC_ROOT_REQUIRED');
- const limit=process.argv[2]===undefined?2:Number(process.argv[2]);
+ const args=process.argv.slice(2);
+ if(process.getuid?.()!==0||args.length>2||
+    (args.length===2&&args[0]!=='--wallet'))
+  fail('NEW_USER_DIAGNOSTIC_ROOT_REQUIRED');
+ const selectedWallet=args[0]==='--wallet'?args[1]:null;
+ if(selectedWallet!==null&&!/^0x[0-9a-fA-F]{40}$/.test(selectedWallet))
+  fail('NEW_USER_DIAGNOSTIC_WALLET_REQUIRED');
+ const limit=selectedWallet?10:args[0]===undefined?2:Number(args[0]);
  if(!Number.isSafeInteger(limit)||limit<1||limit>10)fail('NEW_USER_DIAGNOSTIC_LIMIT_REQUIRED');
  const env=readConfig(parseEnv(fs.readFileSync(privateEnv,'utf8')));
  const journal=privateJson(journalFile),policy=validateDailyPolicy(privateJson(NEW_DEPLOYER_DAILY_POLICY_FILE));
@@ -79,7 +106,8 @@ async function main(){
   fail('NEW_USER_DIAGNOSTIC_TARGET_MISMATCH');
  }
  const daily=journal.daily||{},index=daily.positionIndex||{},registry=daily.registry||{},
-  positions=latestUserPositions(index.positions||{},limit);
+  positions=selectedWallet?positionsForWallet(index.positions||{},selectedWallet,limit):
+   latestUserPositions(index.positions||{},limit);
  const verified=await withVerifiedDiagnosticRpc({
   config:env,expectedVault,runtimeHash:journal.identity.runtimeHash,
   deploymentBlock:policy.deploymentBlock,
@@ -95,6 +123,34 @@ async function main(){
    knownMembers:Object.keys(registry.members||{}).length,
    knownPositions:Object.keys(index.positions||{}).length,activityActivation:activityPolicy.activationTimestamp,
    users:[],signerOpened:false,transactionsSigned:0,transactionsSent:0};
+  if(selectedWallet){
+   const wallet=getAddress(selectedWallet.toLowerCase());
+   const [user,positionCount,usdtAccount]=await Promise.all([
+    vault.users(wallet,{blockTag:head.number}),
+    vault.positionCount(wallet,{blockTag:head.number}),
+    vault.accounts(wallet,token,{blockTag:head.number})
+   ]);
+   report.requestedWallet={
+    address:wallet,registeredOnChain:Boolean(user.registered),
+    positionCountOnChain:Number(positionCount),
+    positionCountInIndex:Object.keys(index.positions||{}).filter(key=>
+     key.toLowerCase().startsWith(wallet.toLowerCase()+':')).length,
+    walletUsdtPrincipal:formatUnits(usdtAccount.principal,decimals),
+    walletUsdtProfit:formatUnits(usdtAccount.profit,decimals),
+    currentCheckIn:Boolean(await activity.evidence(wallet,head.timestamp+1)),
+    indexedThrough:index.through??null,
+    confirmedHead:head.number
+   };
+   report.requestedWallet.reasonHints=[];
+   if(!user.registered)report.requestedWallet.reasonHints.push('WALLET_NOT_REGISTERED_ON_THIS_VAULT');
+   if(Number(positionCount)===0){
+    report.requestedWallet.reasonHints.push('NO_POSITION_ON_THIS_VAULT');
+   }else if(report.requestedWallet.positionCountInIndex<Number(positionCount)){
+    report.requestedWallet.reasonHints.push('NEW_POSITION_NOT_INDEXED');
+   }else if(!report.requestedWallet.currentCheckIn){
+    report.requestedWallet.reasonHints.push('CURRENT_24H_ACTIVITY_NOT_VALID');
+   }
+  }
   for(const {key,row} of positions){
    const paid=daily.positionPaid?.[key]??0;
    if(!Number.isSafeInteger(paid)||paid<0)fail('NEW_USER_DIAGNOSTIC_PAID_CURSOR_INVALID');
@@ -133,6 +189,13 @@ async function main(){
     walletPrincipal:formatUnits(account.principal,decimals),walletProfit:formatUnits(account.profit,decimals),
     activityCurrent:Boolean(latestCheckIn),latestEligibleCheckInAt:latestCheckIn?new Date(latestCheckIn.block.timestamp*1000).toISOString():null,
     periods});
+   if(selectedWallet&&nextDue<=head.timestamp)
+    report.requestedWallet.reasonHints.push('POSITION_HAS_DUE_UNPROCESSED_PERIODS');
+   if(selectedWallet&&periods.some(period=>period.expectedPersonal!==null&&
+    Number(period.expectedPersonal)>0&&!period.confirmedPersonalBatch))
+    report.requestedWallet.reasonHints.push('EXPECTED_PERSONAL_CREDIT_NOT_CONFIRMED');
+   if(selectedWallet&&paid>0&&periods.every(period=>!period.activityEligible))
+    report.requestedWallet.reasonHints.push('PROCESSED_PERIODS_NOT_ACTIVITY_ELIGIBLE');
   }
   return report;
   }
