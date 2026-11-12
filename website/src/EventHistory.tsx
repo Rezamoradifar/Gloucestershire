@@ -1,13 +1,13 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {zeroPadValue} from 'ethers';
+import type {Log} from 'ethers';
 import {ArrowDown,ArrowLeft,ArrowRight,CalendarClock,Check,Clock3,Download,ExternalLink,FileClock,History,RefreshCw,Search,ShieldCheck,Wallet} from 'lucide-react';
 import {displayAmount} from './money';
 import FinancialInsights from './FinancialInsights';
 import WithdrawalHistoryPanel from './WithdrawalHistoryPanel';
-import {filterHistory,financialTopics,historyCsv,historyLabels,historyTotals,networkRewardTopic,parseFinancialLog,type HistoryFilter,type LedgerEvent} from './history-ledger';
+import {filterHistory,historyCsv,historyLabels,historyTotals,parseFinancialLog,type HistoryFilter,type LedgerEvent} from './history-ledger';
 import {errorText,type Asset} from './chain';
 import {readOnlySession} from './read-only-session';
-import {readEventPage} from './adaptive-event-logs';
+import {requestVerifiedHistory} from './server-event-history';
 import {chainId,explorer,vaultAddress} from './config';
 import './history-center.css';
 
@@ -15,7 +15,6 @@ export {parseFinancialLog} from './history-ledger';
 type Scan='finance'|'reward';
 type ScanSession={rows:LedgerEvent[];head:number;financeCursor:number|null;rewardCursor:number|null;rewardStarted:boolean};
 const historyCache=new Map<string,ScanSession>();
-const stampCache=new Map<string,number>();
 const PAGE_SIZE=20;
 const initialFilter:HistoryFilter={kind:'all',query:'',from:'',to:'',sort:'newest'};
 const abbreviated=(value:string)=>value.slice(0,10)+'…'+value.slice(-7);
@@ -46,7 +45,7 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
  const scan=async(kind:Scan,mode:'recent'|'older'|'deep'='older')=>{
   const cursor=cursorRef.current[kind];
   if(!connected||!who||!token||cursor===null||busy.current)return;
-  busy.current=true;setLoading(kind);setProgress('Connecting to read-only blockchain history…');
+  busy.current=true;setLoading(kind);setProgress('Reading verified blockchain history from the Global server…');
   if(kind==='finance')setError('');else setRewardError('');
   const identity=generation.current;
   const targetBlocks=mode==='recent'?1024:mode==='deep'?12000:4096;
@@ -55,40 +54,27 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
   const collected:LedgerEvent[]=[];
   let current=cursor,requests=0;
   try{
-   const {provider}=await readOnlySession(who);
-   const latest=await provider.getBlockNumber();
-   if(latest<cursor)throw Error('The chain head has changed. Refresh your account and try again.');
+   // The wallet is only used to confirm the selected account and chain.
+   // The server owns the historical RPC log reads, never the wallet provider.
+   await readOnlySession(who);
+   const verifiedHead=await requestVerifiedHistory({wallet:who,asset:token,scope,kind});
+   if(verifiedHead.confirmedHead<cursor)
+    throw Error('Verified server head is behind this scan. Restart history after the blocks confirm.');
    while(current>=floor&&requests<pageLimit){
     if(generation.current!==identity)return;
-    const topics=kind==='finance'
-     ?[financialTopics,scope==='wallet'?zeroPadValue(who,32):null,zeroPadValue(token,32)]
-     :[networkRewardTopic,zeroPadValue(who,32)];
-    const {logs,first}=await readEventPage(provider,{address:vaultAddress,topics},floor,current,96);
-    for(const log of logs){
-     const row=parseFinancialLog(log);
-     if(row&&(kind==='reward'?row.kind==='networkReward':row.kind!=='networkReward'))collected.push(row);
+    const first=Math.max(floor,current-95);
+    const result=await requestVerifiedHistory({wallet:who,asset:token,scope,kind,from:first,to:current});
+    for(const log of result.logs){
+     const row=parseFinancialLog(log as unknown as Log);
+     if(row&&(kind==='reward'?row.kind==='networkReward':row.kind!=='networkReward'))
+      collected.push({...row,timestamp:log.timestamp});
     }
     current=first-1;requests++;
     if(requests%4===0){
      setProgress('Scanning confirmed blocks '+Math.max(0,current+1).toLocaleString('en-US')+' – '+cursor.toLocaleString('en-US')+' · '+collected.length+' events found');
     }
    }
-   const heights=[...new Set(collected.map(row=>row.block))];
-   // Read block timestamps without changing payment or account state.
-   const times=new Map<number,number>();
-   const missing=heights.filter(height=>!stampCache.has(chainId+':'+height));
-   for(let i=0;i<Math.min(missing.length,240);i+=6){
-    if(generation.current!==identity)return;
-    const batch=missing.slice(i,i+6);
-    const result=await Promise.allSettled(batch.map(height=>provider.getBlock(height)));
-    result.forEach((item,index)=>{
-     if(item.status==='fulfilled'&&item.value){
-      const time=Number(item.value.timestamp);
-      stampCache.set(chainId+':'+batch[index],time);times.set(batch[index],time);
-     }
-    });
-   }
-   const annotated=collected.map(row=>({...row,timestamp:stampCache.get(chainId+':'+row.block)??times.get(row.block)??null}));
+   const annotated=collected;
    if(generation.current!==identity)return;
    const previous=cacheFor();
    if(!previous||previous.head!==headRef.current)throw Error('History session changed; reload to continue.');
@@ -115,9 +101,17 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
    const existing=historyCache.get(key);
    if(existing){sync(existing);}
    else{
-    const start=Math.max(0,block-3);
-    const initial:ScanSession={rows:[],head:start,financeCursor:start,rewardCursor:start,rewardStarted:false};
-    historyCache.set(key,initial);sync(initial);void scan('finance','recent');
+    const identity=generation.current;
+    void (async()=>{
+     try{
+      await readOnlySession(who);
+      const info=await requestVerifiedHistory({wallet:who,asset:token,scope,kind:'finance'});
+      if(generation.current!==identity)return;
+      const start=Math.max(0,Math.min(block-3,info.confirmedHead));
+      const initial:ScanSession={rows:[],head:start,financeCursor:start,rewardCursor:start,rewardStarted:false};
+      historyCache.set(key,initial);sync(initial);void scan('finance','recent');
+     }catch(reason){if(generation.current===identity)setError(errorText(reason));}
+    })();
    }
   }
   return()=>{generation.current++;};
@@ -145,10 +139,18 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
  const refresh=()=>{
   if(!connected||!who||!token||block<=0||busy.current)return;
   generation.current++;busy.current=false;
-  const start=Math.max(0,block-3);
-  const updated:ScanSession={rows:[],head:start,financeCursor:start,rewardCursor:start,rewardStarted:false};
-  historyCache.set(key,updated);sync(updated);setError('');setRewardError('');setFilter(initialFilter);setPage(0);setProgress('');
-  void scan('finance','recent');
+  setError('');setRewardError('');setFilter(initialFilter);setPage(0);setProgress('');
+  const identity=generation.current;
+  void (async()=>{
+   try{
+    await readOnlySession(who);
+    const info=await requestVerifiedHistory({wallet:who,asset:token,scope,kind:'finance'});
+    if(generation.current!==identity)return;
+    const start=Math.max(0,Math.min(block-3,info.confirmedHead));
+    const updated:ScanSession={rows:[],head:start,financeCursor:start,rewardCursor:start,rewardStarted:false};
+    historyCache.set(key,updated);sync(updated);void scan('finance','recent');
+   }catch(reason){if(generation.current===identity)setError(errorText(reason));}
+  })();
  };
  const download=()=>{
   if(filterRows.length===0||invalidDates)return;
@@ -215,14 +217,14 @@ export default function EventHistory({who,asset,token,decimals,block,connected,s
      {entry.group!==undefined&&<><div><span>Reward group</span><b>#{(entry.group+1n).toString()}; stage {entry.stage}</b></div><div><span>Recorded network volume</span><b>{money(entry.volumeUsd??0n,18)} USD</b></div></>}
      <div><span>Source</span><b>Confirmed contract event, block {entry.block}</b></div>
     </details>
-   </article>)}</div>:!loading&&connected&&!invalidDates?<p className="history-empty">No matching events were found in the blocks scanned so far. Older blocks may contain records.</p>:!connected?<p className="history-empty"><Wallet size={20}/> Connect your wallet on the configured chain to browse contract history.</p>:null}
+   </article>)}</div>:!loading&&connected&&!invalidDates&&!error?<p className="history-empty">No matching events were found in the blocks scanned so far. Older blocks may contain records.</p>:!connected?<p className="history-empty"><Wallet size={20}/> Connect your wallet on the configured chain to browse contract history.</p>:null}
    <div className="history-page-controls">
     <button className="small-button" type="button" disabled={page===0} onClick={()=>setPage(p=>p-1)}><ArrowLeft size={15}/> Previous</button>
     <span>Page {filterRows.length?String(Math.min(page+1,pages)):'0'} of {filterRows.length?String(pages):'0'}</span>
     <button className="small-button" type="button" disabled={(page+1)*PAGE_SIZE>=filterRows.length} onClick={()=>setPage(p=>p+1)}>Next <ArrowRight size={15}/></button>
    </div>
    <div className="history-scan-actions">
-    <div><strong><FileClock size={18}/> Need older history?</strong><p>Load more verified block ranges on demand. Full historical coverage depends on the connected wallet RPC's archive and log access.</p></div>
+    <div><strong><FileClock size={18}/> Need older history?</strong><p>Load more verified block ranges on demand. Full historical coverage depends on the verified server RPC's archive and log access.</p></div>
     <div className="history-scan-buttons">
      <button className="small-button" type="button" disabled={!connected||loading!==null||financeCursor===null} onClick={()=>void scan('finance','older')}><ArrowDown size={15}/> Load older finance events</button>
      <button className="small-button" type="button" disabled={!connected||loading!==null||financeCursor===null} onClick={()=>void scan('finance','deep')}>Deep scan older blocks</button>
