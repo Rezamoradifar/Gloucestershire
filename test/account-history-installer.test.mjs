@@ -32,3 +32,10 @@ test('history installer uses exact static and API rollback and cannot erase fina
  assert.match(source,/ACCOUNT_HISTORY_SITE_AND_API_INSTALLED/);
  assert.doesNotMatch(source,/rm -rf[^\n]*globaldroptrade-new-deployer|systemctl (?:stop|disable|restart) globaldroptrade-new-deployer|eth_sendRawTransaction|readPrivateKey|sendTransaction/);
 });
+
+test('history API RPC hotfix is pinned to reviewed previous release hashes only',()=>{
+ assert.match(source,/65e8fba4d20409564f7707d98808efa7aac56772/);
+ assert.match(source,/991727bce4b7ba9b5efa056e3173567b15eead91/);
+ assert.match(source,/ACCOUNT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED/);
+ assert.doesNotMatch(source,/--force|ALLOW_UNVERIFIED_RELEASE/);
+});
