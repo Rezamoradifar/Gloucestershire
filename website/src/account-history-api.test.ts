@@ -18,6 +18,16 @@ const page=(items:HistoryEntry[]=[],nextCursor:string|null=null)=>({
 const parse=(value:unknown)=>parseAccountHistoryPage(value,{wallet,chainId:97,vaultAddress:vault});
 
 describe('verified account history',()=>{
+ it('explains missing server route and sanitized RPC archive or rate-limit errors',async()=>{
+  const request={wallet,chainId:97,vaultAddress:vault};
+  const unavailable=async()=>new Response(JSON.stringify({error:'temporarily unavailable',reason:'RATE_LIMITED'}),{status:503});
+  await expect(fetchAccountHistory({...request,fetcher:unavailable as typeof fetch})).rejects.toThrow(/rate-limited/);
+  const archive=async()=>new Response(JSON.stringify({reason:'ARCHIVE_REQUIRED'}),{status:503});
+  await expect(fetchAccountHistory({...request,fetcher:archive as typeof fetch})).rejects.toThrow(/archive-capable/);
+  const missing=async()=>new Response('{}',{status:404});
+  await expect(fetchAccountHistory({...request,fetcher:missing as typeof fetch})).rejects.toThrow(/not installed/);
+ });
+
  it('accepts a valid page with exact token precision and linked receipt',()=>{
   const entry=row(1,90);
   expect(parse(page([entry],'89:4294967295')).items[0]).toEqual(entry);
