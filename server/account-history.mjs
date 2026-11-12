@@ -26,6 +26,17 @@ const vaultTopics=personalEvents.map(name=>vaultInterface.getEvent(name).topicHa
 const saleTopic=vaultInterface.getEvent('SaleSettled').topicHash;
 const requestedTopic=queueInterface.getEvent('Requested').topicHash;
 const statusValues=['pending','paid','cancelled','approved'];
+export function publicHistoryRpcReason(error){
+ const reason=error?.logProbeDiagnostic?.reason;
+ if(reason==='RATE_LIMITED')return 'RATE_LIMITED';
+ if(reason==='HISTORICAL_STATE_UNAVAILABLE')return 'ARCHIVE_REQUIRED';
+ if(reason==='TIMEOUT'||error?.code==='TIMEOUT')return 'RPC_TIMEOUT';
+ if(reason==='CANONICAL_MISMATCH'||reason==='CONFLICTING_DUPLICATE'||
+    error?.code==='ACCOUNT_HISTORY_REORG')return 'CHAIN_REORG';
+ if(error?.code==='ACCOUNT_HISTORY_WRONG_CHAIN')return 'WRONG_CHAIN';
+ if(error?.code==='ACCOUNT_HISTORY_BUSY')return 'RPC_BUSY';
+ return 'RPC_UNAVAILABLE';
+}
 const maxLogIndex=4294967295;
 // Keep each HTTP page small enough for limited public RPC providers and nginx deadlines.
 // Older history remains reachable by a stable (block:log-index) cursor.
@@ -215,9 +226,18 @@ export function createAccountHistory(config,{providers,metadata}={}){
    if(pending.size>=3)fail('ACCOUNT_HISTORY_BUSY');
    // Race complete verified pages, never mix log subsets from different RPC histories.
    // Bound shared expensive reads: duplicate requests share one pending promise.
+   const errors=[];
    const work=Promise.any(candidates.map(provider=>readAccountHistoryPage({
     provider,config,...args,maxWindows:historyScanWindowsPerRequest,metadata
-   }))).catch(()=>fail('ACCOUNT_HISTORY_UNAVAILABLE'));
+   }).catch(error=>{errors.push(publicHistoryRpcReason(error));throw error;})))
+    .catch(()=>{
+     const priority=['CHAIN_REORG','WRONG_CHAIN','ARCHIVE_REQUIRED','RATE_LIMITED',
+      'RPC_TIMEOUT','RPC_BUSY','RPC_UNAVAILABLE'];
+     const error=Error('ACCOUNT_HISTORY_UNAVAILABLE');
+     error.code='ACCOUNT_HISTORY_UNAVAILABLE';
+     error.reason=priority.find(reason=>errors.includes(reason))||'RPC_UNAVAILABLE';
+     throw error;
+    });
    pending.set(key,work);
    try{return await work;}finally{if(pending.get(key)===work)pending.delete(key);}
   },
