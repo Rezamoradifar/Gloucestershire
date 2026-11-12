@@ -1,4 +1,4 @@
-import {describe,expect,it,vi} from 'vitest';
+import {describe,expect,it} from 'vitest';
 import {fetchAccountHistory,mergeHistoryEntries,parseAccountHistoryPage,type HistoryEntry} from './account-history-api';
 
 const wallet='0x2222222222222222222222222222222222222222';
@@ -39,12 +39,13 @@ describe('verified account history',()=>{
    .toEqual([recent.id,older.id,earliest.id]);
  });
  it('requests bounded older pages and rejects HTTP errors without pretending history is empty',async()=>{
-  const item=row(2,91),mock=vi.fn(async()=>new Response(JSON.stringify(page([item],null)),{status:200,
-   headers:{'Content-Type':'application/json'}})) as unknown as typeof fetch;
-  const result=await fetchAccountHistory({wallet,chainId:97,vaultAddress:vault,before:'95:4',limit:30,fetcher:mock});
+  const item=row(2,91),calls:string[]=[];
+  const mock=async(input:RequestInfo|URL)=>{calls.push(String(input));return new Response(JSON.stringify(page([item],null)),{status:200,
+   headers:{'Content-Type':'application/json'}});};
+  const result=await fetchAccountHistory({wallet,chainId:97,vaultAddress:vault,before:'95:4',limit:30,fetcher:mock as typeof fetch});
   expect(result.items).toHaveLength(1);
-  expect(String(mock.mock.calls[0][0])).toContain('before=95%3A4');
-  const bad=vi.fn(async()=>new Response('{}',{status:503})) as unknown as typeof fetch;
-  await expect(fetchAccountHistory({wallet,chainId:97,vaultAddress:vault,fetcher:bad})).rejects.toThrow(/unavailable/);
+  expect(calls[0]).toContain('before=95%3A4');
+  const bad=async()=>new Response('{}',{status:503});
+  await expect(fetchAccountHistory({wallet,chainId:97,vaultAddress:vault,fetcher:bad as typeof fetch})).rejects.toThrow(/unavailable/);
  });
 });
