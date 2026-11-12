@@ -65,7 +65,7 @@ load=$(systemctl show --property=LoadState --value "$timer")
 original_active=$(systemctl show --property=ActiveState --value "$timer")
 original_enabled=$(systemctl show --property=UnitFileState --value "$timer")
 case "$original_active" in active|inactive|failed) ;; *) echo 'ZERO_V2_TIMER_STATE_REVIEW_REQUIRED'; exit 1;; esac
-case "$original_enabled" in enabled|disabled|masked|static) ;; *) echo 'ZERO_V2_TIMER_ENABLE_STATE_REVIEW_REQUIRED'; exit 1;; esac
+case "$original_enabled" in enabled|disabled|static) ;; *) echo 'ZERO_V2_TIMER_ENABLE_STATE_REVIEW_REQUIRED'; exit 1;; esac
 
 timer_changed=0
 restore_timer() {
@@ -91,9 +91,12 @@ cleanup() {
  exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
-systemctl stop "$timer"
 timer_changed=1
+systemctl stop "$timer"
 if [ "$original_enabled" = enabled ]; then systemctl disable "$timer"; fi
 for attempt in {1..180}; do
  current=$(systemctl show --property=ActiveState --value "$service")
