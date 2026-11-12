@@ -101,6 +101,46 @@ test('volume endpoint reads verified contract branches, never invents earnings',
  await assert.rejects(readTeamSnapshot({provider:wrong,config,query:q('wallet='+parent+'&mode=volume')}),/WRONG_CHAIN/);
 });
 
+test('on-chain branch pagination returns all registered direct wallets without historical log scans',async()=>{
+ const f=fixture(),abi=new Interface([
+  'function networkBranchCount(address) view returns(uint256)',
+  'function networkBranch(address,uint256) view returns(address)'
+ ]);
+ const original=f.provider.call;
+ f.provider.call=async transaction=>{
+  const call=abi.parseTransaction({data:transaction.data});
+  if(call?.name==='networkBranchCount')return abi.encodeFunctionResult(call.name,[call.args[0]===parent?1n:0n]);
+  if(call?.name==='networkBranch')return abi.encodeFunctionResult(call.name,[child]);
+  const user=users.parseTransaction({data:transaction.data});
+  if(user?.name==='users')return users.encodeFunctionResult('users',[parent,true,false,false,0n,800n,1200n]);
+  return original(transaction);
+ };
+ const query='parent='+parent+'&mode=branches&offset=0&limit=12';
+ assert.equal(q(query).kind,'branches');
+ const page=await readTeamSnapshot({provider:f.provider,config,query:q(query)});
+ assert.equal(page.total,1);assert.equal(page.block,197);assert.equal(page.blockHash,hash(197));
+ assert.deepEqual(page.members,[{address:child,branchIndex:0}]);
+ assert.equal(f.calls.length,0,'No wallet or historical event getLogs needed for registered roster');
+ const older=await readTeamSnapshot({provider:f.provider,config,query:q('parent='+parent+'&mode=branches&offset=1&limit=12&block=196')});
+ assert.equal(older.total,1);assert.deepEqual(older.members,[]);
+ const member=await readTeamSnapshot({provider:f.provider,config,query:q('wallet='+child+'&block=197')});
+ assert.equal(member.profile.registered,true);assert.equal(member.profile.active,false);
+ for(const bad of [
+  'parent='+parent+'&mode=branches&limit=21',
+  'parent='+parent+'&mode=branches&offset=-1',
+  'parent='+parent+'&mode=branches&from=1&to=20',
+  'parent='+parent+'&mode=branches&block=abc',
+  'parent='+parent+'&mode=branches&offset=0&offset=1',
+  'wallet='+parent+'&mode=branches'
+ ])assert.throws(()=>q(bad),/TEAM_RELAY_BAD_REQUEST/);
+ const wrong={...f.provider,call:async transaction=>{
+  const parsed=users.parseTransaction({data:transaction.data});
+  if(parsed?.name==='users')return users.encodeFunctionResult('users',[unrelated,true,false,false,0n,0n,0n]);
+  return f.provider.call(transaction);
+ }};
+ await assert.rejects(readTeamSnapshot({provider:wrong,config,query:q(query)}),/TEAM_RELAY_INVALID_BRANCH/);
+});
+
 test('API serves team data, sanitizes errors, and preserves other API paths',async()=>{
  const f=fixture(),teamRelay=createTeamRelay(config,{providers:[f.provider]});
  const feed={configured:true,publicConfig:{version:1,chainId:97,vaultAddress:vault},get:async()=>({status:'live',trades:[]})};
