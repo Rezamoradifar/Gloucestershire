@@ -202,3 +202,27 @@ test('catch-up shares the live worker PID lock and never removes a competing loc
   releaseCatchupLock(lock);assert.equal(fs.existsSync(lock.file),false);
  }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });
+
+
+test('refreshes new depositor positions beyond a previously complete target without replaying older credits',async()=>{
+ const second=getAddress('0x6666666666666666666666666666666666666666');
+ const state=stateFor(1999);
+ const initial=history(1999);
+ const scanOptions={policy,state:state.daily,save:()=>{},maxRegistryPages:4,pageSize:1000,logBlockSpan:1000,advanceCompletedTarget:true};
+ const original=await scanPositionHistory({provider:initial.provider,...scanOptions});
+ assert.equal(original.status,'indexed');
+ assert.equal(original.final.number,1999);
+ const protectedFinancial=structuredClone({paid:state.daily.positionPaid,closed:state.daily.positionClosed,transactions:state.transactions,epoch:state.daily.epoch});
+ const later=history(2499,{extra:[
+  event('Registered',[second,member],2100,41),
+  event('Deposited',[second,token,0,150n,150n,15n],2101,42)
+ ]});
+ const updated=await scanPositionHistory({provider:later.provider,...scanOptions});
+ assert.equal(updated.status,'indexed');
+ assert.equal(updated.final.number,2496);
+ assert.equal(state.daily.registry.through,2496);
+ assert.equal(state.daily.positionIndex.through,2496);
+ assert.equal(state.daily.registry.members[second],2100);
+ assert.equal(state.daily.positionIndex.positions[second.toLowerCase()+':0'].openedBlock,2101);
+ assert.deepEqual({paid:state.daily.positionPaid,closed:state.daily.positionClosed,transactions:state.transactions,epoch:state.daily.epoch},protectedFinancial);
+});
