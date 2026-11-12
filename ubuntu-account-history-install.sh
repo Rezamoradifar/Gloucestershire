@@ -10,7 +10,7 @@ case "$1" in --check|--install) mode="$1";; *) echo 'ACCOUNT_HISTORY_MODE_REQUIR
 case "$(uname -m)" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; *) echo 'UNSUPPORTED_CPU'; exit 1;; esac
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
 if [ -x "$runtime/node" ]; then export PATH="$runtime:$PATH"; fi
-for tool in node npm curl cmp find install cp nginx systemctl readlink flock; do
+for tool in node npm git realpath curl cmp find install cp nginx systemctl readlink flock; do
  command -v "$tool" >/dev/null || { echo "ACCOUNT_HISTORY_TOOL_REQUIRED_$tool"; exit 1; }
 done
 node -e 'const [major,minor]=process.versions.node.split(".").map(Number);if(major<22||(major===22&&minor<12))throw Error("NODE_22_12_REQUIRED")'
@@ -21,6 +21,9 @@ unit=/etc/systemd/system/globaldroptrade-api.service
 [ -f "$unit" ] && [ ! -L "$unit" ] || { echo 'ACCOUNT_HISTORY_API_UNIT_REQUIRED'; exit 1; }
 previous_api=$(readlink -f /opt/globaldroptrade-api/current)
 [ -d "$previous_api" ] || { echo 'ACCOUNT_HISTORY_CURRENT_API_REQUIRED'; exit 1; }
+# Refuse to overwrite an unfamiliar live API release with older source code.
+[ "$(git hash-object "$previous_api/server/trades-api.mjs")" = 13e11f9251a2434cfb8039276ce4cfc2c0aa8152 ] ||
+ { echo 'ACCOUNT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED'; exit 1; }
 nginx -t
 
 node --env-file="$envfile" --input-type=module - <<'JS'
