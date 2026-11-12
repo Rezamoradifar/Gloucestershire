@@ -48,11 +48,19 @@ export async function catchUpNewDeployerIndex({provider,policy,state,save,guard=
   const result=await scanPositionHistory({
    provider,policy,state:state.daily,save:checkedSave,confirmations,
    maxRegistryPages:4,pageSize:1000,logBlockSpan:1000,
+   advanceCompletedTarget:true,
    milliseconds:Math.min(90000,milliseconds-(clock()-start)),reserveMilliseconds:5000
   });
   passes++;last=result.status;
   onProgress({passes,memberThrough:state.daily.registry?.through??null,indexThrough:state.daily.positionIndex?.through??null,indexTarget:state.daily.positionScanTarget?.number??null});
-  if(last==='indexed')break;
+  if(last==='indexed'){
+   // A previously frozen target can become complete during this pass. Do not
+   // report success until a subsequent pass has checked the current confirmed
+   // chain head for new registrations and deposits.
+   const indexedAt=state.daily.positionScanTarget?.number??policy.deploymentBlock-1;
+   if(indexedAt>=Math.max(policy.deploymentBlock,(await provider.getBlockNumber())-confirmations))break;
+   continue;
+  }
   if((state.daily.registry?.through??policy.deploymentBlock-1)===oldMember&&(state.daily.positionIndex?.through??policy.deploymentBlock-1)===oldPosition)break;
  }
  if(financialState(state)!==beforeFinancial)fail('INDEX_CATCHUP_FINANCIAL_STATE_CHANGED');

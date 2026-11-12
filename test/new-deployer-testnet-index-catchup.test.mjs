@@ -102,3 +102,32 @@ test('catch-up shares the live worker PID lock and never removes a competing loc
   releaseCatchupLock(lock);assert.equal(fs.existsSync(lock.file),false);
  }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });
+
+
+test('a later new-user deposit advances the fully indexed target without resetting paid hours',async()=>{
+ const state=stateFor(45000),first=history();
+ const initial=await catchUpNewDeployerIndex({provider:first.provider,policy,state,save:()=>{}});
+ assert.equal(initial.status,'indexed');
+ assert.equal(initial.indexTarget,45000);
+ const paid={...state.daily.positionPaid},closed={...state.daily.positionClosed};
+ const next=history(46000),late=event('Deposited',[member,token,2,200n,200n,20n],45500,30);
+ const provider={
+  ...next.provider,
+  getLogs:async filter=>{
+   const rows=await next.provider.getLogs(filter);
+   return late.blockNumber>=filter.fromBlock&&late.blockNumber<=filter.toBlock&&
+    late.topics[0]===filter.topics[0]?[...rows,late]:rows;
+  }
+ };
+ const updated=await catchUpNewDeployerIndex({provider,policy,state,save:()=>{}});
+ assert.equal(updated.status,'indexed');
+ assert.equal(updated.indexTarget,45997);
+ assert.equal(updated.indexThrough,45997);
+ assert.equal(updated.memberThrough,45997);
+ assert.equal(updated.positions,3);
+ assert.deepEqual(state.daily.positionPaid,paid);
+ assert.deepEqual(state.daily.positionClosed,closed);
+ assert.deepEqual(state.transactions,{});
+ assert.equal(updated.transactionsSent,0);
+ assert.equal(updated.signerOpened,false);
+});
