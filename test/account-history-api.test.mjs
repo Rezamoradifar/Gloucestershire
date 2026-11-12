@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Interface,ZeroAddress,parseEther,zeroPadValue} from 'ethers';
-import {readAccountHistoryPage,createAccountHistory,parseHistoryQuery} from '../server/account-history.mjs';
+import {readAccountHistoryPage,createAccountHistory,parseHistoryQuery,publicHistoryRpcReason} from '../server/account-history.mjs';
 import {createApiServer} from '../server/trades-api.mjs';
 
 const vault='0x1111111111111111111111111111111111111111';
@@ -151,4 +151,13 @@ test('history scans bounded block windows and reaches old deposits without large
  }while(cursor!==null);
  assert.equal(seen.size,6,'oldest records and newer confirmed credits must remain accessible');
  assert.ok(pages>2,'sparse windows must page rather than invent an empty full history');
+});
+
+test('history errors disclose only public-safe RPC failure reasons',()=>{
+ assert.equal(publicHistoryRpcReason({logProbeDiagnostic:{reason:'RATE_LIMITED',url:'https://secret.invalid/key'}}),'RATE_LIMITED');
+ assert.equal(publicHistoryRpcReason({logProbeDiagnostic:{reason:'HISTORICAL_STATE_UNAVAILABLE'}}),'ARCHIVE_REQUIRED');
+ assert.equal(publicHistoryRpcReason({code:'TIMEOUT'}),'RPC_TIMEOUT');
+ assert.equal(publicHistoryRpcReason({code:'ACCOUNT_HISTORY_WRONG_CHAIN'}),'WRONG_CHAIN');
+ assert.equal(publicHistoryRpcReason({code:'ACCOUNT_HISTORY_REORG'}),'CHAIN_REORG');
+ assert.equal(publicHistoryRpcReason(Error('private URL https://secret.invalid/key')),'RPC_UNAVAILABLE');
 });
