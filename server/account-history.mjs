@@ -72,7 +72,7 @@ function eventRow(log,parsed,head,token,decimals,timestamp,source){
   switch(name){
    case 'Registered':label='Account registered';break;
    case 'Deposited':
-    label='Deposit recorded';amount=unit(args.amount);fee=unit(args.feeEach);positionId=args.position.toString();
+    label='Deposit recorded';amount=unit(args.amount);fee=unit(args.feeEach*2n);positionId=args.position.toString();
     detail='Recorded principal; 10% goes to each fee wallet and the remainder to operations.';break;
    case 'Reinvested':
     label='Profit reinvested';amount=unit(args.amount);positionId=args.position.toString();
