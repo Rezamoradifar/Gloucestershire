@@ -144,7 +144,9 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,marketpl
    try{return send(200,await accountHistory.get(url.searchParams));}
    catch(error){
     const bad=error?.code==='ACCOUNT_HISTORY_BAD_REQUEST'||error?.code==='ACCOUNT_HISTORY_CURSOR_INVALID';
-    return send(bad?400:503,{error:bad?'Invalid wallet, limit or history cursor.':'Account history is temporarily unavailable.'});
+    return send(bad?400:503,{error:bad?'Invalid wallet, limit or history cursor.':'Account history is temporarily unavailable.',
+     ...(!bad?{reason:['CHAIN_REORG','WRONG_CHAIN','ARCHIVE_REQUIRED','RATE_LIMITED',
+      'RPC_TIMEOUT','RPC_BUSY','RPC_UNAVAILABLE'].includes(error?.reason)?error.reason:'RPC_UNAVAILABLE'}:{})});
    }
   }
   if(url.pathname==='/api/config')return send(feed.configured&&feed.publicConfig?200:503,feed.configured&&feed.publicConfig?feed.publicConfig:{error:'Contract not configured'});
