@@ -157,3 +157,34 @@ test('a broadcast approved-payout transaction is reconciled from its exact new-p
  let resumed=0;const result=await reconcileNewDeployerPendingTransactions({provider,wallet:journalSigner,expectedOperator:journalAddress,state:pendingState,policy:{version:1},vault,queue,feedAddresses:[release.bnbFeed,release.tokenFeed],feedArtifact:artifact('MockFeed'),seedOptions:{},activity:async()=>{throw Error('ACTIVITY_MUST_NOT_BE_READ_FOR_WITHDRAWAL');},transact:async(label,value)=>{resumed++;assert.equal(label,'withdrawal-0');assert.deepEqual(value,{...request,value:0n});const receipt=await provider.getTransactionReceipt(keccak256(raw));pendingState.transactions[label]={...pendingState.transactions[label],block:receipt.blockNumber,blockHash:receipt.blockHash};return receipt;}});
  assert.equal(result.length,1);assert.equal(resumed,1);assert.equal((await queue.requests(0)).status,1n);
 });
+
+
+test('new depositor is indexed while older positions still have several overdue hours',async()=>{
+ const s=await session();await s.seed();
+ await tx(token.mint(addresses[1],E('100')));
+ await tx(token.connect(signers[1]).approve(vault.target,MaxUint256));
+ await tx(vault.connect(signers[1]).deposit(token.target,E('100'),ZeroAddress));
+ await runUntil(s,value=>value.status==='scheduled');
+ await advance(3600*9+1);
+ const older=await s.run();
+ assert.equal(older.status,'scheduled');
+ assert.ok(older.dailyCredits.length>0);
+ const oldThrough=s.state.daily.positionIndex.through;
+ const oldPaid=structuredClone(s.state.daily.positionPaid);
+ await tx(token.mint(addresses[2],E('100')));
+ await tx(token.connect(signers[2]).approve(vault.target,MaxUint256));
+ await tx(vault.connect(signers[2]).deposit(token.target,E('100'),ZeroAddress));
+ await advance(3601);
+ const refreshed=await s.run();
+ assert.equal(refreshed.status,'scheduled',JSON.stringify(refreshed));
+ assert.ok(s.state.daily.positionIndex.through>oldThrough,'the scanner must move past the old fully indexed block');
+ assert.ok(s.state.daily.registry.members[addresses[2]],'newly registered wallet must be indexed');
+ assert.ok(Object.values(s.state.daily.positionIndex.positions).some(row=>row.member===addresses[2]),'new deposit must be indexed');
+ assert.ok(Object.keys(oldPaid).every(key=>s.state.daily.positionPaid[key]>=oldPaid[key]),'existing paid cursors may only advance');
+ const expected=E('100')*(await vault.dailyTargetBps(addresses[2]))/10000n;
+ for(let n=0;n<12&&(await vault.accounts(addresses[2],token.target)).profit===0n;n++)await s.run();
+ assert.equal((await vault.accounts(addresses[2],token.target)).profit,expected,'eligible newly deposited user must get one confirmed credit');
+ const before=(await vault.accounts(addresses[2],token.target)).profit;
+ await s.run();
+ assert.equal((await vault.accounts(addresses[2],token.target)).profit,before,'a worker restart cannot replay the new user credit');
+});
