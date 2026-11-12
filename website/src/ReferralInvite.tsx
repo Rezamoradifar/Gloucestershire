@@ -24,10 +24,10 @@ export default function ReferralInvite({
  const [copied,setCopied]=useState<'code'|'link'|null>(null);
  const code=connected&&isAddress(wallet)?getAddress(wallet):'';
  const link=useMemo(()=>{
-  if(!code)return '';
+  if(!code||!registered)return '';
   try{return referralLink(code,window.location.origin,window.location.pathname);}
   catch{return '';}
- },[code]);
+ },[code,registered]);
  const enabled=Boolean(code&&registered&&link);
  const copy=async(kind:'code'|'link')=>{
   if(!enabled)return;
