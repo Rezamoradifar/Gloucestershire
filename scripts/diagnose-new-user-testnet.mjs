@@ -85,8 +85,8 @@ async function main(){
   deploymentBlock:policy.deploymentBlock,
   onAttempt:entry=>console.error('NEW_USER_RPC_CANDIDATE '+JSON.stringify(entry)),
   read:async(provider,head)=>{
-  const vault=new Contract(expectedVault,abi,provider),token=getAddress(await vault.usdt()),
-   decimals=Number(await vault.tokenDecimals());
+  const vault=new Contract(expectedVault,abi,provider),token=getAddress(await vault.usdt({blockTag:head.number})),
+   decimals=Number(await vault.tokenDecimals({blockTag:head.number}));
   const activity=createDailyActivityReader({provider,file:activityPolicy.historyFile,
    chainId:97,vaultAddress:expectedVault,origin:'https://globaldroptrade.com'});
   const report={version:1,kind:'new-depositor-readonly-check',chainId:97,vault:expectedVault,
@@ -98,8 +98,8 @@ async function main(){
   for(const {key,row} of positions){
    const paid=daily.positionPaid?.[key]??0;
    if(!Number.isSafeInteger(paid)||paid<0)fail('NEW_USER_DIAGNOSTIC_PAID_CURSOR_INVALID');
-   const account=await vault.accounts(row.member,token);
-   const current=await vault.positionOf(row.member,BigInt(row.id));
+   const account=await vault.accounts(row.member,token,{blockTag:head.number});
+   const current=await vault.positionOf(row.member,BigInt(row.id),{blockTag:head.number});
    const latestCheckIn=await activity.evidence(row.member,head.timestamp+1);
    const periods=[];
    // Processed periods only; one latest user need not have been eligible historically.
