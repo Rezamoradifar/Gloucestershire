@@ -38,13 +38,22 @@ export default function AccountHistory({
   const current=new AbortController();controller.current=current;
   setLoading(true);setError('');
   try{
-   const page=await fetchAccountHistory({
-    wallet:who,chainId,vaultAddress,before,limit:30,signal:current.signal
-   });
-   if(id!==sequence.current||current.signal.aborted)return;
+   // The API scans bounded block windows to avoid RPC timeouts. A wallet
+   // with no recent events can advance a few pages without repeated clicks.
+   let page,after=before,firstScannedTo:number|null=null;
+   for(let attempt=0;attempt<4;attempt++){
+    page=await fetchAccountHistory({
+     wallet:who,chainId,vaultAddress,before:after,limit:30,signal:current.signal
+    });
+    if(id!==sequence.current||current.signal.aborted)return;
+    if(firstScannedTo===null)firstScannedTo=page.scannedTo;
+    if(page.items.length||page.nextCursor===null||page.nextCursor===after)break;
+    after=page.nextCursor;
+   }
+   if(!page)throw Error('History page was not available.');
    setRows(old=>before===null?page.items:mergeHistoryEntries(old,page.items));
    setCursor(page.nextCursor);
-   setScanned({from:page.scannedFrom,to:page.scannedTo,head:page.confirmedThrough});
+   setScanned({from:page.scannedFrom,to:firstScannedTo,head:page.confirmedThrough});
    setLoaded(true);
   }catch(cause){
    if(id!==sequence.current||current.signal.aborted)return;
