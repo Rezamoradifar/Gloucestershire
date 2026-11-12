@@ -1,6 +1,7 @@
 // Configure verified, read-only BNB Testnet RPC fallbacks without changing the primary signer RPC.
 import fs from 'node:fs';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {parseEnv} from 'node:util';
 import {getAddress,Interface,keccak256} from 'ethers';
 import {readConfig} from '../server/trades-api.mjs';
@@ -25,12 +26,10 @@ function privateFile(file){
 }
 const isHash=x=>typeof x==='string'&&/^0x[0-9a-f]{64}$/i.test(x);
 const checkHex=x=>typeof x==='string'&&/^0x[0-9a-f]+$/i.test(x);
-const configEntries=new Set(['TRADES_RPC_URLS']);
 
 export function makeRpcFallbackEnv(original,fallbacks){
  if(typeof original!=='string'||!Array.isArray(fallbacks)||fallbacks.length<1||fallbacks.length>3||
     fallbacks.some(x=>typeof x!=='string'||x.includes("'")||/[\r\n]/.test(x)))fail('RPC_FALLBACK_SELECTION_INVALID');
- const previous=readConfig(parseEnv(original));
  const sanitized=original.split('\n').filter(line=>!/^(?:export\s+)?TRADES_RPC_URLS\s*=/.test(line)).join('\n');
  return sanitized.replace(/\n*$/,'\n')+"TRADES_RPC_URLS='"+JSON.stringify(fallbacks)+"'\n";
 }
@@ -151,7 +150,9 @@ async function main(){
   apiRestartRequired:true,workerUnchanged:true,transactionsSent:0
  }));
 }
-main().catch(error=>{
+let invoked;
+try{if(process.argv[1])invoked=pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href;}catch{}
+if(import.meta.url===invoked)main().catch(error=>{
  console.error(/^RPC_FALLBACK_[A-Z0-9_]+$/.test(error?.message||'')?
   error.message:'RPC_FALLBACK_VALIDATION_FAILED');
  process.exitCode=1;
