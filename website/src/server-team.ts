@@ -41,11 +41,13 @@ export async function requestTeamPage(parent:string,from?:number,to?:number,sign
  return {confirmedHead:Number(r.confirmedHead),first:r.first as number|null,last:r.last as number|null,
   members:r.members as TeamMember[]};
 }
-export async function requestTeamProfile(wallet:string,block:number,signal?:AbortSignal):Promise<TeamProfile>{
- if(!isAddress(wallet)||!safe(block))throw Error('Invalid team member request.');
- const r=await getTeam('/api/team/member?'+new URLSearchParams({wallet:getAddress(wallet),block:String(block)}),signal);
+export async function requestTeamProfile(wallet:string,block?:number,signal?:AbortSignal):Promise<TeamProfile>{
+ if(!isAddress(wallet)||(block!==undefined&&!safe(block)))throw Error('Invalid team member request.');
+ const params=new URLSearchParams({wallet:getAddress(wallet)});
+ if(block!==undefined)params.set('block',String(block));
+ const r=await getTeam('/api/team/member?'+params,signal);
  verified(r);
- if(r.kind!=='member'||r.wallet!==getAddress(wallet)||r.block!==block||block>Number(r.confirmedHead)||
+ if(r.kind!=='member'||r.wallet!==getAddress(wallet)||!safe(r.block)||(block!==undefined&&r.block!==block)||Number(r.block)>Number(r.confirmedHead)||
     !r.profile||typeof r.profile!=='object')fail();
  const profile=r.profile as Record<string,unknown>;
  if(!isAddress(profile.referrer)||typeof profile.registered!=='boolean'||typeof profile.active!=='boolean'||
