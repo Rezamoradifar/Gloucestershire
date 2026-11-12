@@ -21,7 +21,7 @@ export function parseVerifiedHistorySnapshot(value:unknown,{
  wallet,asset,scope,kind,from,to
 }:{wallet:string;asset:string;scope:HistoryScanScope;kind:HistoryScanKind;from?:number;to?:number}):HistorySnapshot{
  if(!value||typeof value!=='object'||Array.isArray(value))invalid();
- const page=value as Record<string,unknown>;
+ const page=value as Record<string,any>;
  if(page.version!==1||page.chainId!==chainId||!validAddress(page.vaultAddress)||
   !validAddress(page.wallet)||!validAddress(page.asset)||
   getAddress(page.vaultAddress)!==getAddress(vaultAddress)||
