@@ -2,7 +2,8 @@
 
 ## Applied, proposed source changes
 - Team registrations (levels 1–3) no longer use `eth_getLogs` on a mobile wallet. `/api/team/registrations` accepts a parent and at most 96 blocks per request, checks BNB chain ID and contract, reads `Registered` event logs on verified server RPC candidates, and verifies canonical block hashes before returning them.
-- Expanded member details now use `/api/team/member`, reading the contract's `users(address)` at a confirmed checkpoint. No signer, wallet approval or private RPC URL reaches the browser.
+- Expanded member details now use `/api/team/member`, reading the contract's `users(address)` at a confirmed checkpoint. First-deposit referral preflight verifies the inviter is already registered before prompting a transaction. No signer, wallet approval or private RPC URL reaches the browser.
+- Exact level 1–3 volumes use `/api/team/volume` and confirmed contract branch accounting through the server RPC, not historical `eth_call` on a mobile wallet. Pending propagation or oversized networks (>256 branch records / >64 volume jobs) safely return unavailable; a durable indexed backend is needed for large teams.
 - A bounded, incremental client maintains a pinned chain snapshot and labels discovered counts as partial. It rejects malformed/unconfirmed API responses, supports loading older pages, and keeps the contract's reporter-verified active-direct count separate from raw registrations.
 - The network sidebar is labeled **Team & referrals**.
 - The permanent referral identifier stays the inviter's **public wallet address**, via `?ref=0x...#dashboard`. Short alphanumeric aliases are **not** accepted by the current contract and must not be pretended to be on-chain referral codes.
