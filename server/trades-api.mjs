@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {Block,Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress} from 'ethers';
 import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 import {createAutomationStatusReader} from './automation-status.mjs';
+import {createAccountHistory} from './account-history.mjs';
 
 const eventAbi=['event SaleSettled(bytes32 indexed id,address indexed seller,address indexed asset,uint256 grossProfit,uint256 salesUsd,bytes32 evidenceHash)'];
 const iface=new Interface(eventAbi);
@@ -128,7 +129,7 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace(),migration,dailyActivity,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace(),migration,dailyActivity,accountHistory,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
@@ -138,6 +139,14 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,marketpl
   const url=new URL(req.url,'http://localhost');
   if(migration&&await migration(req,res,url))return;
   if(await marketplace(req,res,url))return;
+  if(url.pathname==='/api/account-history'){
+   if(!accountHistory)return send(503,{error:'Account history is temporarily unavailable.'});
+   try{return send(200,await accountHistory.get(url.searchParams));}
+   catch(error){
+    const bad=error?.code==='ACCOUNT_HISTORY_BAD_REQUEST'||error?.code==='ACCOUNT_HISTORY_CURSOR_INVALID';
+    return send(bad?400:503,{error:bad?'Invalid wallet, limit or history cursor.':'Account history is temporarily unavailable.'});
+   }
+  }
   if(url.pathname==='/api/config')return send(feed.configured&&feed.publicConfig?200:503,feed.configured&&feed.publicConfig?feed.publicConfig:{error:'Contract not configured'});
   if(url.pathname==='/api/health')return send(200,{status:'ok',configured:feed.configured,source});
   if(url.pathname==='/api/automation/status'){
@@ -174,5 +183,5 @@ async function configuredDailyActivity(config){
 let entrypoint;
 try{if(process.argv[1]&&process.argv[1]!=='-')entrypoint=pathToFileURL(realpathSync(process.argv[1])).href;}catch{}
 if(import.meta.url===entrypoint){
- try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const server=createApiServer(feed,{community,migration,dailyActivity,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();dailyActivity?.close?.();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
+ try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const accountHistory=createAccountHistory(config);const server=createApiServer(feed,{community,migration,dailyActivity,accountHistory,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();dailyActivity?.close?.();accountHistory.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }
