@@ -27,6 +27,10 @@ const saleTopic=vaultInterface.getEvent('SaleSettled').topicHash;
 const requestedTopic=queueInterface.getEvent('Requested').topicHash;
 const statusValues=['pending','paid','cancelled','approved'];
 const maxLogIndex=4294967295;
+// Keep each HTTP page small enough for limited public RPC providers and nginx deadlines.
+// Older history remains reachable by a stable (block:log-index) cursor.
+export const historyScanWindowBlocks=500;
+export const historyScanWindowsPerRequest=2;
 
 function fail(code){const e=Error(code);e.code=code;throw e;}
 function safeNumber(value){return Number.isSafeInteger(value)&&value>=0;}
@@ -109,7 +113,7 @@ function eventRow(log,parsed,head,token,decimals,timestamp,source){
   source,confirmed:true
  };
 }
-export async function readAccountHistoryPage({provider,config,wallet,before=null,limit=30,maxWindows=10,
+export async function readAccountHistoryPage({provider,config,wallet,before=null,limit=30,maxWindows=historyScanWindowsPerRequest,
  metadata}){
  if(!provider||!config?.rpcUrl&&!metadata||!isAddress(config.address)||![56,97].includes(config.chainId)||
   !safeNumber(config.startBlock)||config.startBlock<0||!safeNumber(config.confirmations)||
@@ -149,7 +153,7 @@ export async function readAccountHistoryPage({provider,config,wallet,before=null
  const userTopic=zeroPadValue(wallet,32),all=[],seen=new Set(),blocks=new Map();
  let remaining=cursor.block,scannedTo=null,scannedFrom=null;
  for(let count=0;count<maxWindows&&remaining>=config.startBlock;count++){
-  const high=remaining,low=Math.max(config.startBlock,high-999);
+  const high=remaining,low=Math.max(config.startBlock,high-historyScanWindowBlocks+1);
   scannedTo??=high;scannedFrom=low;
   const [personal,sales,requests]=await Promise.all([
    getCompleteLogs({provider,filter:{address:config.address,topics:[vaultTopics,userTopic],fromBlock:low,toBlock:high}}),
@@ -212,7 +216,7 @@ export function createAccountHistory(config,{providers,metadata}={}){
    // Race complete verified pages, never mix log subsets from different RPC histories.
    // Bound shared expensive reads: duplicate requests share one pending promise.
    const work=Promise.any(candidates.map(provider=>readAccountHistoryPage({
-    provider,config,...args,maxWindows:6,metadata
+    provider,config,...args,maxWindows:historyScanWindowsPerRequest,metadata
    }))).catch(()=>fail('ACCOUNT_HISTORY_UNAVAILABLE'));
    pending.set(key,work);
    try{return await work;}finally{if(pending.get(key)===work)pending.delete(key);}
