@@ -46,7 +46,7 @@ export default function ReferralInvite({
  };
  return <section className="panel referral-invite" aria-labelledby="referral-invite-title">
   <div className="panel-title"><div><h2 id="referral-invite-title"><Users size={20}/> Your referral code</h2>
-   <p>The referral code is your public wallet address, recorded on-chain when a new member first deposits.</p></div>
+   <p>Your public wallet address is your referral code. Short custom codes are not supported by this contract; a code must resolve to an existing registered on-chain wallet.</p></div>
    <ShieldCheck size={21}/></div>
   {!connected?<p className="inline-error" role="status">Connect your wallet to the correct network to view your invitation.</p>:
    !registered?<p className="notice neutral" role="status">Register on this contract with your first valid deposit before sharing a referral link. Unregistered referrers cannot be accepted.</p>:null}

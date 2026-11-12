@@ -1,17 +1,17 @@
 import {useEffect,useRef,useState} from 'react';
-import {Interface,zeroPadValue,getAddress,type Log} from 'ethers';
+import {Interface,ZeroAddress,getAddress,type Log} from 'ethers';
 import {ChevronDown,ChevronRight,ExternalLink,GitBranch,RefreshCw,Users} from 'lucide-react';
 import {errorText,type Snapshot} from './chain';
 import {readOnlySession} from './read-only-session';
-import {readEventPage} from './adaptive-event-logs';
-import {explorer,vaultAddress} from './config';
+import {requestVerifiedHistory} from './server-event-history';
+import {requestVerifiedTeamMember,type VerifiedTeamMember} from './team-data';
+import {explorer} from './config';
 import {displayAmount} from './money';
 import NetworkConstellation from './NetworkConstellation';
 
 const registry=new Interface(['event Registered(address indexed user,address indexed referrer)']);
-const topic=registry.getEvent('Registered')!.topicHash;
 type Member={address:string;block:number;tx:string};
-type Profile={active:boolean;kyc:boolean;capitalUsd:bigint;salesUsd:bigint;activeDirect:bigint;registered:boolean};
+type Profile=VerifiedTeamMember;
 const short=(a:string)=>a.slice(0,8)+'…'+a.slice(-5);
 
 function MemberRow({root,member,depth,block,selected=false}:{root:string;member:Member;depth:number;block:number;selected?:boolean}){
@@ -20,9 +20,8 @@ function MemberRow({root,member,depth,block,selected=false}:{root:string;member:
  useEffect(()=>{
   if(!open)return;
   let cancelled=false;setProfile(null);setError('');
-  readOnlySession(root).then(({vault})=>vault.users(member.address,{blockTag:block})).then(user=>{
-   if(!cancelled)setProfile({registered:Boolean(user.registered),active:Boolean(user.active),kyc:Boolean(user.vipKyc),
-    capitalUsd:BigInt(user.capitalUsd),salesUsd:BigInt(user.salesUsd),activeDirect:BigInt(user.activeDirect)});
+  requestVerifiedTeamMember(member.address).then(user=>{
+   if(!cancelled)setProfile(user);
   }).catch(reason=>{if(!cancelled)setError(errorText(reason));});
   return()=>{cancelled=true;};
  },[root,member.address,block,open]);
@@ -40,7 +39,7 @@ function MemberRow({root,member,depth,block,selected=false}:{root:string;member:
     <span>Reported active directs: <strong>{profile.activeDirect.toString()}</strong></span>
     <span>Recorded capital: <strong>{displayAmount(profile.capitalUsd,18,2)} USD</strong></span>
     <span>Recorded sales: <strong>{displayAmount(profile.salesUsd,18,2)} USD</strong></span>
-    <span>VIP KYC: <strong>{profile.kyc?'Verified':'Not verified'}</strong></span></div>:!error?<p className="muted">Loading member details from the contract…</p>:null}
+    <span>VIP KYC: <strong>{profile.kyc?'Verified':'Not verified'}</strong></span><span>Confirmed snapshot: <strong>{profile.blockNumber.toLocaleString('en-US')}</strong></span></div>:!error?<p className="muted">Reading confirmed member details from server RPC…</p>:null}
    {error&&<p className="inline-error" role="alert">{error}</p>}
    {depth<3&&<Level key={member.address} root={root} parent={member.address} block={block} depth={depth+1}/>}
   </div>}
@@ -48,24 +47,27 @@ function MemberRow({root,member,depth,block,selected=false}:{root:string;member:
 }
 
 function Level({root,parent,block,depth}:{root:string;parent:string;block:number;depth:number}){
- const [members,setMembers]=useState<Member[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[cursor,setCursor]=useState<number|null>(null),[show,setShow]=useState(12),[focused,setFocused]=useState<string|null>(null);
+ const [members,setMembers]=useState<Member[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[cursor,setCursor]=useState<number|null>(null),[show,setShow]=useState(12),[focused,setFocused]=useState<string|null>(null),[source,setSource]=useState('');
  const cursorRef=useRef<number|null>(null),request=useRef(0),running=useRef(false);
  const load=async()=>{
   const head=cursorRef.current;
   if(head===null||running.current)return;
   const id=request.current;running.current=true;setBusy(true);setError('');
   try{
-   const {provider}=await readOnlySession(root);
-   if(id!==request.current)return;
-   const target=Math.max(0,head-2047);
+   // Read registration logs from the verified server RPC, never the
+   // mobile wallet's often unsupported eth_getLogs method.
+   const target=Math.max(0,head-1151);
    const found:Member[]=[];let current=head,attempts=0;
-   while(current>=target&&attempts<24){
+   while(current>=target&&attempts<12){
     if(id!==request.current)return;
-    const {logs,first}=await readEventPage(provider,{address:vaultAddress,topics:[topic,null,zeroPadValue(parent,32)]},target,current,64);
-    for(const record of logs){
-     const parsed=registry.parseLog(record);
-     if(parsed&&parsed.name==='Registered')found.push({address:getAddress(String(parsed.args.user)),block:record.blockNumber,tx:record.transactionHash});
+    const first=Math.max(target,current-95);
+    const page=await requestVerifiedHistory({wallet:parent,asset:ZeroAddress,scope:'wallet',kind:'team',from:first,to:current});
+    for(const record of page.logs){
+     const parsed=registry.parseLog(record as unknown as Log);
+     if(parsed?.name==='Registered'&&getAddress(String(parsed.args.referrer))===getAddress(parent))
+      found.push({address:getAddress(String(parsed.args.user)),block:record.blockNumber,tx:record.transactionHash});
     }
+    setSource(page.source==='database+rpc'?'Cached + RPC verified':'RPC verified');
     current=first-1;attempts++;
    }
    if(id!==request.current)return;
@@ -77,20 +79,29 @@ function Level({root,parent,block,depth}:{root:string;parent:string;block:number
   finally{if(id===request.current){running.current=false;setBusy(false);}}
  };
  useEffect(()=>{
-  request.current++;running.current=false;cursorRef.current=Math.max(0,block-3);
-  setMembers([]);setCursor(cursorRef.current);setError('');setShow(12);setFocused(null);
-  void load();
+  request.current++;const id=request.current;running.current=false;cursorRef.current=null;
+  setMembers([]);setCursor(null);setError('');setShow(12);setFocused(null);setSource('');
+  void (async()=>{
+   try{
+    await readOnlySession(root); // verify connected wallet and chain, not its history RPC
+    const head=await requestVerifiedHistory({wallet:parent,asset:ZeroAddress,scope:'wallet',kind:'team'});
+    if(id!==request.current)return;
+    cursorRef.current=Math.max(0,Math.min(block-3,head.confirmedHead));
+    setCursor(cursorRef.current);
+    void load();
+   }catch(reason){if(id===request.current)setError(errorText(reason));}
+  })();
   return()=>{request.current++;};
-  // Block changes from dashboard polling must not reset the historical scan.
+  // Dashboard polling does not discard already loaded historical pages.
   // eslint-disable-next-line react-hooks/exhaustive-deps
  },[root,parent,depth]);
  return <div className="team-level">
   <div className="team-level-heading"><strong>Level {depth} · {members.length} discovered</strong>
-   <span>{cursor===null?'Scanned to genesis':cursor!==null?'Older registrations may exist':'Not scanned'}</span></div>
+   <span>{cursor===null?'No older pages remaining':'Older registrations may exist'}{source?' · '+source:''}</span></div>
   {depth===1&&<NetworkConstellation parent={parent} members={members} selected={focused} onSelect={address=>{setFocused(address);setShow(Math.max(show,members.findIndex(m=>m.address===address)+1));}}/>}
   {members.length?<ul className="team-members">{members.slice(0,show).map(member=>
     <MemberRow key={member.address} root={root} member={member} depth={depth} block={block} selected={focused===member.address}/>)}</ul>:
-   !busy?<p className="muted">No direct registrations found in the scanned range. Older records may exist.</p>:null}
+   !busy?<p className="muted">{error?'Registration data unavailable. Do not treat this as zero members.':cursor===null?'No direct registrations found in all scanned blocks.':'No registrations in loaded pages; older records may exist.'}</p>:null}
   {error&&<p className="inline-error" role="alert">{error}</p>}
   <div className="team-footer">
    {members.length>show&&<button type="button" className="small-button" onClick={()=>setShow(v=>v+12)}>Show more members</button>}

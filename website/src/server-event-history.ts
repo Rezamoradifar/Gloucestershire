@@ -1,7 +1,7 @@
 import {getAddress,isAddress,ZeroAddress} from 'ethers';
 import {chainId,vaultAddress} from './config';
 
-export type HistoryScanKind='finance'|'reward';
+export type HistoryScanKind='finance'|'reward'|'team';
 export type HistoryScanScope='wallet'|'global';
 export type VerifiedHistoryLog={
  address:string;transactionHash:string;blockHash:string;blockNumber:number;
@@ -10,7 +10,8 @@ export type VerifiedHistoryLog={
 type HistorySnapshot={
  version:1;chainId:number;vaultAddress:string;wallet:string;asset:string;
  scope:HistoryScanScope;kind:HistoryScanKind;confirmedHead:number;
- first:number|null;last:number|null;logs:VerifiedHistoryLog[]
+ first:number|null;last:number|null;logs:VerifiedHistoryLog[];
+ windowHash?:string;runtimeHash?:string;source?:'rpc'|'database+rpc'
 };
 const validHash=(value:unknown)=>typeof value==='string'&&/^0x[0-9a-f]{64}$/i.test(value);
 const validNumber=(value:unknown)=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
@@ -27,7 +28,11 @@ export function parseVerifiedHistorySnapshot(value:unknown,{
   getAddress(page.vaultAddress)!==getAddress(vaultAddress)||
   getAddress(page.wallet)!==getAddress(wallet)||getAddress(page.asset)!==getAddress(asset)||
   page.scope!==scope||page.kind!==kind||!validNumber(page.confirmedHead)||
+  (page.source!==undefined&&!['rpc','database+rpc'].includes(page.source))||
+  (page.windowHash!==undefined&&!validHash(page.windowHash))||
+  (page.runtimeHash!==undefined&&!validHash(page.runtimeHash))||
   !Array.isArray(page.logs)||page.logs.length>250)invalid();
+ if(kind==='team'&&(scope!=='wallet'||getAddress(asset)!==ZeroAddress))invalid();
  if(from===undefined||to===undefined){
   if(page.first!==null||page.last!==null||page.logs.length!==0)invalid();
  }else if(page.first!==from||page.last!==to||to>page.confirmedHead)invalid();
@@ -54,7 +59,8 @@ export async function requestVerifiedHistory({
  from?:number;to?:number;fetcher?:typeof fetch;signal?:AbortSignal
 }):Promise<HistorySnapshot>{
  if(!isAddress(wallet)||getAddress(wallet)===ZeroAddress||!isAddress(asset)||
-  (kind==='reward'&&scope!=='wallet')||
+  (kind!=='finance'&&scope!=='wallet')||
+  (kind==='team'&&getAddress(asset)!==ZeroAddress)||
   (from!==undefined||to!==undefined)&&
   (!validNumber(from)||!validNumber(to)||Number(from)>Number(to)||Number(to)-Number(from)+1>96))
   throw Error('Invalid history server request.');
