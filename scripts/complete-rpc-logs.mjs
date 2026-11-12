@@ -74,7 +74,7 @@ function fixedFilter(filter){
  if(!filter||typeof filter!=='object'||Object.keys(filter).some(key=>!['address','topics','fromBlock','toBlock'].includes(key))||!integer(filter.fromBlock)||!integer(filter.toBlock)||filter.toBlock<filter.fromBlock||filter.toBlock-filter.fromBlock+1>1000)throw Error('COMPLETE_LOG_FILTER_REQUIRED');
  let address;try{address=getAddress(filter.address);}catch{throw Error('COMPLETE_LOG_FILTER_REQUIRED');}
  const topic=value=>value===null||hash(value)||(Array.isArray(value)&&value.length>0&&value.length<=16&&value.every(hash));
- if(address===ZeroAddress||!Array.isArray(filter.topics)||filter.topics.length<1||filter.topics.length>4||!hash(filter.topics[0])||!filter.topics.every(topic))throw Error('COMPLETE_LOG_FILTER_REQUIRED');
+ if(address===ZeroAddress||!Array.isArray(filter.topics)||filter.topics.length<1||filter.topics.length>4||filter.topics[0]===null||!filter.topics.every(topic))throw Error('COMPLETE_LOG_FILTER_REQUIRED');
  return {address:filter.address,topics:structuredClone(filter.topics),fromBlock:filter.fromBlock,toBlock:filter.toBlock};
 }
 
