@@ -29,7 +29,7 @@ describe('verified account history',()=>{
   expect(()=>parse({...page([item]),wallet:'0x3333333333333333333333333333333333333333'})).toThrow();
   expect(()=>parse(page([item,item]))).toThrow();
   expect(()=>parse(page([{...item,confirmed:false} as unknown as HistoryEntry]))).toThrow();
-  expect(()=>parse(page([{...item,asset:'BTC'}]))).toThrow();
+  expect(()=>parse(page([{...item,asset:'BTC'} as unknown as HistoryEntry]))).toThrow();
   expect(()=>parse(page([{...item,amount:'not-a-number'}]))).toThrow();
   expect(()=>parse({...page([item]),nextCursor:'../etc/passwd'})).toThrow();
  });
