@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from 'vitest';
 import {acceptPublicConfig} from '../src/config';
-import {requestTeamPage,requestTeamProfile} from '../src/server-team';
+import {requestTeamPage,requestTeamProfile,requestTeamVolumes} from '../src/server-team';
 
 const vault='0x1111111111111111111111111111111111111111';
 const parent='0x2222222222222222222222222222222222222222';
@@ -43,6 +43,20 @@ describe('verified team API client',()=>{
    const user=await requestTeamProfile(child,195);
    expect(user.capitalUsd).toBe(800n);
    expect(user.activeDirect).toBe(3n);
+  }finally{globalThis.fetch=original;}
+ });
+ it('reads verified level volumes as exact bigint values from the server',async()=>{
+  const original=globalThis.fetch;
+  const report={...base,kind:'volume',wallet:parent,block:197,levels:[
+   {level:1,members:2,volume:'1000000000000000000'},
+   {level:2,members:1,volume:'2000000000000000000'},
+   {level:3,members:0,volume:'0'}
+  ]};
+  globalThis.fetch=(async()=>new Response(JSON.stringify(report),{status:200})) as typeof fetch;
+  try{
+   const result=await requestTeamVolumes(parent);
+   expect(result.levels[0].volume).toBe(1000000000000000000n);
+   expect(result.levels[1].members).toBe(1);
   }finally{globalThis.fetch=original;}
  });
  it('does not leak server errors or accept unbounded pages',async()=>{
