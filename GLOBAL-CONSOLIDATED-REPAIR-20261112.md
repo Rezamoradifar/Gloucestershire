@@ -46,6 +46,7 @@ bash ubuntu-global-complete-readiness.sh --local
 bash ubuntu-global-complete-readiness.sh --live-readonly
 
 # Independently:
+node scripts/check-live-worker-index.mjs
 node scripts/testnet-rpc-doctor.mjs
 node scripts/diagnose-new-user-testnet.mjs 5
 node scripts/testnet-withdrawal-audit.mjs
@@ -70,7 +71,7 @@ journal or deploy a new contract.
 - [ ] Open the invite with a fresh wallet; the inviter pre-fills the
       referrer before the first deposit. Verify self/unregistered
       referrals are rejected and that the ledger referrer is immutable.
-- [ ] Check a new depositor with an eligible 24-hour signed check-in.
+- [ ] Check the active systemd worker release with `check-live-worker-index.mjs` and verify `indexRefreshInLiveWorker=true`; GitHub code alone does not update the signer release.\n- [ ] Check a new depositor with an eligible 24-hour signed check-in.
       Verify the personal batch ID, `ProfitCredited` event and no replay.
 - [ ] Check one unqualified period; it must record **no credit** and
       must never be backdated or fabricated.
