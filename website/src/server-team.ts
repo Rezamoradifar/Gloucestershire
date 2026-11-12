@@ -29,8 +29,9 @@ export async function requestTeamPage(parent:string,from?:number,to?:number,sign
  if(r.kind!=='registrations'||r.parent!==getAddress(parent)||!Array.isArray(r.members)||r.members.length>250)fail();
  if(from===undefined){if(r.first!==null||r.last!==null||r.members.length!==0)fail();}
  else if(r.first!==from||r.last!==to||Number(to)>Number(r.confirmedHead))fail();
+ const members=r.members as unknown[];
  const seen=new Set<string>();
- for(const item of r.members){
+ for(const item of members){
   if(!item||typeof item!=='object')fail();
   const row=item as Record<string,unknown>;
   if(!isAddress(row.address)||!safe(row.block)||!safe(row.index)||!hex(row.tx)||
@@ -52,7 +53,7 @@ export async function requestTeamProfile(wallet:string,block?:number,signal?:Abo
  const profile=r.profile as Record<string,unknown>;
  if(!isAddress(profile.referrer)||typeof profile.registered!=='boolean'||typeof profile.active!=='boolean'||
     typeof profile.kyc!=='boolean'||!['activeDirect','capitalUsd','salesUsd'].every(k=>typeof profile[k]==='string'&&/^(0|[1-9][0-9]*)$/.test(profile[k] as string)))fail();
- return {referrer:profile.referrer as string,registered:profile.registered,active:profile.active,kyc:profile.kyc,
+ return {referrer:profile.referrer as string,registered:profile.registered as boolean,active:profile.active as boolean,kyc:profile.kyc as boolean,
   activeDirect:BigInt(profile.activeDirect as string),capitalUsd:BigInt(profile.capitalUsd as string),salesUsd:BigInt(profile.salesUsd as string)};
 }
 
@@ -66,12 +67,13 @@ export async function requestTeamVolumes(wallet:string,block?:number,signal?:Abo
  if(r.kind!=='volume'||r.wallet!==getAddress(wallet)||!safe(r.block)||
     Number(r.block)>Number(r.confirmedHead)||(block!==undefined&&r.block!==block)||
     !Array.isArray(r.levels)||r.levels.length!==3)fail();
- const levels=r.levels.map((entry,index)=>{
+ const rawLevels=r.levels as unknown[];
+ const levels=rawLevels.map((entry:unknown,index:number)=>{
   if(!entry||typeof entry!=='object')fail();
   const row=entry as Record<string,unknown>;
   if(row.level!==index+1||!safe(row.members)||typeof row.volume!=='string'||
     !/^(0|[1-9][0-9]*)$/.test(row.volume))fail();
-  return {level:index+1,members:Number(row.members),volume:BigInt(row.volume)};
+  return {level:index+1,members:Number(row.members),volume:BigInt(row.volume as string)};
  });
  return {block:Number(r.block),levels};
 }
