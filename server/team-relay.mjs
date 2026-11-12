@@ -43,6 +43,7 @@ async function bounded(items,fn){
 export async function verifiedVolumes(provider,address,wallet,block){
  const vault=new Contract(address,[
   'function volumeJobCount() view returns(uint256)',
+  'function volumeJobs(uint256) view returns(address child,address ancestor,uint256 usd)',
   'function networkBranchCount(address) view returns(uint256)',
   'function networkBranch(address,uint256) view returns(address)',
   'function branchVolumeUsd(address,address) view returns(uint256)'
@@ -50,11 +51,11 @@ export async function verifiedVolumes(provider,address,wallet,block){
  const at={blockTag:block};
  const jobs=Number(await vault.volumeJobCount(at));
  if(!Number.isSafeInteger(jobs)||jobs>MAX_MEMBERS)fail('TEAM_RELAY_INDEX_REQUIRED');
- // A pending propagation job makes the stored subtree balances incomplete.
- for(let start=0;start<jobs;start+=64) {
-  // The original contract getter is required for pending-job identity checks.
-  // No salary or reward amount is inferred from incomplete propagation.
-  fail('TEAM_RELAY_PROPAGATION_PENDING');
+ // Pending job ancestors make reported network volumes incomplete.
+ for(let start=0;start<jobs;start+=64){
+  const rows=await bounded(Array.from({length:Math.min(64,jobs-start)},(_,i)=>start+i),
+   i=>vault.volumeJobs(i,at));
+  if(rows.some(job=>getAddress(job.ancestor)!==ZeroAddress))fail('TEAM_RELAY_PROPAGATION_PENDING');
  }
  const seen=new Set([wallet.toLowerCase()]),subtrees=[0n,0n,0n,0n],members=[0,0,0];
  let parents=[wallet],total=0;
