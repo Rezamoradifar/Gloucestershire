@@ -70,6 +70,8 @@ test('member details read the same verified contract at a confirmed block withou
  const result=await readTeamSnapshot({provider:f.provider,config,query:q('wallet='+child+'&block=195')});
  assert.deepEqual(result.profile,{referrer:parent,registered:true,active:true,kyc:false,
   activeDirect:'3',capitalUsd:'800',salesUsd:'1200'});
+ const latest=await readTeamSnapshot({provider:f.provider,config,query:q('wallet='+child)});
+ assert.equal(latest.block,197);assert.equal(latest.profile.registered,true);
  const modified={...f.provider,send:async()=> '0x38'};
  await assert.rejects(readTeamSnapshot({provider:modified,config,query:q('wallet='+child+'&block=195')}),/WRONG_CHAIN/);
  await assert.rejects(readTeamSnapshot({provider:f.provider,config,query:q('wallet='+child+'&block=198')}),/NOT_CONFIRMED/);
