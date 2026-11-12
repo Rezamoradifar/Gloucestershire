@@ -116,7 +116,12 @@ async function main(){
      const rate=eligible?await vault.dailyTargetBps(row.member,{blockTag:snapshot.number}):0n;
      rateBps=rate.toString();snapshotBlock=snapshot.number;
      expectedPersonal=formatUnits(pos.principal*rate/10000n,decimals);
-    }catch{snapshotIssue='HISTORICAL_RPC_OR_SNAPSHOT_REQUIRED';}
+    }catch(error){
+     if(error?.message==='NEW_USER_DIAGNOSTIC_ASSET_CHANGED')throw error;
+     // A partial estimate is not a valid report. Retry the entire report on
+     // the next configured archive RPC instead of hiding a historical failure.
+     throw Error('RPC_HISTORICAL_STATE_UNAVAILABLE');
+    }
     periods.push({period:i+1,end:new Date(end*1000).toISOString(),
      activityRequired:required,activityEligible:eligible,rateBps,
      expectedPersonal,confirmedPersonalBatch:creditedOnChain,snapshotBlock,snapshotIssue});
