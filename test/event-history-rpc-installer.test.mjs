@@ -24,6 +24,14 @@ test('installer refuses unknown code, old UI or wrong target and tests a real se
  assert.match(source,/&from=\$confirmed&to=\$confirmed/);
 });
 
+test('installer recognizes only immutable reviewed previous API releases before replacement',()=>{
+ assert.match(source,/EVENT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED/);
+ assert.match(source,/694a78c8804d180780735f23abe272768e8abc5f/);
+ assert.match(source,/a54cc051915a6731daa468ca4476b100abd7712c/);
+ assert.match(source,/git hash-object "\$previous_api\/server\/trades-api\.mjs"/);
+ assert.doesNotMatch(source,/EVENT_HISTORY_SKIP_VERSION|--force-version/);
+});
+
 test('installer backs up current API and static assets with rollback, never touches reward worker or financial journals',()=>{
  assert.match(source,/EVENT_HISTORY_PREVIOUS_RELEASE_RESTORED/);
  assert.match(source,/trap cleanup EXIT/);

@@ -7,6 +7,7 @@ import {Block,Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,format
 import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 import {createAutomationStatusReader} from './automation-status.mjs';
 import {createHistoryRelay} from './history-relay.mjs';
+import {createTeamRelay} from './team-relay.mjs';
 
 const eventAbi=['event SaleSettled(bytes32 indexed id,address indexed seller,address indexed asset,uint256 grossProfit,uint256 salesUsd,bytes32 evidenceHash)'];
 const iface=new Interface(eventAbi);
@@ -129,7 +130,7 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace(),migration,dailyActivity,historyRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
@@ -146,6 +147,21 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,marketpl
     return send(error?.code==='HISTORY_RELAY_BAD_REQUEST'?400:503,{
      error:error?.code==='HISTORY_RELAY_BAD_REQUEST'?
       'Invalid verified history query.':'Verified history is temporarily unavailable.'});
+   }
+  }
+  if(['/api/team/registrations','/api/team/member','/api/team/volume'].includes(url.pathname)){
+   if(!teamRelay)return send(503,{error:'Verified team service is not configured.'});
+   try{
+    const params=new URLSearchParams(url.searchParams);
+    const isRegistrations=url.pathname.endsWith('/registrations');
+    const isVolume=url.pathname.endsWith('/volume');
+    if(isRegistrations?(!params.has('parent')||params.has('wallet')):(!params.has('wallet')||params.has('parent')))
+     return send(400,{error:'Invalid team query.'});
+    if(isVolume)params.set('mode','volume');
+    return send(200,await teamRelay.get(params));
+   }catch(error){
+    const invalid=error?.code==='TEAM_RELAY_BAD_REQUEST';
+    return send(invalid?400:503,{error:invalid?'Invalid team query.':'Verified team RPC is unavailable or requires a fully reconciled index.'});
    }
   }
   if(url.pathname==='/api/config')return send(feed.configured&&feed.publicConfig?200:503,feed.configured&&feed.publicConfig?feed.publicConfig:{error:'Contract not configured'});
@@ -184,5 +200,5 @@ async function configuredDailyActivity(config){
 let entrypoint;
 try{if(process.argv[1]&&process.argv[1]!=='-')entrypoint=pathToFileURL(realpathSync(process.argv[1])).href;}catch{}
 if(import.meta.url===entrypoint){
- try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const server=createApiServer(feed,{community,migration,dailyActivity,historyRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();dailyActivity?.close?.();historyRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
+ try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const teamRelay=createTeamRelay(config);const server=createApiServer(feed,{community,migration,dailyActivity,historyRelay,teamRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();dailyActivity?.close?.();historyRelay.close();teamRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }

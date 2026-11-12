@@ -10,6 +10,7 @@ import PlanEligibility from './PlanEligibility';
 import LevelVolumes from './LevelVolumes';
 import ReferralInvite from './ReferralInvite';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
+import {requestTeamProfile} from './server-team';
 import Community from './Community';
 import CustomerStatus from './CustomerStatus';
 import DailyActivity from './DailyActivity';
@@ -34,7 +35,7 @@ import {chainId,chainName,configured,vaultAddress,explorer,feeWallets} from './c
 import {readSnapshot,session,execute,executeCustomerStatus,errorText,actionNames,actionFee,type CustomerStatusAction,type Snapshot,type Asset,type Action} from './chain';
 import {displayAmount as fmt,parseAmount,withdrawalCap} from './money';
 const tierNames=['Starter','Basic','Growth','Pro','VIP'];
-const tabs=[{key:'overview',label:'Overview',Icon:LayoutDashboard},{key:'positions',label:'My positions',Icon:Layers},{key:'network',label:'Referral network',Icon:Users},{key:'history',label:'Profit & deposits',Icon:History},{key:'profile',label:'My profile',Icon:UserRound},{key:'transparency',label:'Contract transparency',Icon:ShieldCheck},{key:'tickets',label:'Support tickets',Icon:Info},{key:'announcements',label:'Announcements',Icon:Info},{key:'admin',label:'Funding & settlement',Icon:Settings2}];
+const tabs=[{key:'overview',label:'Overview',Icon:LayoutDashboard},{key:'positions',label:'My positions',Icon:Layers},{key:'network',label:'Team & referrals',Icon:Users},{key:'history',label:'Profit & deposits',Icon:History},{key:'profile',label:'My profile',Icon:UserRound},{key:'transparency',label:'Contract transparency',Icon:ShieldCheck},{key:'tickets',label:'Support tickets',Icon:Info},{key:'announcements',label:'Announcements',Icon:Info},{key:'admin',label:'Funding & settlement',Icon:Settings2}];
 const short=(a:string)=>a.slice(0,6)+'…'+a.slice(-4);
 const date=(v:bigint)=>new Date(Number(v)*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});
 const actionLabel=(kind:Action['kind'])=>actionNames[kind];
@@ -94,7 +95,31 @@ function App(){
  }
  async function disconnectWallet(){setWalletOpen(false);try{await wallets.disconnect();}catch(error){setError(errorText(error));}}
  async function switchNetwork(){setError('');try{await switchWalletNetwork();}catch(e){setError(errorText(e));}}
- function newAction(){setError('');if(!ready||!data)return;try{const amount=parseAmount(value,data.decimals);if(['transfer','ownerWithdraw'].includes(kind)&&!isAddress(recipient))throw Error('Enter a valid recipient address.');const reviewedReferrer=kind==='deposit'&&!data.registered?reviewReferralForDeposit(referrer,window.location.origin,who):referrer.trim();if(kind==='settle'&&(!isAddress(recipient)||!saleId.trim()||!evidence.trim()||!salesUsd))throw Error('Complete the sales information and seller address.');setDraft({kind,value,recipient,referrer:reviewedReferrer,settlementId:saleId,evidence,salesUsd,expectedFee:kind==='profit'?data.fee:0n,expectedLock:data.lock,expectedPenalty:data.penalty});}catch(e){setError(errorText(e));}}
+ async function newAction(){
+  setError('');
+  if(!ready||!data)return;
+  const revision=generation.current;
+  let verifying=false;
+  try{
+   const amount=parseAmount(value,data.decimals);
+   if(amount<=0n)throw Error('Amount must be greater than zero.');
+   if(['transfer','ownerWithdraw'].includes(kind)&&!isAddress(recipient))throw Error('Enter a valid recipient address.');
+   const reviewedReferrer=kind==='deposit'&&!data.registered?
+    reviewReferralForDeposit(referrer,window.location.origin,who):referrer.trim();
+   if(kind==='deposit'&&!data.registered&&reviewedReferrer){
+    verifying=true;setBusy(true);setStatus('Verifying referrer registration through the contract RPC…');
+    const profile=await requestTeamProfile(reviewedReferrer);
+    if(generation.current!==revision)return;
+    if(!profile.registered)throw Error('This referral wallet is not registered on the configured contract. Ask the inviter to register first.');
+   }
+   if(kind==='settle'&&(!isAddress(recipient)||!saleId.trim()||!evidence.trim()||!salesUsd))
+    throw Error('Complete the sales information and seller address.');
+   if(generation.current!==revision)return;
+   setDraft({kind,value,recipient,referrer:reviewedReferrer,settlementId:saleId,evidence,salesUsd,
+    expectedFee:kind==='profit'?data.fee:0n,expectedLock:data.lock,expectedPenalty:data.penalty});
+  }catch(e){if(generation.current===revision)setError(errorText(e));}
+  finally{if(verifying){setBusy(false);setStatus('');}}
+ }
  function captureTransaction(captured:Snapshot){
   try{
   requireContractTarget(captured,{chainId,vaultAddress});
