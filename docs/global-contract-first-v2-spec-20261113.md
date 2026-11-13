@@ -1,0 +1,87 @@
+# GLOBAL V2 — Contract-first protocol and admin visibility specification (13 November 2026)
+
+Status: **design only**, not deployed, not investment-ready. Build new contracts, tests, and migration tooling only after an explicit economic and security review. This document supersedes any suggestion that the existing `Reporter` role can be made strictly KYC-only with a wrapper.
+
+## Baseline verified from current source
+
+- The current BNB testnet target is chain 97, vault `0x4C0F6141b18971db4b14e45c0bE8CddB09febc14`. The deployed vault is not shown to be upgradeable; changes to its role checks and financial functions require a **new deployment** and carefully verified optional migration, not source edits to the old address.
+- `contracts/fresh/DropshippingVault.sol`: one `reporters` role and `setCustomerStatus(user,active,kyc)`; a Reporter can set *both* fields. `batchProfit(id,asset,recipients,amounts)` takes amounts from a privileged Reporter rather than independently verifying economic calculations. `ownerWithdrawCapital` can move liquid user-liability funds. Current deposit flow sends 20% to fee wallets, 80% to the operations wallet, while recording 100% user principal.
+- `contracts/fresh/ProfitWithdrawalQueue.sol`: the owner must approve pending withdrawals; anyone can pay only after approval. The 72h window is a cancelability deadline, not a guaranteed funding date.
+- `scripts/position-profit.mjs`: the testnet hourly worker calls `dailyProfitAmount(principal,dailyTargetBps)` once per hour, without a 24-hour divisor. The intended *economic* meaning of `dailyTargetBps` must be fixed before V2. `profit-referrals` is calculated separately; source tier sets percentage, while uplines must be active, activity-eligible and VIP-KYC verified when required.
+- Observed VPS snapshots earlier in this discussion: 525 journal batches classified as personal and zero as referrals; do not infer a universal referral failure without full historical position eligibility audit.
+
+## Primary invariant and operating principle
+
+**The smart contract owns entitlement calculations, cash/liability accounting and access controls. The server supplies no authoritative profit amounts or activation flags.**
+
+An EVM contract **cannot invoke itself at an arbitrary future time**. On-chain functions run only when a transaction invokes them. Avoid mandatory background bots by using wallet-initiated actions and permissionless bounded keepers as optional redundancy. The protocol MUST remain usable if the VPS is offline.
+
+### A. On-chain eligibility and KYC separation
+
+1. Registration: `register(referrer)` or `deposit(referrer)`, immutable validated referrer (with anti-cycle rules). Persist block/event of registration.
+2. Active funding: `activePrincipalUsd(user)` read from currently outstanding positions; use the *current* principal, not lifetime deposits.
+3. Optional user activity: user sends a direct `checkIn()` transaction to the vault (or a gas-sponsored, replay-protected signed meta-tx). Record `lastCheckIn` in contract. A purely off-chain signature is **not** known to the chain until someone submits it.
+4. Eligibility should be **derived**, not a long-lived manually written `active` boolean:
+   `isEligible(user, timestamp) = registered && activePrincipalUsd >= policy.minActiveCapitalUsd && !suspended && activityRequirementSatisfied(lastCheckIn, timestamp)`.
+   A failure is not guessed to be active; no amount of registrations alone enables payouts.
+5. Enforce KYC only on the VIP-restricted operations chosen by policy, not as a mandatory daily action. Human KYC review is controlled by a separate admin role; documents remain encrypted off-chain. Do not disclose identity documents or imply the on-chain boolean proves full verification.
+6. Roles: `KYC_ADMIN_ROLE` may call **only** `setVipKyc`; `SECURITY_GUARDIAN_ROLE` can freeze compromised accounts with timelimited appeals; `REVENUE_FUNDER_ROLE` can fund/attest revenue but **cannot mint liabilities without escrow**; `TREASURY_ROLE` may move only explicitly distributable surplus, not protected backing. Avoid giving automatic activation any KYC power.
+7. Expiry is dynamic: do not maintain an always-accurate `activeDirect` counter via a 24h expiry flag because time passing triggers no transaction. Report **registered directs**, **capital-qualified directs**, and **currently activity-qualified directs** as distinct numbers. For rank use bounded lookup/cached verified checkpoints; a stale counter must not authorize extra payouts.
+8. Policy activation timestamp applies forward; no automatic backdating of old earning windows. Track versioned policies and history.
+
+### B. Correct profit and referral allocation
+
+1. Resolve the economics **first**: is `dailyTargetBps` a daily rate or an hourly rate? Rate unit and compounding must be unambiguous. Example: if rate is 50 bps/day (0.5%/day), 1000 USD at a simple 24h interval yields 5 USD, not 5 USD every hour. If accruing hourly, apply precise elapsed-time math with fixed-point remainder handling, avoiding `uint` overflow and rounding-based arbitrage.
+2. Never treat an advertised target as realized profit. If the business generates revenue off-chain, a trusted, independently auditable external funding/attestation step remains necessary. A smart contract cannot independently verify off-chain earnings or fund a reward promise.
+3. For a fully funded, attributable on-chain profit event (the preferred V2 default), define an atomic operation conceptually like `settleFundedEarnings(source, asset, grossEarned, revenueReference, periodId)` that **receives or verifies reserved backing** before granting any liability. The contract itself calculates personal amount and up to four upline referral shares, checks same-period eligibility and tier rules, and credits both sides **in the same transaction**. Keep personal profit unchanged by referral allocation; referral amount comes from a separately funded, accounted pool rather than reducing user principal or silently creating unfunded promises.
+4. Prohibit arbitrary `batchProfit` by a broad Reporter with arbitrary `recipients` and `amounts` in the production V2 path. If batch import is required, enforce committed liabilities, authorization, time window, per-recipient reconciliation and independent review. Never reuse testnet batch hashes on another contract as if funds had transferred.
+5. Per-source period identifiers: `keccak256(chainId, vault, positionId, source, asset, periodStart, policyVersion, revenueReference)`. At most one settlement per identifier; prevent reentrancy, replay across chains/contracts, and duplicate personal/referral allocations. Emit rich events:
+   - `EarningFunded(source,asset,periodId,revenueReference,fundedTotal)`
+   - `PersonalProfitCredited(source,asset,periodId,amount)`
+   - `ReferralProfitCredited(upline,source,level,asset,periodId,rateBps,amount)`
+   - `ProfitSkipped(source,upline,level,periodId,reason)` as appropriate, or surface computed read-only skip reasons without permanent expensive logs.
+6. Define referral percentage owner **once** in immutable/spec version (current code uses the *source earner's tier*, not the upline's tier). Define maximum 4 levels and KYC rules. Zero-match or unsuitable levels must not silently redirect commission to other recipients.
+7. Prefer lazy accrual or settlement on specific user/position events to mass distribution across every user, which is unbounded in gas. Optionally expose `settleNextPositionPeriod(user,positionId)` permissionlessly callable by any keeper **only if** funded and policy-bound. Funding exhaustion must result in clear `unfunded` / `not-settled` status, not a false success.
+8. Source-of-yield proof and solvency checks are required. Do not automatically pay referrers from new deposits if earnings are not verified and funded.
+
+### C. Deposits, principal, treasury and withdrawals
+
+1. Fix the 20/80 routing mismatch before describing a deposit as a fully backed user balance. Preserve a **separate ledger** for user principal, claimable earnings, reserved payouts, explicit earned fees and unrestricted surplus. If any money is deployed to a strategy, show strategy balance/risk and exact liquidity/withdrawal limits; user principal must not be represented as cash if unavailable.
+2. No unilateral owner sweep of reserved principal/profit/pending withdrawals; treasury draws are restricted to surplus verified after `assets >= liabilities` and strategy safety checks. Introduce multisig/timelock and emergency pause controls with narrowly separated authority.
+3. Normal due withdrawal is `requestWithdrawal`/`claimWithdrawal` permissionlessly executable by the beneficiary or any executor for the **fixed rightful beneficiary**; no manual owner approval if all objective conditions pass. Do not let executor alter recipient or gross amount. An exception queue can require controlled review with auditable reasons.
+4. Funding and liquidity are prerequisites to an actual payment. A due timestamp is not a guarantee when cash is missing. Expose explicit statuses `requested`, `eligible`, `unfunded`, `claimable`, `paid`, `cancelled`.
+5. All principal unlock, fee, penalty, cooldown, claim-cap, compounding and reinvestment rules require explicit approved economic specification. Avoid treating a 72h payout deadline as a promise.
+6. Public user balances must distinguish `accountedPrincipal`, `backedAssets`, `accruedButUnfunded` (if allowed; default disallow), `claimableProfit`, `paidToWallet`, and `pendingWithdrawal`.
+
+### D. Admin UX & indexing
+
+1. Build a signer-free, canonical, reorg-safe event indexer backed by a durable database, with unique event key `(chainId,vault,txHash,logIndex)` and block hash/cursor/coverage metadata. Never permit unverified API data to control contract payouts.
+2. Admin list: all registered wallets, paginated; registry age; referrer and levels; capital USD; BNB/USDT funded principal; positions; personal vs referral earnings; last signed on-chain check-in; on-chain activity status; VIP/KYC review status; transaction histories; withdrawals and their hash/receipt; errors and reason for skipped profit.
+3. User file: show `eligibleNow` and `eligibleAtPeriod` separately with evidence block, last check-in, tier/source rate, active principal, direct registrations vs qualified directs, and per-level referral credits.
+4. Admin ledger must distinguish calculated, funded/credited, queued, and actually paid. KYC files remain access-controlled and confidential. Capture audit trail of admin decisions and role changes.
+5. Alerts: stale chain RPC; indexer lag; lost signer gas; no reward funding; insolvent backing; queued overdue withdrawals; rejected check-ins; no referral payouts due to eligibility vs configuration. The server's failure affects visibility, not permissioned accounting.
+
+### E. Required tests and change gates
+
+- Four on-chain activity cases (registered no capital, invested without check-in, valid check-in, expired check-in), ensuring no static active flag remains paid forever.
+- KYC privilege adversarial tests: activation/user cannot set KYC; KYC admin cannot move assets/allocate rewards; a stolen generic reporter cannot set either field.
+- Fixed 24h economics: one 1000-USD position at a 50-bps/day **sample rate** does not accrue 120 USD over 24h; regression test catches hourly multiplication.
+- 1–4 referral depth, source-tier vs upline-tier policy, KYC gating, zero/unqualified levels, distinct BNB/USDT assets; personal/referral credits atomic, funded and unique.
+- Unfunded period: no event suggests paid reward; no negative budget or unfunded user claim.
+- Withdrawal: user can claim correct amount when due/funded; owner cannot steal backing; reentrancy, same-user double withdrawal, token callback, race and gas bound tests.
+- Indexing: historical reconciliation; block reorg rollback; 10k users without full on-chain iteration; server outage does not block contract use.
+- Existing journal: never reset or mutate previous epoch IDs or user balances; export snapshot before any voluntary migration. Separate old/new networks and addresses.
+- Independent security and economic audit, release-by-release E2E testnet rehearsal, and documented migration consent before public real-capital launch.
+
+## Milestones
+
+- **M0 (now):** freeze economic terms and precise daily/hourly basis, withdrawal policy, data/privacy requirements; audit the existing state. No new contract.
+- **M1:** detailed on-chain V2 interfaces, threat model, funding invariant and test vectors. Keep PR #55's reporter automation **off** pending V2 review.
+- **M2:** implement new contract with role separation, on-chain check-in and atomic funded personal+referral settlement, bounded/permissionless withdrawal and events.
+- **M3:** deploy isolated testnet V2, register two-plus consented test wallets, verify scenarios including real funded referral event and receipt, wallet independence from VPS, and measured gas.
+- **M4:** publish user/admin frontend with canonical history index; stage and independently audit migration from current vault. **Never silently move client funds**.
+- **M5:** only after audit, solvency review and legal review consider real funds.
+
+## Deployment and status
+
+This file is a technical specification. It is **not** new contract code, not a green light to invest, and has not changed the current chain 97 vault, role assignments, historical profits, payouts or timers. Prior PR #55 contains an opt-in *reporter-based* prototype; its backend must not be installed with a production authority until the V2 on-chain roles are evaluated.
