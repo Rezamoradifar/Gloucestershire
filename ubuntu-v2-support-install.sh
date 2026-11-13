@@ -23,7 +23,7 @@ node --check server/community.mjs
 
 # Install dependencies only to isolated reviewed checkout before preflight tests.
 npm ci --ignore-scripts --no-audit --no-fund
-node --test test/v2-community-isolation.test.mjs test/v2-read-rpc.test.mjs
+node --test test/v2-community-isolation.test.mjs test/v2-read-rpc.test.mjs test/v2-read-rpc-integration.test.mjs
 
 live=/opt/globaldroptrade-api/current
 old=$(readlink -f "$live")
