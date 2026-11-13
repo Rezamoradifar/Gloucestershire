@@ -1,0 +1,117 @@
+/* Global V2 responsive hardening — layout-only, preserves contract and data flows.
+   Covers 320px phones, 390px reference, tablets, desktop and mobile safe areas. */
+.gv2-classic{width:100%;max-width:100%;min-width:0}
+.gv2-classic,.gv2-classic *{box-sizing:border-box}
+.gv2-classic :is(.gv2-workspace,.gv2-wrap,.gv2-content,.gv2-panel,.gv2-account-entry,
+.gv2-classic-history,.gv2-investment,.gv2-investment-grid,.gv2-admin,.gv2-summary,
+.gv2-history-filters,.gv2-history-event,.gv2-history-event-info,.gv2-history-event-value,
+.gv2-section-head,.gv2-panel-head,.gv2-position,.gv2-asset-row){min-width:0;max-width:100%}
+.gv2-classic :is(p,small,span,strong,b,dd,dt,li,label){overflow-wrap:anywhere}
+.gv2-classic :is(.gv2-break,.gv2-history-event-info span,.gv2-detail b){word-break:break-word}
+.gv2-classic .gv2-wrap{width:100%}
+.gv2-classic :is(input:not([type=checkbox]):not([type=radio]),select,textarea){max-width:100%;min-width:0;font-size:16px}
+.gv2-classic input[type=checkbox],.gv2-classic input[type=radio]{
+ width:auto;max-width:none;min-width:16px;flex:0 0 auto;accent-color:#d9ba77;
+}
+.gv2-classic button{white-space:normal;overflow-wrap:anywhere}
+.gv2-classic :is(.gv2-safety-disclosure,.gv2-invest-warning){min-width:0}
+.gv2-classic .gv2-safety-disclosure>div{min-width:0}
+.gv2-classic .gv2-history-event>a{min-width:28px;min-height:36px}
+.gv2-classic .gv2-section-head,.gv2-classic .gv2-panel-head{flex-wrap:wrap}
+.gv2-classic .gv2-classic-topbar .top-actions{min-width:0}
+.gv2-classic .gv2-classic-topbar .breadcrumb{min-width:0;overflow:hidden}
+.gv2-classic .gv2-classic-topbar .breadcrumb strong{overflow:hidden;text-overflow:ellipsis}
+.gv2-classic .gv2-classic-topbar .wallet-button{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.gv2-classic .gv2-detail{min-width:0}
+.gv2-classic .gv2-detail :is(b,span){min-width:0}
+.gv2-classic .gv2-history-table-toolbar{flex-wrap:wrap}
+.gv2-classic .gv2-position>div{min-width:0}
+.gv2-classic .gv2-investment-grid,.gv2-classic .gv2-plan-grid{min-width:0}
+.gv2-classic .gv2-plan-card{min-width:0;overflow-wrap:anywhere}
+.gv2-classic .gv2-history-pages{flex-wrap:wrap}
+.gv2-classic .gv2-history-pages button{min-width:0}
+.gv2-classic .gv2-mobile-bottom button{touch-action:manipulation}
+@media(min-width:961px) and (max-width:1280px){
+ .gv2-classic .gv2-wrap{padding:24px clamp(18px,2vw,28px) 60px}
+ .gv2-classic .gv2-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gv2-classic .gv2-classic-topbar{padding:12px 20px}
+ .gv2-classic .gv2-history-filters{gap:12px}
+}
+@media(max-width:960px){
+ .gv2-classic .gv2-workspace{width:100%;margin:0;min-width:0}
+ .gv2-classic .gv2-sidebar{max-width:calc(100vw - 35px);height:100dvh;overscroll-behavior:contain}
+ .gv2-classic .gv2-sidebar nav button{min-height:44px}
+ .gv2-classic .gv2-classic-topbar{width:100%;max-width:100%;gap:8px}
+ .gv2-classic .gv2-wrap{width:100%;padding:18px 16px 28px}
+ .gv2-classic .gv2-mobile-bottom{width:100%;max-width:100vw}
+ .gv2-classic .gv2-history-header button{max-width:100%;align-self:flex-start}
+ .gv2-classic .gv2-history-summary>div{min-width:0}
+ .gv2-classic .gv2-investment-heading{gap:12px}
+ .gv2-classic .gv2-investment-grid{grid-template-columns:minmax(0,1fr)}
+ .gv2-classic .gv2-admin-search>div{min-width:0}
+ .gv2-classic .gv2-mobile-bottom button{min-width:0}
+ .gv2-classic .gv2-workspace{padding-bottom:calc(104px + env(safe-area-inset-bottom,0px))}
+}
+@media(max-width:600px){
+ .gv2-classic .gv2-wrap{padding:12px 12px 22px}
+ .gv2-classic .gv2-heading h1{font-size:clamp(21px,6vw,26px)}
+ .gv2-classic .gv2-heading p{font-size:12px;line-height:1.6}
+ .gv2-classic .gv2-classic-topbar{min-height:62px;padding:8px 12px}
+ .gv2-classic .gv2-classic-topbar .breadcrumb{gap:5px;flex:1}
+ .gv2-classic .gv2-classic-topbar .breadcrumb>span{display:none}
+ .gv2-classic .gv2-classic-topbar .top-actions{flex:0 1 auto}
+ .gv2-classic .gv2-classic-topbar .wallet-button{font-size:11px;max-width:min(44vw,174px);padding:9px 8px}
+ .gv2-classic .gv2-release{padding:9px 11px}
+ .gv2-classic .gv2-release>a{white-space:normal}
+ .gv2-classic .gv2-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .gv2-classic .gv2-metric{min-height:109px;padding:13px 11px}
+ .gv2-classic .gv2-metric strong{font-size:clamp(15px,4.4vw,20px);line-height:1.3}
+ .gv2-classic .gv2-metric span{font-size:11px}
+ .gv2-classic .gv2-panel{padding:16px 13px}
+ .gv2-classic .gv2-panel-head{align-items:flex-start;gap:8px}
+ .gv2-classic .gv2-panel-head h2{font-size:19px}
+ .gv2-classic .gv2-buttons{display:grid;grid-template-columns:minmax(0,1fr);gap:9px}
+ .gv2-classic .gv2-buttons>*{width:100%;max-width:100%}
+ .gv2-classic .gv2-detail{gap:5px;align-items:flex-start;flex-wrap:wrap}
+ .gv2-classic .gv2-detail span,.gv2-classic .gv2-detail b{width:100%;text-align:left}
+ .gv2-classic .gv2-position{grid-template-columns:minmax(0,1fr);gap:8px}
+ .gv2-classic .gv2-position>div:last-child{grid-column:auto}
+ .gv2-classic .gv2-history-filters{grid-template-columns:minmax(0,1fr)}
+ .gv2-classic .gv2-history-filters label{grid-column:1/-1}
+ .gv2-classic .gv2-history-pages{gap:7px}
+ .gv2-classic .gv2-history-pages button{padding:9px 10px;font-size:11px}
+ .gv2-classic .gv2-history-scan-buttons button{width:100%}
+ .gv2-classic .gv2-investment-heading{align-items:flex-start}
+ .gv2-classic .gv2-investment-demo{white-space:normal}
+ .gv2-classic .gv2-invest-values>div{align-items:flex-start;flex-wrap:wrap}
+ .gv2-classic .gv2-invest-values span,.gv2-classic .gv2-invest-values b{max-width:100%;width:100%;text-align:left}
+ .gv2-classic .gv2-admin .gv2-admin-search>div{flex-direction:column}
+ .gv2-classic .gv2-admin .gv2-admin-search button{width:100%}
+ .gv2-classic .gv2-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gv2-classic .gv2-mobile-bottom{padding:7px max(5px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom,0px)) max(5px,env(safe-area-inset-right))}
+ .gv2-classic .gv2-mobile-bottom button{min-height:62px;padding:6px 1px;font-size:11px;gap:5px}
+ .gv2-classic .gv2-mobile-bottom button svg{width:22px;height:22px}
+}
+@media(max-width:360px){
+ .gv2-classic .gv2-wrap{padding-left:9px;padding-right:9px}
+ .gv2-classic .gv2-panel{padding:13px 10px}
+ .gv2-classic .gv2-classic-topbar{padding:7px 8px}
+ .gv2-classic .gv2-classic-topbar .wallet-button{max-width:42vw}
+ .gv2-classic .gv2-classic-quick-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .gv2-classic .gv2-history-summary{grid-template-columns:minmax(0,1fr)}
+ .gv2-classic .gv2-history-summary>div:last-child{grid-column:auto}
+ .gv2-classic .gv2-history-pages{justify-content:space-between}
+ .gv2-classic .gv2-history-pages button{padding:8px 6px}
+ .gv2-classic .gv2-mobile-bottom button{font-size:10px;min-height:60px}
+ .gv2-classic .gv2-mobile-bottom button svg{width:20px;height:20px}
+}
+@media(max-height:500px) and (orientation:landscape) and (max-width:960px){
+ .gv2-classic .gv2-mobile-bottom button{min-height:46px;gap:2px}
+ .gv2-classic .gv2-mobile-bottom button svg{height:19px;width:19px}
+ .gv2-classic .gv2-workspace{padding-bottom:calc(79px + env(safe-area-inset-bottom,0px))}
+ .gv2-classic .gv2-sidebar{overflow-y:auto}
+}
+@media(prefers-reduced-motion:reduce){
+ .gv2-classic .gv2-sidebar{transition:none}
+ .gv2-classic .gv2-spin{animation:none}
+}
