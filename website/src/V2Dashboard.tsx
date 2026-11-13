@@ -171,7 +171,14 @@ export default function V2Dashboard(){
    </div>
     {wallet&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17} className={loading?'gv2-spin':''}/> Refresh</button>}
    </div>
-   <div className="gv2-warning" role="status"><AlertTriangle size={19}/><p><strong>Prototype — not approved for real investments.</strong> New V2 has no migrated balances. Deposits are disabled in this website view because prior 10/10/80 routing leaves principal obligations without matching cash in the vault. Existing blockchain records remain immutable and must be reconciled separately.</p></div>
+   <div className="gv2-release" role="status">
+    <ShieldCheck size={19} aria-hidden="true"/>
+    <div className="gv2-release-copy">
+     <strong>Global V2 · New testnet contract</strong>
+     <span>{v2Short(V2_ADDRESS)} · BNB Testnet · Unaudited test environment — real deposits disabled</span>
+    </div>
+    <a href={explorerAddress(V2_ADDRESS)} target="_blank" rel="noopener noreferrer">View contract <ExternalLink size={14}/></a>
+   </div>
    {error&&<p className="gv2-error" role="alert">{error}</p>}
    {notice&&<p className="gv2-message" role="status">{notice}{transaction&&<> · <a href={explorerTx(transaction)} target="_blank" rel="noopener noreferrer">View transaction <ExternalLink size={14}/></a></>}</p>}
 
@@ -305,7 +312,12 @@ export default function V2Dashboard(){
      <div className="gv2-detail"><span>Withdrawal cooldown</span><b>72 hours</b></div>
      <div className="gv2-detail"><span>Registered V2 accounts</span><b>{snapshot.memberCount}</b></div>
      <a className="gv2-explorer" href={explorerAddress(V2_ADDRESS)} target="_blank" rel="noopener noreferrer">Inspect on BscScan Testnet <ArrowUpRight size={15}/></a>
-     <p className="gv2-small">This is a new contract. Previous positions and credits have not been migrated. Blockchain contracts cannot be deleted. A gross 100% principal ledger entry does not demonstrate 100% cash backing.</p>
+     <div className="gv2-safety-disclosure">
+      <AlertTriangle size={18} aria-hidden="true"/>
+      <div><strong>Important: experimental testnet contract, not approved for real investments.</strong>
+       <p>The V2 vault is unaudited and contains no migrated balances. Deposits are disabled in this website because its 10% + 10% fee routing and 80% operations transfer leave no matching cash in the vault to back the gross 100% principal obligation. The contract itself still exposes a deposit function, so do not send real funds directly to it. Existing users' previous balances and blockchain records remain separate and cannot be erased or automatically transferred. Do not rely on on-chain accounting as proof that funds are withdrawable.</p>
+      </div>
+     </div>
     </div>}
     <footer className="gv2-foot">GLOBAL DROP TRADE V2 · TESTNET ONLY · No guaranteed returns · Blockchain is the source of truth</footer>
    </div>}

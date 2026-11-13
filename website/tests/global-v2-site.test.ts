@@ -41,6 +41,20 @@ describe('Global V2 public-site isolation',()=>{
   const actions=read('src/v2-chain.ts');
   expect(actions).not.toMatch(/case 'deposit'/);
  });
+ it('shows compact V2 identity without suppressing material safety warnings',()=>{
+  const dashboard=read('src/V2Dashboard.tsx');
+  expect(dashboard).toContain('gv2-release');
+  expect(dashboard).toContain('Global V2 · New testnet contract');
+  expect(dashboard).not.toContain('gv2-warning');
+  expect(dashboard).toContain('gv2-safety-disclosure');
+  expect(dashboard).toContain('not approved for real investments');
+  expect(dashboard).toContain('10% + 10%');
+  expect(dashboard).toContain('Deposits are disabled');
+  expect(dashboard).toContain("Existing users' previous balances");
+  const css=read('src/v2-dashboard.css');
+  expect(css).toContain('.gv2-release');
+  expect(css).toContain('.gv2-safety-disclosure');
+ });
  it('uses only a syntax-checked, hash-pinned, rollback-capable installer',()=>{
   const script=read('../ubuntu-global-v2-site.sh');
   expect(script).toContain('V2_SITE_PINNED_SHA_REQUIRED');
