@@ -53,6 +53,11 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
    await done(token.connect(signers[i]).approve(vault.target,DEPOSIT));
    await done(vault.connect(signers[i]).deposit(DEPOSIT,i===1?ZeroAddress:wallets[1]));
   }
+  assert.equal(await vault.memberCount(),BigInt(COUNT));
+  assert.equal(await vault.memberAt(0),wallets[1]);
+  assert.equal(await vault.memberAt(99),wallets[100]);
+  assert.equal(await vault.hasRole(await vault.MANAGER_ROLE(),wallets[101]),false);
+  assert.equal(await vault.hasRole(await vault.FUNDER_ROLE(),wallets[101]),false);
   assert.equal(await vault.principalLiability(),DEPOSIT*BigInt(COUNT));
   assert.equal(await token.balanceOf(vault.target),DEPOSIT*BigInt(COUNT));
   const before=await vault.cashStatus();
@@ -84,6 +89,7 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   const p2=await vault.positionOf(wallets[2],0);
   assert.equal(p2.cumulativeDaily,make(14));
   assert.equal(p2.cumulativeCompound,make('0.049'));
+  assert.equal((await vault.users(wallets[2])).registered,true);
   assert.equal(p2.availableProfit,make('14.049'));
   assert.equal(p2.compoundedBasis,p2.availableProfit);
   assert.equal(await vault.claimableDaily(wallets[2],0),make(14));
@@ -200,7 +206,8 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
    onChainAccruedLiabilityWithoutPreFunding:true,
    independentManagerApprovals:true,exactIndividualCashEscrow:true,
    existingPrincipalCashCanBeReserved:true,noBackfillAfterInactivity:true,
-   oneSignedCheckInAndAccrual:true,
+   oneSignedCheckInAndAccrual:true,permissionlessKeeperNoManagerRole:true,
+   enumeratedV3Members:COUNT,
    payoutToImmutableBeneficiary:true,repeatFundingAndPaymentRejected:true,
    automaticProfitOnProfit:true,manualReinvestOption:true,
    separateCurrentlyClaimableDailyAndCompoundTotals:true,
