@@ -15,7 +15,7 @@ test('V3 deploy is a separate opt-in BNB TESTNET-only signing process with on-ch
   'EMPTY_OR_SHORT_PASSWORD_NOT_ACCEPTED',
   "spawnSync('stty',['-echo']",
   "if(contract===OLD_V2)",
-  "await sent.wait(3)",
+  "await waitV3DeploymentReceipt(p,sent.hash,{confirmations:3})",
   "verified.hasRole(managerRole,ADMIN)",
   "keccak256(code)",
   "V3_PUBLIC_TESTNET_DEPLOYED_AND_VERIFIED"
@@ -37,6 +37,13 @@ test('Android SSH confirmation remains interactive after a pasted empty newline'
  assert.ok(deploy.includes("createInterface({input:process.stdin,terminal:false})"));
  assert.ok(deploy.includes('if(attempt<5)process.stdout.write('));
  assert.equal(deploy.includes('--confirm-privately'),false);
+});
+
+test('V3 deploy never leaves TransactionResponse.wait polling after destroying RPC provider',()=>{
+ assert.ok(deploy.includes("import {waitV3DeploymentReceipt} from './v3-deploy-receipt-poll.mjs'"));
+ assert.ok(deploy.includes("waitV3DeploymentReceipt(p,sent.hash,{confirmations:3})"));
+ assert.equal(deploy.includes('await sent.wait(3)'),false);
+ assert.ok(deploy.includes("record.status='VERIFIED_BNB_TESTNET_ONLY'"));
 });
 
 test('V3 can reuse only the pinned prior testnet deployer, not admin or an arbitrary wallet',()=>{
