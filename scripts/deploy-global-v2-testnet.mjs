@@ -157,8 +157,9 @@ function saveMarker(value){
  // rather than accidentally deploying a second separate contract.
  fs.writeFileSync(PROOF_FILE,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});
 }
-export async function deployV2OnTestnet({provider,release,artifact,key,save=saveMarker,existing=markerStatus}){
- const context=await verifyV2TestnetContext({provider,release,artifact});
+export async function deployV2OnTestnet({provider,release,artifact,key,save=saveMarker,existing=markerStatus,legacyVault=LEGACY_VAULT,confirmations=3}){
+ if(!Number.isSafeInteger(confirmations)||confirmations<1||confirmations>10)fail('V2_CONFIRMATIONS_INVALID');
+ const context=await verifyV2TestnetContext({provider,release,artifact,legacyVault});
  if(existing())fail('V2_DEPLOYMENT_ALREADY_STARTED_RECONCILE_FIRST');
  if(!/^0x[0-9a-f]{64}$/i.test(key||''))fail('V2_SIGNER_KEY_INVALID');
  const signer=new Wallet(key,provider);
@@ -190,7 +191,7 @@ export async function deployV2OnTestnet({provider,release,artifact,key,save=save
   owner:context.owner,bytecodeHash:context.bytecodeHash,startedAt:new Date().toISOString()});
  const broadcast=await provider.broadcastTransaction(signed);
  if(broadcast.hash.toLowerCase()!==txHash.toLowerCase())fail('V2_TX_HASH_MISMATCH');
- const receipt=await broadcast.wait(3);
+ const receipt=await broadcast.wait(confirmations);
  if(!receipt||receipt.status!==1||getAddress(receipt.contractAddress)!==predictedAddress)
   fail('V2_RECEIPT_UNCONFIRMED');
  const output=await verifyV2Deployed({provider,address:predictedAddress,release,artifact});
