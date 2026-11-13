@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync,execFileSync} from 'node:child_process';
 import {createInterface} from 'node:readline/promises';
+import {waitV3DeploymentReceipt} from './v3-deploy-receipt-poll.mjs';
 import {Contract,ContractFactory,FetchRequest,JsonRpcProvider,Wallet,
  getAddress,keccak256,parseEther,formatEther} from 'ethers';
 
@@ -229,7 +230,10 @@ async function main(){
    const sent=vault.deploymentTransaction();
    if(!sent)error('NO_V3_DEPLOY_TX');
    record.status='BROADCAST';record.txHash=sent.hash;saveMarker(record);
-   const receipt=await sent.wait(3);
+   // Verify actual chain receipt via explicit reads. ethers sent.wait(3)
+   // left an async eth_getTransactionReceipt poll behind on mobile SSH;
+   // the later provider.destroy() would then throw AFTER successful deployment.
+   const receipt=await waitV3DeploymentReceipt(p,sent.hash,{confirmations:3});
    if(!receipt||receipt.status!==1||!receipt.contractAddress)
     error('V3_DEPLOYMENT_RECEIPT_NOT_CONFIRMED');
    const contract=getAddress(receipt.contractAddress);

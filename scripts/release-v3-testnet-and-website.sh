@@ -32,13 +32,21 @@ if [[ "$1" == --preflight ]]; then
  exit 0
 fi
 if [[ "$1" == --deploy-testnet-and-install ]]; then
- if [[ -e "$proof" ]]; then
-  echo V3_DEPLOYMENT_INTENT_ALREADY_EXISTS_CHECK_CHAIN_AND_USE_INSTALL_VERIFIED; exit 1
+ if [[ -s "$proof" ]]; then
+  # A previously SUCCESSFUL V3 deployment may have left Android SSH at the
+  # prompt because ethers had a late provider poll cancellation during exit.
+  # DO NOT broadcast another contract creation or reuse an old nonce.
+  # The independent chain/receipt/bytecode verification below must pass.
+  echo V3_DEPLOYMENT_PROOF_FOUND_REVERIFY_ONLY_NO_REDEPLOY
+ elif [[ -e "$proof" ]]; then
+  echo V3_INCOMPLETE_DEPLOYMENT_INTENT_RECONCILE_CHAIN_BEFORE_ANY_RETRY; exit 1
+ else
+  # No on-chain V3 deployment has been attempted under this operator marker.
+  # This stops before any transaction if the old testnet signer lacks gas.
+  node scripts/deploy-global-v3-testnet.mjs --check-old-testnet-deployer
+  # The deployer itself requires an exact typed testnet confirmation in the TTY.
+  node scripts/deploy-global-v3-testnet.mjs --deploy-old-testnet-deployer
  fi
- # This stops before any transaction if the old testnet signer lacks gas.
- node scripts/deploy-global-v3-testnet.mjs --check-old-testnet-deployer
- # The deployer itself requires an exact typed testnet confirmation in the TTY.
- node scripts/deploy-global-v3-testnet.mjs --deploy-old-testnet-deployer
 fi
 # Either a new or an existing deployment must pass independent public testnet
 # tx-receipt, contract-code/source, fee-wallet, role and network validation.

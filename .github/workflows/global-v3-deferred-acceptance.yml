@@ -7,6 +7,8 @@ on:
       - 'scripts/audit-global-v3-readonly.mjs'
       - 'scripts/global-v3-auto-compound-keeper.mjs'
       - 'scripts/deploy-global-v3-testnet.mjs'
+      - 'scripts/v3-deploy-receipt-poll.mjs'
+      - 'scripts/release-v3-testnet-and-website.sh'
       - 'config/global-v3-testnet-keeper.example.json'
       - 'docs/global-v3-automatic-compound-testnet.md'
       - 'scripts/install-global-v3-keeper-timer.sh'
@@ -37,7 +39,10 @@ jobs:
           node --check scripts/audit-global-v3-readonly.mjs
           node --check scripts/global-v3-auto-compound-keeper.mjs
           node --check scripts/deploy-global-v3-testnet.mjs
+          node --check scripts/v3-deploy-receipt-poll.mjs
+          bash -n scripts/release-v3-testnet-and-website.sh
           bash -n scripts/install-global-v3-keeper-timer.sh
+          node --test --test-concurrency=1 test/global-v3-deploy-recovery.test.mjs
           node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-deferred-ledger.test.mjs test/global-v3-readonly-audit.test.mjs test/global-v3-deploy-safety.test.mjs
       - uses: actions/upload-artifact@v4
         if: always()
