@@ -1,7 +1,7 @@
 import {ExternalLink,ShieldCheck,Clock3} from 'lucide-react';
 import {V2_ADDRESS,V2_EXPLORER} from './v2-chain';
 
-// The landing page intentionally never loads old /api/trades settlements.
+// The landing page intentionally never loads old server sales settlements.
 // Only V2 is linked. A history index is not yet installed, so do not invent
 // customer activity, profit or settlement records.
 export default function LiveTrades(){
