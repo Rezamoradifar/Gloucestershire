@@ -77,23 +77,43 @@ describe('Global V2 public-site isolation',()=>{
   expect(css).toContain('.gv2-classic .gv2-workspace');
   expect(css).toContain('@media(max-width:960px)');
  });
- it('restores an investment plan and simulated test-deposit entry point without enabling real deposits',()=>{
+ it('restores all classic pages with genuine NEW V2 contract handlers, not old finance data or demo principal',()=>{
   const root=read('src/V2Dashboard.tsx');
-  const panel=read('src/V2Investment.tsx');
-  const preview=read('src/v2-investment-preview.ts');
-  const client=read('src/v2-chain.ts');
+  const invest=read('src/V2Investment.tsx');
+  const network=read('src/V2Network.tsx');
+  const support=read('src/V2Community.tsx');
+  const client=read('src/v2-community-client.ts');
+  const payments=read('src/v2-live-deposit.ts');
   expect(root).toContain("label:'Invest / plans'");
-  expect(root).toContain("section==='invest'");
-  expect(root).toContain('Preview investment plans');
-  expect(panel).toContain('Run demo investment');
-  expect(panel).toContain('SIMULATION · NO TRANSFERS');
-  expect(panel).toContain('No real BNB/USDT is transferred');
-  expect(panel).toContain('Read V2 oracle quote');
-  expect(preview).toContain('SIMULATION_ONLY_NO_CHAIN_WRITES');
-  expect(client).toContain('readV2InvestmentQuote');
-  expect(client).not.toMatch(/case 'deposit'/);
-  expect(panel).not.toContain('.deposit(');
-  expect(panel).not.toContain('.approve(');
+  expect(root).toContain("label:'My profile'");
+  expect(root).toContain("label:'Support tickets'");
+  expect(root).toContain("label:'Announcements'");
+  expect(root).toContain('V2Investment');
+  expect(root).toContain('V2Network');
+  expect(root).toContain('V2Profile');
+  expect(root).toContain('V2Community');
+  expect(invest).toContain('Submit V2 Testnet deposit');
+  expect(invest).toContain('Real V2 positions');
+  expect(invest).toContain('Do not send real-money assets.');
+  expect(invest).not.toContain('Run demo investment');
+  expect(invest).not.toContain('Demo positions');
+  expect(payments).toContain('v2Session(walletProvider,wallet)');
+  expect(payments).toContain('await vault.deposit.staticCall');
+  expect(payments).toContain('receipt.status!==1');
+  expect(payments).toContain('DepositRouted');
+  expect(payments).not.toContain('MaxUint256');
+  expect(network).toContain('readV2RegistrySlice');
+  expect(support).toContain('signInV2Support');
+  expect(client).toContain('/api/v2/community/');
+  expect(client).not.toContain('/api/community/');
+ });
+ it('retire old browser-only site caches without erasing the on-chain ledger or V2 keys',()=>{
+  const source=read('src/v2-cache-cleanup.ts');
+  const entry=read('src/main.tsx');
+  expect(entry).toContain('migrateGlobalV2BrowserOnce');
+  expect(source).toContain('global-member-profile-v2:');
+  expect(source).toContain('oldContractLedgerDeleted:false');
+  expect(source).toContain('newV2WalletDataPreserved:true');
  });
  it('uses only a syntax-checked, hash-pinned, rollback-capable installer',()=>{
   const script=read('../ubuntu-global-v2-site.sh');

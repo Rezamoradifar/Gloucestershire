@@ -7,5 +7,7 @@ import './theme.css';
 import './refinement.css';
 import ThemeSwitch from './ThemeSwitch';
 import Root from './Root';
+import {migrateGlobalV2BrowserOnce} from './v2-cache-cleanup';
 document.documentElement.dataset.appStarted='true';
+void migrateGlobalV2BrowserOnce();
 createRoot(document.getElementById('root')!).render(<React.StrictMode><><Root/><ThemeSwitch/></></React.StrictMode>);

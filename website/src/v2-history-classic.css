@@ -1,0 +1,68 @@
+/* Faithful mobile treatment of the original Global history workspace.
+ * Visual styles only; values remain confirmed V2 chain 97 events. */
+.gv2-classic .gv2-classic-history{padding:22px;border-radius:18px;background:linear-gradient(160deg,#121b27,#0e1621);border:1px solid #3d4b5d;color:#e8ecf2}
+.gv2-classic .gv2-history-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.gv2-classic .gv2-history-header>div{min-width:0}
+.gv2-classic .gv2-history-header small{color:#d9bd85;font-size:10px;letter-spacing:.12em}
+.gv2-classic .gv2-history-header h2{display:flex;align-items:center;gap:10px;color:#f0f2f6;font-size:22px;margin:7px 0 4px}
+.gv2-classic .gv2-history-header p{font-size:12px;color:#aab5c4;max-width:650px;margin:0}
+.gv2-classic .gv2-history-header button{font-size:12px;white-space:nowrap;min-height:44px}
+.gv2-classic .gv2-history-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin:24px 0 20px}
+.gv2-classic .gv2-history-summary>div{padding:16px;background:#162335;border:1px solid #35485f;border-radius:12px;display:grid;gap:5px}
+.gv2-classic .gv2-history-summary small{color:#9aa9bb;font-size:10px}
+.gv2-classic .gv2-history-summary strong{color:#ebd39e;font-size:21px;overflow-wrap:anywhere}
+.gv2-classic .gv2-history-summary span{color:#91a3b6;font-size:10px}
+.gv2-classic .gv2-history-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 14px;margin:15px 0 23px}
+.gv2-classic .gv2-history-filters label{display:flex;flex-direction:column;min-width:0;gap:8px}
+.gv2-classic .gv2-history-filters label>span{display:flex;align-items:center;gap:5px;color:#aeb9c9;font-size:12px}
+.gv2-classic .gv2-history-filters :is(input,select){width:100%;min-width:0;height:50px;padding:12px 14px;border:1px solid #536885;background:#132033;color:#ebeff6;border-radius:10px;font-size:14px;outline:none;color-scheme:dark}
+.gv2-classic .gv2-history-filters :is(input,select):focus-visible{border-color:#d6b980;outline:2px solid #d6b98066;outline-offset:0}
+.gv2-classic .gv2-history-filters label:first-child{grid-column:1 / -1}
+.gv2-classic .gv2-history-filters .gv2-history-order{grid-column:1 / -1}
+.gv2-classic .gv2-history-table-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:16px 0 15px}
+.gv2-classic .gv2-history-table-toolbar strong{font-size:13px;color:#f5f4f3}
+.gv2-classic .gv2-history-table-toolbar button{border:0;background:transparent;color:#e6c787;text-decoration:underline;min-height:32px;padding:3px 0;font-size:12px;white-space:nowrap}
+.gv2-classic .gv2-history-rpc-error{margin:10px 0 17px;color:#d89e97;font-size:13px;line-height:1.7}
+.gv2-classic .gv2-history-rpc-error small{display:block;opacity:.8;overflow-wrap:anywhere;margin-top:5px;font-size:11px}
+.gv2-classic .gv2-history-note{font-size:11px;color:#95a5b6;line-height:1.6;margin-top:12px}
+.gv2-classic .gv2-history-working{display:flex;align-items:center;gap:8px;margin:10px 0;color:#c8cbb7;font-size:12px}
+.gv2-classic .gv2-history-empty{border:1px dashed #3a4c61;border-radius:15px;padding:27px 20px;margin:15px 0 20px;min-height:92px;display:flex;align-items:center;justify-content:center;text-align:center;color:#acb9cb;font-size:13px;line-height:1.8}
+.gv2-classic .gv2-history-events{display:grid;gap:8px;margin:15px 0 20px}
+.gv2-classic .gv2-history-event{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(85px,.6fr) 30px;gap:11px;align-items:center;padding:14px;border:1px solid #35475b;border-radius:12px;background:#122033}
+.gv2-classic .gv2-history-event-mark{display:grid;place-items:center;width:34px;height:34px;background:#263c45;border-radius:10px;color:#dfc287}
+.gv2-classic .gv2-history-event-info,.gv2-classic .gv2-history-event-value{display:grid;gap:4px;min-width:0}
+.gv2-classic .gv2-history-event-info strong,.gv2-classic .gv2-history-event-value b{font-size:12px;color:#eaeef4;overflow-wrap:anywhere}
+.gv2-classic .gv2-history-event-info small{display:flex;gap:4px;align-items:center;font-size:10px;color:#a6b5c5}
+.gv2-classic .gv2-history-event-info span,.gv2-classic .gv2-history-event-value small{font-size:10px;color:#9aaabb}
+.gv2-classic .gv2-history-event-value{text-align:right}
+.gv2-classic .gv2-history-event>a{color:#e2c789;display:grid;place-items:center}
+.gv2-classic .gv2-history-pages{display:flex;justify-content:center;align-items:center;gap:14px;margin:24px 0 30px}
+.gv2-classic .gv2-history-pages span{font-size:12px;color:#b6bdca;white-space:nowrap}
+.gv2-classic .gv2-history-pages button{font-size:12px;padding:10px 12px;background:#1d2635;border:1px solid #514938;white-space:nowrap}
+.gv2-classic .gv2-history-scan-actions{display:grid;gap:20px;padding-top:22px;border-top:1px solid #3b4656}
+.gv2-classic .gv2-history-scan-actions strong{display:flex;align-items:center;gap:9px;color:#eaeef2;font-size:14px}
+.gv2-classic .gv2-history-scan-actions p{margin:9px 0 0;font-size:12px;line-height:1.8;color:#a4b1c3}
+.gv2-classic .gv2-history-scan-buttons{display:grid;gap:10px}
+.gv2-classic .gv2-history-scan-buttons button{justify-content:flex-start;text-align:left;border-color:#76644e;background:#202b3a;color:#e1c995;padding:13px 17px;font-size:12px;min-height:49px}
+.gv2-classic .gv2-history-scan-buttons button:disabled{opacity:.5}
+@media(max-width:760px){
+ .gv2-classic .gv2-classic-history{padding:18px 16px}
+ .gv2-classic .gv2-history-header{flex-direction:column}
+ .gv2-classic .gv2-history-header h2{font-size:19px}
+ .gv2-classic .gv2-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gv2-classic .gv2-history-summary>div:last-child{grid-column:1 / -1}
+ .gv2-classic .gv2-history-event{grid-template-columns:30px minmax(0,1fr) 28px}
+ .gv2-classic .gv2-history-event-value{grid-column:2;grid-row:2;text-align:left}
+ .gv2-classic .gv2-history-event>a{grid-column:3;grid-row:1}
+}
+@media(max-width:470px){
+ .gv2-classic .gv2-classic-history{border-radius:13px;padding:16px 14px}
+ .gv2-classic .gv2-history-filters{grid-template-columns:minmax(0,1fr);gap:15px;margin-top:19px}
+ .gv2-classic .gv2-history-filters label:first-child,.gv2-classic .gv2-history-filters .gv2-history-order{grid-column:1}
+ .gv2-classic .gv2-history-filters :is(input,select){font-size:15px;height:54px}
+ .gv2-classic .gv2-history-table-toolbar{align-items:baseline}
+ .gv2-classic .gv2-history-pages{gap:9px}
+ .gv2-classic .gv2-history-pages button{font-size:11px;padding:9px}
+ .gv2-classic .gv2-history-summary strong{font-size:16px}
+ .gv2-classic .gv2-history-scan-actions{gap:18px}
+}

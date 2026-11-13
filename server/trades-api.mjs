@@ -3,7 +3,7 @@ import {createMarketplace} from './marketplace.mjs';
 import {realpathSync} from 'node:fs';
 import {createCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
-import {Block,Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress} from 'ethers';
+import {Block,Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress,keccak256} from 'ethers';
 import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 import {createAutomationStatusReader} from './automation-status.mjs';
 import {createHistoryRelay} from './history-relay.mjs';
@@ -130,10 +130,11 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,marketplace=createMarketplace(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,marketplace=createMarketplace(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
+  if(v2Community&&await v2Community(req,res))return;
   if(community&&await community(req,res))return;
   if(dailyActivity&&await dailyActivity(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
@@ -189,6 +190,35 @@ async function configuredCommunity(config){
  const handler=await createCommunity({file:process.env.COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-api/community.json',chainId:config.chainId,contract:config.address,owner:async()=>{if(!vault)throw Error('Contract not configured');if(Number((await provider.getNetwork()).chainId)!==config.chainId)throw Error('Wrong chain');return vault.owner();}});
  handler.close=()=>provider?.destroy();return handler;
 }
+// Separate signed-wallet V2 support uses fresh storage; no old ticket data imported.
+const V2_SUPPORT_VAULT='0xA98D8d3709f5D3730BAD5d76C334731784e7CF07';
+const V2_SUPPORT_HASH='0x3e1f99305bf7edbb12d4d9870124f84ece95bb23b6bf890470e94d06a336bf99';
+const V2_SUPPORT_ADMIN='0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632';
+async function configuredV2Community(config){
+ if(config.chainId!==97||!config.rpcUrl)return null;
+ const provider=createApiReadProvider({...config,address:getAddress(V2_SUPPORT_VAULT)});
+ if(!provider)return null;
+ try{
+  const code=await provider.getCode(V2_SUPPORT_VAULT);
+  if(code==='0x'||keccak256(code).toLowerCase()!==V2_SUPPORT_HASH)
+   throw Error('V2_SUPPORT_TARGET_NOT_VERIFIED');
+  const vault=new Contract(V2_SUPPORT_VAULT,
+   ['function hasRole(bytes32,address) view returns(bool)'],provider);
+  const role='0x'+'0'.repeat(64);
+  const handler=await createCommunity({
+   file:process.env.V2_COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-api/v2/community.json',
+   chainId:97,contract:V2_SUPPORT_VAULT,origin:'https://globaldroptrade.com',
+   prefix:'/api/v2/community/',
+   owner:async()=>{
+    if(!(await vault.hasRole(role,V2_SUPPORT_ADMIN)))
+     throw Error('V2 support administrator role not verified.');
+    return getAddress(V2_SUPPORT_ADMIN);
+   }
+  });
+  handler.close=()=>provider.destroy();return handler;
+ }catch(e){provider.destroy();throw e;}
+}
+
 async function configuredDailyActivity(config){
  if(!config.rpcUrl||!config.address)return null;
  const {createDailyActivity}=await import('./daily-activity.mjs');
@@ -204,5 +234,5 @@ async function configuredDailyActivity(config){
 let entrypoint;
 try{if(process.argv[1]&&process.argv[1]!=='-')entrypoint=pathToFileURL(realpathSync(process.argv[1])).href;}catch{}
 if(import.meta.url===entrypoint){
- try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const teamRelay=createTeamRelay(config);const server=createApiServer(feed,{community,migration,dailyActivity,historyRelay,teamRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();dailyActivity?.close?.();historyRelay.close();teamRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
+ try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);let v2Community=null;try{v2Community=await configuredV2Community(config);}catch{console.error('V2 support disabled: V2 contract or RPC not verified.');}const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const teamRelay=createTeamRelay(config);const server=createApiServer(feed,{community,v2Community,migration,dailyActivity,historyRelay,teamRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();v2Community?.close?.();dailyActivity?.close?.();historyRelay.close();teamRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }

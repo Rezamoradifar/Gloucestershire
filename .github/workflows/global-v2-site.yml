@@ -4,6 +4,10 @@ on:
     paths:
       - 'website/**'
       - 'ubuntu-global-v2-site.sh'
+      - 'ubuntu-v2-support-install.sh'
+      - 'server/community.mjs'
+      - 'server/trades-api.mjs'
+      - 'test/v2-community-isolation.test.mjs'
       - '.github/workflows/global-v2-site.yml'
   workflow_dispatch:
 permissions:
@@ -24,6 +28,12 @@ jobs:
       - run: npm ci --prefix website --no-audit --no-fund
       - name: Frontend regression tests, TypeScript and build
         run: npm test --prefix website && npm run build --prefix website
+      - name: New V2-only support service signature and data-isolation checks
+        run: |
+          node --check server/trades-api.mjs
+          node --check server/community.mjs
+          bash -n ubuntu-v2-support-install.sh
+          node --test test/v2-community-isolation.test.mjs
       - name: Site-only installer and bundle isolation
         shell: bash
         run: |

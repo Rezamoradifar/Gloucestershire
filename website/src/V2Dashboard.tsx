@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useState} from 'react';
 import {ZeroAddress,getAddress,isAddress,parseUnits} from 'ethers';
-import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2} from 'lucide-react';
+import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2,UserRound,Info,Megaphone,History} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,walletConnectReady,type WalletKind} from './wallet';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
  readV2Snapshot,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,
@@ -8,19 +8,34 @@ import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
 import V2HistoryPanel from './V2HistoryPanel';
 import V2AdminConsole from './V2AdminConsole';
 import V2Investment from './V2Investment';
+import V2Network from './V2Network';
+import V2Community from './V2Community';
+import V2Profile from './V2Profile';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
+import './v2-classic-refinement.css';
+import './v2-mobile-dock.css';
 
-type Section='overview'|'invest'|'positions'|'team'|'history'|'withdrawals'|'admin'|'contract';
+type Section='overview'|'invest'|'positions'|'team'|'history'|'profile'|'tickets'|'announcements'|'withdrawals'|'admin'|'contract';
 const navItems=[
  {id:'overview' as Section,label:'Overview',Icon:LayoutDashboard},
  {id:'invest' as Section,label:'Invest / plans',Icon:Coins},
  {id:'positions' as Section,label:'My positions',Icon:Layers},
  {id:'team' as Section,label:'Team & referrals',Icon:Users},
- {id:'history' as Section,label:'Verified history',Icon:Clock3},
+ {id:'history' as Section,label:'Profit & deposits',Icon:Clock3},
+ {id:'profile' as Section,label:'My profile',Icon:UserRound},
+ {id:'tickets' as Section,label:'Support tickets',Icon:Info},
+ {id:'announcements' as Section,label:'Announcements',Icon:Megaphone},
  {id:'withdrawals' as Section,label:'Withdrawals',Icon:Coins},
  {id:'admin' as Section,label:'Administration',Icon:Settings2},
  {id:'contract' as Section,label:'Contract & safety',Icon:ShieldCheck}
+];
+const mobileNavItems=[
+ {id:'overview' as Section,label:'Home',Icon:House},
+ {id:'positions' as Section,label:'Positions',Icon:Layers},
+ {id:'team' as Section,label:'Team',Icon:Users},
+ {id:'history' as Section,label:'History',Icon:History},
+ {id:'profile' as Section,label:'Profile',Icon:UserRound}
 ];
 const explorerAddress=(address:string)=>V2_EXPLORER+'/address/'+address;
 const explorerTx=(hash:string)=>V2_EXPLORER+'/tx/'+hash;
@@ -179,7 +194,7 @@ export default function V2Dashboard(){
   <main className="gv2-wrap">
    <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE · V2 TESTNET</span>
     <h1>{navItems.find(x=>x.id===section)?.label??'Account overview'}</h1>
-    <p>Original Global dashboard design, connected exclusively to the new V2 on-chain account system.</p>
+    <p>Full account workspace · balances, team, rewards, positions and manager controls on the new V2 network.</p>
    </div>
     {wallet&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17} className={loading?'gv2-spin':''}/> Refresh</button>}
    </div>
@@ -194,13 +209,25 @@ export default function V2Dashboard(){
    {error&&<p className="gv2-error" role="alert">{error}</p>}
    {notice&&<p className="gv2-message" role="status">{notice}{transaction&&<> · <a href={explorerTx(transaction)} target="_blank" rel="noopener noreferrer">View transaction <ExternalLink size={14}/></a></>}</p>}
 
-   {!wallet&&<div className="gv2-connect gv2-panel">
-    <Wallet size={36}/><h2>Connect to the new Global V2 contract</h2>
-    <p>This is a separate, newly deployed contract on BNB Testnet. Connecting your wallet does not transfer funds.</p>
-    <button type="button" onClick={()=>setSection('invest')}>Preview investment plans · no wallet needed</button>
-    <div className="gv2-buttons">
-     <button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}>Browser wallet</button>
-     <button disabled={connecting||!walletConnectReady} onClick={()=>void connect('walletconnect')}>WalletConnect / Mobile</button>
+   {!wallet&&section==='overview'&&<div className="gv2-account-entry">
+    <div className="gv2-classic-welcome gv2-panel">
+     <div className="gv2-classic-welcome-copy">
+      <small>GLOBAL DROP TRADE · ACCOUNT CENTER</small>
+      <h2>Your original Global workspace, upgraded for V2.</h2>
+      <p>Open your personal account, positions, team and settlement history with your wallet. Only verified V2 blockchain information is displayed.</p>
+      <div className="gv2-classic-connect-actions">
+       <button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}><Wallet size={17}/> {connecting?'Connecting…':'Connect wallet'}</button>
+       <button disabled={connecting||!walletConnectReady} onClick={()=>void connect('walletconnect')}>WalletConnect / Mobile</button>
+       <button onClick={()=>setSection('invest')}>Explore plans</button>
+      </div>
+     </div>
+     <div className="gv2-classic-welcome-mark" aria-hidden="true"><span>G</span><small>GLOBAL V2</small></div>
+    </div>
+    <div className="gv2-classic-quick-grid" aria-label="Global account sections">
+     <button onClick={()=>setSection('invest')}><Coins size={19}/><strong>Investment plans</strong><small>On-chain testnet only</small></button>
+     <button onClick={()=>setSection('positions')}><Layers size={19}/><strong>My positions</strong><small>Connect to view</small></button>
+     <button onClick={()=>setSection('team')}><Users size={19}/><strong>Network & team</strong><small>V2 referral records</small></button>
+     <button onClick={()=>setSection('withdrawals')}><Clock3 size={19}/><strong>Withdrawals</strong><small>Manager approval required</small></button>
     </div>
    </div>}
    {wallet&&network!==V2_CHAIN_ID&&<div className="gv2-connect gv2-panel">
@@ -210,6 +237,8 @@ export default function V2Dashboard(){
    {wallet&&network===V2_CHAIN_ID&&loading&&!snapshot&&<div className="gv2-panel gv2-loading">Verifying V2 contract bytecode and loading on-chain balances…</div>}
 
    {section==='invest'&&!snapshot&&<V2Investment snapshot={null} wallet={wallet}/>}
+   {section==='history'&&!snapshot&&<V2HistoryPanel requester={wallet} subject={wallet} token={''}/>}
+   {!snapshot&&(['positions','team','profile'] as Section[]).includes(section)&&<section className="gv2-panel gv2-empty-workspace"><h2>{navItems.find(item=>item.id===section)?.label}</h2><p>Connect your V2 wallet to load verified records for this section. Old contract balances are not imported.</p><button onClick={()=>void connect('injected')} disabled={connecting}><Wallet size={17}/> Connect wallet</button></section>}
    {snapshot&&<div className="gv2-content">
     <div className="gv2-summary">
      <div className="gv2-metric"><small>Membership</small><strong>{snapshot.registered?'Registered':'Not registered'}</strong><span>On-chain registry</span></div>
@@ -217,7 +246,7 @@ export default function V2Dashboard(){
      <div className="gv2-metric"><small>Capital · USD</small><strong>{v2Money(snapshot.capitalUsd,18,2)}</strong><span>Recorded principal, not cash</span></div>
      <div className="gv2-metric"><small>VIP verification</small><strong>{snapshot.kyc?'Admin verified':'Unverified'}</strong><span>Manager-only KYC</span></div>
     </div>
-    {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet}/>}
+    {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet} onConfirmed={()=>void refresh()}/>}
     {section==='overview'&&<>
      <div className="gv2-section-head"><h2>Asset accounting</h2><span>Verified at block {snapshot.block.toLocaleString('en-US')}</span></div>
      <div className="gv2-asset-row">{snapshot.accounts.map(a=><article key={a.symbol} className="gv2-panel">
@@ -251,15 +280,11 @@ export default function V2Dashboard(){
      {!snapshot.positionsTotal&&<p>No positions have been opened on this V2 contract.</p>}
      {snapshot.positionsTotal>10&&<p>Showing 10 positions. More pages require a verified indexer.</p>}
     </div>}
-    {section==='team'&&<div className="gv2-panel">
-     <div className="gv2-panel-head"><h2>Referral & activity</h2><Users size={19}/></div>
-     <div className="gv2-detail"><span>Your wallet</span><b className="gv2-break">{snapshot.wallet}</b></div>
-     <div className="gv2-detail"><span>Referrer</span><b className="gv2-break">{snapshot.referrer===ZeroAddress?'None':snapshot.referrer}</b></div>
-     <div className="gv2-detail"><span>Eligibility right now</span><b>{snapshot.eligible?'Eligible':'Not eligible'}</b></div>
-     <div className="gv2-detail"><span>24h check-in expires</span><b>{snapshot.lastCheckIn?v2Date(snapshot.lastCheckIn+86400):'Not started'}</b></div>
-     <p className="gv2-small">Eligible upline commissions are allocated atomically with funded personal earnings in the V2 contract. Exact per-source referral history requires a verified event index, not an estimate from the combined profit balance.</p>
-    </div>}
+    {section==='team'&&<V2Network wallet={wallet} snapshot={snapshot}/>}
     {section==='history'&&<V2HistoryPanel requester={wallet} subject={wallet} token={snapshot.token} decimals={snapshot.accounts[1].decimals}/>}
+    {section==='profile'&&<V2Profile snapshot={snapshot}/>}
+    {section==='tickets'&&<V2Community mode="tickets" who={wallet} admin={snapshot.canApprove||snapshot.canKyc}/>}
+    {section==='announcements'&&<V2Community mode="announcements" who={wallet} admin={snapshot.canApprove||snapshot.canKyc}/>}
     {section==='withdrawals'&&<>
      <div className="gv2-panel"><div className="gv2-panel-head"><h2>Request manager-approved withdrawal</h2><Clock3 size={18}/></div>
       <p>Every request requires manager approval. Profit fee: 3%. Cooldown: 72 hours per asset. Principal lock: 90 days, followed by a 30% penalty.</p>
@@ -307,5 +332,6 @@ export default function V2Dashboard(){
    </div>}
   </main>
   </div>
+  <nav className="gv2-mobile-bottom" aria-label="Quick dashboard navigation">{mobileNavItems.map(({id,label,Icon})=><button type="button" key={id} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setAmount('');setError('');setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});}}><Icon size={23} strokeWidth={2.1}/><span>{label}</span></button>)}</nav>
  </div>;
 }
