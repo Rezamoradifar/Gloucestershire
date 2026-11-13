@@ -32,6 +32,8 @@ test('Android SSH confirmation remains interactive after a pasted empty newline'
  assert.ok(first>0&&first<loop&&loop<approved&&approved<guard&&guard<marker,
   'Never write deployment intent or sign before exact interactive confirmation');
  assert.ok(deploy.includes('V3_CONFIRMATION_NOT_MATCHED.'));
+ assert.ok(deploy.includes("process.stdout.write('Type DEPLOY NEW V3 BNB TESTNET ONLY: ')"));
+ assert.ok(deploy.includes("const answer=await rl.question('')"));
  assert.ok(deploy.includes("createInterface({input:process.stdin,terminal:false})"));
  assert.ok(deploy.includes('if(attempt<5)process.stdout.write('));
  assert.equal(deploy.includes('--confirm-privately'),false);
