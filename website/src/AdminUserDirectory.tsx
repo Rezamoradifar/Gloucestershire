@@ -70,14 +70,14 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
  const [authBusy,setAuthBusy]=useState(false),[scanBusy,setScanBusy]=useState(false),[detailBusy,setDetailBusy]=useState(false);
  const [error,setError]=useState(''),[detailError,setDetailError]=useState('');
  const revision=useRef(0),scanning=useRef(false),sessionRef=useRef(''),scannerRef=useRef<AbortController|null>(null);
- const selectedRef=useRef(0);
+ const selectedRef=useRef(0),historyGeneration=useRef(0),historyAbort=useRef<AbortController|null>(null);
  useEffect(()=>{
-  revision.current++;sessionRef.current='';scannerRef.current?.abort();scanning.current=false;
+  revision.current++;sessionRef.current='';scannerRef.current?.abort();historyGeneration.current++;historyAbort.current?.abort();scanning.current=false;
   setToken('');setHead(null);setRows([]);setCursor(null);setSelected('');setSearch('');
   setProfile(null);setWithdrawals(null);setBranches(null);setActivity(null);setHistory([]);setHistoryAsset('USDT');
   setError('');setDetailError('');setHistoryError('');setPositionOffset(0);setWithdrawPage(0);
   setAuthBusy(false);setScanBusy(false);setDetailBusy(false);
-  return()=>{revision.current++;scannerRef.current?.abort();};
+  return()=>{revision.current++;scannerRef.current?.abort();historyGeneration.current++;historyAbort.current?.abort();};
  },[who,owner]);
  const needSign=()=>{sessionRef.current='';setToken('');setError('Owner audit session expired. Verify your owner wallet again.');};
  const handleError=(e:unknown,set:(value:string)=>void)=>{
@@ -127,6 +127,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
   const address=getAddress(wallet);
   setSelected(address);setSearch(address);setPositionOffset(0);setWithdrawPage(0);
   setProfile(null);setWithdrawals(null);setBranches(null);setActivity(null);setActivityError('');
+  historyGeneration.current++;historyAbort.current?.abort();setHistoryBusy(false);
   setHistory([]);setHistoryCursor(head?.confirmedHead??null);setHistoryError('');setHistoryAsset('USDT');
  };
  const find=(event:FormEvent)=>{event.preventDefault();if(!isAddress(search))setDetailError('Enter a valid wallet address.');else{setDetailError('');choose(search);}};
@@ -156,11 +157,13 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
  },[selected,token,head,positionOffset,withdrawPage]);
  const scanHistory=async()=>{
   if(!selected||!head||!token||historyCursor===null||historyBusy||!profile)return;
+  const generation=++historyGeneration.current,controller=new AbortController();historyAbort.current=controller;
   setHistoryBusy(true);setHistoryError('');
   const current=historyCursor,first=Math.max(head.deploymentBlock,current-95);
   try{
    const asset=historyAsset==='BNB'?ZeroAddress:(profile.assets.find(a=>a.symbol==='USDT')?.address??ZeroAddress);
-   const data=await requestVerifiedHistory({wallet:selected,asset,scope:'wallet',kind:'finance',from:first,to:current});
+   const data=await requestVerifiedHistory({wallet:selected,asset,scope:'wallet',kind:'finance',from:first,to:current,signal:controller.signal});
+   if(controller.signal.aborted||generation!==historyGeneration.current)return;
    const seen=new Map(history.map(row=>[row.key,row]));
    for(const log of data.logs){
     const record=parseFinancialLog(log as unknown as Log);
@@ -168,8 +171,8 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
    }
    setHistory([...seen.values()].sort((a,b)=>b.block-a.block||b.index-a.index));
    setHistoryCursor(first===head.deploymentBlock?null:first-1);
-  }catch(e){handleError(e,setHistoryError);}
-  finally{setHistoryBusy(false);}
+  }catch(e){if(!controller.signal.aborted&&generation===historyGeneration.current)handleError(e,setHistoryError);}
+  finally{if(generation===historyGeneration.current){setHistoryBusy(false);historyAbort.current=null;}}
  };
  const exportLoaded=()=>{
   if(!head||!rows.length)return;
@@ -208,7 +211,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
       <RefreshCw size={15} className={scanBusy?'spin':''}/>{scanBusy?'Reading confirmed blocks…':cursor===null?'Full scan reached':'Scan up to 4,096 older blocks'}
      </button>
      <button type="button" className="small-button" onClick={exportLoaded} disabled={!rows.length}><FileDown size={15}/> Export loaded CSV</button>
-     <button type="button" className="small-button" onClick={()=>{revision.current++;scannerRef.current?.abort();sessionRef.current='';setToken('');setHead(null);setSelected('');setRows([]);setCursor(null);}}>
+     <button type="button" className="small-button" onClick={()=>{revision.current++;scannerRef.current?.abort();historyGeneration.current++;historyAbort.current?.abort();sessionRef.current='';setToken('');setHead(null);setSelected('');setRows([]);setCursor(null);}}>
       Lock owner directory
      </button>
     </div>
@@ -293,7 +296,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
      </section>
      <section className="admin-users-subsection"><h4>Verified financial events · {historyAsset}</h4>
       <div className="admin-users-toolbar" role="group" aria-label="Financial history asset">
-       {(['USDT','BNB'] as const).map(symbol=><button type="button" key={symbol} className="small-button" aria-pressed={historyAsset===symbol} disabled={historyBusy} onClick={()=>{setHistoryAsset(symbol);setHistory([]);setHistoryCursor(head.confirmedHead);setHistoryError('');}}>{symbol}</button>)}
+       {(['USDT','BNB'] as const).map(symbol=><button type="button" key={symbol} className="small-button" aria-pressed={historyAsset===symbol} disabled={historyBusy} onClick={()=>{historyGeneration.current++;historyAbort.current?.abort();setHistoryAsset(symbol);setHistory([]);setHistoryCursor(head.confirmedHead);setHistoryError('');}}>{symbol}</button>)}
       </div>
       <p className="muted">{historyCursor===null?'History scanned to the configured deployment block.':'Loaded '+history.length+' events in scanned windows only. Click “Scan older finance events” to expand coverage.'}</p>
       {historyError&&<p className="inline-error" role="alert">{historyError}</p>}
