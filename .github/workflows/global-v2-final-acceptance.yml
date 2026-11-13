@@ -1,0 +1,62 @@
+name: Global V2 — final testnet acceptance evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/global-v2-final-acceptance.yml'
+      - 'scripts/global-v2-final-acceptance-report.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  final-testnet-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - name: Install isolated test dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix website --ignore-scripts --no-audit --no-fund
+      - name: Verify frontend tests, TypeScript and build
+        run: |
+          npm test --prefix website -- --maxWorkers=2
+          npm run build --prefix website
+      - name: Verify V2 API isolation and read-only gateway
+        run: |
+          node --check server/trades-api.mjs
+          node --check server/v2-read-rpc.mjs
+          node --test test/v2-community-isolation.test.mjs test/v2-read-rpc.test.mjs test/v2-read-rpc-integration.test.mjs
+          bash -n ubuntu-global-v2-site.sh
+          bash -n scripts/launch-v2-site-service.sh
+      - name: Test 100 independent LOCAL MOCK wallets and full settlement lifecycle
+        run: node scripts/global-v2-100-account-lab.mjs
+      - name: Audit publicly deployed V2 read-only (report unavailable RPC honestly)
+        shell: bash
+        run: |
+          mkdir -p reports
+          set +e
+          node scripts/global-v2-readonly-audit.mjs --check > reports/global-v2-onchain-readonly.log 2>&1
+          result=$?
+          set -e
+          printf '%s\n' "$result" > reports/global-v2-onchain-exit.txt
+          echo "Public read-only audit exit: $result (0=check passed, 2=cash shortage, 1=not verified)"
+      - name: Generate fail-closed final evidence report
+        run: |
+          node scripts/global-v2-final-acceptance-report.mjs
+          cat reports/global-v2-final-acceptance.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload sanitized test evidence (no private keys)
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-v2-final-testnet-acceptance
+          path: |
+            reports/global-v2-local-100-account-report.json
+            reports/global-v2-final-acceptance.json
+            reports/global-v2-final-acceptance.md
+            reports/global-v2-onchain-exit.txt
+          retention-days: 14
