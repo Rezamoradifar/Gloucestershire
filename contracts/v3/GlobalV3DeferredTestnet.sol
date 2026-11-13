@@ -7,13 +7,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {V3NetworkPlan} from "./V3NetworkPlan.sol";
 
 /// @notice ISOLATED BNB TESTNET prototype; NOT DEPLOYED OR APPROVED FOR PRODUCTION.
 /// @dev Accrual is a CONTRACTUAL TEST LIABILITY, not proof of business income,
 /// backed USDT, available vault liquidity, insured principal or a guaranteed return.
 /// An independently verified revenue source and financial/legal audits are mandatory
 /// before any consideration of a real-money deployment.
-contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
+contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard, V3NetworkPlan {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS = 10_000;
@@ -24,6 +25,11 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     uint256 public constant PRINCIPAL_PENALTY_BPS = 3000;
     uint256 public constant PROFIT_WITHDRAWAL_CAP_BPS = 1000;
     uint256 public constant MIN_TEST_DEPOSIT = 10 ether;
+    uint256 public constant DEPOSIT_FEE_EACH_BPS = 1000;
+    // Preserve the existing V2 destinations. The remainder goes to operations.
+    address public constant FEE_WALLET_1 = address(bytes20(hex"7037cc199499d7a3431285a01e435454eae51265"));
+    address public constant FEE_WALLET_2 = address(bytes20(hex"5bc282a45a8a1d7d9b915f04fc1d4031156d7632"));
+    address public constant OPERATIONS_WALLET = address(bytes20(hex"8c4ac9b009808a0b49ba77b58e3871e7cdba463c"));
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant FUNDER_ROLE = keccak256("FUNDER_ROLE");
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
@@ -64,7 +70,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         bool fromReinvestment;
     }
     // status: 0 Requested, 1 Approved, 2 CashEscrowed, 3 Paid, 4 Rejected, 5 Cancelled
-    // kind: 0 position-profit, 1 principal, 2 referral-profit
+    // kind: 0 position-profit, 1 principal, 2 referral-profit, 3 network reward
     struct Withdrawal {
         address beneficiary;
         uint256 positionId;
@@ -82,16 +88,22 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     // from cumulative totals after withdrawals/reinvestment.
     mapping(address => mapping(uint256 => uint256)) public claimableDaily;
     mapping(address => mapping(uint256 => uint256)) public claimableCompound;
+    mapping(address => uint256) public networkAvailable;
+    mapping(address => uint256) public networkReserved;
+    mapping(address => uint256) public cumulativeNetwork;
+    // Incremental bounded sums avoid looping over all direct branches during accrual.
+    mapping(address => mapping(uint8 => uint256)) public qualifiedVolume;
     mapping(uint256 => uint256) public reservedDailyByRequest;
     mapping(uint256 => uint256) public reservedCompoundByRequest;
     Withdrawal[] private withdrawals;
     mapping(address => uint256[]) private userWithdrawalIds;
 
-    event DepositRetained(address indexed user,uint256 indexed positionId,uint256 amount);
+    event DepositRouted(address indexed user,uint256 indexed positionId,uint256 amount,uint256 fee1,uint256 fee2,uint256 operations);
     event DailyClaimAccrued(address indexed user,uint256 indexed positionId,uint256 personal,uint256 compounded,uint256 total,uint256 at);
     event ProfitClaimSplitReserved(uint256 indexed requestId,uint256 personal,uint256 compounded);
     event ProfitClaimSplitPaid(uint256 indexed requestId,uint256 personal,uint256 compounded);
     event ReferralClaimAccrued(address indexed upline,address indexed source,uint8 level,uint256 amount);
+    event NetworkClaimAccrued(address indexed user,uint256 indexed group,uint256 amount,uint8 stages);
     event ProfitReinvested(address indexed user,uint256 indexed fromPosition,uint256 newPositionId,uint256 amount);
     event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee);
     event WithdrawalApproved(uint256 indexed id,address indexed manager);
@@ -184,6 +196,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     function isEligible(address who) public view returns(bool) {
         User storage u=users[who];
         return u.registered&&!u.suspended&&u.capital>=MIN_TEST_DEPOSIT&&
+               (u.capital<=50_000 ether||u.vipKyc)&&
                u.lastCheckIn!=0&&block.timestamp>=u.lastCheckIn&&
                block.timestamp-u.lastCheckIn<ONE_DAY;
     }
@@ -204,6 +217,31 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         if(tier==4)return 130;
         revert Invalid();
     }
+    /// @notice Test-token values simulate USD 1:1; no real market price is asserted.
+    function upgradeTerms(uint8 tier) public pure returns(uint256 target,uint256 directs,uint16 maximumBps) {
+        if(tier==0)return (2_500 ether,4,100);
+        if(tier==1)return (10_000 ether,6,120);
+        if(tier==2)return (50_000 ether,8,150);
+        if(tier==3)return (250_000 ether,10,180);
+        if(tier==4)return (1_000_000 ether,12,200);
+        revert Invalid();
+    }
+    function effectiveDailyBps(address who) public view returns(uint16) {
+        uint8 tier=tierOf(who);
+        (uint256 target,uint256 directs,uint16 maximum)=upgradeTerms(tier);
+        if(qualifiedDirects[who]>=directs&&qualifiedVolume[who][tier]>=target)return maximum;
+        return dailyBps(tier);
+    }
+    function _networkParent(address who) internal view override returns(address) {
+        return users[who].referrer;
+    }
+    function _onBranchVolume(address who,uint256 beforeVolume,uint256 afterVolume) internal override {
+        for(uint8 tier=0;tier<5;tier++){
+            (uint256 target,,)=upgradeTerms(tier);
+            uint256 cap=Math.mulDiv(target,branchCapBps(target),BPS);
+            qualifiedVolume[who][tier]+=Math.min(afterVolume,cap)-Math.min(beforeVolume,cap);
+        }
+    }
     function referralBps(uint8 tier,uint8 level) public pure returns(uint16) {
         if(tier>4||level>3)revert Invalid();
         if(level==0)return [uint16(800),1000,1200,1400,1600][tier];
@@ -212,8 +250,9 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         return tier==4?400:0;
     }
 
-    /// @notice Keeps 100% of test deposit in vault; no legacy 10/10/80 leakage.
-    /// This is a NEW TEST CONTRACT, not a silent change to existing economics.
+    /// @notice Routes each TEST deposit to the original two 10% fee wallets and
+    /// the original operations wallet. Gross principal is an unfunded claim,
+    /// not cash retained by this vault. Any integer rounding goes to operations.
     function deposit(uint256 amount,address referrer) external nonReentrant active {
         if(amount<MIN_TEST_DEPOSIT)revert Insufficient();
         User storage u=users[msg.sender];
@@ -221,13 +260,20 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         else if(u.referrer!=referrer)revert Invalid();
         if(u.suspended||(u.capital+amount>50_000 ether&&!u.vipKyc))revert NotEligible();
         _receiveExact(amount);
+        _capitalChanged(msg.sender,u.capital,u.capital+amount);
         u.capital+=amount;
         u.originalDeposits+=amount;
         principalLiability+=amount;
         uint256 id=positions[msg.sender].length;
         positions[msg.sender].push(Position(amount,0,0,0,0,0,0,
             uint64(block.timestamp),uint64(block.timestamp),false));
-        emit DepositRetained(msg.sender,id,amount);
+        _addNetworkVolume(msg.sender,amount);
+        uint256 fee=Math.mulDiv(amount,DEPOSIT_FEE_EACH_BPS,BPS);
+        uint256 operations=amount-2*fee;
+        asset.safeTransfer(FEE_WALLET_1,fee);
+        asset.safeTransfer(FEE_WALLET_2,fee);
+        asset.safeTransfer(OPERATIONS_WALLET,operations);
+        emit DepositRouted(msg.sender,id,amount,fee,fee,operations);
     }
 
     function _receiveExact(uint256 amount) private {
@@ -251,7 +297,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         if(!isEligible(who))revert NotEligible();
         Position storage p=positions[who][positionId];
         if(p.principal==0||block.timestamp<uint256(p.lastAccruedAt)+ONE_DAY)revert Locked();
-        uint256 bps=dailyBps(tierOf(who));
+        uint256 bps=effectiveDailyBps(who);
         uint256 personal=Math.mulDiv(p.principal,bps,BPS);
         uint256 compound=Math.mulDiv(p.compoundedBasis,bps,BPS);
         uint256 gross=personal+compound;
@@ -274,7 +320,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         for(uint8 i=0;i<4&&parent!=address(0);i++){
             uint256 amount=Math.mulDiv(gross,referralBps(sourceTier,i),BPS);
             User storage u=users[parent];
-            if(amount>0&&isEligible(parent)&&(i!=3||(tierOf(parent)==4&&u.vipKyc))){
+            if(amount>0&&isEligible(parent)&&(i!=3||tierOf(parent)==4)){
                 u.referralAvailable+=amount;
                 u.cumulativeReferral+=amount;
                 profitLiability+=amount;
@@ -304,12 +350,31 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         claimableCompound[msg.sender][positionId]-=(amount-personalUsed);
         profitLiability-=amount;
         principalLiability+=amount;
+        _capitalChanged(msg.sender,u.capital,u.capital+amount);
         u.capital+=amount;
         u.reinvestments+=amount;
         uint256 id=positions[msg.sender].length;
         positions[msg.sender].push(Position(amount,0,0,0,0,0,0,
             uint64(block.timestamp),uint64(block.timestamp),true));
+        _addNetworkVolume(msg.sender,amount);
         emit ProfitReinvested(msg.sender,positionId,id,amount);
+    }
+
+    /// @notice Prepare or claim the original 14 staged network rewards as
+    /// unfunded MOCK-token liabilities. No cash or real USD is invented.
+    function prepareNetworkReward(uint256 group,uint8 expectedStage,uint256 steps) external nonReentrant active {
+        _checkRewardStage(msg.sender,group,expectedStage);
+        _prepareReward(msg.sender,group,steps);
+    }
+    function claimNetworkRewards(uint256 group,uint8 expectedStage,uint8 count) external nonReentrant active {
+        if(!isEligible(msg.sender)||count==0||uint256(expectedStage)+count>14)revert NotEligible();
+        _checkRewardStage(msg.sender,group,expectedStage);
+        uint256 total;
+        for(uint256 i=0;i<count;i++)total+=_consumeReward(msg.sender,group);
+        networkAvailable[msg.sender]+=total;
+        cumulativeNetwork[msg.sender]+=total;
+        profitLiability+=total;
+        emit NetworkClaimAccrued(msg.sender,group,total,count);
     }
 
     function _beginRequest(address who) private {
@@ -344,6 +409,13 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         u.referralAvailable-=amount;
         u.referralReserved+=amount;
         id=_addWithdrawal(msg.sender,0,amount,0,2);
+    }
+    function requestNetworkReward(uint256 amount) external nonReentrant active returns(uint256 id) {
+        if(amount==0||amount>networkAvailable[msg.sender]||amount>profitWithdrawalCap(msg.sender))revert Insufficient();
+        _beginRequest(msg.sender);
+        networkAvailable[msg.sender]-=amount;
+        networkReserved[msg.sender]+=amount;
+        id=_addWithdrawal(msg.sender,0,amount,0,3);
     }
     function requestPrincipal(uint256 positionId,uint256 amount) external nonReentrant active returns(uint256 id) {
         Position storage p=positions[msg.sender][positionId];
@@ -419,6 +491,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
             Position storage p=positions[r.beneficiary][r.positionId];
             p.reservedPrincipal-=r.gross;
             p.principal-=r.gross;
+            _capitalChanged(r.beneficiary,u.capital,u.capital-r.gross);
             u.capital-=r.gross;
             principalLiability-=r.gross;
         }else if(r.kind==0){
@@ -428,8 +501,11 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
             emit ProfitClaimSplitPaid(id,reservedDailyByRequest[id],reservedCompoundByRequest[id]);
             delete reservedDailyByRequest[id];
             delete reservedCompoundByRequest[id];
-        }else{
+        }else if(r.kind==2){
             u.referralReserved-=r.gross;
+            profitLiability-=r.gross;
+        }else{
+            networkReserved[r.beneficiary]-=r.gross;
             profitLiability-=r.gross;
         }
         asset.safeTransfer(feeReceiver,r.fee);
@@ -466,9 +542,12 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
             claimableCompound[r.beneficiary][r.positionId]+=reservedCompoundByRequest[id];
             delete reservedDailyByRequest[id];
             delete reservedCompoundByRequest[id];
-        }else{
+        }else if(r.kind==2){
             u.referralReserved-=r.gross;
             u.referralAvailable+=r.gross;
+        }else{
+            networkReserved[r.beneficiary]-=r.gross;
+            networkAvailable[r.beneficiary]+=r.gross;
         }
     }
 

@@ -11,7 +11,7 @@ const input={language:'Solidity',sources:{[file]:{content:fs.readFileSync(file,'
  outputSelection:{'*':{'*':['abi','evm.bytecode.object','evm.deployedBytecode.object']}}
 }};
 const output=JSON.parse(solc.compile(JSON.stringify(input),{import:name=>{
- try{return {contents:fs.readFileSync(path.resolve('node_modules',name),'utf8')};}
+ try{return {contents:fs.readFileSync(path.resolve(name.startsWith('contracts/')?name:path.join('node_modules',name)),'utf8')};}
  catch{return {error:'Cannot resolve '+name};}
 }}));
 const errors=(output.errors||[]).filter(x=>x.severity==='error');

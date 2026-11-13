@@ -38,7 +38,7 @@ jobs:
           node --check scripts/global-v3-auto-compound-keeper.mjs
           node --check scripts/deploy-global-v3-testnet.mjs
           bash -n scripts/install-global-v3-keeper-timer.sh
-          node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-deferred-ledger.test.mjs test/global-v3-readonly-audit.test.mjs test/global-v3-deploy-safety.test.mjs
+          node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-deferred-ledger.test.mjs test/global-v3-plan-routing.test.mjs test/global-v3-readonly-audit.test.mjs test/global-v3-deploy-safety.test.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
