@@ -1,13 +1,22 @@
 import {useCallback,useEffect,useState} from 'react';
 import {ZeroAddress,getAddress,isAddress,parseUnits} from 'ethers';
-import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet} from 'lucide-react';
+import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,walletConnectReady,type WalletKind} from './wallet';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
  readV2Snapshot,readV2AdminRequests,readV2AdminMembers,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,
  type V2Asset,type V2Action,type V2Snapshot,type V2AdminMember,type V2Withdrawal} from './v2-chain';
 import './v2-dashboard.css';
+import './v2-classic-shell.css';
 
 type Section='overview'|'positions'|'team'|'withdrawals'|'admin'|'contract';
+const navItems=[
+ {id:'overview' as Section,label:'Overview',Icon:LayoutDashboard},
+ {id:'positions' as Section,label:'My positions',Icon:Layers},
+ {id:'team' as Section,label:'Team & referrals',Icon:Users},
+ {id:'withdrawals' as Section,label:'Withdrawals',Icon:Coins},
+ {id:'admin' as Section,label:'Administration',Icon:Settings2},
+ {id:'contract' as Section,label:'Contract & safety',Icon:ShieldCheck}
+];
 type AdminRows={total:number;page:number;members:V2AdminMember[];requests:V2Withdrawal[];requestCount:number};
 const explorerAddress=(address:string)=>V2_EXPLORER+'/address/'+address;
 const explorerTx=(hash:string)=>V2_EXPLORER+'/tx/'+hash;
@@ -21,6 +30,7 @@ export default function V2Dashboard(){
  const [amount,setAmount]=useState(''),[principalPosition,setPrincipalPosition]=useState('0');
  const [referrer,setReferrer]=useState(ZeroAddress),[adminRows,setAdminRows]=useState<AdminRows|null>(null);
  const [adminBusy,setAdminBusy]=useState(false),[adminError,setAdminError]=useState('');
+ const [mobileMenu,setMobileMenu]=useState(false);
 
  useEffect(()=>{
   let mounted=true,revision=0;
@@ -153,21 +163,41 @@ export default function V2Dashboard(){
   }catch(e){setError((e as Error).message);}
  };
 
- return <div className="gv2" dir="ltr">
-  <header className="gv2-topbar">
-   <a href="#" className="gv2-logo"><span>G</span><div>GLOBAL<small>DROP TRADE · V2 TESTNET</small></div></a>
-   <div className="gv2-top-actions">
-    <span className="gv2-testnet"><span/>BNB TESTNET</span>
-    {wallet?<button onClick={()=>void disconnect()}><LogOut size={16}/>{v2Short(wallet)}</button>:
-     <button className="gv2-primary" onClick={()=>void connect('injected')} disabled={connecting}>
-      <Wallet size={16}/>Connect wallet</button>}
+ return <div className="gv2 shell gv2-classic" dir="ltr">
+  <aside id="gv2-menu" className={'sidebar gv2-sidebar '+(mobileMenu?'open':'')} aria-label="Global V2 navigation" aria-hidden={mobileMenu?undefined:undefined}>
+   <button className="gv2-sidebar-close" aria-label="Close navigation" onClick={()=>setMobileMenu(false)}><X size={18}/></button>
+   <a className="brand" href="#" onClick={()=>setMobileMenu(false)}><span className="brand-icon">G</span><div><strong>GLOBAL</strong><small>DROP TRADE · V2 TESTNET</small></div></a>
+   <div className="sidebar-caption">YOUR WORKSPACE</div>
+   <nav>{navItems.filter(item=>item.id!=='admin'||canManage).map(({id,label,Icon})=>
+    <button key={id} className={section===id?'active':''} aria-current={section===id?'page':undefined}
+     onClick={()=>{setSection(id);setAmount('');setError('');setMobileMenu(false);}}>
+     <Icon size={19}/><span>{label}</span>{section===id&&<ChevronLeft size={15}/>}
+    </button>)}</nav>
+   <div className="gv2-sidebar-bottom">
+    <a href="#"><House size={15}/> Back to website</a>
+    <button onClick={()=>window.dispatchEvent(new Event('global-theme-toggle'))}><SunMoon size={16}/> Change appearance</button>
+    <div className="gv2-detail"><span>Network</span><b>BNB Testnet · 97</b></div>
+    <small>Global V2 · Verified new contract only</small>
    </div>
-  </header>
-
+  </aside>
+  {mobileMenu&&<button className="gv2-scrim" aria-label="Close mobile navigation" onClick={()=>setMobileMenu(false)}/>}
+  <div className="workspace gv2-workspace">
+   <header className="topbar gv2-classic-topbar">
+    <div className="breadcrumb">
+     <button className="icon-button mobile-menu" aria-label="Open dashboard menu" aria-controls="gv2-menu" aria-expanded={mobileMenu}
+      onClick={()=>setMobileMenu(v=>!v)}><Menu size={21}/></button>
+     <span>Dashboard</span><ChevronLeft size={15}/><strong>{navItems.find(x=>x.id===section)?.label}</strong>
+    </div>
+    <div className="top-actions"><span className="network-label">V2 TESTNET</span>
+     {wallet?<button className="wallet-button" onClick={()=>void disconnect()}><LogOut size={16}/>{v2Short(wallet)}</button>:
+      <button className="wallet-button" onClick={()=>void connect('injected')} disabled={connecting}>
+       <Wallet size={17}/> {connecting?'Connecting…':'Connect wallet'}</button>}
+    </div>
+   </header>
   <main className="gv2-wrap">
-   <div className="gv2-heading"><div><span className="gv2-kicker">CONTRACT-FIRST · ISOLATED TEST ENVIRONMENT</span>
-    <h1>Global V2 <em>Account Center</em></h1>
-    <p>Direct on-chain reads. No external reward worker determines account eligibility or referral amounts.</p>
+   <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE · V2 TESTNET</span>
+    <h1>{navItems.find(x=>x.id===section)?.label??'Account overview'}</h1>
+    <p>Original Global dashboard design, connected exclusively to the new V2 on-chain account system.</p>
    </div>
     {wallet&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17} className={loading?'gv2-spin':''}/> Refresh</button>}
    </div>
@@ -203,10 +233,6 @@ export default function V2Dashboard(){
      <div className="gv2-metric"><small>Capital · USD</small><strong>{v2Money(snapshot.capitalUsd,18,2)}</strong><span>Recorded principal, not cash</span></div>
      <div className="gv2-metric"><small>VIP verification</small><strong>{snapshot.kyc?'Admin verified':'Unverified'}</strong><span>Manager-only KYC</span></div>
     </div>
-    <nav className="gv2-nav" aria-label="Global V2 account pages">
-     {([['overview','Overview'],['positions','Positions'],['team','Referral & activity'],['withdrawals','Withdrawals'],...(canManage?[['admin','Admin']]:[]),['contract','Contract & safety']] as [Section,string][]).map(([id,label])=>
-      <button key={id} className={section===id?'gv2-selected':''} onClick={()=>{setSection(id);setAmount('');setError('');}}>{label}</button>)}
-    </nav>
     {section==='overview'&&<>
      <div className="gv2-section-head"><h2>Asset accounting</h2><span>Verified at block {snapshot.block.toLocaleString('en-US')}</span></div>
      <div className="gv2-asset-row">{snapshot.accounts.map(a=><article key={a.symbol} className="gv2-panel">
@@ -322,5 +348,6 @@ export default function V2Dashboard(){
     <footer className="gv2-foot">GLOBAL DROP TRADE V2 · TESTNET ONLY · No guaranteed returns · Blockchain is the source of truth</footer>
    </div>}
   </main>
+  </div>
  </div>;
 }
