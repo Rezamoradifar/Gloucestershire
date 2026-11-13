@@ -9,6 +9,8 @@ import {V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
 
 export const V3_EXPLORER='https://testnet.bscscan.com';
+const V3_EXPECTED_MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
+const V3_EXPECTED_FEE_RECEIVER=getAddress('0x74015dedf36677485793f1714ec7bd4893907b26');
 export const V3_ABI=[
  'function asset() view returns(address)',
  'function feeReceiver() view returns(address)',
@@ -118,15 +120,24 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    throw Error('V3 source returned a different chain.');
   const height=await provider.getBlockNumber();
   if(height<4)throw Error('BNB Testnet has no confirmed V3 blocks.');
-  const [block,code]=await Promise.all([
-   provider.getBlock(height-3),provider.getCode(config.address,'latest')
+  const [block,code,receipt]=await Promise.all([
+   provider.getBlock(height-3),provider.getCode(config.address,'latest'),
+   provider.getTransactionReceipt(config.deploymentTx)
   ]);
-  if(!block||!block.hash||code==='0x'||keccak256(code).toLowerCase()!==config.runtimeHash)
-   throw Error('V3 runtime bytecode or confirmed block is not the approved deployment.');
+  if(!block||!block.hash||code==='0x'||keccak256(code).toLowerCase()!==config.runtimeHash||
+   !receipt||receipt.status!==1||receipt.blockNumber>block.number||
+   !receipt.contractAddress||getAddress(receipt.contractAddress)!==config.address)
+   throw Error('V3 runtime, confirmed deployment transaction or BNB Testnet block mismatched.');
   const vault=new Contract(config.address,V3_ABI,provider);
-  const asset=await vault.asset({blockTag:block.number});
-  if(getAddress(asset)!==V3_TEST_TOKEN)throw Error('V3 asset is not the approved TEST USDT token.');
-  return {provider,vault,options:{blockTag:block.number},block,config};
+  const options={blockTag:block.number};
+  const [asset,fees,managerRole]=await Promise.all([
+   vault.asset(options),vault.feeReceiver(options),vault.MANAGER_ROLE(options)
+  ]);
+  const adminAllowed=await vault.hasRole(managerRole,V3_EXPECTED_MANAGER,options);
+  if(getAddress(asset)!==V3_TEST_TOKEN||
+    getAddress(fees)!==V3_EXPECTED_FEE_RECEIVER||!adminAllowed)
+   throw Error('V3 asset, approved fee receiver or manager role was not verified.');
+  return {provider,vault,options,block,config};
  };
  // Try independent sources sequentially; retain the successful provider only
  // for the scoped read, so its connection is not destroyed prematurely.
