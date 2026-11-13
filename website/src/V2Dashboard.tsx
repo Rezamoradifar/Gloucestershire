@@ -13,6 +13,7 @@ import V2Community from './V2Community';
 import V2Profile from './V2Profile';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
+import './v2-classic-refinement.css';
 
 type Section='overview'|'invest'|'positions'|'team'|'history'|'profile'|'tickets'|'announcements'|'withdrawals'|'admin'|'contract';
 const navItems=[
@@ -185,7 +186,7 @@ export default function V2Dashboard(){
   <main className="gv2-wrap">
    <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE · V2 TESTNET</span>
     <h1>{navItems.find(x=>x.id===section)?.label??'Account overview'}</h1>
-    <p>Original Global dashboard design, connected exclusively to the new V2 on-chain account system.</p>
+    <p>Full account workspace · balances, team, rewards, positions and manager controls on the new V2 network.</p>
    </div>
     {wallet&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17} className={loading?'gv2-spin':''}/> Refresh</button>}
    </div>
@@ -200,13 +201,25 @@ export default function V2Dashboard(){
    {error&&<p className="gv2-error" role="alert">{error}</p>}
    {notice&&<p className="gv2-message" role="status">{notice}{transaction&&<> · <a href={explorerTx(transaction)} target="_blank" rel="noopener noreferrer">View transaction <ExternalLink size={14}/></a></>}</p>}
 
-   {!wallet&&<div className="gv2-connect gv2-panel">
-    <Wallet size={36}/><h2>Connect to the new Global V2 contract</h2>
-    <p>This is a separate, newly deployed contract on BNB Testnet. Connecting your wallet does not transfer funds.</p>
-    <button type="button" onClick={()=>setSection('invest')}>Preview investment plans · no wallet needed</button>
-    <div className="gv2-buttons">
-     <button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}>Browser wallet</button>
-     <button disabled={connecting||!walletConnectReady} onClick={()=>void connect('walletconnect')}>WalletConnect / Mobile</button>
+   {!wallet&&<div className="gv2-account-entry">
+    <div className="gv2-classic-welcome gv2-panel">
+     <div className="gv2-classic-welcome-copy">
+      <small>GLOBAL DROP TRADE · ACCOUNT CENTER</small>
+      <h2>Your original Global workspace, upgraded for V2.</h2>
+      <p>Open your personal account, positions, team and settlement history with your wallet. Only verified V2 blockchain information is displayed.</p>
+      <div className="gv2-classic-connect-actions">
+       <button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}><Wallet size={17}/> {connecting?'Connecting…':'Connect wallet'}</button>
+       <button disabled={connecting||!walletConnectReady} onClick={()=>void connect('walletconnect')}>WalletConnect / Mobile</button>
+       <button onClick={()=>setSection('invest')}>Explore plans</button>
+      </div>
+     </div>
+     <div className="gv2-classic-welcome-mark" aria-hidden="true"><span>G</span><small>GLOBAL V2</small></div>
+    </div>
+    <div className="gv2-classic-quick-grid" aria-label="Global account sections">
+     <button onClick={()=>setSection('invest')}><Coins size={19}/><strong>Investment plans</strong><small>On-chain testnet only</small></button>
+     <button onClick={()=>setSection('positions')}><Layers size={19}/><strong>My positions</strong><small>Connect to view</small></button>
+     <button onClick={()=>setSection('team')}><Users size={19}/><strong>Network & team</strong><small>V2 referral records</small></button>
+     <button onClick={()=>setSection('withdrawals')}><Clock3 size={19}/><strong>Withdrawals</strong><small>Manager approval required</small></button>
     </div>
    </div>}
    {wallet&&network!==V2_CHAIN_ID&&<div className="gv2-connect gv2-panel">
