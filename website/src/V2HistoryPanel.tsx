@@ -84,7 +84,7 @@ export default function V2HistoryPanel({
     const data=await readV2History(walletProvider,requester,subject,offset);
     if(revision.current!==version||walletProvider!==getWalletProvider())return;
     setRows(old=>{
-     const entries=new Map((reset&&i===0?[]:old).map(row=>[row.key,row]));
+     const entries=new Map<string,V2WalletEvent>((reset&&i===0?[]:old).map(row=>[row.key,row] as const));
      for(const row of data.events)entries.set(row.key,row);
      return [...entries.values()].sort((a,b)=>b.block-a.block||b.index-a.index);
     });
