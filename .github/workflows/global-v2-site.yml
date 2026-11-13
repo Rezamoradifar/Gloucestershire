@@ -7,6 +7,7 @@ on:
       - 'scripts/verify-v3-site-deployment.mjs'
       - 'scripts/install-v3-site-when-verified.sh'
       - 'scripts/launch-v3-site-after-deployment.sh'
+      - 'scripts/release-v3-testnet-and-website.sh'
       - 'test/v3-site-release-gate.test.mjs'
       - 'ubuntu-v2-support-install.sh'
       - 'server/community.mjs'
@@ -41,6 +42,7 @@ jobs:
           node --check scripts/verify-v3-site-deployment.mjs
           bash -n scripts/install-v3-site-when-verified.sh
           bash -n scripts/launch-v3-site-after-deployment.sh
+          bash -n scripts/release-v3-testnet-and-website.sh
           node --test test/v3-site-release-gate.test.mjs
           node --test test/v2-server-testnet-treasury.test.mjs
           bash -n ubuntu-v2-support-install.sh
