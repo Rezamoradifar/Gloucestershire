@@ -10,19 +10,21 @@ The immutable V2 address \`0xA98D8d3709f5D3730BAD5d76C334731784e7CF07\` has \`se
 
 The new \`GlobalV3DeferredTestnet.accrueDaily(who, positionId)\` records **one conditional period**, never hidden catch-up, only after at least 24 hours have elapsed and the investor has signed a recent 24-hour check-in. An authorized funder is not required to pre-fund accrual. Position and asset liabilities are updated together, with event evidence. A new accrual does **not** imply that money was earned through trading, that the payment is funded, or that the user has received tokens. A separate reconciliation displays the actual cash gap.
 
+A single `checkInAndAccrue(positionIds)` wallet signature can check in and record a bounded list (maximum 20) of mature positions. Independent keepers may also call permissionless `accrueDaily`, but neither route creates funds.
+
 The daily tier ceilings mirror the current V2 contract solely for compatibility/testing: Starter 0.50%, Basic 0.70%, Growth 0.90%, Pro 1.10%, VIP 1.30% per eligible daily settlement. **These rates are highly speculative and would require independent commercial evidence and legal review before any real use; they are not guaranteed yields.**
 
 ## 2. Profit on profit, without double counting
 
 Each position has \`principal\` and \`compoundedBasis\` for eligible, outstanding, on-chain **test claims**. After the first day, \`personal = principal × bps / 10000\` and \`compounded = compoundedBasis × bps / 10000\`. The credited increase is exactly \`personal + compounded\`. The credited increase becomes the new compounding basis for subsequent qualifying days.
 
-Example: A position holding 1,000 mock USDT at the 0.70% test tier receives a day-one accrued claim of 7. Day two adds 7 in base accrual plus 0.049 profit-on-profit, yielding **14.049 accumulated mock-unit claims**, before any withdrawal or reinvestment. These are contract-accounting figures, **not demonstrated economic returns or a representation that the cash exists**. Pending withdrawals stop compounding their reserved portion.
+Example: A position holding 1,000 mock USDT at the 0.70% test tier receives a day-one accrued claim of 7. Day two adds 7 in base accrual plus 0.049 profit-on-profit, yielding **14.049 accumulated mock-unit claims**, before any withdrawal or reinvestment. These are contract-accounting figures, **not demonstrated economic returns or a representation that the cash exists**. Pending withdrawals stop compounding their reserved portion. Separate on-chain `claimableDaily(user,positionId)` and `claimableCompound(user,positionId)` track **remaining** component claims, decrement on request and reinvest, and restore exactly on rejection/cancellation.
 
 Manual \`reinvest\` moves previously accrued profits into a distinct new locked principal position with no new token transfer. The total principal/profit liabilities and shortage are updated; no phantom incoming cash appears.
 
 ## 3. Withdrawal, approval, just-in-time escrow and payout
 
-A user submits a specific claim against a position (\`requestProfit\`), a matured principal position (\`requestPrincipal\`), or existing referral earnings (\`requestReferral\`). One pending request per user and a 72-hour per-user cooldown limit concurrent/repeat requests. Management must independently approve a specific request. A role-restricted funder then supplies **exactly that request's gross amount** through \`fundWithdrawal(id)\` to an escrow tracked in \`reservedForPayout\`. No fixed 1m mock-token deposit is required. A later, separate \`payWithdrawal(id)\` transfers to the **immutable original beneficiary** and fee recipient only; the same request cannot pay twice.
+A user submits a specific claim against a position (\`requestProfit\`), a matured principal position (\`requestPrincipal\`), or existing referral earnings (\`requestReferral\`). One pending request per user and a 72-hour per-user cooldown limit concurrent/repeat requests. Management must independently approve a specific request. A role-restricted funder then supplies **exactly that request's gross amount** through \`fundWithdrawal(id)\` to an escrow tracked in \`reservedForPayout\`. No fixed 1m mock-token deposit is required. Where verified unescrowed liquidity is already available, `reserveExistingCash(id)` earmarks it without another token transfer. Profit reserves cannot consume the unescrowed principal backing; multiple requests cannot spend the same escrow. A later, separate \`payWithdrawal(id)\` transfers to the **immutable original beneficiary** and fee recipient only; the same request cannot pay twice.
 
 The cash paid is not a frontend display change. A successful local or public-chain transfer requires a real token balance, independent signatures, adequate gas and verifiable receipt. Profit withdrawal fee: 3%. Principal lock: 90 days, followed by a 30% contractual penalty. User-request profit cap: 10% of cumulative mock test deposits + reinvestments (same as V2; any proposed different cap requires governance review).
 
@@ -30,6 +32,7 @@ The cash paid is not a frontend display change. A successful local or public-cha
 
 At all times on the test prototype:
 - \`principalLiability\` and \`profitLiability\` are separate, explicit on-chain obligations.
+- \`principalEscrowed\` identifies the already-earmarked principal subset, protecting it from use by another claim.
 - \`reservedForPayout\` is an escrow earmarked to already manager-approved cash-backed requests, not freely spendable treasury cash.
 - \`cashStatus()\` returns actual token cash and the **shortfall** \`max(principalLiability + profitLiability − cash, 0)\`.
 - The original 10/10/80 V2 deposit routing is **not** copied into V3: the V3 deposit retains all mock principal in the vault. This is a material change in business economics, not a migration or a silent terms update.
