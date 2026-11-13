@@ -21,6 +21,9 @@ done
 node -e 'if(Number(process.versions.node.split(".")[0])<22)throw Error("NODE_22_REQUIRED")'
 nginx -t
 
+# Frontend regression tests also import the repository's root test dependencies.
+# Install dependencies only inside the isolated checkout, never in the running API.
+npm ci --ignore-scripts --no-audit --no-fund
 # Only V2 can appear in the produced site bundle. Old server assets are not modified.
 npm ci --prefix website --ignore-scripts --no-audit --no-fund
 npm test --prefix website
