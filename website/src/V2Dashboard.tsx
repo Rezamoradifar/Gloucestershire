@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ZeroAddress,getAddress,isAddress,parseUnits} from 'ethers';
-import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2,UserRound,Info,Megaphone,History} from 'lucide-react';
+import {Activity,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2,UserRound,Info,Megaphone,History} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,walletConnectReady,type WalletKind} from './wallet';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
  readV2Snapshot,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,v2WithTimeout,
@@ -375,11 +375,12 @@ export default function V2Dashboard(){
      <div className="gv2-detail"><span>Withdrawal cooldown</span><b>72 hours</b></div>
      <div className="gv2-detail"><span>Registered V2 accounts</span><b>{snapshot.memberCount}</b></div>
      <a className="gv2-explorer" href={explorerAddress(V2_ADDRESS)} target="_blank" rel="noopener noreferrer">Inspect on BscScan Testnet <ArrowUpRight size={15}/></a>
-     <div className="gv2-safety-disclosure">
-      <AlertTriangle size={18} aria-hidden="true"/>
-      <div><strong>Important: experimental testnet contract, not approved for real investments.</strong>
-       <p>The V2 vault is unaudited and contains no migrated balances. Deposits are disabled in this website because its 10% + 10% fee routing and 80% operations transfer leave no matching cash in the vault to back the gross 100% principal obligation. The contract itself still exposes a deposit function, so do not send real funds directly to it. Existing users' previous balances and blockchain records remain separate and cannot be erased or automatically transferred. Do not rely on on-chain accounting as proof that funds are withdrawable.</p>
-      </div>
+     <div className="gv2-contract-disclosure">
+      <p><Info size={15} aria-hidden="true"/> BNB Testnet only · Unaudited · Not approved for real investments. Deposits are disabled in this website; do not send real funds.</p>
+      <details>
+       <summary>Contract risks and fund routing</summary>
+       <p>The contract routes deposits 10% + 10% to fee wallets and 80% to operations, while recording 100% principal. The vault does not retain matching cash backing for the gross principal obligation. A deposit function still exists on-chain; do not send real assets directly. Existing users' previous balances and blockchain records remain separate and cannot be erased or automatically transferred. Recorded credits are not proof that withdrawals are funded.</p>
+      </details>
      </div>
     </div>}
     <footer className="gv2-foot">GLOBAL DROP TRADE V2 · TESTNET ONLY · No guaranteed returns · Blockchain is the source of truth</footer>
