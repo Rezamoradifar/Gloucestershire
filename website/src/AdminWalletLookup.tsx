@@ -30,7 +30,7 @@ export default function AdminWalletLookup({admin,data}:{admin:string;data:Snapsh
    const [user,tier,positionsCount,token,tokenDecimals,branches]=await Promise.all([
     vault.users(target,options),vault.tierOf(target,options),vault.positionCount(target,options),
     vault.usdt(options),vault.tokenDecimals(options),
-    requestDirectBranches(target,0,12,data.blockNumber)
+    requestDirectBranches(target,0,12)
    ]);
    const count=Number(positionsCount);
    if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid contract position count.');
