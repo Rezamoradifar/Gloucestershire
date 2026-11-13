@@ -56,6 +56,8 @@ export default function V2Dashboard(){
   let mounted=true,revision=0;
   const sync=async()=>{
    const id=++revision,provider=getWalletProvider();
+   // Invalidate outstanding account reads immediately on wallet or network events.
+   readGeneration.current++;
    if(!provider){if(mounted){setWallet('');setNetwork(null);setSnapshot(null);}return;}
    try{
     const [accounts,chain]=await Promise.all([
