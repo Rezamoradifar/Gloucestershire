@@ -26,7 +26,7 @@ previous_api=$(readlink -f /opt/globaldroptrade-api/current)
 # Refuse to overwrite an unfamiliar live API release with older source code.
 live_api_sha=$(git hash-object "$previous_api/server/trades-api.mjs")
 case "$live_api_sha" in
- a54cc051915a6731daa468ca4476b100abd7712c|13e11f9251a2434cfb8039276ce4cfc2c0aa8152|694a78c8804d180780735f23abe272768e8abc5f|c488903ba7ff6222e6e683f2a13221986bb3cac8) ;;
+ a54cc051915a6731daa468ca4476b100abd7712c|13e11f9251a2434cfb8039276ce4cfc2c0aa8152|694a78c8804d180780735f23abe272768e8abc5f|c488903ba7ff6222e6e683f2a13221986bb3cac8|8473f8fb072a1edd468682b0d3cc5cd592ebf21f) ;;
  *) echo 'EVENT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED'; exit 1 ;;
 esac
 nginx -t
