@@ -34,7 +34,7 @@ const menus=[
 ];
 const dock=menus.slice(0,5);
 const short=(s:string)=>s.slice(0,9)+'…'+s.slice(-5);
-const show=(v:bigint,p=4)=>formatUnits(v,18).replace(/(\.\d{0,8})\d+$/,'$1').replace(/\.?0+$/,'')||'0';
+const show=(v:bigint,p=6)=>{const [whole,fraction='']=formatUnits(v,18).split('.'); const rest=fraction.slice(0,p).replace(/0+$/,''); return BigInt(whole).toLocaleString('en-US')+(rest?'.'+rest:'');};
 const date=(seconds:number)=>seconds?new Date(seconds*1000).toLocaleString('en-US'):'Not recorded';
 const kinds=['Profit','Principal','Referral'] as const;
 const statuses=['Requested','Manager approved','Cash escrowed','Paid','Rejected','Cancelled'] as const;
