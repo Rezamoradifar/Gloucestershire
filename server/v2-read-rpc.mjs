@@ -1,6 +1,6 @@
 // Strictly read-only same-origin BNB Testnet V2 gateway.
 // The former contract, keys, financial journals and balances are never queried or changed.
-import {keccak256,getAddress,isAddress} from 'ethers';
+import {FetchRequest,JsonRpcProvider,keccak256,getAddress,isAddress} from 'ethers';
 
 export const V2_RPC_CHAIN=97;
 export const V2_RPC_VAULT=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
@@ -12,6 +12,30 @@ export const V2_RPC_SOURCES=Object.freeze([
  'https://bsc-testnet-dataseed.bnbchain.org',
  'https://bsc-testnet-rpc.publicnode.com'
 ]);
+
+
+// Server tools use separate V2 RPC connections and never inherit the retired
+// vault's TRADES_RPC_URL, which can be 403 or have a different service policy.
+export async function openVerifiedV2ReadProvider({preferred=process.env.GLOBAL_V2_RPC_URL,
+ sources=V2_RPC_SOURCES,timeoutMs=10000}={}){
+ const urls=[...new Set([preferred,...sources].filter(Boolean))];
+ if(!urls.length||urls.some(url=>typeof url!=='string'||!url.startsWith('https://')))
+  throw Error('V2_VERIFIED_RPC_CONFIG_INVALID');
+ for(const url of urls){
+  let provider;
+  try{
+   const request=new FetchRequest(url);request.timeout=timeoutMs;
+   provider=new JsonRpcProvider(request,V2_RPC_CHAIN,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+   const [chain,code]=await Promise.all([
+    provider.send('eth_chainId',[]),provider.getCode(V2_RPC_VAULT,'latest')
+   ]);
+   if(Number(BigInt(chain))!==97||code==='0x'||keccak256(code).toLowerCase()!==V2_RPC_CODE_HASH)
+    throw Error('V2_VERIFIED_RPC_IDENTITY_MISMATCH');
+   return provider;
+  }catch{provider?.destroy();}
+ }
+ throw Error('V2_READ_RPC_ALL_SOURCES_UNAVAILABLE');
+}
 
 const invalid=()=>Object.assign(Error('Invalid V2 read request.'),{status:400});
 const hex=(value,max=8192)=>typeof value==='string'&&/^0x(?:[0-9a-fA-F]{2})*$/.test(value)&&value.length<=max;
