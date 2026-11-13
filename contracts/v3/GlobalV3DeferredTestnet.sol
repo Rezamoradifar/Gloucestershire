@@ -76,6 +76,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     }
 
     mapping(address => User) public users;
+    address[] private members; // enumerable on-chain index for a permissionless testnet accrual keeper
     mapping(address => Position[]) private positions;
     // Exact outstanding claim split: dashboard must not reconstruct this split
     // from cumulative totals after withdrawals/reinvestment.
@@ -142,6 +143,8 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         users[who].vipKyc=value;
     }
 
+    function memberCount() external view returns(uint256) {return members.length;}
+    function memberAt(uint256 index) external view returns(address) {return members[index];}
     function positionCount(address who) external view returns(uint256) {return positions[who].length;}
     function positionOf(address who,uint256 id) external view returns(Position memory) {return positions[who][id];}
     function withdrawalCount() external view returns(uint256) {return withdrawals.length;}
@@ -157,6 +160,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
            (referrer!=address(0)&&!users[referrer].registered))revert Invalid();
         users[who].registered=true;
         users[who].referrer=referrer;
+        members.push(who);
     }
     function checkIn() external active {
         _checkIn(msg.sender);
@@ -237,6 +241,9 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     /// silently catches up after inactivity. A user signs check-in periodically;
     /// anyone may call this transaction when check-in and 24-hour interval pass.
     /// The resulting on-chain claim is recorded EVEN IF cash has not been funded.
+    // Permissionless: neither the wallet operator nor MANAGER_ROLE approves
+    // compounding. A gas-funded keeper or user may trigger this on schedule.
+    // Existing daily-activity and 24-hour interval rules remain enforced.
     function accrueDaily(address who,uint256 positionId) external nonReentrant active {
         _accrueDaily(who,positionId);
     }
