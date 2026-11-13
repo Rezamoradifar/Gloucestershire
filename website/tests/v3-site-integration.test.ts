@@ -29,6 +29,9 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   for(const required of [
    'v3ParseReleaseConfig','v3ReadSession(walletProvider,wallet,config)',
    "provider.getCode(config.address,'latest')",
+   'provider.getTransactionReceipt(config.deploymentTx)',
+   'V3_EXPECTED_MANAGER',
+   'V3_EXPECTED_FEE_RECEIVER',
    "keccak256(code).toLowerCase()!==config.runtimeHash",
    'getAddress(asset)!==V3_TEST_TOKEN',
    'vault.users(wallet,options)',
