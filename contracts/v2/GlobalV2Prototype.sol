@@ -227,6 +227,7 @@ contract GlobalV2Prototype is AccessControl, ReentrancyGuard {
         User storage u=users[msg.sender];
         if (!u.registered) _register(msg.sender,referrer);
         else if (u.referrer!=referrer) revert Invalid();
+        if (u.suspended || (u.capitalUsd+usd>50_000 ether && !u.vipKyc)) revert Forbidden();
         _receiveAsset(asset,amount);
         uint256 fee=amount/10;
         uint256 operations=amount-2*fee;
@@ -252,6 +253,8 @@ contract GlobalV2Prototype is AccessControl, ReentrancyGuard {
         if (amount==0 || a.profit<amount) revert Insufficient();
         uint256 usd=quoteUsd(asset,amount);
         if (usd==0) revert Insufficient();
+        if (users[msg.sender].suspended ||
+            (users[msg.sender].capitalUsd+usd>50_000 ether && !users[msg.sender].vipKyc)) revert Forbidden();
         a.profit-=amount;
         profitLiability[asset]-=amount;
         a.principal+=amount;
