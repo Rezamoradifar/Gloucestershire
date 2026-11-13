@@ -11,6 +11,7 @@ import V2Investment from './V2Investment';
 import V2Network from './V2Network';
 import V2Community from './V2Community';
 import V2Profile from './V2Profile';
+import {v3ParseReleaseConfig} from './v3-site-config';
 import {summarizeV2UserProfit} from './v2-user-profit-summary';
 import './v2-user-profit-summary.css';
 import './v2-dashboard.css';
@@ -42,6 +43,11 @@ const mobileNavItems=[
  {id:'history' as Section,label:'History',Icon:History},
  {id:'profile' as Section,label:'Profile',Icon:UserRound}
 ];
+const hasPinnedV3Testnet=Boolean(v3ParseReleaseConfig({
+ address:import.meta.env.VITE_V3_CONTRACT_ADDRESS,
+ runtimeHash:import.meta.env.VITE_V3_RUNTIME_HASH,
+ deploymentTx:import.meta.env.VITE_V3_DEPLOYMENT_TX
+}));
 const explorerAddress=(address:string)=>V2_EXPLORER+'/address/'+address;
 const explorerTx=(hash:string)=>V2_EXPLORER+'/tx/'+hash;
 
@@ -219,6 +225,7 @@ export default function V2Dashboard(){
      <strong>Global V2 · New testnet contract</strong>
      <span>{v2Short(V2_ADDRESS)} · BNB Testnet · Unaudited test environment — real deposits disabled</span>
     </div>
+    {hasPinnedV3Testnet&&<a href="#v3-dashboard" className="gv3-v2-link">Explore verified V3 Testnet <ArrowUpRight size={14}/></a>}
     <a href={explorerAddress(V2_ADDRESS)} target="_blank" rel="noopener noreferrer">View contract <ExternalLink size={14}/></a>
    </div>
    {error&&<p className="gv2-error" role="alert">{error}</p>}
