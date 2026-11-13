@@ -64,6 +64,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
  const [branches,setBranches]=useState<DirectBranchPage|null>(null);
  const [activity,setActivity]=useState<DailyActivityStatus|null>(null),[activityError,setActivityError]=useState('');
  const [history,setHistory]=useState<LedgerEvent[]>([]),[historyCursor,setHistoryCursor]=useState<number|null>(null);
+ const [historyAsset,setHistoryAsset]=useState<'BNB'|'USDT'>('USDT');
  const [historyError,setHistoryError]=useState(''),[historyBusy,setHistoryBusy]=useState(false);
  const [positionOffset,setPositionOffset]=useState(0),[withdrawPage,setWithdrawPage]=useState(0);
  const [authBusy,setAuthBusy]=useState(false),[scanBusy,setScanBusy]=useState(false),[detailBusy,setDetailBusy]=useState(false);
@@ -73,7 +74,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
  useEffect(()=>{
   revision.current++;sessionRef.current='';scannerRef.current?.abort();scanning.current=false;
   setToken('');setHead(null);setRows([]);setCursor(null);setSelected('');setSearch('');
-  setProfile(null);setWithdrawals(null);setBranches(null);setActivity(null);setHistory([]);
+  setProfile(null);setWithdrawals(null);setBranches(null);setActivity(null);setHistory([]);setHistoryAsset('USDT');
   setError('');setDetailError('');setHistoryError('');setPositionOffset(0);setWithdrawPage(0);
   setAuthBusy(false);setScanBusy(false);setDetailBusy(false);
   return()=>{revision.current++;scannerRef.current?.abort();};
@@ -126,7 +127,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
   const address=getAddress(wallet);
   setSelected(address);setSearch(address);setPositionOffset(0);setWithdrawPage(0);
   setProfile(null);setWithdrawals(null);setBranches(null);setActivity(null);setActivityError('');
-  setHistory([]);setHistoryCursor(head?.confirmedHead??null);setHistoryError('');
+  setHistory([]);setHistoryCursor(head?.confirmedHead??null);setHistoryError('');setHistoryAsset('USDT');
  };
  const find=(event:FormEvent)=>{event.preventDefault();if(!isAddress(search))setDetailError('Enter a valid wallet address.');else{setDetailError('');choose(search);}};
  useEffect(()=>{
@@ -158,7 +159,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
   setHistoryBusy(true);setHistoryError('');
   const current=historyCursor,first=Math.max(head.deploymentBlock,current-95);
   try{
-   const asset=profile.assets.find(a=>a.symbol==='USDT')?.address??ZeroAddress;
+   const asset=historyAsset==='BNB'?ZeroAddress:(profile.assets.find(a=>a.symbol==='USDT')?.address??ZeroAddress);
    const data=await requestVerifiedHistory({wallet:selected,asset,scope:'wallet',kind:'finance',from:first,to:current});
    const seen=new Map(history.map(row=>[row.key,row]));
    for(const log of data.logs){
@@ -207,7 +208,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
       <RefreshCw size={15} className={scanBusy?'spin':''}/>{scanBusy?'Reading confirmed blocks…':cursor===null?'Full scan reached':'Scan up to 4,096 older blocks'}
      </button>
      <button type="button" className="small-button" onClick={exportLoaded} disabled={!rows.length}><FileDown size={15}/> Export loaded CSV</button>
-     <button type="button" className="small-button" onClick={()=>{sessionRef.current='';setToken('');setHead(null);setSelected('');setRows([]);setCursor(null);}}>
+     <button type="button" className="small-button" onClick={()=>{revision.current++;scannerRef.current?.abort();sessionRef.current='';setToken('');setHead(null);setSelected('');setRows([]);setCursor(null);}}>
       Lock owner directory
      </button>
     </div>
@@ -242,7 +243,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
       <p className="muted">Activity is a reporter-set contract flag. Check-in evidence is separate; recorded credits do not confirm wallet transfers. Snapshot at block {profile.confirmedHead.toLocaleString('en-US')}.</p>
       <AccountAssets user={profile}/>
       <div className="admin-users-actions">
-       <button className="small-button" type="button" onClick={()=>onReviewStatus(selected)}>Prefill reviewed customer status</button>
+       <button className="small-button" type="button" onClick={()=>{onReviewStatus(selected);document.getElementById('global-customer-status')?.scrollIntoView({behavior:'smooth',block:'start'});}}>Prefill reviewed customer status</button>
        <button className="small-button" type="button" disabled={!profile.profile.registered||historyBusy||historyCursor===null}
         onClick={()=>void scanHistory()}><FileClock size={15}/> {historyBusy?'Scanning events…':'Scan older finance events'}</button>
       </div>
@@ -280,12 +281,15 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
       </>:withdrawals?<p className="muted">The deployed contract does not expose a compatible withdrawal queue. Check verified withdrawal events instead.</p>:
        <p className="muted">Withdrawal queue details unavailable or still loading.</p>}
      </section>
-     <section className="admin-users-subsection"><h4>Verified financial events (USDT)</h4>
+     <section className="admin-users-subsection"><h4>Verified financial events · {historyAsset}</h4>
+      <div className="admin-users-toolbar" role="group" aria-label="Financial history asset">
+       {(['USDT','BNB'] as const).map(symbol=><button type="button" key={symbol} className="small-button" aria-pressed={historyAsset===symbol} disabled={historyBusy} onClick={()=>{setHistoryAsset(symbol);setHistory([]);setHistoryCursor(head.confirmedHead);setHistoryError('');}}>{symbol}</button>)}
+      </div>
       <p className="muted">{historyCursor===null?'History scanned to the configured deployment block.':'Loaded '+history.length+' events in scanned windows only. Click “Scan older finance events” to expand coverage.'}</p>
       {historyError&&<p className="inline-error" role="alert">{historyError}</p>}
       {history.length>0?<div className="admin-users-table-scroll"><table><thead><tr><th>Event</th><th>Amount</th><th>Block</th><th>Receipt</th></tr></thead><tbody>
        {history.slice(0,30).map(row=><tr key={row.key}><td>{historyLabels[row.kind]}</td>
-        <td>{displayAmount(row.amount,assetDecimals('USDT'),5)} USDT</td><td>{row.block.toLocaleString('en-US')}</td>
+        <td>{displayAmount(row.amount,assetDecimals(historyAsset),5)} {historyAsset}</td><td>{row.block.toLocaleString('en-US')}</td>
         <td><a href={explorer+'/tx/'+row.tx} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/> Tx</a></td></tr>)}
       </tbody></table></div>:<p className="muted">No USDT events found in the ranges scanned so far; this does not establish zero lifetime activity.</p>}
       <p className="muted">ProfitCredited is an on-chain credit, not a paid bank or wallet transfer. Personal versus referral allocation requires verified batch attribution, not guesswork.</p>
