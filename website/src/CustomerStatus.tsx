@@ -1,10 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {errorText,readCustomerStatus,type CustomerStatusAction,type CustomerStatusSnapshot} from './chain';
 
-export default function CustomerStatus({who,connected,disabled,onSubmit}:{who:string;connected:boolean;disabled:boolean;onSubmit:(action:CustomerStatusAction)=>Promise<boolean>}){
+export default function CustomerStatus({who,connected,disabled,onSubmit,initialCustomer=''}:{who:string;connected:boolean;disabled:boolean;onSubmit:(action:CustomerStatusAction)=>Promise<boolean>;initialCustomer?:string}){
  const [customer,setCustomer]=useState(''),[loaded,setLoaded]=useState<CustomerStatusSnapshot|null>(null),[active,setActive]=useState(false),[kyc,setKyc]=useState(false),[review,setReview]=useState<CustomerStatusAction|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const revision=useRef(0),inFlight=useRef(false);
- useEffect(()=>{revision.current++;setLoaded(null);setReview(null);setError('');setNotice('');setLoading(false);return()=>{revision.current++;};},[who,connected]);
+ useEffect(()=>{revision.current++;setCustomer(initialCustomer);setLoaded(null);setReview(null);setError('');setNotice('');setLoading(false);return()=>{revision.current++;};},[who,connected,initialCustomer]);
  const busy=disabled||loading;
  async function load(){
   if(!connected||busy||inFlight.current)return;const id=++revision.current;inFlight.current=true;setLoading(true);setError('');setNotice('');setLoaded(null);setReview(null);
