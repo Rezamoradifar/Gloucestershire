@@ -335,7 +335,7 @@ contract GlobalV2Prototype is AccessControl, ReentrancyGuard {
         emit PrincipalLiquidityFunded(msg.sender,asset,amount);
     }
     function availablePrincipalCash(address asset) public view returns(uint256) {
-        uint256 cash=assetBalance(asset),reservedProfit=profitLiability[asset];
+        uint256 cash=assetBalance(asset);uint256 reservedProfit=profitLiability[asset];
         return cash>reservedProfit?cash-reservedProfit:0;
     }
     function unfundedPrincipal(address asset) external view returns(uint256) {
