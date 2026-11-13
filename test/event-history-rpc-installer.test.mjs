@@ -28,6 +28,9 @@ test('installer recognizes only immutable reviewed previous API releases before 
  assert.match(source,/EVENT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED/);
  assert.match(source,/694a78c8804d180780735f23abe272768e8abc5f/);
  assert.match(source,/c488903ba7ff6222e6e683f2a13221986bb3cac8/);
+ assert.match(source,/8473f8fb072a1edd468682b0d3cc5cd592ebf21f/);
+ assert.match(source,/ADMIN_DIRECTORY_OWNER_AUTH_GUARD_PASS/);
+ assert.match(source,/admin_code.*curl/);
  assert.match(source,/TEAM_BRANCHES_API_READ_ONLY_PASS/);
  assert.match(source,/\/api\/team\/branches\?parent=/);
  assert.match(source,/a54cc051915a6731daa468ca4476b100abd7712c/);
