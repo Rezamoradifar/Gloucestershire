@@ -1,9 +1,9 @@
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {ZeroAddress,getAddress,isAddress,parseUnits} from 'ethers';
 import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2,UserRound,Info,Megaphone,History} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,walletConnectReady,type WalletKind} from './wallet';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
- readV2Snapshot,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,
+ readV2Snapshot,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,v2WithTimeout,
  type V2Asset,type V2Action,type V2Snapshot} from './v2-chain';
 import V2HistoryPanel from './V2HistoryPanel';
 import V2AdminConsole from './V2AdminConsole';
@@ -50,6 +50,7 @@ export default function V2Dashboard(){
  const [amount,setAmount]=useState(''),[principalPosition,setPrincipalPosition]=useState('0');
  const [referrer,setReferrer]=useState(ZeroAddress);
  const [mobileMenu,setMobileMenu]=useState(false);
+ const readGeneration=useRef(0);
 
  useEffect(()=>{
   let mounted=true,revision=0;
@@ -74,14 +75,20 @@ export default function V2Dashboard(){
  },[]);
 
  const refresh=useCallback(async()=>{
+  const requestId=++readGeneration.current;
   const provider=getWalletProvider();
-  if(!provider||!wallet||network!==V2_CHAIN_ID){setSnapshot(null);return;}
+  if(!provider||!wallet||network!==V2_CHAIN_ID){setSnapshot(null);setLoading(false);return;}
   setLoading(true);setError('');
   try{
-   const view=await readV2Snapshot(provider,wallet);
-   if(provider===getWalletProvider())setSnapshot(view);
-  }catch(e){setSnapshot(null);setError(e instanceof Error?e.message:'The V2 contract could not be verified.');}
-  finally{setLoading(false);}
+   const view=await v2WithTimeout(readV2Snapshot(provider,wallet),30000,
+    'The V2 account read took too long. Wallet is connected; try Retry or switch to a responsive BNB Testnet RPC.');
+   if(requestId===readGeneration.current&&provider===getWalletProvider())setSnapshot(view);
+  }catch(e){
+   if(requestId===readGeneration.current&&provider===getWalletProvider()){
+    setSnapshot(null);
+    setError(e instanceof Error?e.message:'The V2 contract could not be verified.');
+   }
+  }finally{if(requestId===readGeneration.current)setLoading(false);}
  },[wallet,network]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
@@ -235,11 +242,16 @@ export default function V2Dashboard(){
     <h2>Wrong network</h2><p>Please switch your wallet to BNB Testnet (Chain 97).</p>
     <button className="gv2-primary" onClick={()=>void switchWalletNetwork().catch(e=>setError((e as Error).message))}>Switch network</button>
    </div>}
-   {wallet&&network===V2_CHAIN_ID&&loading&&!snapshot&&<div className="gv2-panel gv2-loading">Verifying V2 contract bytecode and loading on-chain balances…</div>}
+   {wallet&&network===V2_CHAIN_ID&&loading&&!snapshot&&<div className="gv2-panel gv2-loading" role="status">Verifying V2 contract and loading account balances…</div>}
+   {wallet&&network===V2_CHAIN_ID&&!loading&&!snapshot&&<div className="gv2-panel gv2-read-retry">
+    <h3>Wallet connected — account data unavailable</h3>
+    <p>We could not confirm your balances from the V2 blockchain. No balances are guessed and no transaction was sent.</p>
+    <button type="button" className="gv2-primary" onClick={()=>void refresh()}><RefreshCw size={16}/> Retry secure account read</button>
+   </div>}
 
    {section==='invest'&&!snapshot&&<V2Investment snapshot={null} wallet={wallet}/>}
    {section==='history'&&!snapshot&&<V2HistoryPanel requester={wallet} subject={wallet} token={''}/>}
-   {!snapshot&&(['positions','team','profile'] as Section[]).includes(section)&&<section className="gv2-panel gv2-empty-workspace"><h2>{navItems.find(item=>item.id===section)?.label}</h2><p>Connect your V2 wallet to load verified records for this section. Old contract balances are not imported.</p><button onClick={()=>void connect('injected')} disabled={connecting}><Wallet size={17}/> Connect wallet</button></section>}
+   {!snapshot&&(['positions','team','profile'] as Section[]).includes(section)&&<section className="gv2-panel gv2-empty-workspace"><h2>{navItems.find(item=>item.id===section)?.label}</h2><p>{wallet?'Your wallet is connected, but account records have not loaded yet. Retry the blockchain read above.':'Connect your V2 wallet to load verified records for this section.'} Old contract balances are not imported.</p>{!wallet&&<button onClick={()=>void connect('injected')} disabled={connecting}><Wallet size={17}/> Connect wallet</button>}</section>}
    {snapshot&&<div className="gv2-content">
     <div className="gv2-summary">
      <div className="gv2-metric"><small>Membership</small><strong>{snapshot.registered?'Registered':'Not registered'}</strong><span>On-chain registry</span></div>
