@@ -14,6 +14,7 @@ const GAS_LIMIT_PER_TX=parseEther('0.005');
 const GAS_LIMIT_PER_RUN=parseEther('0.15');
 const ABI=[
  'function asset() view returns(address)',
+ 'function DEFAULT_ADMIN_ROLE() view returns(bytes32)',
  'function MANAGER_ROLE() view returns(bytes32)',
  'function FUNDER_ROLE() view returns(bytes32)',
  'function GUARDIAN_ROLE() view returns(bytes32)',
@@ -148,7 +149,7 @@ async function main(){
   // A designated permissionless gas-only signer; never the role-holding admin
   // or wallet that controls customer funds.
   const roles=await Promise.all([
-   contract.MANAGER_ROLE(),contract.FUNDER_ROLE(),contract.GUARDIAN_ROLE()
+   contract.DEFAULT_ADMIN_ROLE(),contract.MANAGER_ROLE(),contract.FUNDER_ROLE(),contract.GUARDIAN_ROLE()
   ]);
   if((await Promise.all(roles.map(role=>contract.hasRole(role,signer.address)))).some(Boolean))
    throw Error('USE_A_SEPARATE_GAS_ONLY_KEEPER_WITHOUT_ADMIN_ROLES');
