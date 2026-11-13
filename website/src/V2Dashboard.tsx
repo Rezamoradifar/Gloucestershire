@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useState} from 'react';
 import {ZeroAddress,getAddress,isAddress,parseUnits} from 'ethers';
-import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2,UserRound,Info,Megaphone} from 'lucide-react';
+import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2,UserRound,Info,Megaphone,History} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,walletConnectReady,type WalletKind} from './wallet';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
  readV2Snapshot,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,
@@ -14,6 +14,7 @@ import V2Profile from './V2Profile';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
 import './v2-classic-refinement.css';
+import './v2-mobile-dock.css';
 
 type Section='overview'|'invest'|'positions'|'team'|'history'|'profile'|'tickets'|'announcements'|'withdrawals'|'admin'|'contract';
 const navItems=[
@@ -28,6 +29,13 @@ const navItems=[
  {id:'withdrawals' as Section,label:'Withdrawals',Icon:Coins},
  {id:'admin' as Section,label:'Administration',Icon:Settings2},
  {id:'contract' as Section,label:'Contract & safety',Icon:ShieldCheck}
+];
+const mobileNavItems=[
+ {id:'overview' as Section,label:'Home',Icon:House},
+ {id:'positions' as Section,label:'Positions',Icon:Layers},
+ {id:'team' as Section,label:'Team',Icon:Users},
+ {id:'history' as Section,label:'History',Icon:History},
+ {id:'profile' as Section,label:'Profile',Icon:UserRound}
 ];
 const explorerAddress=(address:string)=>V2_EXPLORER+'/address/'+address;
 const explorerTx=(hash:string)=>V2_EXPLORER+'/tx/'+hash;
@@ -201,7 +209,7 @@ export default function V2Dashboard(){
    {error&&<p className="gv2-error" role="alert">{error}</p>}
    {notice&&<p className="gv2-message" role="status">{notice}{transaction&&<> · <a href={explorerTx(transaction)} target="_blank" rel="noopener noreferrer">View transaction <ExternalLink size={14}/></a></>}</p>}
 
-   {!wallet&&<div className="gv2-account-entry">
+   {!wallet&&section==='overview'&&<div className="gv2-account-entry">
     <div className="gv2-classic-welcome gv2-panel">
      <div className="gv2-classic-welcome-copy">
       <small>GLOBAL DROP TRADE · ACCOUNT CENTER</small>
@@ -229,6 +237,8 @@ export default function V2Dashboard(){
    {wallet&&network===V2_CHAIN_ID&&loading&&!snapshot&&<div className="gv2-panel gv2-loading">Verifying V2 contract bytecode and loading on-chain balances…</div>}
 
    {section==='invest'&&!snapshot&&<V2Investment snapshot={null} wallet={wallet}/>}
+   {section==='history'&&!snapshot&&<V2HistoryPanel requester={wallet} subject={wallet} token={''}/>}
+   {!snapshot&&(['positions','team','profile'] as Section[]).includes(section)&&<section className="gv2-panel gv2-empty-workspace"><h2>{navItems.find(item=>item.id===section)?.label}</h2><p>Connect your V2 wallet to load verified records for this section. Old contract balances are not imported.</p><button onClick={()=>void connect('injected')} disabled={connecting}><Wallet size={17}/> Connect wallet</button></section>}
    {snapshot&&<div className="gv2-content">
     <div className="gv2-summary">
      <div className="gv2-metric"><small>Membership</small><strong>{snapshot.registered?'Registered':'Not registered'}</strong><span>On-chain registry</span></div>
@@ -322,5 +332,6 @@ export default function V2Dashboard(){
    </div>}
   </main>
   </div>
+  <nav className="gv2-mobile-bottom" aria-label="Quick dashboard navigation">{mobileNavItems.map(({id,label,Icon})=><button type="button" key={id} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setAmount('');setError('');setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});}}><Icon size={23} strokeWidth={2.1}/><span>{label}</span></button>)}</nav>
  </div>;
 }
