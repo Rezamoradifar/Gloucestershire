@@ -54,7 +54,7 @@ export default function V3Dashboard(){
  const [value,setValue]=useState(''),[selectedPosition,setSelectedPosition]=useState('0');
  const [referrer,setReferrer]=useState(ZeroAddress);
  const [requestKind,setRequestKind]=useState<'profit'|'principal'|'referral'>('profit');
- const [adminQueue,setAdminQueue]=useState<{count:number;requests:V3Withdrawal[]}|null>(null);
+ const [adminQueue,setAdminQueue]=useState<{count:number;page:number;requests:V3Withdrawal[]}|null>(null);
  const revision=useRef(0);
  const config=v3ReleaseConfig;
 
@@ -113,7 +113,7 @@ export default function V3Dashboard(){
   try{
    const hash=await sendV3Action(p,wallet,action,config);
    setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
-   await refresh();if(view.canManage)await readQueue();
+   await refresh();if(view.canManage)await readQueue(adminQueue?.page??0);
   }catch(e){setNotice('');setError(e instanceof Error?e.message:'V3 action not confirmed.');}
   finally{setBusy(false);}
  }
@@ -135,9 +135,9 @@ export default function V3Dashboard(){
   }catch(e){setNotice('');setError(e instanceof Error?e.message:'V3 deposit not confirmed.');}
   finally{setBusy(false);}
  }
- async function readQueue(){
+ async function readQueue(page=0){
   const p=getWalletProvider();if(!p||!config||!wallet)return;
-  try{setAdminQueue(await readV3ManagerQueue(p,wallet,config));}
+  try{setAdminQueue(await readV3ManagerQueue(p,wallet,config,page));}
   catch(e){setError(e instanceof Error?e.message:'V3 manager queue unavailable.');}
  }
  async function fund(id:number,gross:bigint,beneficiary:string){
@@ -349,9 +349,11 @@ export default function V3Dashboard(){
       <div className="gv2-detail"><span>V3 test-token cash</span><b>{show(view.ledger.cash)} TEST</b></div>
       <div className="gv2-detail"><span>Cash reserved for approved requests</span><b>{show(view.ledger.escrow)} TEST</b></div>
       <div className="gv2-detail"><span>Unfunded total liability</span><b>{claims?show(claims.overallUnfundedLiability):'—'} TEST</b></div>
-      {adminQueue&&<><h3>Latest {adminQueue.requests.length} of {adminQueue.count} requests</h3>
+      {adminQueue&&<><h3>Page {adminQueue.page+1} · {adminQueue.requests.length} of {adminQueue.count} requests</h3>
        {adminQueue.requests.map(r=>withdrawItem(r,true))}
-       {!adminQueue.requests.length&&<p>No manager requests are currently indexed.</p>}</>}
+       {!adminQueue.requests.length&&<p>No manager requests are currently indexed on this page.</p>}
+       <div className="gv2-buttons"><button disabled={busy||adminQueue.page===0} onClick={()=>void readQueue(adminQueue.page-1)}>Newer requests</button>
+        <button disabled={busy||(adminQueue.page+1)*20>=adminQueue.count} onClick={()=>void readQueue(adminQueue.page+1)}>Older requests</button></div></>}
      </section>}
      {tab==='contract'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>V3 source and verification</h3><ShieldCheck size={18}/></div>
       <div className="gv2-detail"><span>Network</span><b>BNB Testnet (97)</b></div>
