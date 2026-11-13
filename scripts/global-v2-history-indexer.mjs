@@ -7,7 +7,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {FetchRequest,JsonRpcProvider,keccak256,getAddress} from 'ethers';
-import {readConfig} from '../server/trades-api.mjs';
+import {openVerifiedV2ReadProvider} from '../server/v2-read-rpc.mjs';
 
 const CHAIN=97;
 const V2_ADDRESS=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
@@ -187,15 +187,14 @@ async function main(){
  if(process.argv.length!==3||!['--check','--sync'].includes(process.argv[2]))
   fail('V2_INDEX_USAGE_CHECK_OR_SYNC');
  if(process.getuid?.()!==0)fail('V2_INDEX_ROOT_REQUIRED');
- const config=readConfig();
- if(config.chainId!==97||!config.rpcUrl)fail('V2_INDEX_TESTNET_RPC_REQUIRED');
- const request=new FetchRequest(config.rpcUrl);request.timeout=15000;
- const provider=new JsonRpcProvider(request,CHAIN,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+ // Use independent V2-specific URLs with a proven historical-log capability.
+ // The old service RPC is never inherited or modified.
+ const provider=await openVerifiedV2ReadProvider({requireLogs:true});
  let index;
  try{
   if(process.argv[2]==='--check'){
    const head=await provider.getBlockNumber();
-   const code=await provider.getCode(V2_ADDRESS,head-6);
+   const code=await provider.getCode(V2_ADDRESS,'latest');
    if(Number(await provider.send('eth_chainId',[]))!==CHAIN||
     code==='0x'||keccak256(code).toLowerCase()!==V2_CODE_HASH)
     fail('V2_INDEX_TARGET_UNVERIFIED');

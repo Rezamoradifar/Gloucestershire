@@ -1,7 +1,7 @@
 // V2 operator-facing, read-only solvency and account/withdrawal health check.
 // NO signing, NO deposits, NO changing installed API or existing user ledgers.
 import {Contract,FetchRequest,JsonRpcProvider,ZeroAddress,formatUnits,keccak256,getAddress} from 'ethers';
-import {readConfig} from '../server/trades-api.mjs';
+import {openVerifiedV2ReadProvider} from '../server/v2-read-rpc.mjs';
 import {analyzeV2Liquidity} from './global-v2-solvency.mjs';
 
 const CHAIN=97;
@@ -40,17 +40,16 @@ function singleAsset(raw,decimals,symbol){
 async function main(){
  if(process.argv.length!==3||process.argv[2]!=='--check')
   fail('GLOBAL_V2_AUDIT_READ_ONLY_CHECK_ONLY');
- const current=readConfig();
- if(current.chainId!==97||!current.rpcUrl)fail('GLOBAL_V2_AUDIT_TESTNET_RPC_REQUIRED');
- const req=new FetchRequest(current.rpcUrl);req.timeout=20000;
- const provider=new JsonRpcProvider(req,CHAIN,{staticNetwork:true,batchMaxCount:1});
+ // Read V2 independently of the legacy RPC, with strict chain and code
+ // verification before auditing any financial liabilities.
+ const provider=await openVerifiedV2ReadProvider();
  try{
   if(Number(await provider.send('eth_chainId',[]))!==CHAIN)fail('GLOBAL_V2_AUDIT_WRONG_CHAIN');
   const latest=await provider.getBlockNumber();
   const blockNumber=latest-3;
   if(blockNumber<142416836)fail('GLOBAL_V2_AUDIT_BEFORE_DEPLOYMENT');
   const [block,code]=await Promise.all([
-   provider.getBlock(blockNumber),provider.getCode(VAULT,blockNumber)
+   provider.getBlock(blockNumber),provider.getCode(VAULT,'latest')
   ]);
   if(!block?.hash||code==='0x'||keccak256(code).toLowerCase()!==CODE_HASH)
    fail('GLOBAL_V2_AUDIT_CODE_OR_BLOCK_MISMATCH');

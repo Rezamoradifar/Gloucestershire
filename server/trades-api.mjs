@@ -8,6 +8,7 @@ import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 import {createAutomationStatusReader} from './automation-status.mjs';
 import {createHistoryRelay} from './history-relay.mjs';
 import {createTeamRelay} from './team-relay.mjs';
+import {createV2ReadGateway,V2_RPC_SOURCES} from './v2-read-rpc.mjs';
 
 const eventAbi=['event SaleSettled(bytes32 indexed id,address indexed seller,address indexed asset,uint256 grossProfit,uint256 salesUsd,bytes32 evidenceHash)'];
 const iface=new Interface(eventAbi);
@@ -130,10 +131,11 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,marketplace=createMarketplace(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
+  if(v2ReadGateway&&await v2ReadGateway(req,res))return;
   if(v2Community&&await v2Community(req,res))return;
   if(community&&await community(req,res))return;
   if(dailyActivity&&await dailyActivity(req,res))return;
@@ -195,8 +197,11 @@ const V2_SUPPORT_VAULT='0xA98D8d3709f5D3730BAD5d76C334731784e7CF07';
 const V2_SUPPORT_HASH='0x3e1f99305bf7edbb12d4d9870124f84ece95bb23b6bf890470e94d06a336bf99';
 const V2_SUPPORT_ADMIN='0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632';
 async function configuredV2Community(config){
- if(config.chainId!==97||!config.rpcUrl)return null;
- const provider=createApiReadProvider({...config,address:getAddress(V2_SUPPORT_VAULT)});
+ if(config.chainId!==97)return null;
+ // The V1 TRADES_RPC_URL previously returned 403. V2 is verified with its
+ // independent allowlisted testnet RPCs instead of inheriting V1 transport.
+ const provider=createApiReadProvider({...config,address:getAddress(V2_SUPPORT_VAULT),
+  rpcUrl:V2_RPC_SOURCES[0],rpcUrls:V2_RPC_SOURCES});
  if(!provider)return null;
  try{
   const code=await provider.getCode(V2_SUPPORT_VAULT);
@@ -234,5 +239,5 @@ async function configuredDailyActivity(config){
 let entrypoint;
 try{if(process.argv[1]&&process.argv[1]!=='-')entrypoint=pathToFileURL(realpathSync(process.argv[1])).href;}catch{}
 if(import.meta.url===entrypoint){
- try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);let v2Community=null;try{v2Community=await configuredV2Community(config);}catch{console.error('V2 support disabled: V2 contract or RPC not verified.');}const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const teamRelay=createTeamRelay(config);const server=createApiServer(feed,{community,v2Community,migration,dailyActivity,historyRelay,teamRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();v2Community?.close?.();dailyActivity?.close?.();historyRelay.close();teamRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
+ try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);let v2Community=null;try{v2Community=await configuredV2Community(config);}catch{console.error('V2 support disabled: V2 contract or RPC not verified.');}const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const teamRelay=createTeamRelay(config);const v2ReadGateway=createV2ReadGateway();const server=createApiServer(feed,{community,v2Community,v2ReadGateway,migration,dailyActivity,historyRelay,teamRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();v2Community?.close?.();dailyActivity?.close?.();historyRelay.close();teamRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }

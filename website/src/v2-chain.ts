@@ -89,6 +89,8 @@ export const v2WithdrawalStatus=(status:number)=>{
 
 // Read-only RPC endpoints documented by BNB Chain. Never used for signing.
 export const V2_READ_RPCS=[
+ // Same-origin V2-only proxy avoids mobile-wallet CORS and archive-RPC issues.
+ '/api/v2/rpc',
  // Current BNB Chain documented testnet endpoints, with independent fallback.
  'https://bsc-testnet-dataseed.bnbchain.org',
  'https://bsc-testnet.bnbchain.org',
@@ -116,11 +118,12 @@ export async function v2PickReadSource<T>(sources:ReadonlyArray<()=>Promise<T>>,
 // every 45-second refresh can leak background polling and exhaust public RPC quotas.
 const v2ReadProviders=new Map<string,JsonRpcProvider>();
 const v2ReadProvider=(url:string)=>{
- const existing=v2ReadProviders.get(url);
+ const resolved=url.startsWith('/')?new URL(url,window.location.origin).href:url;
+ const existing=v2ReadProviders.get(resolved);
  if(existing)return existing;
- const request=new FetchRequest(url);request.timeout=8000;
+ const request=new FetchRequest(resolved);request.timeout=8000;
  const provider=new JsonRpcProvider(request,V2_CHAIN_ID,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
- v2ReadProviders.set(url,provider);
+ v2ReadProviders.set(resolved,provider);
  return provider;
 };
 

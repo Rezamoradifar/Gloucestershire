@@ -9,7 +9,8 @@ describe('V2 account reads on mobile wallet RPC',()=>{
   expect(V2_READ_RPCS.length).toBeGreaterThan(1);
   expect(V2_READ_RPCS).toContain('https://bsc-testnet-dataseed.bnbchain.org');
   expect(V2_READ_RPCS).toContain('https://bsc-testnet-rpc.publicnode.com');
-  expect(V2_READ_RPCS.every(url=>url.startsWith('https://')&&!url.includes(':8545'))).toBe(true);
+  expect(V2_READ_RPCS[0]).toBe('/api/v2/rpc');
+  expect(V2_READ_RPCS.slice(1).every(url=>url.startsWith('https://')&&!url.includes(':8545'))).toBe(true);
   const source=fs.readFileSync(new URL('../src/v2-chain.ts',import.meta.url),'utf8');
   expect(source).toContain("provider.getCode(V2_ADDRESS,'latest')");
   expect(source).toContain('keccak256(code).toLowerCase()!==V2_CODE_HASH');
