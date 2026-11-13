@@ -206,7 +206,7 @@ async function configuredV2Community(config){
    ['function hasRole(bytes32,address) view returns(bool)'],provider);
   const role='0x'+'0'.repeat(64);
   const handler=await createCommunity({
-   file:process.env.V2_COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-v2/community.json',
+   file:process.env.V2_COMMUNITY_DATA_FILE||'/var/lib/globaldroptrade-api/v2/community.json',
    chainId:97,contract:V2_SUPPORT_VAULT,origin:'https://globaldroptrade.com',
    prefix:'/api/v2/community/',
    owner:async()=>{
