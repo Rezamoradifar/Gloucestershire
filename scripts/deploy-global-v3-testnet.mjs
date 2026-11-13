@@ -90,13 +90,16 @@ function loadKeystore(filename){
 function loadExistingV2TestnetDeployer(){
  // Only the pinned, previously deployed testnet-only signer is accepted.
  // No arbitrary wallet files, admin keys, environment secrets or remote keys.
- let stat;
- try{stat=fs.lstatSync(OLD_TESTNET_DEPLOYER_KEYFILE);}
- catch{error('PREVIOUS_V2_TESTNET_DEPLOYER_SIGNER_FILE_MISSING');}
+ // V2 legacy deployment supported two PREDEFINED testnet-only file paths.
+ // Never accept caller-supplied paths or access the separate manager key.
+ const candidates=[OLD_TESTNET_DEPLOYER_KEYFILE,'/root/global-testnet-v071/.testnet-server/deployer.key'];
+ const file=candidates.find(candidate=>fs.existsSync(candidate));
+ if(!file)error('PREVIOUS_V2_TESTNET_DEPLOYER_SIGNER_FILE_MISSING');
+ const stat=fs.lstatSync(file);
  if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==process.getuid()||
     (stat.mode&0o077)!==0||stat.size>128)
   error('PREVIOUS_V2_TESTNET_SIGNER_FILE_MUST_BE_ROOT_PRIVATE');
- const raw=fs.readFileSync(OLD_TESTNET_DEPLOYER_KEYFILE,'utf8').trim();
+ const raw=fs.readFileSync(file,'utf8').trim();
  if(!/^(?:0x)?[0-9a-f]{64}$/i.test(raw))
   error('PREVIOUS_TESTNET_DEPLOYER_FILE_FORMAT_INVALID');
  const wallet=new Wallet(raw.startsWith('0x')?raw:'0x'+raw);
