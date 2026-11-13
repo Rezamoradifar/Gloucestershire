@@ -26,7 +26,7 @@ previous_api=$(readlink -f /opt/globaldroptrade-api/current)
 # Refuse to overwrite an unfamiliar live API release with older source code.
 live_api_sha=$(git hash-object "$previous_api/server/trades-api.mjs")
 case "$live_api_sha" in
- a54cc051915a6731daa468ca4476b100abd7712c|13e11f9251a2434cfb8039276ce4cfc2c0aa8152|694a78c8804d180780735f23abe272768e8abc5f|c488903ba7ff6222e6e683f2a13221986bb3cac8) ;;
+ a54cc051915a6731daa468ca4476b100abd7712c|13e11f9251a2434cfb8039276ce4cfc2c0aa8152|694a78c8804d180780735f23abe272768e8abc5f|c488903ba7ff6222e6e683f2a13221986bb3cac8|8473f8fb072a1edd468682b0d3cc5cd592ebf21f) ;;
  *) echo 'EVENT_HISTORY_LIVE_API_VERSION_REVIEW_REQUIRED'; exit 1 ;;
 esac
 nginx -t
@@ -180,6 +180,21 @@ if(data.version!==1||data.chainId!==97||
  !Array.isArray(data.members)||data.members.length>12)
  throw Error('TEAM_BRANCHES_API_SMOKE_INVALID');
 console.log('TEAM_BRANCHES_API_READ_ONLY_PASS');
+JS
+
+# The owner directory must NEVER leak records without a valid owner-audit
+# session. Check the signed-in-only gate before exposing its frontend.
+admin_code=$(curl -sS --noproxy '*' --max-time 15 \
+ --resolve globaldroptrade.com:443:127.0.0.1 \
+ -o "$stage/admin-unauthorized.json" -w '%{http_code}' \
+ 'https://globaldroptrade.com/api/admin-users/head')
+[ "$admin_code" = 401 ] || { echo 'ADMIN_DIRECTORY_AUTH_REQUIRED'; exit 1; }
+node --input-type=module - "$stage/admin-unauthorized.json" <<'JS'
+import fs from 'node:fs';
+const d=JSON.parse(fs.readFileSync(process.argv[2]));
+if(!d.error||d.events!==undefined||d.profile!==undefined)
+ throw Error('ADMIN_DIRECTORY_UNAUTHORIZED_RESPONSE_INVALID');
+console.log('ADMIN_DIRECTORY_OWNER_AUTH_GUARD_PASS');
 JS
 
 # Copy new hashed assets first, index.html last. Leave automation-data intact.
