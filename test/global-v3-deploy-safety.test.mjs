@@ -23,6 +23,20 @@ test('V3 deploy is a separate opt-in BNB TESTNET-only signing process with on-ch
  for(const prohibited of ['process.env.PRIVATE_KEY','--mainnet','chainId:56','TRANSFER_USDT','token.mint('])
   assert.equal(deploy.includes(prohibited),false,prohibited);
 });
+test('Android SSH confirmation remains interactive after a pasted empty newline',()=>{
+ const first=deploy.indexOf("if(!process.stdin.isTTY||!process.stdout.isTTY)",deploy.indexOf('const estimatedRequired='));
+ const loop=deploy.indexOf('for(let attempt=1;attempt<=5;attempt++)',first);
+ const approved=deploy.indexOf("answer.trim()==='DEPLOY NEW V3 BNB TESTNET ONLY'",loop);
+ const guard=deploy.indexOf("if(!approved)error('DEPLOYMENT_CANCELLED_BY_OPERATOR')",approved);
+ const marker=deploy.indexOf('saveMarker(record,true);',guard);
+ assert.ok(first>0&&first<loop&&loop<approved&&approved<guard&&guard<marker,
+  'Never write deployment intent or sign before exact interactive confirmation');
+ assert.ok(deploy.includes('V3_CONFIRMATION_NOT_MATCHED.'));
+ assert.ok(deploy.includes("createInterface({input:process.stdin,terminal:false})"));
+ assert.ok(deploy.includes('if(attempt<5)process.stdout.write('));
+ assert.equal(deploy.includes('--confirm-privately'),false);
+});
+
 test('V3 can reuse only the pinned prior testnet deployer, not admin or an arbitrary wallet',()=>{
  for(const required of [
   "--check-old-testnet-deployer",
