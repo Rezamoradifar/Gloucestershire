@@ -71,7 +71,9 @@ async function readState(provider,address){
 
 async function secretPassword(){
  if(!process.stdin.isTTY||!process.stdout.isTTY)fail('FUNDING_REQUIRES_INTERACTIVE_TERMINAL');
- const rl=createInterface({input:process.stdin,output:process.stdout});
+ // Terminal line discipline handles input; never attach a readline output stream
+ // or it may echo the password even if stty has disabled kernel echo.
+ const rl=createInterface({input:process.stdin,terminal:false});
  process.stdout.write('Encrypted TESTNET keystore password (hidden): ');
  const masked=spawnSync('stty',['-echo'],{stdio:'inherit'});
  if(masked.status!==0){rl.close();fail('CANNOT_HIDE_KEYSTORE_PASSWORD');}
