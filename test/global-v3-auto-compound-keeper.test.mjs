@@ -28,7 +28,7 @@ test('keeper never uses a manager wallet, calls token transfers or credits fake 
   "V3_PUBLIC_TESTNET_DEPLOYMENT_NOT_VERIFIED_OR_RPC_UNAVAILABLE",
   "V3_PINNED_CHAIN97_CONFIG_REQUIRED",
   "USE_A_SEPARATE_GAS_ONLY_KEEPER_WITHOUT_ADMIN_ROLES",
-  "contract.MANAGER_ROLE(),contract.FUNDER_ROLE(),contract.GUARDIAN_ROLE()",
+  "contract.DEFAULT_ADMIN_ROLE(),contract.MANAGER_ROLE(),contract.FUNDER_ROLE(),contract.GUARDIAN_ROLE()",
   "contract.isEligible(member)",
   "contract.positionOf(member,j)",
   "payable.accrueDaily.staticCall(item.member,item.positionId)",
