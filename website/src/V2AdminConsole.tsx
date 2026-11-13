@@ -5,7 +5,7 @@ import {getWalletProvider} from './wallet';
 import {readV2AdminMembers,readV2AdminRequests,V2_EXPLORER,v2Money,v2Date,v2Short,v2WithdrawalStatus,type V2Snapshot,type V2Withdrawal,type V2AdminMember} from './v2-chain';
 import {readV2AdminCustomer,sendV2ManagerAction,V2_APPROVAL_REASONS,type V2AdminCustomer,type V2RejectCode} from './v2-admin';
 import V2HistoryPanel from './V2HistoryPanel';
-import V2TreasuryFunding from './V2TreasuryFunding';
+import V2OnDemandFunding from './V2OnDemandFunding';
 import './v2-admin.css';
 
 type ListState={total:number;page:number;members:V2AdminMember[]};
@@ -105,7 +105,7 @@ export default function V2AdminConsole({wallet,snapshot,onChanged}:{
    <p className="gv2-small">These are on-chain contract balances and liabilities, not an independent audit of operations wallet holdings or real external business revenue.</p>
   </section>
 
-  <V2TreasuryFunding wallet={wallet} onChanged={onChanged}/>
+  <section className="gv2-panel"><div className="gv2-panel-head"><h3>Just-in-time TESTNET payout funding</h3><span>No advance treasury top-up</span></div><p>Fund the exact on-chain cash shortfall only after a withdrawal has been requested and manager-approved. This immutable V2 contract may require coverage of all credited-profit liabilities before paying one individual profit request. See each approved TEST USDT request below.</p></section>
 
   <section className="gv2-panel">
    <div className="gv2-panel-head"><h3><Users size={18}/> Registered V2 customers</h3>
@@ -179,7 +179,7 @@ export default function V2AdminConsole({wallet,snapshot,onChanged}:{
   {snapshot.canApprove&&<section className="gv2-panel">
    <div className="gv2-panel-head"><h3><Clock3 size={19}/> All manager-approved withdrawal requests</h3>
     <button disabled={loading} onClick={()=>void listRequests(requests?.page??0)}>Refresh queue</button></div>
-   <p className="gv2-small">Approval is never automatic. Pending requests require your explicit wallet signature; payment execution remains separate and requires real cash.</p>
+   <p className="gv2-small">Approval is never automatic. Fund only when an approved withdrawal is ready for payment. An exact on-chain shortfall is checked for each request; separate wallet signatures are required for actual test-token funding and payout.</p>
    <div className="gv2-detail"><span>Visible pending this page / total all statuses</span><b>{approvalTotal} / {requests?.total??0}</b></div>
    {requests?.rows.map(r=><div className="gv2-position" key={r.id}>
     <div><strong>#{r.id+1} · {r.principal?'Principal':'Profit'}</strong>
@@ -196,7 +196,7 @@ export default function V2AdminConsole({wallet,snapshot,onChanged}:{
      </select>
      <button disabled={busy} onClick={()=>void execute({kind:'reject',requestId:r.id,reason},
       'Reject V2 request #'+(r.id+1)+' with reason '+reason+'? This will restore the recorded pending claim.')}>Reject</button>
-    </div>}</div>
+    </div>}{r.status===1&&r.asset.toLowerCase()===snapshot.token.toLowerCase()&&<V2OnDemandFunding wallet={wallet} requestId={r.id} onChanged={()=>{onChanged();void listRequests(requests?.page??0);}}/>}</div>
    </div>)}
    {!requests?.rows.length&&<p>{loading?'Loading queue…':'No V2 requests recorded on this page.'}</p>}
    <div className="gv2-buttons">
