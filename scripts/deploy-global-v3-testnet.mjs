@@ -17,6 +17,7 @@ const FEE=getAddress('0x74015dedf36677485793f1714ec7bd4893907b26');
 const OLD_V2=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
 const MARKER='/var/lib/globaldroptrade/v3-prototype/deployment.json';
 const KEEPER_CONFIG='/etc/globaldroptrade/v3-keeper-testnet.json';
+const ENCRYPTED_DEPLOYER='/etc/globaldroptrade/v3-deployer-only-testnet.json';
 const MAX_GAS=9000000n;
 const MAX_COST=parseEther('0.08');
 const RPC=[
@@ -82,11 +83,26 @@ function saveMarker(data,create=false){
  }
 }
 async function main(){
- if(!['--check','--deploy'].includes(process.argv[2])||
+ if(!['--check','--deploy','--init-deployer'].includes(process.argv[2])||
     (process.argv[2]==='--check'&&process.argv.length!==3)||
-    (process.argv[2]==='--deploy'&&process.argv.length!==4))
-  error('USAGE_CHECK_OR_DEPLOY_ENCRYPTED_TESTNET_KEYSTORE');
+    (process.argv[2]==='--deploy'&&process.argv.length!==4)||
+    (process.argv[2]==='--init-deployer'&&process.argv.length!==3))
+  error('USAGE_INIT_DEPLOYER_CHECK_OR_DEPLOY_ENCRYPTED_TESTNET_KEYSTORE');
  if(process.getuid?.()!==0)error('ROOT_REQUIRED_FOR_PRIVATE_DEPLOYMENT_RECORD');
+ if(process.argv[2]==='--init-deployer'){
+  if(fs.existsSync(ENCRYPTED_DEPLOYER))error('TESTNET_DEPLOYER_KEYSTORE_ALREADY_EXISTS');
+  const password=await passwordPrompt();
+  if(password.length<12)error('TESTNET_KEYSTORE_PASSWORD_MUST_BE_AT_LEAST_12_CHARS');
+  const fresh=Wallet.createRandom();
+  const encrypted=await fresh.encrypt(password);
+  fs.mkdirSync(path.dirname(ENCRYPTED_DEPLOYER),{recursive:true,mode:0o700});
+  fs.writeFileSync(ENCRYPTED_DEPLOYER,encrypted+'\n',{flag:'wx',mode:0o600});
+  console.log('V3_NEW_TESTNET_DEPLOYER_ONLY '+JSON.stringify({
+   publicAddress:fresh.address,encryptedKeystore:ENCRYPTED_DEPLOYER,
+   chainId:97,needsValuelessTestnetBNBGas:true,privateKeyPrinted:false
+  }));
+  return;
+ }
  if(fs.existsSync(MARKER)){
   const existing=JSON.parse(fs.readFileSync(MARKER,'utf8'));
   console.log('V3_EXISTING_DEPLOYMENT_INTENT '+JSON.stringify({
