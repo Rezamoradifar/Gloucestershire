@@ -3,21 +3,23 @@ import {ZeroAddress,getAddress,isAddress,parseUnits} from 'ethers';
 import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,walletConnectReady,type WalletKind} from './wallet';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
- readV2Snapshot,readV2AdminRequests,readV2AdminMembers,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,
- type V2Asset,type V2Action,type V2Snapshot,type V2AdminMember,type V2Withdrawal} from './v2-chain';
+ readV2Snapshot,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,
+ type V2Asset,type V2Action,type V2Snapshot} from './v2-chain';
+import V2HistoryPanel from './V2HistoryPanel';
+import V2AdminConsole from './V2AdminConsole';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
 
-type Section='overview'|'positions'|'team'|'withdrawals'|'admin'|'contract';
+type Section='overview'|'positions'|'team'|'history'|'withdrawals'|'admin'|'contract';
 const navItems=[
  {id:'overview' as Section,label:'Overview',Icon:LayoutDashboard},
  {id:'positions' as Section,label:'My positions',Icon:Layers},
  {id:'team' as Section,label:'Team & referrals',Icon:Users},
+ {id:'history' as Section,label:'Verified history',Icon:Clock3},
  {id:'withdrawals' as Section,label:'Withdrawals',Icon:Coins},
  {id:'admin' as Section,label:'Administration',Icon:Settings2},
  {id:'contract' as Section,label:'Contract & safety',Icon:ShieldCheck}
 ];
-type AdminRows={total:number;page:number;members:V2AdminMember[];requests:V2Withdrawal[];requestCount:number};
 const explorerAddress=(address:string)=>V2_EXPLORER+'/address/'+address;
 const explorerTx=(hash:string)=>V2_EXPLORER+'/tx/'+hash;
 
@@ -28,8 +30,7 @@ export default function V2Dashboard(){
  const [transaction,setTransaction]=useState(''),[snapshot,setSnapshot]=useState<V2Snapshot|null>(null);
  const [section,setSection]=useState<Section>('overview'),[symbol,setSymbol]=useState<V2Asset>('USDT');
  const [amount,setAmount]=useState(''),[principalPosition,setPrincipalPosition]=useState('0');
- const [referrer,setReferrer]=useState(ZeroAddress),[adminRows,setAdminRows]=useState<AdminRows|null>(null);
- const [adminBusy,setAdminBusy]=useState(false),[adminError,setAdminError]=useState('');
+ const [referrer,setReferrer]=useState(ZeroAddress);
  const [mobileMenu,setMobileMenu]=useState(false);
 
  useEffect(()=>{
@@ -77,7 +78,7 @@ export default function V2Dashboard(){
   catch(e){setError(walletConnectionError(e));}
   finally{setConnecting(false);}
  }
- async function disconnect(){await wallets.disconnect();setSnapshot(null);setAdminRows(null);setTransaction('');}
+ async function disconnect(){await wallets.disconnect();setSnapshot(null);setTransaction('');}
 
  const account=snapshot?.accounts.find(a=>a.symbol===symbol);
  const canManage=Boolean(snapshot?.canApprove||snapshot?.canKyc);
@@ -96,31 +97,10 @@ export default function V2Dashboard(){
    const hash=await sendV2Action(provider,wallet,action);
    setTransaction(hash);setNotice('Transaction confirmed on BNB Testnet.');setAmount('');
    await refresh();
-   if(section==='admin'&&canManage)void reloadAdmin(0);
   }catch(e){
    setNotice('');setError(e instanceof Error?e.message:'The transaction was not confirmed.');
   }finally{setBusy(false);}
  }
-
- async function reloadAdmin(page:number){
-  const p=getWalletProvider();
-  if(!p||!wallet||network!==V2_CHAIN_ID)return;
-  setAdminBusy(true);setAdminError('');
-  try{
-   const [m,r]=await Promise.all([
-    readV2AdminMembers(p,wallet,page),
-    readV2AdminRequests(p,wallet,0)
-   ]);
-   setAdminRows({total:m.total,page:m.page,members:m.members,
-    requests:r.rows,requestCount:r.total});
-  }catch(e){
-   setAdminRows(null);setAdminError(e instanceof Error?e.message:'Admin records are unavailable.');
-  }finally{setAdminBusy(false);}
- }
- useEffect(()=>{
-  if(section==='admin'&&canManage)void reloadAdmin(0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
- },[section,canManage,wallet,network]);
 
  const amountValue=()=>{
   if(!account)throw Error('Choose a supported asset.');
@@ -273,6 +253,7 @@ export default function V2Dashboard(){
      <div className="gv2-detail"><span>24h check-in expires</span><b>{snapshot.lastCheckIn?v2Date(snapshot.lastCheckIn+86400):'Not started'}</b></div>
      <p className="gv2-small">Eligible upline commissions are allocated atomically with funded personal earnings in the V2 contract. Exact per-source referral history requires a verified event index, not an estimate from the combined profit balance.</p>
     </div>}
+    {section==='history'&&<V2HistoryPanel requester={wallet} subject={wallet} token={snapshot.token} decimals={snapshot.accounts[1].decimals}/>}
     {section==='withdrawals'&&<>
      <div className="gv2-panel"><div className="gv2-panel-head"><h2>Request manager-approved withdrawal</h2><Clock3 size={18}/></div>
       <p>Every request requires manager approval. Profit fee: 3%. Cooldown: 72 hours per asset. Principal lock: 90 days, followed by a 30% penalty.</p>
@@ -298,36 +279,7 @@ export default function V2Dashboard(){
       {!snapshot.withdrawalsTotal&&<p>No V2 withdrawal requests yet.</p>}
      </div>
     </>}
-    {section==='admin'&&canManage&&<div className="gv2-admin">
-     <div className="gv2-panel"><div className="gv2-panel-head"><h2>V2 administrator</h2><ShieldCheck size={20}/></div>
-      <p>On-chain role checks protect manager actions. A secure independent identity verification workflow is required before changing VIP KYC; this prototype has no one-click KYC authorization.</p>
-      <div className="gv2-detail"><span>Withdrawal approver</span><b>{snapshot.canApprove?'Authorized':'No'}</b></div>
-      <div className="gv2-detail"><span>KYC administrator</span><b>{snapshot.canKyc?'Authorized':'No'}</b></div>
-      {adminError&&<p className="gv2-error">{adminError}</p>}
-     </div>
-     <div className="gv2-panel">
-      <div className="gv2-panel-head"><h3>Registered customers</h3>
-       <button disabled={adminBusy} onClick={()=>void reloadAdmin(adminRows?.page??0)}>Refresh</button></div>
-      <p className="gv2-small">On-chain registry. This is a bounded preview, not an audited complete financial database.</p>
-      {adminRows?.members.map(m=><div className="gv2-position" key={m.wallet}>
-       <div><a href={explorerAddress(m.wallet)} target="_blank" rel="noopener noreferrer">{v2Short(m.wallet)} <ExternalLink size={12}/></a><small>Referrer {v2Short(m.referrer)}</small></div>
-       <div><b>{v2Money(m.capitalUsd,18,2)} USD</b><small>USDT profit {v2Money(m.profitUsdt,snapshot.accounts[1].decimals)}</small></div>
-       <div><span>{m.eligible?'Active now':'Inactive'} · {m.kyc?'KYC verified':'KYC pending'}</span></div></div>)}
-      {!adminRows?.members.length&&<p>{adminBusy?'Loading registry…':'No registered V2 users.'}</p>}
-      <div className="gv2-buttons"><button disabled={!adminRows||adminBusy||adminRows.page===0} onClick={()=>void reloadAdmin((adminRows?.page??0)-1)}>Previous</button>
-       <span>{adminRows?.total??0} users · page {(adminRows?.page??0)+1}</span>
-       <button disabled={!adminRows||adminBusy||(adminRows.page+1)*10>=adminRows.total} onClick={()=>void reloadAdmin((adminRows?.page??0)+1)}>Next</button></div>
-     </div>
-     {snapshot.canApprove&&<div className="gv2-panel"><div className="gv2-panel-head"><h3>Withdrawal approval queue</h3><span>{adminRows?.requestCount??0} total</span></div>
-      {adminRows?.requests.map(r=><div className="gv2-position" key={r.id}>
-       <div><strong>Request #{r.id+1}</strong><small>{v2Short(r.user)} · {r.principal?'Principal':'Profit'}</small></div>
-       <div><b>{v2Money(r.gross,decimalsFor(r.asset))} {assetName(r.asset)}</b><small>Fee {v2Money(r.fee,decimalsFor(r.asset))} · {v2WithdrawalStatus(r.status)}</small></div>
-       <div>{r.status===0&&<button className="gv2-primary" disabled={busy} onClick={()=>void perform({kind:'approveWithdrawal',id:r.id},
-         'Approve exact request #'+(r.id+1)+' of '+v2Money(r.gross,decimalsFor(r.asset))+' '+assetName(r.asset)+' for '+r.user+'.')}>Approve in wallet</button>}</div>
-      </div>)}
-      {!adminRows?.requests.length&&<p>No V2 withdrawal requests.</p>}
-     </div>}
-    </div>}
+    {section==='admin'&&canManage&&<V2AdminConsole wallet={wallet} snapshot={snapshot} onChanged={()=>void refresh()}/>}
     {section==='contract'&&<div className="gv2-panel">
      <div className="gv2-panel-head"><h2>Verified V2 contract</h2><ShieldCheck size={20}/></div>
      <div className="gv2-detail"><span>Network</span><b>BNB Testnet · 97</b></div>
