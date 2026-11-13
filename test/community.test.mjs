@@ -86,6 +86,8 @@ test('owner audit sign-in has dedicated signature scope, live owner recheck and 
   assert.equal(token.status,200);assert.equal(token.value.scope,'owner-audit');
   const auth={headers:{authorization:'Bearer '+token.value.token}};
   assert.equal(await handler.authorizeOwner(auth),owner.address);
+  const scopeDenied=await fetch(base+'tickets',{headers:{Authorization:'Bearer '+token.value.token}});
+  assert.equal(scopeDenied.status,403,'Read-only audit token must not authorize support messages or modifications');
   currentOwner=outsider.address;
   await assert.rejects(handler.authorizeOwner(auth),e=>e.status===403);
   currentOwner=owner.address;clock+=600001;
