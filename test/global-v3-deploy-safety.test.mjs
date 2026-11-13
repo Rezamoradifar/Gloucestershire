@@ -15,7 +15,7 @@ test('V3 deploy is a separate opt-in BNB TESTNET-only signing process with on-ch
   'EMPTY_OR_SHORT_PASSWORD_NOT_ACCEPTED',
   "spawnSync('stty',['-echo']",
   "if(contract===OLD_V2)",
-  "await sent.wait(3)",
+  "await waitV3DeploymentReceipt(p,sent.hash,{confirmations:3})",
   "verified.hasRole(managerRole,ADMIN)",
   "keccak256(code)",
   "V3_PUBLIC_TESTNET_DEPLOYED_AND_VERIFIED"
