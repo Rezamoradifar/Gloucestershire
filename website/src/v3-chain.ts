@@ -139,7 +139,7 @@ const toSafeCount=(raw:bigint,label:string)=>{
 };
 export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig){
- if(!config)throw Error('V3 has not been publicly deployed and operator-pinned for this site. Existing V2 account remains available.');
+ if(!config)throw Error('The V3 testnet contract has not been deployed and verified for this site.');
  if(!isAddress(wallet))throw Error('Connect a valid testnet wallet.');
  wallet=getAddress(wallet);
  const [chain,accounts]=await Promise.all([

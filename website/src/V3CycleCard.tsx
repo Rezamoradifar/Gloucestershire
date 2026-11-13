@@ -3,6 +3,7 @@ import {ArrowRight,Clock3,RefreshCw,ShieldCheck} from 'lucide-react';
 import type {V3Snapshot} from './v3-chain';
 import {v3Countdown,v3CycleView,V3_PERIOD_SECONDS} from './v3-cycle';
 import {formatV3Amount as money} from './v3-format';
+import DigitalValue from './DigitalValue';
 
 export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
  view:V3Snapshot;busy:boolean;onCheckIn:()=>void;onPositions:()=>void;
@@ -26,8 +27,12 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
    <span className={'gv3-cycle-state '+(active?'active':'')}><span/> {active?'Activity active':'Check-in required'}</span></div>
   <div className="gv3-cycle-body">
    <div className="gv3-cycle-clock">
-    <div className="gv3-clock-ring" style={{background:`conic-gradient(#efcd8c ${progress*100}%, #34424a 0)`}}>
-     <div><Clock3 size={19}/><strong aria-label="Estimated time remaining">{remaining===null?'--:--:--':v3Countdown(remaining)}</strong><small>{remaining===null?'No position':due?'Due · verify on chain':'Until next cycle'}</small></div>
+    <div className="gv3-clock-console" role="timer" aria-live="off">
+     <div className="gv3-clock-console-head"><span>DAILY CYCLE</span><Clock3/></div>
+     <DigitalValue size="clock" value={remaining===null?'--:--:--':v3Countdown(remaining)}
+      label={remaining===null?'No active position':`Estimated time remaining ${v3Countdown(remaining)}`}/>
+     <div className="gv3-clock-console-foot"><span>{remaining===null?'NO POSITION':due?'DUE · VERIFY ON CHAIN':'HOURS : MIN : SEC'}</span><span>24H</span></div>
+     <div className="gv3-clock-progress" aria-hidden="true"><span style={{width:`${progress*100}%`}}/></div>
     </div>
     <div className="gv3-cycle-copy"><span className="gv3-kicker">NEXT POSITION</span>
      <h3>{remaining===null?'No active position':due?'Ready for on-chain confirmation':'Next eligibility window'}</h3>
@@ -37,12 +42,13 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
     </div>
    </div>
    <div className="gv3-cycle-side">
-    <div className="gv3-cycle-forecast"><span className="gv3-kicker">CONDITIONAL CYCLE ESTIMATE</span>
-     <strong>{money(cycle.estimatedDaily+cycle.estimatedCompound)} <small>TEST USDT</small></strong>
-     <p>Across current positions at the verified {view.dailyRateBps/100}% test rate, if each becomes eligible.</p>
-     <div><span>Personal estimate</span><b>{money(cycle.estimatedDaily)}</b></div>
-     <div><span>Profit-on-profit estimate</span><b>{money(cycle.estimatedCompound)}</b></div>
-     <small>Estimate only · not accrued, funded, or guaranteed.</small>
+    <div className="gv3-cycle-forecast"><span className="gv3-kicker">LIVE ESTIMATED PROGRESS</span>
+     <strong><DigitalValue value={money(cycle.progressDaily+cycle.progressCompound)} unit="TEST USDT"/></strong>
+     <p>A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.</p>
+     <div><span>Daily estimate so far</span><b><DigitalValue value={money(cycle.progressDaily)}/></b></div>
+     <div><span>Profit-on-profit estimate so far</span><b><DigitalValue value={money(cycle.progressCompound)}/></b></div>
+     <div><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="TEST USDT"/></b></div>
+     <small>At the verified {view.dailyRateBps/100}% test rate, if each position becomes eligible. Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>
     <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Check-in active':'Check in to qualify'}</strong>
      <small>{active?'Expires in '+v3Countdown(cycle.activityRemaining):'A signed check-in is required for an eligible cycle.'}</small></div>

@@ -15,6 +15,7 @@ import V3ClaimsReadout from './V3ClaimsReadout';
 import V3CycleCard from './V3CycleCard';
 import V3PaymentMap from './V3PaymentMap';
 import V3NetworkPanel from './V3NetworkPanel';
+import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
@@ -60,6 +61,7 @@ export default function V3Dashboard(){
  const [adminQueue,setAdminQueue]=useState<{count:number;page:number;requests:V3Withdrawal[]}|null>(null);
  const [branchPage,setBranchPage]=useState(0),[groupPage,setGroupPage]=useState(0);
  const revision=useRef(0);
+ const polling=useRef(false);
  const config=v3ReleaseConfig;
 
  useEffect(()=>{
@@ -97,10 +99,14 @@ export default function V3Dashboard(){
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
   if(!config||!wallet||chain!==97)return;
-  const tick=setInterval(()=>{
-   if(document.visibilityState==='visible'&&!busy)void refresh();
-  },45000);
-  return()=>clearInterval(tick);
+  const tick=()=>{
+   if(document.visibilityState!=='visible'||busy||polling.current)return;
+   polling.current=true;
+   void refresh().finally(()=>{polling.current=false;});
+  };
+  const timer=setInterval(tick,20000);
+  document.addEventListener('visibilitychange',tick);
+  return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',tick);};
  },[wallet,chain,busy,refresh,config]);
  async function connect(kind:WalletKind){
   setConnecting(true);setError('');
@@ -198,7 +204,7 @@ export default function V3Dashboard(){
   <article className="gv3-withdrawal-row" key={r.id}>
    <div><strong>Request #{r.id+1} · {kinds[r.kind]??'Unknown'}</strong>
     <small>{date(r.requestedAt)} · {short(r.beneficiary)}</small></div>
-   <div><b>{show(r.gross)} TEST USDT</b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
+   <div><b><DigitalValue value={show(r.gross)} unit="TEST USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>
     {admin&&<div className="gv3-queue-actions">
      {r.status===0&&<><button disabled={busy} onClick={()=>void perform({kind:'approveWithdrawal',id:r.id},'Approve request #'+(r.id+1)+' for '+r.beneficiary+'? Gross '+formatUnits(r.gross,18)+' TEST, fee '+formatUnits(r.fee,18)+' TEST. No money is paid until escrowed.')}>Approve</button>
@@ -236,7 +242,7 @@ export default function V3Dashboard(){
     </div>{wallet&&config&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17}/> Refresh</button>}</div>
     <section className="gv2-release"><ShieldCheck size={19}/><div className="gv2-release-copy">
      <strong>Isolated Global V3 test environment</strong>
-     <span>{config?short(config.address)+' · verified runtime required before any wallet action':'V3 not deployed or not operator-pinned. V2 remains available.'}</span>
+     <span>{config?short(config.address)+' · verified runtime required before any wallet action':'The current testnet contract has not yet been verified.'}</span>
     </div>{config&&<a target="_blank" rel="noreferrer" href={V3_EXPLORER+'/address/'+config.address}>Contract <ExternalLink size={14}/></a>}</section>
     {!config&&<section className="gv2-panel gv3-not-ready" role="status"><ShieldAlert size={26}/>
      <h2>V3 integration is prepared, but activation is locked</h2>
@@ -258,25 +264,27 @@ export default function V3Dashboard(){
      <button onClick={()=>void refresh()}>Retry blockchain verification</button></section>}
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
+      <div className="gv3-sync-line" aria-live="off"><span className="gv3-live-status">{loading?'CHECKING BLOCKCHAIN':'AUTO REFRESH · 20 SEC'}</span>
+       <span>Verified block {view.block.toLocaleString('en-US')} · {date(view.asOf)}</span></div>
       <section className="gv2-premium-board">
        <div className="gv2-premium-board-top"><span className="gv2-premium-eyebrow">GLOBAL PRIVATE TESTNET WORKSPACE</span><span className="gv2-premium-wallet"><Wallet size={14}/>{short(wallet)}</span></div>
        <div className="gv2-premium-board-main"><div className="gv2-premium-hero-balance">
         <span className="gv2-premium-caption">Recorded V3 principal · not redeemable cash</span>
-        <strong>{show(view.capital)} <em>TEST USDT</em></strong>
+        <strong><DigitalValue size="hero" value={show(view.capital)} unit="TEST USDT"/></strong>
         <p>Only blockchain-confirmed records for this contract are shown.</p>
        </div><div className="gv2-premium-hero-side">
         <small>Internal Current · {view.registered?'Registered':'Unregistered'} · {view.eligible?'Eligible':'Check-in required'}</small>
-        <h2>{claims?show(claims.internalCurrent):'—'} TEST USDT</h2>
+        <h2><DigitalValue value={claims?show(claims.internalCurrent):'—'} unit="TEST USDT"/></h2>
         <p>Internal account credit, not wallet cash. Wallet balance: {show(view.walletTestTokenBalance)} TEST USDT.</p>
        </div></div>
       </section>
       <V3CycleCard view={view} busy={busy} onCheckIn={checkIn} onPositions={()=>navigate('positions')}/>
       <V3ClaimsReadout verifiedLedger={view.ledger}/>
       <div className="gv2-summary">
-       <div className="gv2-metric"><small>Daily test-rate tier</small><strong>{view.dailyRateBps/100}%</strong><span>Conditional accounting rule</span></div>
-       <div className="gv2-metric"><small>Personal accrued claims</small><strong>{claims?show(claims.outstandingPersonal):'—'}</strong><span>Including profit-on-profit</span></div>
-       <div className="gv2-metric"><small>Vault test-token cash</small><strong>{show(view.ledger.cash)} TEST</strong><span>Includes cash reserved for requests</span></div>
-       <div className="gv2-metric"><small>Unfunded total obligations</small><strong>{claims?show(claims.overallUnfundedLiability):'—'}</strong><span>Not guaranteed to be paid</span></div>
+       <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
+       <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="TEST"/></strong><span>Including profit-on-profit</span></div>
+       <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="TEST"/></strong><span>Includes cash reserved for requests</span></div>
+       <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="TEST"/></strong><span>Not guaranteed to be paid</span></div>
       </div>
       <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {date(view.lastCheckIn)} · {due.length} positions due at the last verified block. Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
@@ -285,9 +293,10 @@ export default function V3Dashboard(){
        {view.positions.map(p=><article className="gv3-position-card" key={p.id}>
         <div><strong>Position #{p.id+1}{p.fromReinvestment?' · from manual reinvestment':''}</strong>
          <small>Opened {date(p.openedAt)} · Next eligible accrual after {date(p.lastAccruedAt+86400)}</small></div>
-        <div><b>{show(p.principal)} TEST</b><small>Original principal entry</small></div>
-        <div><b>{show(p.availableDaily)} + {show(p.availableCompound)}</b><small>Daily + compound available claims</small></div>
-        <div><b>{show(p.reservedProfit)} TEST</b><small>Reserved for pending withdrawal</small></div>
+        <div><b><DigitalValue value={show(p.principal)} unit="TEST"/></b><small>Original principal entry</small></div>
+        <div><b><DigitalValue value={show(p.availableDaily)} unit="TEST"/></b><small>Daily available claims</small>
+         <b><DigitalValue value={show(p.availableCompound)} unit="TEST"/></b><small>Profit-on-profit available claims</small></div>
+        <div><b><DigitalValue value={show(p.reservedProfit)} unit="TEST"/></b><small>Reserved for pending withdrawal</small></div>
        </article>)}
        {!view.positions.length&&<p>No independently verified V3 positions exist in this wallet.</p>}
       </section>
@@ -332,7 +341,7 @@ export default function V3Dashboard(){
      </section>}
      {tab==='withdrawals'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Request a V3 testnet withdrawal</h3><Clock3 size={18}/></div>
       <p>Claimed profit is a recorded obligation, not escrowed cash. Manager approval and actual TEST token funding are required before payment.</p>
-      <div className="gv2-detail"><span>Maximum single profit/referral request now</span><b>{claims?show(claims.maxSingleRequest):'0'} TEST</b></div>
+      <div className="gv2-detail"><span>Maximum single profit/referral request now</span><b><DigitalValue value={claims?show(claims.maxSingleRequest):'0'} unit="TEST"/></b></div>
       <div className="gv3-input-row">
        <label htmlFor="v3-request-kind">Withdrawal type</label>
        <select id="v3-request-kind" value={requestKind} onChange={e=>setRequestKind(e.target.value as 'profit'|'principal'|'referral'|'network')}><option value="profit">Accrued profit</option><option value="referral">Referral claim</option><option value="network">Network milestone claim</option><option value="principal">Matured principal</option></select>

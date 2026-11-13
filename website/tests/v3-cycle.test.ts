@@ -7,6 +7,17 @@ import {formatV3Amount} from '../src/v3-format';
 const position={id:0,principal:parseEther('1000'),compoundedBasis:parseEther('10'),
  lastAccruedAt:1000} as V3WalletPosition;
 describe('V3 display-only 24-hour cycle',()=>{
+ it('updates the visual progress estimate while leaving the full cycle estimate fixed',()=>{
+  const start=v3CycleView([position],1000,0,1000,70);
+  const half=v3CycleView([position],1000,43200,1000,70);
+  const due=v3CycleView([position],1000,172800,1000,70);
+  expect(start.progressDaily).toBe(0n);
+  expect(start.progressCompound).toBe(0n);
+  expect(half.progressDaily).toBe(parseEther('3.5'));
+  expect(half.progressCompound).toBe(parseEther('0.035'));
+  expect(due.progressDaily).toBe(due.estimatedDaily);
+  expect(due.progressCompound).toBe(due.estimatedCompound);
+ });
  it('uses each confirmed position timestamp and exact per-component integer rounding',()=>{
   const result=v3CycleView([position],1000,0,1000,70);
   expect(result.secondsRemaining).toBe(86400);
