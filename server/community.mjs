@@ -12,7 +12,7 @@ export async function createCommunity({file,owner,chainId,contract,origin='https
  function prune(){for(const map of [challenges,sessions,rates])for(const [key,value] of map)if(value.expires<=now())map.delete(key);}
  async function body(req){let size=0,data='';for await(const chunk of req){size+=chunk.length;if(size>16384)throw fail(413,'Request too large.');data+=chunk;}try{return JSON.parse(data||'{}');}catch{throw fail(400,'Invalid JSON.');}}
  function session(req){prune();const token=(req.headers.authorization||'').replace(/^Bearer /,'');const entry=sessions.get(token);if(!entry)throw fail(401,'Sign in with your wallet again.');return entry;}
- function user(req){return session(req).wallet;}
+ function user(req){const entry=session(req);if(entry.scope!=='support')throw fail(403,'Support sign-in required.');return entry.wallet;}
  async function admin(wallet){let current;try{current=await owner();}catch{throw fail(503,'Could not verify support administrator.');}if(current.toLowerCase()!==wallet.toLowerCase())throw fail(403,'Administrator permission required.');}
  const handle=async function handle(req,res){const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith('/api/community/'))return false;
  const send=(code,value)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
