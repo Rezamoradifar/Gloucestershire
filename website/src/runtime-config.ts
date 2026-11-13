@@ -1,19 +1,28 @@
 import {getAddress,isAddress,ZeroAddress} from 'ethers';
+
 export type PublicConfig={chainId:number;vaultAddress:string};
+
+// A new, isolated V2 interface must never silently attach to the old deployment.
+// The historical vault is preserved on-chain, but it is not a permitted live target.
+const forbiddenVaults=new Set([
+ '0x4c0f6141b18971db4b14e45c0be8cddb09febc14'
+]);
+
 export function parsePublicConfig(value:unknown,legacy=false):PublicConfig{
  const v=value as Record<string,unknown>|null;
  if(!v||!Number.isInteger(v.chainId)||![56,97].includes(Number(v.chainId)))throw Error('Unsupported public network configuration.');
- if(legacy?(v.status!=='live'||v.source!=='contract-sales-settlements'):v.version!==1)throw Error('The contract connection could not be verified.');
- const address=legacy?v.contract:v.vaultAddress;
+ if(legacy)throw Error('Legacy contract discovery is disabled for the independent V2 site.');
+ if(v.version!==1)throw Error('The contract connection could not be verified.');
+ const address=v.vaultAddress;
  if(typeof address!=='string'||!isAddress(address)||address.toLowerCase()===ZeroAddress)throw Error('The public contract address is invalid.');
- return {chainId:Number(v.chainId),vaultAddress:getAddress(address)};
+ const vaultAddress=getAddress(address);
+ if(forbiddenVaults.has(vaultAddress.toLowerCase()))throw Error('The API still points to the old contract. V2 access is blocked until the new deployment is verified.');
+ return {chainId:Number(v.chainId),vaultAddress};
 }
+
 export async function fetchPublicConfig(fetcher:typeof fetch=fetch):Promise<PublicConfig>{
- for(const [url,legacy] of [['/api/config',false],['/api/trades?limit=1',true]] as const){
-  const response=await fetcher(url,{cache:'no-store',signal:AbortSignal.timeout(10000)});
-  if(!legacy&&response.status===404)continue;
-  if(!response.ok)throw Error('The configured contract service is unavailable. Retry shortly.');
-  return parsePublicConfig(await response.json(),legacy);
- }
- throw Error('No verified public contract configuration is available.');
+ // No legacy fallback. Never infer a transaction target from trading history.
+ const response=await fetcher('/api/config',{cache:'no-store',signal:AbortSignal.timeout(10000)});
+ if(!response.ok)throw Error('The V2 contract configuration service is unavailable. No wallet transactions are permitted.');
+ return parsePublicConfig(await response.json());
 }
