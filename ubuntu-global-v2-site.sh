@@ -26,7 +26,9 @@ nginx -t
 npm ci --ignore-scripts --no-audit --no-fund
 # Only V2 can appear in the produced site bundle. Old server assets are not modified.
 npm ci --prefix website --ignore-scripts --no-audit --no-fund
-npm test --prefix website
+# Bound Vitest worker processes on the VPS; CI can continue using its own
+# parallelism. Avoid dozens of Ganache workers exhausting a small host.
+npm test --prefix website -- --maxWorkers=2
 npm run build --prefix website
 [ -s website/dist/index.html ] || { echo "V2_SITE_BUILD_MISSING"; exit 1; }
 grep -RilF '0xA98D8d3709f5D3730BAD5d76C334731784e7CF07' website/dist/assets --include='*.js' >/dev/null || {

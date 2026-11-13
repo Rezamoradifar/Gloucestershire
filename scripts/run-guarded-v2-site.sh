@@ -10,10 +10,10 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 [ -d .git ] && [ -f ubuntu-global-v2-site.sh ] || { echo V2_RELEASE_CHECKOUT_REQUIRED; exit 1; }
 export GLOBAL_V2_EXPECTED_SHA="$(git rev-parse HEAD)"
 echo "V2_RELEASE_SHA=$GLOBAL_V2_EXPECTED_SHA"
-echo "V2_PRECHECK_START"
-bash ubuntu-global-v2-site.sh --check
-echo "V2_PRECHECK_PASSED"
-echo "V2_FRONTEND_INSTALL_START"
+# The --install implementation performs ALL preflight tests, build and API
+# integrity checks before touching the served website. Running --check first
+# used to duplicate npm install + 200 tests and made mobile SSH HUP more likely.
+echo "V2_SINGLE_PASS_PREFLIGHT_AND_INSTALL_START"
 bash ubuntu-global-v2-site.sh --install
 echo "V2_FRONTEND_INSTALL_COMPLETED"
 echo "V2_FINANCIAL_PRODUCTION_NOT_APPROVED"

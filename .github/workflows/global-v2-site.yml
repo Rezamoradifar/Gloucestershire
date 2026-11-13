@@ -27,7 +27,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix website --no-audit --no-fund
       - name: Frontend regression tests, TypeScript and build
-        run: npm test --prefix website && npm run build --prefix website
+        run: npm test --prefix website -- --maxWorkers=2 && npm run build --prefix website
       - name: New V2-only support service signature and data-isolation checks
         run: |
           node --check server/trades-api.mjs
