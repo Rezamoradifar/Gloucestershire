@@ -5,6 +5,7 @@ import {getWalletProvider} from './wallet';
 import {readV2AdminMembers,readV2AdminRequests,V2_EXPLORER,v2Money,v2Date,v2Short,v2WithdrawalStatus,type V2Snapshot,type V2Withdrawal,type V2AdminMember} from './v2-chain';
 import {readV2AdminCustomer,sendV2ManagerAction,V2_APPROVAL_REASONS,type V2AdminCustomer,type V2RejectCode} from './v2-admin';
 import V2HistoryPanel from './V2HistoryPanel';
+import './v2-admin.css';
 
 type ListState={total:number;page:number;members:V2AdminMember[]};
 type QueueState={total:number;page:number;rows:V2Withdrawal[]};
