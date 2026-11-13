@@ -89,6 +89,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     event DepositRetained(address indexed user,uint256 indexed positionId,uint256 amount);
     event DailyClaimAccrued(address indexed user,uint256 indexed positionId,uint256 personal,uint256 compounded,uint256 total,uint256 at);
     event ProfitClaimSplitReserved(uint256 indexed requestId,uint256 personal,uint256 compounded);
+    event ProfitClaimSplitPaid(uint256 indexed requestId,uint256 personal,uint256 compounded);
     event ReferralClaimAccrued(address indexed upline,address indexed source,uint8 level,uint256 amount);
     event ProfitReinvested(address indexed user,uint256 indexed fromPosition,uint256 newPositionId,uint256 amount);
     event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee);
@@ -417,6 +418,9 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
             Position storage p=positions[r.beneficiary][r.positionId];
             p.reservedProfit-=r.gross;
             profitLiability-=r.gross;
+            emit ProfitClaimSplitPaid(id,reservedDailyByRequest[id],reservedCompoundByRequest[id]);
+            delete reservedDailyByRequest[id];
+            delete reservedCompoundByRequest[id];
         }else{
             u.referralReserved-=r.gross;
             profitLiability-=r.gross;
