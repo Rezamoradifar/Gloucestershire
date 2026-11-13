@@ -199,7 +199,9 @@ export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet
  }finally{provider.destroy();}
 }
 export async function readV3ManagerQueue(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig){
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,page=0){
+ if(!Number.isSafeInteger(page)||page<0||page>100000)
+  throw Error('Invalid V3 manager request page.');
  const s=await v3ReadSession(walletProvider,wallet,config);
  try{
   const role=await s.vault.MANAGER_ROLE(s.options);
@@ -208,7 +210,8 @@ export async function readV3ManagerQueue(walletProvider:Eip1193Provider,wallet:s
   const raw=await s.vault.withdrawalCount(s.options);
   const count=Number(raw);
   if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid V3 queue size.');
-  const ids=Array.from({length:Math.min(count,20)},(_,i)=>count-1-i);
+  const from=count-page*20;
+  const ids=Array.from({length:Math.max(0,Math.min(20,from))},(_,i)=>from-1-i);
   const requests=await Promise.all(ids.map(async id=>{
    const r=await s.vault.withdrawalOf(id,s.options);
    return {id,beneficiary:getAddress(r.beneficiary),
@@ -216,6 +219,6 @@ export async function readV3ManagerQueue(walletProvider:Eip1193Provider,wallet:s
     requestedAt:Number(r.requestedAt),status:Number(r.status),
     kind:Number(r.kind)} as V3Withdrawal;
   }));
-  return {count,requests};
+  return {count,page,requests};
  }finally{s.provider.destroy();}
 }
