@@ -1,7 +1,7 @@
 // Global V2 browser wallet connector: never load /api/config or the retired ABI.
 // The V2 address and deployed runtime hash are pinned to the operator's verified
 // BNB Testnet deployment. Any mismatch stops ALL account actions.
-import {BrowserProvider,Contract,ZeroAddress,getAddress,isAddress,keccak256,formatUnits,type Eip1193Provider} from 'ethers';
+import {BrowserProvider,Contract,FetchRequest,JsonRpcProvider,ZeroAddress,getAddress,isAddress,keccak256,formatUnits,type Eip1193Provider} from 'ethers';
 
 export const V2_CHAIN_ID=97;
 export const V2_ADDRESS=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
@@ -87,29 +87,72 @@ export const v2WithdrawalStatus=(status:number)=>{
  return 'Unknown — verify on chain';
 };
 
+// Read-only RPC endpoints documented by BNB Chain. Never used for signing.
+export const V2_READ_RPCS=[
+ 'https://data-seed-prebsc-1-s1.bnbchain.org:8545',
+ 'https://data-seed-prebsc-2-s1.bnbchain.org:8545',
+ 'https://data-seed-prebsc-1-s2.bnbchain.org:8545'
+] as const;
+
+export async function v2WithTimeout<T>(promise:Promise<T>,ms:number,message:string):Promise<T>{
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ try{return await Promise.race([promise,new Promise<T>((_,reject)=>{
+  timer=setTimeout(()=>reject(Error(message)),ms);
+ })]);}finally{if(timer)clearTimeout(timer);}
+}
+export async function v2PickReadSource<T>(sources:ReadonlyArray<()=>Promise<T>>,ms=17000):Promise<T>{
+ if(!sources.length)throw Error('No V2 blockchain read services configured.');
+ try{return await v2WithTimeout(Promise.any(sources.map(source=>Promise.resolve().then(source))),ms,
+  'Reading V2 timed out. Your wallet is connected, but the blockchain RPC did not respond. Retry.');}
+ catch(e){
+  if(e instanceof AggregateError)throw Error('BNB Testnet RPCs could not verify the V2 contract. Try Retry or switch the wallet RPC.');
+  throw e;
+ }
+}
+
+const v2ReadProvider=(url:string)=>{
+ const request=new FetchRequest(url);request.timeout=9000;
+ return new JsonRpcProvider(request,V2_CHAIN_ID,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+};
+
 export async function v2Session(walletProvider:Eip1193Provider,wallet:string){
  if(!isAddress(wallet))throw Error('Connect a valid account on BNB Testnet.');
- const [chain,accounts]=await Promise.all([
+ // The wallet is used only for identity confirmation and signing. Wallet RPCs may
+ // reject historical eth_getCode/eth_call on mobile; never make them the sole reader.
+ const [chain,accounts]=await v2WithTimeout(Promise.all([
   walletProvider.request({method:'eth_chainId'}),
   walletProvider.request({method:'eth_accounts'})
- ]);
+ ]),10000,'The wallet did not respond. Reopen the wallet connection and retry.');
  if(Number(chain)!==V2_CHAIN_ID)throw Error('Switch your wallet to BNB Testnet (chain 97).');
  if(!Array.isArray(accounts)||!accounts.some(value=>typeof value==='string'&&value.toLowerCase()===wallet.toLowerCase()))
   throw Error('The selected wallet changed; reconnect before using V2.');
- const provider=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
- const head=await provider.getBlockNumber();
- const blockNumber=Math.max(0,head-3);
- const [block,code]=await Promise.all([
-  provider.getBlock(blockNumber),
-  provider.getCode(V2_ADDRESS,blockNumber)
- ]);
- if(!block||!block.hash||block.number!==blockNumber||code==='0x'||keccak256(code).toLowerCase()!==V2_CODE_HASH)
-  throw Error('The verified V2 testnet contract was not found at the expected address and code hash.');
- const vault=new Contract(V2_ADDRESS,V2_VAULT_ABI,provider);
- const fee=await vault.PROFIT_FEE_BPS({blockTag:blockNumber});
- const cooldown=await vault.WITHDRAWAL_COOLDOWN({blockTag:blockNumber});
- if(fee!==300n||cooldown!==259200n)throw Error('V2 on-chain withdrawal terms do not match the approved terms.');
- return {provider,vault,block,options:{blockTag:blockNumber}};
+ const verify=async(provider:BrowserProvider|JsonRpcProvider,readChain:boolean)=>{
+  if(readChain&&Number(BigInt(await provider.send('eth_chainId',[])))!==V2_CHAIN_ID)
+   throw Error('Wrong BNB Testnet RPC network.');
+  const head=await provider.getBlockNumber();
+  const blockNumber=Math.max(0,head-3);
+  // Verify bytecode at latest: mobile RPCs often cannot return historical code.
+  // Financial account reads below remain pinned to one confirmed block.
+  const [block,code]=await Promise.all([
+   provider.getBlock(blockNumber),
+   provider.getCode(V2_ADDRESS,'latest')
+  ]);
+  if(!block||!block.hash||block.number!==blockNumber||code==='0x'||keccak256(code).toLowerCase()!==V2_CODE_HASH)
+   throw Error('The verified V2 testnet contract was not found at the expected address and code hash.');
+  const vault=new Contract(V2_ADDRESS,V2_VAULT_ABI,provider);
+  const [fee,cooldown]=await Promise.all([
+   vault.PROFIT_FEE_BPS({blockTag:blockNumber}),
+   vault.WITHDRAWAL_COOLDOWN({blockTag:blockNumber})
+  ]);
+  if(fee!==300n||cooldown!==259200n)throw Error('V2 on-chain withdrawal terms do not match the approved terms.');
+  return {provider,vault,block,options:{blockTag:blockNumber}};
+ };
+ // Read only. The browser wallet still approves/signs every on-chain action.
+ const sources=[
+  ...V2_READ_RPCS.map(url=>()=>verify(v2ReadProvider(url),true)),
+  ()=>verify(new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1}),false)
+ ];
+ return v2PickReadSource(sources,17000);
 }
 
 export async function readV2Snapshot(walletProvider:Eip1193Provider,wallet:string):Promise<V2Snapshot>{
