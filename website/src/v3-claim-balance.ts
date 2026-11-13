@@ -56,6 +56,8 @@ export function v3PrepareUserClaims(ledger:V3ClaimLedger){
  const internalCurrent=outstandingDaily+outstandingCompound+ledger.referralAvailable;
  const pendingInternal=reservedPersonal+ledger.referralReserved;
  const internalRecordedTotal=internalCurrent+pendingInternal;
+ if(internalRecordedTotal>ledger.profitLiability||recordedPrincipal>ledger.principalLiability)
+  throw Error('V3 internal Current exceeds verified on-chain global liabilities.');
  const accruedUnfunded=ledger.principalLiability+ledger.profitLiability>ledger.cash?
   ledger.principalLiability+ledger.profitLiability-ledger.cash:0n;
  return Object.freeze({
