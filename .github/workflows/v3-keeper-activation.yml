@@ -1,0 +1,33 @@
+name: V3 keeper activation safety
+on:
+  pull_request:
+    paths:
+      - 'scripts/global-v3-auto-compound-keeper.mjs'
+      - 'scripts/v3-keeper-receipt-poll.mjs'
+      - 'scripts/install-global-v3-keeper-timer.sh'
+      - 'test/global-v3-keeper-activation.test.mjs'
+      - '.github/workflows/v3-keeper-activation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  keeper-activation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check source and shell syntax
+        run: |
+          node --check scripts/global-v3-auto-compound-keeper.mjs
+          node --check scripts/v3-keeper-receipt-poll.mjs
+          bash -n scripts/install-global-v3-keeper-timer.sh
+      - name: Offline keeper activation and safety tests
+        run: |
+          node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-keeper-activation.test.mjs test/global-v3-deploy-safety.test.mjs
