@@ -198,10 +198,24 @@ async function main(){
    error('TESTNET_DEPLOYER_HAS_INSUFFICIENT_TBNB');
   if(!process.stdin.isTTY||!process.stdout.isTTY)
    error('INTERACTIVE_DEPLOYMENT_CONFIRMATION_REQUIRED');
-  const rl=createInterface({input:process.stdin,output:process.stdout});
-  const answer=await rl.question('Type DEPLOY NEW V3 BNB TESTNET ONLY: ');
-  rl.close();
-  if(answer!=='DEPLOY NEW V3 BNB TESTNET ONLY')error('DEPLOYMENT_CANCELLED_BY_OPERATOR');
+  // Android SSH often submits an extra empty newline when the multi-line
+  // release command is pasted. Do not cancel on that empty line and never
+  // accept a confirmation typed after returning to the shell.
+  const rl=createInterface({input:process.stdin,terminal:false});
+  let approved=false;
+  try{
+   for(let attempt=1;attempt<=5;attempt++){
+    const answer=await rl.question('Type DEPLOY NEW V3 BNB TESTNET ONLY: ');
+    if(answer.trim()==='DEPLOY NEW V3 BNB TESTNET ONLY'){
+     approved=true;
+     break;
+    }
+    if(attempt<5)process.stdout.write(
+     'V3_CONFIRMATION_NOT_MATCHED. Enter the EXACT phrase at the NEXT prompt while this program is still running.\n'
+    );
+   }
+  }finally{rl.close();}
+  if(!approved)error('DEPLOYMENT_CANCELLED_BY_OPERATOR');
   const record={
    status:'INTENT',createdAt:new Date().toISOString(),
    chainId:97,deployer:wallet.address,admin:ADMIN,asset:TOKEN,feeReceiver:FEE,
