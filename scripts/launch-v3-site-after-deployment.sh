@@ -8,16 +8,18 @@ cd -- "$(dirname -- "$0")/.."
 [[ $# -eq 1 && "$1" == --install ]] ||
  { echo "Usage: bash scripts/launch-v3-site-after-deployment.sh --install"; exit 1; }
 [[ "$(id -u)" -eq 0 ]] || { echo V3_SITE_ROOT_REQUIRED; exit 1; }
+# Load the existing pinned Node installation BEFORE checking commands. New
+# Android SSH sessions usually do not carry a previous shell's PATH.
+arch="$(uname -m)"
+if [[ "$arch" == x86_64 ]]; then arch=x64; elif [[ "$arch" == aarch64 ]]; then arch=arm64; else echo V3_SITE_UNSUPPORTED_ARCH; exit 1; fi
+runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
+[[ -x "$runtime/node" ]] && export PATH="$runtime:$PATH"
 for command in systemd-run systemctl git node; do
  command -v "$command" >/dev/null || { echo "V3_SITE_MISSING_$command"; exit 1; }
 done
 [[ -d .git ]] || { echo V3_SITE_GIT_CHECKOUT_REQUIRED; exit 1; }
 # Finite, read-only proof and RPC preflight before even starting a service.
 # If V3 has NOT been successfully deployed, no release starts.
-arch="$(uname -m)"
-if [[ "$arch" == x86_64 ]]; then arch=x64; elif [[ "$arch" == aarch64 ]]; then arch=arm64; else echo V3_SITE_UNSUPPORTED_ARCH; exit 1; fi
-runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
-[[ -x "$runtime/node" ]] && export PATH="$runtime:$PATH"
 node scripts/verify-v3-site-deployment.mjs --check
 if systemctl list-units --all --no-legend --plain 'global-v3-site-*.service' |
     grep -E 'running|activating' >/dev/null; then
