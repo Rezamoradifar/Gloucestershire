@@ -80,7 +80,7 @@ test('administrator directory query parser enforces bounded windows and pinned b
   ['head','wallet='+member],
   ['user','wallet='+member],
   ['user','head=197&hash='+hash(197)+'&wallet=INVALID'],
-  ['registrations','head=197&hash='+hash(197)+'&from=0&to=197'],
+  ['registrations','head=197&hash='+hash(197)+'&from=198&to=197'],
   ['registrations','head=2000&hash='+hash(197)+'&from=0&to=1100'],
   ['registrations','head=197&hash='+hash(197)+'&from=180&to=197&from=175'],
   ['withdrawals','head=197&hash='+hash(197)+'&wallet='+member+'&page=-1'],
@@ -99,6 +99,8 @@ test('read-only owner registry reports precise canonical coverage, not a fabrica
  const done=await readAdminUsers({provider:f.provider,config,
   query:q('registrations','head=197&hash='+hash(197)+'&from=100&to=197')});
  assert.equal(done.complete,true);
+ await assert.rejects(readAdminUsers({provider:f.provider,config,
+  query:q('registrations','head=197&hash='+hash(197)+'&from=0&to=197')}),/ADMIN_USERS_BAD_REQUEST/);
  const changed={...f.provider,getBlock:async n=>({number:n,hash:hash(n+1)})};
  await assert.rejects(readAdminUsers({provider:changed,config,
   query:q('registrations','head=197&hash='+hash(197)+'&from=180&to=197')}),/CHECKPOINT_MISMATCH/);
