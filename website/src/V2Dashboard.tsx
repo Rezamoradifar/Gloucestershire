@@ -15,6 +15,7 @@ import './v2-dashboard.css';
 import './v2-classic-shell.css';
 import './v2-classic-refinement.css';
 import './v2-mobile-dock.css';
+import './v2-responsive-complete.css';
 
 type Section='overview'|'invest'|'positions'|'team'|'history'|'profile'|'tickets'|'announcements'|'withdrawals'|'admin'|'contract';
 const navItems=[
