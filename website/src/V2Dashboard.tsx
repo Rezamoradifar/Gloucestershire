@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useState} from 'react';
 import {ZeroAddress,getAddress,isAddress,parseUnits} from 'ethers';
-import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2} from 'lucide-react';
+import {Activity,AlertTriangle,ArrowUpRight,CheckCircle2,Clock3,Coins,Copy,ExternalLink,LogOut,RefreshCw,ShieldCheck,Users,Wallet,Menu,X,LayoutDashboard,Layers,ChevronLeft,SunMoon,House,Settings2,UserRound,Info,Megaphone} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,walletConnectReady,type WalletKind} from './wallet';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
  readV2Snapshot,sendV2Action,v2Date,v2Money,v2Short,v2WithdrawalStatus,
@@ -8,16 +8,22 @@ import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
 import V2HistoryPanel from './V2HistoryPanel';
 import V2AdminConsole from './V2AdminConsole';
 import V2Investment from './V2Investment';
+import V2Network from './V2Network';
+import V2Community from './V2Community';
+import V2Profile from './V2Profile';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
 
-type Section='overview'|'invest'|'positions'|'team'|'history'|'withdrawals'|'admin'|'contract';
+type Section='overview'|'invest'|'positions'|'team'|'history'|'profile'|'tickets'|'announcements'|'withdrawals'|'admin'|'contract';
 const navItems=[
  {id:'overview' as Section,label:'Overview',Icon:LayoutDashboard},
  {id:'invest' as Section,label:'Invest / plans',Icon:Coins},
  {id:'positions' as Section,label:'My positions',Icon:Layers},
  {id:'team' as Section,label:'Team & referrals',Icon:Users},
- {id:'history' as Section,label:'Verified history',Icon:Clock3},
+ {id:'history' as Section,label:'Profit & deposits',Icon:Clock3},
+ {id:'profile' as Section,label:'My profile',Icon:UserRound},
+ {id:'tickets' as Section,label:'Support tickets',Icon:Info},
+ {id:'announcements' as Section,label:'Announcements',Icon:Megaphone},
  {id:'withdrawals' as Section,label:'Withdrawals',Icon:Coins},
  {id:'admin' as Section,label:'Administration',Icon:Settings2},
  {id:'contract' as Section,label:'Contract & safety',Icon:ShieldCheck}
@@ -217,7 +223,7 @@ export default function V2Dashboard(){
      <div className="gv2-metric"><small>Capital · USD</small><strong>{v2Money(snapshot.capitalUsd,18,2)}</strong><span>Recorded principal, not cash</span></div>
      <div className="gv2-metric"><small>VIP verification</small><strong>{snapshot.kyc?'Admin verified':'Unverified'}</strong><span>Manager-only KYC</span></div>
     </div>
-    {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet}/>}
+    {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet} onConfirmed={()=>void refresh()}/>}
     {section==='overview'&&<>
      <div className="gv2-section-head"><h2>Asset accounting</h2><span>Verified at block {snapshot.block.toLocaleString('en-US')}</span></div>
      <div className="gv2-asset-row">{snapshot.accounts.map(a=><article key={a.symbol} className="gv2-panel">
@@ -251,15 +257,11 @@ export default function V2Dashboard(){
      {!snapshot.positionsTotal&&<p>No positions have been opened on this V2 contract.</p>}
      {snapshot.positionsTotal>10&&<p>Showing 10 positions. More pages require a verified indexer.</p>}
     </div>}
-    {section==='team'&&<div className="gv2-panel">
-     <div className="gv2-panel-head"><h2>Referral & activity</h2><Users size={19}/></div>
-     <div className="gv2-detail"><span>Your wallet</span><b className="gv2-break">{snapshot.wallet}</b></div>
-     <div className="gv2-detail"><span>Referrer</span><b className="gv2-break">{snapshot.referrer===ZeroAddress?'None':snapshot.referrer}</b></div>
-     <div className="gv2-detail"><span>Eligibility right now</span><b>{snapshot.eligible?'Eligible':'Not eligible'}</b></div>
-     <div className="gv2-detail"><span>24h check-in expires</span><b>{snapshot.lastCheckIn?v2Date(snapshot.lastCheckIn+86400):'Not started'}</b></div>
-     <p className="gv2-small">Eligible upline commissions are allocated atomically with funded personal earnings in the V2 contract. Exact per-source referral history requires a verified event index, not an estimate from the combined profit balance.</p>
-    </div>}
+    {section==='team'&&<V2Network wallet={wallet} snapshot={snapshot}/>}
     {section==='history'&&<V2HistoryPanel requester={wallet} subject={wallet} token={snapshot.token} decimals={snapshot.accounts[1].decimals}/>}
+    {section==='profile'&&<V2Profile snapshot={snapshot}/>}
+    {section==='tickets'&&<V2Community mode="tickets" who={wallet} admin={snapshot.canApprove||snapshot.canKyc}/>}
+    {section==='announcements'&&<V2Community mode="announcements" who={wallet} admin={snapshot.canApprove||snapshot.canKyc}/>}
     {section==='withdrawals'&&<>
      <div className="gv2-panel"><div className="gv2-panel-head"><h2>Request manager-approved withdrawal</h2><Clock3 size={18}/></div>
       <p>Every request requires manager approval. Profit fee: 3%. Cooldown: 72 hours per asset. Principal lock: 90 days, followed by a 30% penalty.</p>
