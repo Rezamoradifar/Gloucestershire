@@ -129,8 +129,9 @@ export async function adminWithdrawals(token:string,head:AdminHead,wallet:string
  base(d);ensureHeader(d as AdminHead,head);const x=d as AdminWithdrawals;
  if(x.kind!=='withdrawals'||!same(x.wallet,wallet)||typeof x.supported!=='boolean')invalid();
  if(x.supported){
-  if(!ensureAddress(x.queueAddress)||x.page!==page||!safe(x.total)||!Array.isArray(x.requests)||x.requests.length>8)invalid();
-  for(const row of x.requests)if(!units(row.id)||!ensureAddress(row.asset)||
+  const requests=x.requests;
+  if(!ensureAddress(x.queueAddress)||x.page!==page||!safe(x.total)||!Array.isArray(requests)||requests.length>8)invalid();
+  for(const row of requests)if(!units(row.id)||!ensureAddress(row.asset)||
     !units(row.gross)||!units(row.fee)||!units(row.net)||!units(row.dueAt)||
     !safe(row.status)||row.status>3)invalid();
  }
