@@ -33,6 +33,8 @@ jobs:
           node --check server/trades-api.mjs
           node --check server/community.mjs
           node --check server/v2-read-rpc.mjs
+          node --check scripts/fund-v2-testnet-treasury-server.mjs
+          node --test test/v2-server-testnet-treasury.test.mjs
           bash -n ubuntu-v2-support-install.sh
           bash -n scripts/run-v2-testnet-stack.sh
           node --test test/v2-community-isolation.test.mjs test/v2-read-rpc.test.mjs test/v2-read-rpc-integration.test.mjs
