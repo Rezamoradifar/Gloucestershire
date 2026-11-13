@@ -92,8 +92,8 @@ describe('Global V2 public-site isolation',()=>{
   expect(preview).toContain('SIMULATION_ONLY_NO_CHAIN_WRITES');
   expect(client).toContain('readV2InvestmentQuote');
   expect(client).not.toMatch(/case 'deposit'/);
-  expect(panel).not.toMatch(/\\.deposit\\(/);
-  expect(panel).not.toMatch(/approve\\(/);
+  expect(panel).not.toContain('.deposit(');
+  expect(panel).not.toContain('.approve(');
  });
  it('uses only a syntax-checked, hash-pinned, rollback-capable installer',()=>{
   const script=read('../ubuntu-global-v2-site.sh');
