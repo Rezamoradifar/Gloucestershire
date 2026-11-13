@@ -58,6 +58,22 @@ if [[ "$mode" == --check ]]; then
 fi
 
 command -v systemd-analyze >/dev/null || die "MISSING_SYSTEMD_ANALYZE"
+command -v npm >/dev/null || die "MISSING_NPM"
+command -v git >/dev/null || die "MISSING_GIT"
+[[ ! -e "/etc/systemd/system/$UNIT.service" && ! -e "/etc/systemd/system/$UNIT.timer" ]] ||
+ die "KEEPER_TIMER_ALREADY_INSTALLED_REVIEW_BEFORE_UPGRADE"
+sha="$(git -C "$BASE" rev-parse HEAD)"
+[[ "$sha" =~ ^[a-f0-9]{40}$ ]] || die "REPOSITORY_COMMIT_SHA_INVALID"
+# Freeze the exact reviewed script and dependency lock outside the mutable
+# Global website checkout. Future git switches cannot change the running job.
+RELEASE="/opt/global-v3-testnet-keeper/releases/$sha"
+[[ ! -e "$RELEASE" ]] || die "PINNED_KEEPER_RELEASE_ALREADY_EXISTS_REVIEW_BEFORE_RETRY"
+install -d -m 0755 "$RELEASE/scripts"
+install -m 0644 "$BASE/scripts/global-v3-auto-compound-keeper.mjs" "$RELEASE/scripts/"
+install -m 0644 "$BASE/package.json" "$BASE/package-lock.json" "$RELEASE/"
+(cd "$RELEASE"; npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+"$node" --check "$RELEASE/scripts/global-v3-auto-compound-keeper.mjs"
+chmod -R go-w "$RELEASE"
 cat > "/etc/systemd/system/$UNIT.service" <<EOF
 [Unit]
 Description=BNB Testnet V3 permissionless daily plus compounded claim keeper (no manager role)
@@ -69,8 +85,8 @@ ConditionPathExists=$KEY
 [Service]
 Type=oneshot
 DynamicUser=yes
-WorkingDirectory=$BASE
-ExecStart=$node $BASE/scripts/global-v3-auto-compound-keeper.mjs --run --config %d/keeper-config --key-file %d/keeper-gas-key
+WorkingDirectory=$RELEASE
+ExecStart=$node $RELEASE/scripts/global-v3-auto-compound-keeper.mjs --run --config %d/keeper-config --key-file %d/keeper-gas-key
 LoadCredential=keeper-config:$CONFIG
 LoadCredential=keeper-gas-key:$KEY
 StateDirectory=globaldroptrade-v3-keeper
@@ -108,6 +124,7 @@ systemd-analyze verify "/etc/systemd/system/$UNIT.service" "/etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now "$UNIT.timer"
 echo "V3_AUTO_COMPOUND_KEEPER_TIMER_INSTALLED=$UNIT.timer"
+echo "V3_PINNED_KEEPER_RELEASE=$sha"
 echo "V3_AUTO_COMPOUND_KEEPER_TESTNET_ONLY=TRUE"
 echo "V3_ADMIN_APPROVAL_REQUIRED_FOR_ACCRUAL=FALSE"
 echo "V3_KEEPER_MAY_ACCRUE_ONLY_IF_USER_CHECKIN_ELIGIBLE=TRUE"
