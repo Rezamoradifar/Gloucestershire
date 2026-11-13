@@ -4,7 +4,8 @@ import path from 'node:path';
 import {getAddress,isAddress,verifyMessage} from 'ethers';
 const fail=(status,message)=>Object.assign(Error(message),{status});
 const text=(v,max)=>{if(typeof v!=='string'||!v.trim()||v.trim().length>max)throw fail(400,`Text must contain 1–${max} characters.`);return v.trim();};
-export async function createCommunity({file,owner,chainId,contract,origin='https://globaldroptrade.com',now=Date.now}){
+export async function createCommunity({file,owner,chainId,contract,origin='https://globaldroptrade.com',now=Date.now,prefix='/api/community/'}){
+ if(!['/api/community/','/api/v2/community/'].includes(prefix))throw Error('Community API prefix is not approved.');
  let state;try{state=JSON.parse(await readFile(file,'utf8'));if(state.version!==1||!Array.isArray(state.tickets)||!Array.isArray(state.announcements))throw Error('Invalid community data');}catch(e){if(e.code!=='ENOENT')throw e;state={version:1,tickets:[],announcements:[]};}
  await mkdir(path.dirname(file),{recursive:true,mode:0o700});
  let queue=Promise.resolve();const challenges=new Map(),sessions=new Map(),rates=new Map();
@@ -13,9 +14,9 @@ export async function createCommunity({file,owner,chainId,contract,origin='https
  async function body(req){let size=0,data='';for await(const chunk of req){size+=chunk.length;if(size>16384)throw fail(413,'Request too large.');data+=chunk;}try{return JSON.parse(data||'{}');}catch{throw fail(400,'Invalid JSON.');}}
  function user(req){prune();const token=(req.headers.authorization||'').replace(/^Bearer /,'');const session=sessions.get(token);if(!session)throw fail(401,'Sign in with your wallet again.');return session.wallet;}
  async function admin(wallet){let current;try{current=await owner();}catch{throw fail(503,'Could not verify support administrator.');}if(current.toLowerCase()!==wallet.toLowerCase())throw fail(403,'Administrator permission required.');}
- return async function handle(req,res){const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith('/api/community/'))return false;
+ return async function handle(req,res){const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith(prefix))return false;
  const send=(code,value)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
- try{prune();const route=url.pathname.slice('/api/community/'.length),method=req.method;
+ try{prune();const route=url.pathname.slice(prefix.length),method=req.method;
  if(route==='announcements'&&method==='GET'){send(200,{items:state.announcements.filter(a=>a.published).slice(-100).reverse()});return true;}
  if(route==='challenge'&&method==='POST'){
   const peer=req.socket.remoteAddress||'unknown',rate=rates.get(peer)||{count:0,expires:now()+60000};if(++rate.count>60)throw fail(429,'Too many sign-in attempts. Try later.');rates.set(peer,rate);
