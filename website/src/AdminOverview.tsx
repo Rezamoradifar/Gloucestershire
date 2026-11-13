@@ -4,10 +4,11 @@ import {type Asset,type Snapshot} from './chain';
 import {readAllocationStatus,type AllocationStatus} from './daily-activity-client';
 import {explorer,chainId,vaultAddress} from './config';
 import AdminWalletLookup from './AdminWalletLookup';
+import AdminUserDirectory from './AdminUserDirectory';
 import {displayAmount} from './money';
 
 const short=(a:string)=>a.slice(0,8)+'…'+a.slice(-6);
-export default function AdminOverview({data,asset,onNavigate}:{data:Snapshot;asset:Asset;onNavigate:(page:'tickets'|'announcements')=>void}){
+export default function AdminOverview({data,asset,onNavigate,onReviewUser}:{data:Snapshot;asset:Asset;onNavigate:(page:'tickets'|'announcements')=>void;onReviewUser:(wallet:string)=>void}){
  const [report,setReport]=useState<AllocationStatus|null>(null),[failure,setFailure]=useState('');
  const [ops,setOps]=useState<{checkedAt:string|null;dailyStatus:string|null;blockers:string[];errors:string[];schedulerActive:boolean|null}|null>(null);
  useEffect(()=>{
@@ -75,6 +76,7 @@ export default function AdminOverview({data,asset,onNavigate}:{data:Snapshot;ass
    </section>
   </div>
   <AdminWalletLookup admin={data.who} data={data}/>
+  <AdminUserDirectory who={data.who} owner={data.owner} onReviewStatus={onReviewUser}/>
   <div className="admin-shortcuts">{data.deferredRewards&&<button className="small-button" type="button" onClick={()=>document.getElementById('global-withdrawal-queue')?.scrollIntoView({behavior:'smooth',block:'start'})}><Wallet size={16}/> Review withdrawal requests <ArrowUpRight size={16}/></button>}<button className="small-button" type="button" onClick={()=>onNavigate('tickets')}><Wallet size={16}/> Support queue <ArrowUpRight size={16}/></button>
    {data.owner&&<button className="small-button" type="button" onClick={()=>onNavigate('announcements')}><ShieldCheck size={16}/> Publish announcements <ArrowUpRight size={16}/></button>}</div>
  </section>;
