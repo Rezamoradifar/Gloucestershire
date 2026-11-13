@@ -4,8 +4,8 @@
 // The deployed V2 requires ALL credited-profit liabilities to be cash-backed
 // before ANY profit request can pay; disclose this unavoidable global shortfall.
 import {
- BrowserProvider,Contract,Interface,ZeroAddress,getAddress,
- type Eip1193Provider
+ BrowserProvider,Contract,Interface,getAddress,
+ type Eip1193Provider,type Log
 } from 'ethers';
 import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,v2Session} from './v2-chain';
 import {V2_TEST_TOKEN} from './v2-live-deposit';
@@ -118,7 +118,7 @@ export async function fundAndPayV2ApprovedWithdrawal(
   const receipt=await funded.wait(5);
   if(!receipt||receipt.status!==1)
    throw Error('Funding not confirmed. Inspect any broadcast transaction before retrying.');
-  const fundedEvent=receipt.logs.some(log=>{
+  const fundedEvent=receipt.logs.some((log:Log)=>{
    if(log.address?.toLowerCase()!==V2_ADDRESS.toLowerCase())return false;
    try{
     const evt=EVENTS.parseLog({topics:log.topics,data:log.data});
@@ -141,7 +141,7 @@ export async function fundAndPayV2ApprovedWithdrawal(
  report('Payout broadcast. Verifying 3 on-chain confirmations.',payment.hash);
  const payoutReceipt=await payment.wait(3);
  if(!payoutReceipt||payoutReceipt.status!==1)throw Error('Payout unconfirmed. Review transaction.');
- const paidEvent=payoutReceipt.logs.some(log=>{
+ const paidEvent=payoutReceipt.logs.some((log:Log)=>{
   if(log.address?.toLowerCase()!==V2_ADDRESS.toLowerCase())return false;
   try{
    const evt=EVENTS.parseLog({topics:log.topics,data:log.data});
