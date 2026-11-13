@@ -32,8 +32,10 @@ jobs:
         run: |
           node --check server/trades-api.mjs
           node --check server/community.mjs
+          node --check server/v2-read-rpc.mjs
           bash -n ubuntu-v2-support-install.sh
-          node --test test/v2-community-isolation.test.mjs
+          bash -n scripts/run-v2-testnet-stack.sh
+          node --test test/v2-community-isolation.test.mjs test/v2-read-rpc.test.mjs test/v2-read-rpc-integration.test.mjs
       - name: Site-only installer and bundle isolation
         shell: bash
         run: |
