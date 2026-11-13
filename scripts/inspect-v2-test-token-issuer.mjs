@@ -23,6 +23,7 @@ const ABI=[
  'function decimals() view returns(uint8)',
  'function totalSupply() view returns(uint256)',
  'function balanceOf(address) view returns(uint256)',
+ 'function allowance(address,address) view returns(uint256)',
  'function owner() view returns(address)',
  'function MINTER_ROLE() view returns(bytes32)',
  'function hasRole(bytes32,address) view returns(bool)',
@@ -70,9 +71,15 @@ async function main(){
   const unique=[...new Set(addresses)];
   const balances=[];
   for(const wallet of unique){
-   const res=await probe(()=>t.balanceOf(wallet));
+   const [res,gas,allowance]=await Promise.all([
+    probe(()=>t.balanceOf(wallet)),probe(()=>provider.getBalance(wallet)),
+    probe(()=>t.allowance(wallet,VAULT))
+   ]);
    balances.push({wallet,testTokens:res.available?formatUnits(res.value,18):null,
-    meetsExactMillion:res.available&&res.value>=AMOUNT});
+    gasTestBNB:gas.available?formatUnits(gas.value,18):null,
+    tokenAllowanceToV2:allowance.available?formatUnits(allowance.value,18):null,
+    meetsExactMillion:res.available&&res.value>=AMOUNT,
+    readyToApproveAndFund:res.available&&res.value>=AMOUNT&&gas.available&&gas.value>0n});
   }
   const roles=[];
   if(minterRole.available){
@@ -92,6 +99,7 @@ async function main(){
    },'latest'));
    candidates.push({from:wallet,noRevertInReadOnlySimulation:result.available});
   }
+  const currentVaultCash=await probe(()=>t.balanceOf(VAULT));
   const output={
    version:1,checkedAt:new Date().toISOString(),mode:'READ_ONLY_BNB_TESTNET',
    ...success,name:name.available?name.value:null,
@@ -101,6 +109,7 @@ async function main(){
    owner:owner.available?String(owner.value):null,
    requiredMintOrTransfer:'1000000',
    fundingWallet:FUNDER,balances,roles,
+   currentVaultTestTokens:currentVaultCash.available?formatUnits(currentVaultCash.value,18):null,
    mintProbe:{selector,readOnlySimulations:candidates,
     warning:'eth_call no-revert does not prove mint authorization, token issuance or a real transfer'},
    fundingTransactionSubmitted:false,
