@@ -33,3 +33,23 @@
  .gv2-classic .gv2-mobile-bottom{gap:2px;padding-left:4px;padding-right:4px}
  .gv2-classic .gv2-mobile-bottom button{font-size:10px}
 }
+
+
+/* Reference-matched, safe-area-aware five-tab mobile navigation. */
+@media(max-width:960px){
+ .gv2-classic .gv2-mobile-bottom{
+  background:#0d1725;border-top:1px solid #202c3c;
+  padding:8px max(9px,env(safe-area-inset-left)) calc(12px + env(safe-area-inset-bottom)) max(9px,env(safe-area-inset-right));
+  box-shadow:0 -8px 26px #050c1866;
+ }
+ .gv2-classic .gv2-mobile-bottom button{
+  min-height:66px;border-radius:13px;gap:6px;font-size:11px;
+  color:#b5c0cf;font-weight:500;
+ }
+ .gv2-classic .gv2-mobile-bottom button svg{width:24px;height:24px;stroke-width:2.1}
+ .gv2-classic .gv2-mobile-bottom button[aria-current=page]{
+  background:#383a35;color:#e9c98c;box-shadow:none;
+ }
+ .gv2-classic .gv2-mobile-bottom button:focus-visible{outline:2px solid #e7c78a;outline-offset:-2px}
+ .gv2-classic .gv2-workspace{padding-bottom:calc(102px + env(safe-area-inset-bottom))}
+}
