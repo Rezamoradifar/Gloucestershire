@@ -1,0 +1,38 @@
+name: Global V2-only website release checks
+on:
+  pull_request:
+    paths:
+      - 'website/**'
+      - 'ubuntu-global-v2-site.sh'
+      - '.github/workflows/global-v2-site.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  v2-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --prefix website --no-audit --no-fund
+      - name: Frontend regression tests, TypeScript and build
+        run: npm test --prefix website && npm run build --prefix website
+      - name: Site-only installer and bundle isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ubuntu-global-v2-site.sh
+          test -s website/dist/index.html
+          grep -RilF '0xA98D8d3709f5D3730BAD5d76C334731784e7CF07' website/dist/assets --include='*.js' >/dev/null
+          if grep -RilE '0x4c0f6141b18971db4b14e45c0be8cddb09febc14|/api/trades\?limit|/api/config' website/dist/assets --include='*.js' >/dev/null; then
+            echo 'V2_SITE_OLD_CONTRACT_REFERENCE_DETECTED'
+            exit 1
+          fi
+          echo 'V2_EXCLUSIVE_FRONTEND_BUNDLE_PASS'
