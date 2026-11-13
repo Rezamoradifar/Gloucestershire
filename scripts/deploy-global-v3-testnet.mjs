@@ -53,10 +53,21 @@ async function passwordPrompt(){
  if(!process.stdin.isTTY||!process.stdout.isTTY)error('INTERACTIVE_TTY_REQUIRED');
  const term=spawnSync('stty',['-echo'],{stdio:'inherit'});
  if(term.status!==0)error('CANNOT_HIDE_ENCRYPTED_WALLET_PASSWORD');
+ // Android SSH clients often include a trailing newline when pasting the
+ // command, which gets consumed as an empty password. Re-prompt instead of
+ // failing and requiring a complete new shell command.
  const rl=createInterface({input:process.stdin,terminal:false});
  try{
-  process.stdout.write('Enter dedicated TESTNET encrypted keystore password (hidden): ');
-  return await rl.question('');
+  for(let attempt=1;attempt<=5;attempt++){
+   process.stdout.write('Enter TESTNET keystore password (12+ characters; invisible), then press Enter: ');
+   const answer=await rl.question('');
+   if(answer.length>=12)return answer;
+   process.stdout.write('\n');
+   if(attempt<5)process.stdout.write(
+    'EMPTY_OR_SHORT_PASSWORD_NOT_ACCEPTED. Type the actual password AFTER this prompt; characters will stay hidden.\n'
+   );
+  }
+  error('TESTNET_KEYSTORE_PASSWORD_MUST_BE_AT_LEAST_12_CHARS');
  }finally{
   rl.close();
   spawnSync('stty',['echo'],{stdio:'inherit'});
