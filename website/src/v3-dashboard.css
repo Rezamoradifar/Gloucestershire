@@ -1,0 +1,50 @@
+/* Global V3 gated TESTNET workspace. Reuses current navy/gold V2 signature
+   theme, breakpoints and five-tab mobile dock, with dedicated financial cards. */
+.gv3-workspace .gv2-release{border-color:#617567;background:linear-gradient(130deg,#132d2b,#172733)}
+.gv3-workspace .gv2-panel{margin:17px 0}
+.gv3-workspace .gv2-panel a,.gv3-not-ready>a{color:#f0d18a;text-decoration:underline}
+.gv3-workspace .gv2-panel b,.gv3-workspace .gv2-detail b{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.gv3-not-ready{display:grid;gap:13px;justify-items:start;max-width:840px}
+.gv3-not-ready svg{color:#dfc180}
+.gv3-not-ready h2{color:#f2dfb4}
+.gv3-not-ready p{line-height:1.7}
+.gv3-not-ready>a{display:inline-flex;align-items:center;gap:7px}
+.gv3-notice{display:flex;align-items:flex-start;gap:9px;margin:8px 0 18px;padding:14px 17px;border:1px solid #806d46;border-radius:12px;background:#2b2c27;color:#e5d3ab;font-size:12px;line-height:1.7}
+.gv3-notice svg{flex-shrink:0;margin-top:3px}
+.gv3-connect{display:grid;justify-items:center;gap:13px;text-align:center;padding:34px}
+.gv3-connect>svg{color:#e3c481}
+.gv3-connect h2{font-size:20px}
+.gv3-connect .gv2-buttons{justify-content:center}
+.gv3-input-row{display:grid;gap:9px;max-width:700px;margin:13px 0}
+.gv3-input-row label{color:#bfcdd5;font-size:12px}
+.gv3-input-row small{color:#b6bbc7}
+.gv3-input-row :is(input,select){background:#0c1b28;border:1px solid #465a68;color:#f0e8dd;border-radius:10px;padding:12px;font-size:16px;max-width:100%;min-width:0}
+.gv3-input-row :is(input,select):focus-visible{outline:2px solid #e1c078;outline-offset:2px}
+.gv3-input-row button{max-width:100%;justify-self:start}
+.gv3-workspace .gv2-premium-hero-balance strong em{font-style:normal;font-size:15px;color:#c6c7bd}
+.gv3-position-card,.gv3-withdrawal-row{display:grid;grid-template-columns:minmax(190px,1.5fr) repeat(3,minmax(100px,1fr));align-items:start;gap:12px;min-width:0;padding:16px 10px;border-bottom:1px solid #354551}
+.gv3-withdrawal-row{grid-template-columns:minmax(150px,1.5fr) minmax(145px,1fr) minmax(175px,1.2fr)}
+.gv3-position-card:last-child,.gv3-withdrawal-row:last-child{border-bottom:0}
+.gv3-position-card>div,.gv3-withdrawal-row>div{min-width:0;display:grid;gap:8px}
+.gv3-position-card strong,.gv3-withdrawal-row strong{font-size:13px;color:#f0e6ce}
+.gv3-position-card b,.gv3-withdrawal-row b{font-size:13px;color:#e9cf9a;font-weight:650;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.gv3-position-card small,.gv3-withdrawal-row small{font-size:11px;color:#b0c1c7;line-height:1.6;overflow-wrap:anywhere}
+.gv3-request-status{display:inline-flex;width:max-content;max-width:100%;padding:6px 9px;border-radius:10px;background:#243d40;color:#e7d9ab;font-size:12px}
+.gv3-queue-actions{display:flex;gap:8px;flex-wrap:wrap;max-width:100%}
+.gv3-queue-actions button{font-size:12px;padding:9px 11px;max-width:100%;border-radius:10px}
+.gv3-workspace footer a{color:#e5c684}
+.gv3-workspace .gv2-premium-hero-side h2{font-size:clamp(18px,2.6vw,25px);font-variant-numeric:tabular-nums;color:#eacf97}
+.gv3-workspace .gv2-premium-hero-side p{font-size:12px;color:#b4c7cb}
+@media(max-width:1000px){
+ .gv3-position-card{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gv3-withdrawal-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gv3-withdrawal-row>div:last-child{grid-column:1/-1}
+}
+@media(max-width:540px){
+ .gv3-position-card,.gv3-withdrawal-row{grid-template-columns:minmax(0,1fr)}
+ .gv3-position-card>div,.gv3-withdrawal-row>div{gap:5px}
+ .gv3-withdrawal-row>div:last-child{grid-column:auto}
+ .gv3-queue-actions button{flex:1 1 45%}
+ .gv3-notice{padding:12px}
+ .gv3-input-row button{width:100%;justify-self:stretch}
+}
