@@ -86,6 +86,8 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   assert.equal(p2.cumulativeCompound,make('0.049'));
   assert.equal(p2.availableProfit,make('14.049'));
   assert.equal(p2.compoundedBasis,p2.availableProfit);
+  assert.equal(await vault.claimableDaily(wallets[2],0),make(14));
+  assert.equal(await vault.claimableCompound(wallets[2],0),make('0.049'));
 
   // Replay and unauthorized management are rejected.
   await mustFail(vault.connect(signers[2]).accrueDaily.staticCall(wallets[2],0));
@@ -99,6 +101,10 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   await done(vault.connect(signers[2]).requestProfit(0,make(5)));
   assert.equal((await vault.withdrawalOf(0)).status,0n);
   assert.equal((await vault.positionOf(wallets[2],0)).compoundedBasis,make('9.049'));
+  assert.equal(await vault.claimableDaily(wallets[2],0),make(9));
+  assert.equal(await vault.claimableCompound(wallets[2],0),make('0.049'));
+  assert.equal(await vault.reservedDailyByRequest(0),make(5));
+  assert.equal(await vault.reservedCompoundByRequest(0),0n);
   await mustFail(vault.connect(signers[3]).payWithdrawal.staticCall(0));
   await done(vault.approveWithdrawal(0));
   // Unfunded reward must NEVER spend another user's principal cash.
@@ -126,6 +132,8 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   await done(vault.connect(signers[3]).reinvest(0,make(4)));
   assert.equal(await vault.positionCount(wallets[3]),2n);
   assert.equal((await vault.positionOf(wallets[3],1)).principal,make(4));
+  assert.equal(await vault.claimableDaily(wallets[3],0),make(10));
+  assert.equal(await vault.claimableCompound(wallets[3],0),make('0.049'));
   assert.equal(await vault.profitLiability(),oldProfitLiability-make(4));
   assert.equal(await vault.principalLiability(),DEPOSIT*BigInt(COUNT)+make(4));
   const afterReinvestment=await vault.cashStatus();
@@ -142,6 +150,10 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   assert.equal(restored.reservedProfit,0n);
   assert.equal(restored.availableProfit,make('14.049'));
   assert.equal(restored.compoundedBasis,restored.availableProfit);
+  assert.equal(await vault.claimableDaily(wallets[4],0),make(14));
+  assert.equal(await vault.claimableCompound(wallets[4],0),make('0.049'));
+  assert.equal(await vault.reservedDailyByRequest(1),0n);
+  assert.equal(await vault.reservedCompoundByRequest(1),0n);
   assert.equal(await vault.profitLiability(),beforeReject);
 
   // Separate referral ledger can itself be requested but cannot be silently
@@ -174,6 +186,8 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   const pAfterGap=await vault.positionOf(wallets[2],0);
   assert.equal(pAfterGap.cumulativeDaily,make(21));
   assert.equal(pAfterGap.cumulativeCompound,make('0.112343'));
+  assert.equal(await vault.claimableDaily(wallets[2],0),make(16));
+  assert.equal(await vault.claimableCompound(wallets[2],0),make('0.112343'));
   await mustFail(vault.connect(signers[2]).checkInAndAccrue.staticCall(Array(21).fill(0)));
 
   const summary={
@@ -189,6 +203,7 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
    oneSignedCheckInAndAccrual:true,
    payoutToImmutableBeneficiary:true,repeatFundingAndPaymentRejected:true,
    automaticProfitOnProfit:true,manualReinvestOption:true,
+   separateCurrentlyClaimableDailyAndCompoundTotals:true,
    explicitUnfundedLiabilityReporting:true,oldV2Unchanged:true,
    publicV3Deployed:false,realUSDTTransferred:false,wallMs:Date.now()-started
   };
