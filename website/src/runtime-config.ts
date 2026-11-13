@@ -4,6 +4,7 @@ export type PublicConfig={chainId:number;vaultAddress:string};
 
 // A new, isolated V2 interface must never silently attach to the old deployment.
 // The historical vault is preserved on-chain, but it is not a permitted live target.
+const expectedTestnetV2='0xA98D8d3709f5D3730BAD5d76C334731784e7CF07';
 const forbiddenVaults=new Set([
  '0x4c0f6141b18971db4b14e45c0be8cddb09febc14'
 ]);
@@ -17,6 +18,7 @@ export function parsePublicConfig(value:unknown,legacy=false):PublicConfig{
  if(typeof address!=='string'||!isAddress(address)||address.toLowerCase()===ZeroAddress)throw Error('The public contract address is invalid.');
  const vaultAddress=getAddress(address);
  if(forbiddenVaults.has(vaultAddress.toLowerCase()))throw Error('The API still points to the old contract. V2 access is blocked until the new deployment is verified.');
+ if(Number(v.chainId)!==97||vaultAddress.toLowerCase()!==expectedTestnetV2.toLowerCase())throw Error('The API is not pinned to the approved isolated V2 testnet address. Transactions are blocked.');
  return {chainId:Number(v.chainId),vaultAddress};
 }
 
