@@ -4,6 +4,7 @@ on:
     paths:
       - 'contracts/v3/**'
       - 'scripts/compile-global-v3.mjs'
+      - 'scripts/audit-global-v3-readonly.mjs'
       - 'test/global-v3-*.test.mjs'
       - 'docs/global-v3-sequential-acceptance-and-audit-gates.md'
       - '.github/workflows/global-v3-deferred-acceptance.yml'
@@ -27,7 +28,9 @@ jobs:
       - name: Compile only isolated V3; do not deploy
         run: node scripts/compile-global-v3.mjs
       - name: Real mock-token transactions with 100 LOCAL wallet signers
-        run: node --test --test-concurrency=1 test/global-v3-deferred-ledger.test.mjs
+        run: |
+          node --check scripts/audit-global-v3-readonly.mjs
+          node --test --test-concurrency=1 test/global-v3-deferred-ledger.test.mjs test/global-v3-readonly-audit.test.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
