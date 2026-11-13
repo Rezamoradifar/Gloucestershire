@@ -50,7 +50,7 @@ describe('Global V2 public-site isolation',()=>{
   expect(dashboard).toContain('not approved for real investments');
   expect(dashboard).toContain('10% + 10%');
   expect(dashboard).toContain('Deposits are disabled');
-  expect(dashboard).toContain('Previous positions and credits');
+  expect(dashboard).toContain("Existing users' previous balances");
   const css=read('src/v2-dashboard.css');
   expect(css).toContain('.gv2-release');
   expect(css).toContain('.gv2-safety-disclosure');
