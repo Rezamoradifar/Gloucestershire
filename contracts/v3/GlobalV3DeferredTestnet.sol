@@ -34,6 +34,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     uint256 public principalLiability;
     uint256 public profitLiability;
     uint256 public reservedForPayout;
+    uint256 public principalEscrowed; // principal obligation already earmarked for payout
 
     struct User {
         address referrer;
@@ -86,6 +87,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee);
     event WithdrawalApproved(uint256 indexed id,address indexed manager);
     event WithdrawalEscrowFunded(uint256 indexed id,address indexed funder,uint256 gross);
+    event WithdrawalExistingCashReserved(uint256 indexed id,uint256 gross);
     event WithdrawalPaid(uint256 indexed id,address indexed beneficiary,uint256 net,uint256 fee);
     event WithdrawalReleased(uint256 indexed id,uint8 status);
     event CheckIn(address indexed user,uint256 at);
@@ -347,9 +349,33 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         Withdrawal storage r=withdrawals[id];
         if(r.status!=1)revert WrongState();
         _receiveExact(r.gross);
-        reservedForPayout+=r.gross;
-        r.status=2;
+        _escrow(r);
         emit WithdrawalEscrowFunded(id,msg.sender,r.gross);
+    }
+
+    /// @notice If the test vault ALREADY has enough free, unescrowed cash,
+    /// manager may reserve that cash at withdrawal time, without an
+    /// unnecessary new transfer. For profit, ring-fence remaining principal.
+    function reserveExistingCash(uint256 id) external nonReentrant onlyRole(MANAGER_ROLE) {
+        Withdrawal storage r=withdrawals[id];
+        if(r.status!=1)revert WrongState();
+        uint256 cash=asset.balanceOf(address(this));
+        if(cash<reservedForPayout)revert FundingRequired();
+        uint256 freeCash=cash-reservedForPayout;
+        if(freeCash<r.gross)revert FundingRequired();
+        if(r.kind!=1){
+            if(principalLiability<principalEscrowed)revert FundingRequired();
+            uint256 outstandingPrincipal=principalLiability-principalEscrowed;
+            if(freeCash<outstandingPrincipal||
+               freeCash-outstandingPrincipal<r.gross)revert FundingRequired();
+        }
+        _escrow(r);
+        emit WithdrawalExistingCashReserved(id,r.gross);
+    }
+    function _escrow(Withdrawal storage r) private {
+        r.status=2;
+        reservedForPayout+=r.gross;
+        if(r.kind==1)principalEscrowed+=r.gross;
     }
 
     /// @notice Only an escrow-funded and approved request pays. No implicit
@@ -359,6 +385,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         if(r.status!=2)revert FundingRequired();
         r.status=3;
         reservedForPayout-=r.gross;
+        if(r.kind==1)principalEscrowed-=r.gross;
         User storage u=users[r.beneficiary];
         u.pendingRequest=false;
         if(r.kind==1){
