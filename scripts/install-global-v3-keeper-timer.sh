@@ -9,6 +9,21 @@ ETC_DIR=/etc/globaldroptrade
 CONFIG="$ETC_DIR/v3-keeper-testnet.json"
 KEY="$ETC_DIR/v3-keeper-testnet-gas-only.key"
 UNIT=global-v3-compound-keeper-testnet
+STATE=globaldroptrade-v3-keeper
+RELEASE_ROOT=/opt/global-v3-testnet-keeper
+PROFILE_LINE=
+case "${GLOBAL_V3_RELEASE_PROFILE:-}" in
+ '') ;;
+ routed-testnet)
+  CONFIG="$ETC_DIR/v3-routed-keeper-testnet.json"
+  KEY="$ETC_DIR/v3-routed-keeper-testnet-gas-only.key"
+  UNIT=global-v3-routed-compound-keeper-testnet
+  STATE=globaldroptrade-v3-routed-keeper
+  RELEASE_ROOT=/opt/global-v3-routed-testnet-keeper
+  PROFILE_LINE='Environment=GLOBAL_V3_RELEASE_PROFILE=routed-testnet'
+  ;;
+ *) echo V3_KEEPER_ERROR=V3_RELEASE_PROFILE_INVALID >&2; exit 1 ;;
+esac
 die(){ echo "V3_KEEPER_ERROR=$1" >&2; exit 1; }
 [[ "$(id -u)" -eq 0 ]] || die "ROOT_REQUIRED_FOR_INSTALL"
 [[ "$#" -eq 1 ]] || die "USAGE_INIT_WALLET_CHECK_INSTALL_OR_STATUS"
@@ -66,7 +81,7 @@ sha="$(git -C "$BASE" rev-parse HEAD)"
 [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || die "REPOSITORY_COMMIT_SHA_INVALID"
 # Freeze the exact reviewed script and dependency lock outside the mutable
 # Global website checkout. Future git switches cannot change the running job.
-RELEASE="/opt/global-v3-testnet-keeper/releases/$sha"
+RELEASE="$RELEASE_ROOT/releases/$sha"
 [[ ! -e "$RELEASE" ]] || die "PINNED_KEEPER_RELEASE_ALREADY_EXISTS_REVIEW_BEFORE_RETRY"
 install -d -m 0755 "$RELEASE/scripts"
 install -m 0644 "$BASE/scripts/global-v3-auto-compound-keeper.mjs" "$RELEASE/scripts/"
@@ -89,7 +104,8 @@ WorkingDirectory=$RELEASE
 ExecStart=$node $RELEASE/scripts/global-v3-auto-compound-keeper.mjs --run --config %d/keeper-config --key-file %d/keeper-gas-key
 LoadCredential=keeper-config:$CONFIG
 LoadCredential=keeper-gas-key:$KEY
-StateDirectory=globaldroptrade-v3-keeper
+StateDirectory=$STATE
+$PROFILE_LINE
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes

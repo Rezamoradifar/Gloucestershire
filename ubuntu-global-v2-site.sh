@@ -62,6 +62,13 @@ install -d -m 700 "$lockdir"
 exec 9>"$lockdir/installer.lock"
 flock -n 9 || { echo "V2_SITE_INSTALL_LOCKED"; exit 1; }
 
+# A separate routed V3 must not replace the dashboard while the prior V3
+# holds members, obligations, requests or test tokens. Recheck after the
+# lengthy build and immediately before touching served files.
+if [ "${GLOBAL_V3_RELEASE_PROFILE:-}" = routed-testnet ]; then
+ node scripts/verify-prior-v3-testnet-empty.mjs --check
+fi
+
 backup="/var/backups/globaldroptrade/v2-site-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 install -d -m 700 "$backup" "$backup/files"
 cp -p "$stage/served-before.html" "$backup/index-before.html"

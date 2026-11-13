@@ -6,8 +6,11 @@
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {Contract,FetchRequest,JsonRpcProvider,getAddress,isAddress,keccak256} from 'ethers';
+import {v3ReleasePaths} from './v3-release-profile.mjs';
+import {verifyPriorV3Empty} from './verify-prior-v3-testnet-empty.mjs';
 
-const PROOF='/var/lib/globaldroptrade/v3-prototype/deployment.json';
+const PROFILE=v3ReleasePaths();
+const PROOF=PROFILE.proof;
 const OLD_V2=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
 const ADMIN=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
 const TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
@@ -82,6 +85,7 @@ async function verifyCurrentChain(proof){
       getAddress(receipt.contractAddress??'0x0000000000000000000000000000000000000000')!==proof.address||
       receipt.blockNumber!==proof.blockNumber)
     throw Error('V3_ONCHAIN_DEPLOY_RECEIPT_OR_RUNTIME_MISMATCH');
+   if(PROFILE.name==='routed-testnet')await verifyPriorV3Empty(rpc);
    const contract=new Contract(proof.address,ABI,rpc);
    const [asset,fees,role,funderRole,managerAllowed,capital,profit,fee1,fee2,operations,depositFee]=await Promise.all([
     contract.asset(),contract.feeReceiver(),contract.MANAGER_ROLE(),contract.FUNDER_ROLE(),

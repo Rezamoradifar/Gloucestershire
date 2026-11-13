@@ -20,7 +20,11 @@ if [[ "$arch" == x86_64 ]]; then arch=x64; elif [[ "$arch" == aarch64 ]]; then a
 runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
 [[ -x "$runtime/node" ]] && export PATH="$runtime:$PATH"
 command -v node >/dev/null || { echo V3_RELEASE_NODE_MISSING; exit 1; }
-proof=/var/lib/globaldroptrade/v3-prototype/deployment.json
+case "${GLOBAL_V3_RELEASE_PROFILE:-}" in
+ '') proof=/var/lib/globaldroptrade/v3-prototype/deployment.json ;;
+ routed-testnet) proof=/var/lib/globaldroptrade/v3-routed-testnet/deployment.json ;;
+ *) echo V3_RELEASE_PROFILE_INVALID; exit 1 ;;
+esac
 echo "V3_PINNED_SITE_CODE_SHA=$sha"
 if [[ "$1" == --preflight ]]; then
  if [[ -s "$proof" ]]; then
@@ -32,13 +36,15 @@ if [[ "$1" == --preflight ]]; then
  exit 0
 fi
 if [[ "$1" == --deploy-testnet-and-install ]]; then
- if [[ -e "$proof" ]]; then
-  echo V3_DEPLOYMENT_INTENT_ALREADY_EXISTS_CHECK_CHAIN_AND_USE_INSTALL_VERIFIED; exit 1
+ if [[ -s "$proof" ]]; then
+  echo V3_DEPLOYMENT_PROOF_FOUND_REVERIFY_ONLY_NO_REDEPLOY
+ elif [[ -e "$proof" ]]; then
+  echo V3_INCOMPLETE_DEPLOYMENT_INTENT_RECONCILE_CHAIN_BEFORE_ANY_RETRY; exit 1
+ else
+  # Preflight checks signer gas and, for routed releases, the previous V3.
+  node scripts/deploy-global-v3-testnet.mjs --check-old-testnet-deployer
+  node scripts/deploy-global-v3-testnet.mjs --deploy-old-testnet-deployer
  fi
- # This stops before any transaction if the old testnet signer lacks gas.
- node scripts/deploy-global-v3-testnet.mjs --check-old-testnet-deployer
- # The deployer itself requires an exact typed testnet confirmation in the TTY.
- node scripts/deploy-global-v3-testnet.mjs --deploy-old-testnet-deployer
 fi
 # Either a new or an existing deployment must pass independent public testnet
 # tx-receipt, contract-code/source, fee-wallet, role and network validation.

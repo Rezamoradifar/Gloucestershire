@@ -20,6 +20,8 @@ describe('V3 actual accrued claim presentation, awaiting secure deployment',()=>
   expect(view.outstandingCompound).toBe(to('0.049'));
   expect(view.outstandingPersonal).toBe(to('14.049'));
   expect(view.outstandingReferral).toBe(to('1.2'));
+  expect(view.internalCurrent).toBe(to('15.249'));
+  expect(view.pendingInternal).toBe(0n);
   expect(view.overallUnfundedLiability).toBe(to('15.249'));
   expect(view.maxSingleRequest).toBe(to('14.049'));
   expect(view.managerCashPayoutConfirmed).toBe(false);
@@ -33,6 +35,10 @@ describe('V3 actual accrued claim presentation, awaiting secure deployment',()=>
   const network=v3PrepareUserClaims({...ledger,networkAvailable:to('50'),profitLiability:to('65.249')});
   expect(network.outstandingNetwork).toBe(to('50'));
   expect(network.maxSingleRequest).toBe(to('50'));
+  const pending=v3PrepareUserClaims({...ledger,profitLiability:to('21.249'),referralReserved:to('1'),networkReserved:to('3'),
+   positions:[{...ledger.positions[0],reservedProfit:to('2')}]});
+  expect(pending.internalCurrent).toBe(to('15.249'));
+  expect(pending.pendingInternal).toBe(to('6'));
  });
  it('refuses unverified or inconsistent on-chain data rather than fabricating payable balances',()=>{
   expect(()=>v3PrepareUserClaims({...ledger,chainId:56})).toThrow();
@@ -43,5 +49,6 @@ describe('V3 actual accrued claim presentation, awaiting secure deployment',()=>
   ]})).toThrow();
   expect(()=>v3PrepareUserClaims({...ledger,positions:[ledger.positions[0],ledger.positions[0]]})).toThrow();
   expect(()=>v3PrepareUserClaims({...ledger,networkAvailable:to('50')})).toThrow();
+  expect(()=>v3PrepareUserClaims({...ledger,referralReserved:to('1')})).toThrow();
  });
 });

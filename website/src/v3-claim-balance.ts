@@ -11,7 +11,7 @@ export type V3ClaimLedger={
  chainId:number;runtimeVerified:boolean;block:number;
  registered:boolean;suspended:boolean;pendingWithdrawal:boolean;paused?:boolean;
  asOf:number;nextRequestAt:number;requestCap:bigint;
- referralAvailable:bigint;networkAvailable?:bigint;principalLiability:bigint;
+ referralAvailable:bigint;referralReserved?:bigint;networkAvailable?:bigint;networkReserved?:bigint;principalLiability:bigint;
  profitLiability:bigint;cash:bigint;escrow:bigint;
  positions:V3ClaimPosition[];
 };
@@ -22,12 +22,13 @@ export function v3PrepareUserClaims(ledger:V3ClaimLedger){
  if(!Number.isSafeInteger(ledger.asOf)||!Number.isSafeInteger(ledger.nextRequestAt)||
   ledger.asOf<0||ledger.nextRequestAt<0)throw Error('Invalid verified block time.');
  const networkAvailable=ledger.networkAvailable??0n;
- const totals=[ledger.requestCap,ledger.referralAvailable,networkAvailable,ledger.principalLiability,
+ const referralReserved=ledger.referralReserved??0n,networkReserved=ledger.networkReserved??0n;
+ const totals=[ledger.requestCap,ledger.referralAvailable,referralReserved,networkAvailable,networkReserved,ledger.principalLiability,
   ledger.profitLiability,ledger.cash,ledger.escrow];
  if(totals.some(x=>x<0n)||ledger.escrow>ledger.cash)
   throw Error('V3 liability or reserved cash is invalid.');
  let outstandingDaily=0n,outstandingCompound=0n,cumulativeDaily=0n,cumulativeCompound=0n;
- let recordedPrincipal=0n,positionMax=0n;
+ let recordedPrincipal=0n,positionMax=0n,reservedPersonal=0n;
  const seen=new Set<number>();
  for(const p of ledger.positions){
   if(!Number.isSafeInteger(p.id)||p.id<0||seen.has(p.id))throw Error('Duplicate or invalid V3 position.');
@@ -39,14 +40,16 @@ export function v3PrepareUserClaims(ledger:V3ClaimLedger){
    throw Error('V3 claim split does not reconcile; reject display.');
   outstandingDaily+=p.availableDaily;
   outstandingCompound+=p.availableCompound;
+  reservedPersonal+=p.reservedProfit;
   cumulativeDaily+=p.cumulativeDaily;
   cumulativeCompound+=p.cumulativeCompound;
   recordedPrincipal+=p.principal;
   const requestLimit=p.availableProfit<ledger.requestCap?p.availableProfit:ledger.requestCap;
   if(requestLimit>positionMax)positionMax=requestLimit;
  }
- if(recordedPrincipal>ledger.principalLiability||
-  outstandingDaily+outstandingCompound+ledger.referralAvailable+networkAvailable>ledger.profitLiability)
+ const internalCurrent=outstandingDaily+outstandingCompound+ledger.referralAvailable+networkAvailable;
+ const pendingInternal=reservedPersonal+referralReserved+networkReserved;
+ if(recordedPrincipal>ledger.principalLiability||internalCurrent+pendingInternal>ledger.profitLiability)
   throw Error('Account claims exceed verified global liabilities.');
  const eligible=ledger.registered&&!ledger.suspended&&!ledger.paused&&!ledger.pendingWithdrawal&&
   ledger.asOf>=ledger.nextRequestAt;
@@ -64,6 +67,7 @@ export function v3PrepareUserClaims(ledger:V3ClaimLedger){
   outstandingPersonal:outstandingDaily+outstandingCompound,
   outstandingReferral:ledger.referralAvailable,
   outstandingNetwork:networkAvailable,
+  internalCurrent,pendingInternal,
   cumulativeDaily,cumulativeCompound,
   maxSingleRequest,
   managerCashPayoutConfirmed:false,

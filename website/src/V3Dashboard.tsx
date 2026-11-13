@@ -265,9 +265,9 @@ export default function V3Dashboard(){
         <strong>{show(view.capital)} <em>TEST USDT</em></strong>
         <p>Only blockchain-confirmed records are shown. V2 accounts are not migrated.</p>
        </div><div className="gv2-premium-hero-side">
-        <small>Claim status · {view.registered?'Registered':'Unregistered'} · {view.eligible?'Eligible':'Check-in required'}</small>
-        <h2>{claims?show(claims.outstandingPersonal+claims.outstandingReferral+claims.outstandingNetwork):'—'} TEST USDT</h2>
-        <p>Accrued test claims, not funded wallet balances</p>
+        <small>Internal Current · {view.registered?'Registered':'Unregistered'} · {view.eligible?'Eligible':'Check-in required'}</small>
+        <h2>{claims?show(claims.internalCurrent):'—'} TEST USDT</h2>
+        <p>Internal account credit, not wallet cash. Wallet balance: {show(view.walletTestTokenBalance)} TEST USDT.</p>
        </div></div>
       </section>
       <V3CycleCard view={view} busy={busy} onCheckIn={checkIn} onPositions={()=>navigate('positions')}/>

@@ -129,7 +129,11 @@ async function main(){
     (mode==='--run'&&!maybeKey))
   throw Error('Usage: --check --config /abs/v3-keeper.json OR --run --config /abs/v3-keeper.json --key-file /abs/dedicated-GAS-ONLY-testnet.key');
  const config=checkedConfig(configArg);
- const cursorPath='/var/lib/globaldroptrade-v3-keeper/cursor.json';
+ const profile=process.env.GLOBAL_V3_RELEASE_PROFILE;
+ if(profile!==undefined&&profile!==''&&profile!=='routed-testnet')throw Error('V3_RELEASE_PROFILE_INVALID');
+ const cursorPath=profile==='routed-testnet'?
+  '/var/lib/globaldroptrade-v3-routed-keeper/cursor.json':
+  '/var/lib/globaldroptrade-v3-keeper/cursor.json';
  const {provider,contract,url}=await verifiedProvider(config);
  try{
   const head=await provider.getBlock('latest');

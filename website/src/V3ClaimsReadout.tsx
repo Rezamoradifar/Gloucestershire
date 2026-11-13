@@ -15,8 +15,11 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
  </section>;}
  const unit='TEST USDT';
  return <section className="gv3-claims-readout" aria-label="Verified V3 on-chain accrued claims">
-  <div className="gv3-claims-heading"><h2><Coins size={19}/> V3 accrued claims · BNB Testnet</h2>
+  <div className="gv3-claims-heading"><h2><Coins size={19}/> Internal Current · BNB Testnet</h2>
    <small>Confirmed block {claims.block.toLocaleString('en-US')}</small></div>
+  <div className="gv3-current-total"><small>Available internal account credit</small>
+   <strong>{formatV3Amount(claims.internalCurrent)} {unit}</strong>
+   <span>Recorded in your account; daily accrual does not transfer tokens to your wallet.</span></div>
   <div className="gv3-claim-grid">
    <div><small>Daily claims available</small>
     <strong>{formatV3Amount(claims.outstandingDaily)} {unit}</strong></div>
@@ -26,6 +29,8 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
     <strong>{formatV3Amount(claims.outstandingReferral)} {unit}</strong></div>
    <div><small>Network milestone claims available</small>
     <strong>{formatV3Amount(claims.outstandingNetwork)} {unit}</strong></div>
+   <div><small>Reserved for pending requests</small>
+    <strong>{formatV3Amount(claims.pendingInternal)} {unit}</strong></div>
    <div><small>Maximum for one new request under current cooldown/cap</small>
     <strong>{formatV3Amount(claims.maxSingleRequest)} {unit}</strong></div>
   </div>

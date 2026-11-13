@@ -9,6 +9,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync,execFileSync} from 'node:child_process';
 import {createInterface} from 'node:readline/promises';
+import {waitV3DeploymentReceipt} from './v3-deploy-receipt-poll.mjs';
+import {v3ReleasePaths} from './v3-release-profile.mjs';
+import {verifyPriorV3Empty} from './verify-prior-v3-testnet-empty.mjs';
 import {Contract,ContractFactory,FetchRequest,JsonRpcProvider,Wallet,
  getAddress,keccak256,parseEther,formatEther} from 'ethers';
 
@@ -20,8 +23,9 @@ const DEPOSIT_FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
 const DEPOSIT_FEE_2=getAddress('0x5bc282a45a8a1d7d9b915f04fc1d4031156d7632');
 const OPERATIONS=getAddress('0x8c4ac9b009808a0b49ba77b58e3871e7cdba463c');
 const OLD_V2=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
-const MARKER='/var/lib/globaldroptrade/v3-prototype/deployment.json';
-const KEEPER_CONFIG='/etc/globaldroptrade/v3-keeper-testnet.json';
+const PROFILE=v3ReleasePaths();
+const MARKER=PROFILE.proof;
+const KEEPER_CONFIG=PROFILE.keeperConfig;
 const ENCRYPTED_DEPLOYER='/etc/globaldroptrade/v3-deployer-only-testnet.json';
 const OLD_TESTNET_DEPLOYER=getAddress('0xCf6Eb63ba4D2174CA2759eff57a720a54416b71d');
 const OLD_TESTNET_DEPLOYER_KEYFILE='/etc/globaldroptrade/new-deployer-testnet-v1/deployer.key';
@@ -157,6 +161,10 @@ async function main(){
  const a=artifact();
  const {provider:p,rpc}=await provider();
  try{
+  if(PROFILE.name==='routed-testnet'){
+   const prior=await verifyPriorV3Empty(p);
+   console.log('PRIOR_V3_EMPTY_VERIFIED '+JSON.stringify(prior));
+  }
   console.log('V3_TESTNET_DEPLOY_PREFLIGHT '+JSON.stringify({
    chainId:97,admin:ADMIN,testToken:TOKEN,feeWallet:FEE,
    depositFeeWallet1:DEPOSIT_FEE_1,depositFeeWallet2:DEPOSIT_FEE_2,
@@ -203,10 +211,17 @@ async function main(){
    error('TESTNET_DEPLOYER_HAS_INSUFFICIENT_TBNB');
   if(!process.stdin.isTTY||!process.stdout.isTTY)
    error('INTERACTIVE_DEPLOYMENT_CONFIRMATION_REQUIRED');
-  const rl=createInterface({input:process.stdin,output:process.stdout});
-  const answer=await rl.question('Type DEPLOY NEW V3 BNB TESTNET ONLY: ');
-  rl.close();
-  if(answer!=='DEPLOY NEW V3 BNB TESTNET ONLY')error('DEPLOYMENT_CANCELLED_BY_OPERATOR');
+  const rl=createInterface({input:process.stdin,terminal:false});
+  let approved=false;
+  try{
+   for(let attempt=1;attempt<=5;attempt++){
+    process.stdout.write('Type DEPLOY NEW V3 BNB TESTNET ONLY: ');
+    const answer=await rl.question('');
+    if(answer.trim()==='DEPLOY NEW V3 BNB TESTNET ONLY'){approved=true;break;}
+    if(attempt<5)process.stdout.write('V3_CONFIRMATION_NOT_MATCHED. Enter the exact phrase at the next prompt while this program is still running.\n');
+   }
+  }finally{rl.close();}
+  if(!approved)error('DEPLOYMENT_CANCELLED_BY_OPERATOR');
   const record={
    status:'INTENT',createdAt:new Date().toISOString(),
    chainId:97,deployer:wallet.address,admin:ADMIN,asset:TOKEN,feeReceiver:FEE,
@@ -219,7 +234,7 @@ async function main(){
    const sent=vault.deploymentTransaction();
    if(!sent)error('NO_V3_DEPLOY_TX');
    record.status='BROADCAST';record.txHash=sent.hash;saveMarker(record);
-   const receipt=await sent.wait(3);
+   const receipt=await waitV3DeploymentReceipt(p,sent.hash,{confirmations:3});
    if(!receipt||receipt.status!==1||!receipt.contractAddress)
     error('V3_DEPLOYMENT_RECEIPT_NOT_CONFIRMED');
    const contract=getAddress(receipt.contractAddress);
