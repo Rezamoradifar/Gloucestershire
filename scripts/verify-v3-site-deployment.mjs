@@ -4,6 +4,7 @@
 // Never trust an invented address, front-end query param, old-V2 API or
 // user-generated site config for financial actions.
 import fs from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {Contract,FetchRequest,JsonRpcProvider,getAddress,isAddress,keccak256} from 'ethers';
 
 const PROOF='/var/lib/globaldroptrade/v3-prototype/deployment.json';
@@ -27,6 +28,7 @@ export function validateV3DeploymentProof(v){
  if(!v||v.status!=='VERIFIED_BNB_TESTNET_ONLY'||v.chainId!==97||
     !isAddress(v.contract)||!isAddress(v.asset)||!isAddress(v.admin)||
     !isAddress(v.feeReceiver)||!isHash(v.runtimeHash)||!isHash(v.txHash)||
+    !isHash(v.creationBytecodeHash)||
     v.deployedV2Unmodified!==true)
   throw Error('V3_VERIFIED_TESTNET_DEPLOYMENT_PROOF_REQUIRED');
  const address=getAddress(v.contract);
@@ -36,7 +38,19 @@ export function validateV3DeploymentProof(v){
  if(!Number.isSafeInteger(v.blockNumber)||v.blockNumber<=0)
   throw Error('V3_DEPLOYMENT_BLOCK_INVALID');
  return Object.freeze({address,runtimeHash:v.runtimeHash.toLowerCase(),
-  deploymentTx:v.txHash.toLowerCase(),blockNumber:v.blockNumber});
+  deploymentTx:v.txHash.toLowerCase(),
+  creationBytecodeHash:v.creationBytecodeHash.toLowerCase(),blockNumber:v.blockNumber});
+}
+function verifyCurrentV3BuildMatchesDeployIntent(proof){
+ // Compile the exact V3 source (pinned solc, viaIR & optimizer) in this
+ // candidate release. A website built from a differing contract ABI/source
+ // is refused even if another deployed V3 address exists.
+ execFileSync(process.execPath,['scripts/compile-global-v3.mjs'],{stdio:'pipe',timeout:120000});
+ const compiled=JSON.parse(fs.readFileSync('artifacts/GlobalV3DeferredTestnet.json','utf8'));
+ if(!compiled?.evm?.bytecode?.object||compiled.compiler?.startsWith('0.8.30')!==true)
+  throw Error('V3_EXPECTED_COMPILED_CONTRACT_ARTIFACT_MISSING');
+ if(keccak256('0x'+compiled.evm.bytecode.object).toLowerCase()!==proof.creationBytecodeHash)
+  throw Error('V3_WEBSITE_CONTRACT_SOURCE_DIFFERS_FROM_ACTUALLY_DEPLOYED_RELEASE');
 }
 function readProof(){
  const s=fs.lstatSync(PROOF);
@@ -82,6 +96,7 @@ async function main(){
   throw Error('Usage: --check OR --emit-site-env (after real deployed V3 receipt)');
  if(process.getuid?.()!==0)throw Error('V3_DEPLOYMENT_PROOF_ROOT_ONLY');
  const proof=readProof();
+ verifyCurrentV3BuildMatchesDeployIntent(proof);
  const verified=await verifyCurrentChain(proof);
  if(mode==='--check')
   console.log('V3_WEBSITE_DEPLOYMENT_PRECHECK_PASS '+JSON.stringify({
