@@ -248,24 +248,25 @@ export default function V3Dashboard(){
       <section className="gv2-premium-board">
        <div className="gv2-premium-board-top"><span className="gv2-premium-eyebrow">GLOBAL PRIVATE TESTNET WORKSPACE</span><span className="gv2-premium-wallet"><Wallet size={14}/>{short(wallet)}</span></div>
        <div className="gv2-premium-board-main"><div className="gv2-premium-hero-balance">
-        <span className="gv2-premium-caption">Recorded V3 principal · not redeemable cash</span>
-        <strong>{show(view.capital)} <em>TEST USDT</em></strong>
-        <p>Only blockchain-confirmed records are shown. V2 accounts are not migrated.</p>
+        <span className="gv2-premium-caption">Current داخلی · سود روزانه + سود از سود + سود معرفی</span>
+        <strong data-testid="v3-current-hero">{claims?show(claims.internalCurrent):'—'} <em>TEST USDT · INTERNAL</em></strong>
+        <p>Internal accrued TEST credits recorded in your V3 account, NOT transferred to your wallet. No unconfirmed credits or V2 balances are imported.</p>
        </div><div className="gv2-premium-hero-side">
         <small>Claim status · {view.registered?'Registered':'Unregistered'} · {view.eligible?'Eligible':'Check-in required'}</small>
-        <h2>{claims?show(claims.outstandingPersonal+claims.outstandingReferral):'—'} TEST USDT</h2>
-        <p>Accrued test claims, not funded wallet balances</p>
+        <h2>{show(view.capital)} TEST USDT</h2>
+        <p>Recorded principal — separate from Internal Current</p>
        </div></div>
       </section>
       <V3ClaimsReadout verifiedLedger={view.ledger}/>
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong>{view.dailyRateBps/100}%</strong><span>Conditional accounting rule</span></div>
-       <div className="gv2-metric"><small>Personal accrued claims</small><strong>{claims?show(claims.outstandingPersonal):'—'}</strong><span>Including profit-on-profit</span></div>
-       <div className="gv2-metric"><small>Principal cash backing</small><strong>{show(view.ledger.cash)} TEST</strong><span>Vault cash, not personal wallet cash</span></div>
+       <div className="gv2-metric"><small>Daily credited to internal Current</small><strong>{claims?show(claims.outstandingDaily):'—'}</strong><span>Already part of internal Current</span></div>
+       <div className="gv2-metric"><small>Auto compound credited internally</small><strong>{claims?show(claims.outstandingCompound):'—'}</strong><span>No token transfer to connected wallet</span></div>
+       <div className="gv2-metric"><small>TEST token wallet balance</small><strong>{show(view.walletTestTokenBalance)} TEST</strong><span>Actual wallet tokens, unrelated to accrued internal Current</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong>{claims?show(claims.overallUnfundedLiability):'—'}</strong><span>Not guaranteed to be paid</span></div>
       </div>
       <div className="gv2-panel"><div className="gv2-panel-head"><h3>Daily activity & automatic compounding</h3></div>
-       <p>The testnet keeper can accrue eligible positions automatically without manager permission. Your own signed check-in is still needed at least once each active day. Each eligible position can accrue once per 24 hours, with no missed-day backfill.</p>
+       <p>Once your position qualifies, a user-signed or gas-funded permissionless keeper transaction credits daily interest and automatic profit-on-profit into Internal Current. It does not transfer tokens to your wallet. A signed daily check-in is still required, with one accrued period per eligible 24 hours and no missed-day backfill.</p>
        <div className="gv2-buttons"><button className="gv2-primary" disabled={busy||!view.registered||view.suspended||view.paused} onClick={()=>
         void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
          due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?')}>
@@ -317,6 +318,8 @@ export default function V3Dashboard(){
      </section>}
      {tab==='profile'&&<section className="gv2-panel"><h3>Verified V3 profile</h3>
       <div className="gv2-detail"><span>Wallet</span><b>{wallet}</b></div>
+      <div className="gv2-detail"><span>Internal Current (not transferred)</span><b>{claims?show(claims.internalCurrent):'0'} TEST</b></div>
+      <div className="gv2-detail"><span>Actual wallet token balance</span><b>{show(view.walletTestTokenBalance)} TEST</b></div>
       <div className="gv2-detail"><span>Registration</span><b>{view.registered?'Registered on V3':'Not registered'}</b></div>
       <div className="gv2-detail"><span>KYC</span><b>{view.vipKyc?'Manager verified':'Not verified'}</b></div>
       <div className="gv2-detail"><span>Suspension</span><b>{view.suspended?'Suspended':'No suspension'}</b></div>
@@ -329,6 +332,8 @@ export default function V3Dashboard(){
      </section>}
      {tab==='withdrawals'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Request a V3 testnet withdrawal</h3><Clock3 size={18}/></div>
       <p>Claimed profit is a recorded obligation, not escrowed cash. Manager approval and actual TEST token funding are required before payment.</p>
+      <div className="gv2-detail"><span>Internal Current (accrued only)</span><b>{claims?show(claims.internalCurrent):'0'} TEST</b></div>
+      <div className="gv2-detail"><span>Reserved internal credits, pending</span><b>{claims?show(claims.pendingInternal):'0'} TEST</b></div>
       <div className="gv2-detail"><span>Maximum single profit/referral request now</span><b>{claims?show(claims.maxSingleRequest):'0'} TEST</b></div>
       <div className="gv3-input-row">
        <label htmlFor="v3-request-kind">Withdrawal type</label>

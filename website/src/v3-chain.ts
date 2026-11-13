@@ -211,6 +211,7 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   pendingWithdrawal:Boolean(user.pendingRequest),
   asOf:block.timestamp,nextRequestAt:Number(user.nextRequestAt),
   requestCap:BigInt(cap),referralAvailable:BigInt(user.referralAvailable),
+  referralReserved:BigInt(user.referralReserved),
   principalLiability:BigInt(cashStatus.principal),
   profitLiability:BigInt(cashStatus.accruedProfit),
   cash:BigInt(cashStatus.cash),escrow:BigInt(cashStatus.escrowedCash),
