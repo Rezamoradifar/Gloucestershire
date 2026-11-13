@@ -23,7 +23,7 @@ node --check server/community.mjs
 
 # Install dependencies only to isolated reviewed checkout before preflight tests.
 npm ci --ignore-scripts --no-audit --no-fund
-node --test test/v2-community-isolation.test.mjs
+node --test test/v2-community-isolation.test.mjs test/v2-read-rpc.test.mjs
 
 live=/opt/globaldroptrade-api/current
 old=$(readlink -f "$live")
@@ -102,11 +102,24 @@ curl -fsS --max-time 12 -X POST http://127.0.0.1:3115/api/v2/community/challenge
  -H 'Content-Type: application/json' \
  --data '{"wallet":"0x1111111111111111111111111111111111111111"}' \
  -o "$stage/v2-challenge.json"
+# Verify the new same-origin gateway is chain-pinned and read-only.
+curl -fsS --max-time 25 -X POST http://127.0.0.1:3115/api/v2/rpc \
+ -H 'Content-Type: application/json' \
+ --data '{"jsonrpc":"2.0","id":71,"method":"eth_chainId","params":[]}' \
+ -o "$stage/v2-chain.json"
+curl -sS --max-time 8 -X POST http://127.0.0.1:3115/api/v2/rpc \
+ -H 'Content-Type: application/json' \
+ --data '{"jsonrpc":"2.0","id":72,"method":"eth_sendTransaction","params":[]}' \
+ -o "$stage/v2-denied.json"
 
-python3 - "$stage/v2-announcements.json" "$stage/v2-challenge.json" <<'PY'
+python3 - "$stage/v2-announcements.json" "$stage/v2-challenge.json" "$stage/v2-chain.json" "$stage/v2-denied.json" <<'PY'
 import json,sys
 ann=json.load(open(sys.argv[1]))
 challenge=json.load(open(sys.argv[2]))
+chain=json.load(open(sys.argv[3]))
+denied=json.load(open(sys.argv[4]))
+if chain.get('result')!='0x61' or denied.get('error')!='Invalid V2 read request.':
+ raise SystemExit('V2_RPC_GATEWAY_IDENTITY_OR_WRITE_GUARD_FAILED')
 if not isinstance(ann.get('items'),list):
  raise SystemExit('V2_SUPPORT_ANNOUNCEMENTS_INVALID')
 message=challenge.get('message','')
