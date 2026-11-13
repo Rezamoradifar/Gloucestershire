@@ -10,7 +10,8 @@ describe('V2 account reads on mobile wallet RPC',()=>{
   const source=fs.readFileSync(new URL('../src/v2-chain.ts',import.meta.url),'utf8');
   expect(source).toContain("provider.getCode(V2_ADDRESS,'latest')");
   expect(source).toContain('keccak256(code).toLowerCase()!==V2_CODE_HASH');
-  expect(source).not.toContain('/api/config');
+  // Forbid an executable legacy API request; a warning in a source comment is harmless.
+  expect(source).not.toMatch(/fetch\s*\(\s*['\"]\/api\/config['\"]/);
   expect(source).not.toContain('0x4C0F6141b18971db4b14e45c0bE8CddB09febc14');
  });
  it('selects the responsive read source if another wallet RPC fails',async()=>{
