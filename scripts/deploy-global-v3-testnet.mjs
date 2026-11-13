@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // Strict opt-in, isolated BNB TESTNET V3 prototype deployer.
 // NEVER touches deployed V2, existing balances, DNS, Nginx, or the website.
-// NEVER signs silently or accepts an unencrypted operator private key.
-// Needs a separately encrypted JSON wallet, TESTNET tBNB and an interactive TTY.
+// NEVER signs silently or asks for any signing key in chat.
+// Accepts only an encrypted dedicated wallet or the EXACT prior GAS-ONLY BNB
+// TESTNET deployer held in its existing root-private server file, separately
+// from the administrator. Every deployment requires operator TTY approval.
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync,execFileSync} from 'node:child_process';
 import {createInterface} from 'node:readline/promises';
 import {Contract,ContractFactory,FetchRequest,JsonRpcProvider,Wallet,
- getAddress,keccak256,parseEther} from 'ethers';
+ getAddress,keccak256,parseEther,formatEther} from 'ethers';
 
 const CHAIN=97;
 const ADMIN=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
@@ -18,6 +20,8 @@ const OLD_V2=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
 const MARKER='/var/lib/globaldroptrade/v3-prototype/deployment.json';
 const KEEPER_CONFIG='/etc/globaldroptrade/v3-keeper-testnet.json';
 const ENCRYPTED_DEPLOYER='/etc/globaldroptrade/v3-deployer-only-testnet.json';
+const OLD_TESTNET_DEPLOYER=getAddress('0xCf6Eb63ba4D2174CA2759eff57a720a54416b71d');
+const OLD_TESTNET_DEPLOYER_KEYFILE='/etc/globaldroptrade/new-deployer-testnet-v1/deployer.key';
 const MAX_GAS=9000000n;
 const MAX_COST=parseEther('0.08');
 const RPC=[
@@ -83,6 +87,24 @@ function loadKeystore(filename){
  if(!json.crypto&&!json.Crypto)error('ENCRYPTED_JSON_KEYSTORE_REQUIRED');
  return raw;
 }
+function loadExistingV2TestnetDeployer(){
+ // Only the pinned, previously deployed testnet-only signer is accepted.
+ // No arbitrary wallet files, admin keys, environment secrets or remote keys.
+ let stat;
+ try{stat=fs.lstatSync(OLD_TESTNET_DEPLOYER_KEYFILE);}
+ catch{error('PREVIOUS_V2_TESTNET_DEPLOYER_SIGNER_FILE_MISSING');}
+ if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==process.getuid()||
+    (stat.mode&0o077)!==0||stat.size>128)
+  error('PREVIOUS_V2_TESTNET_SIGNER_FILE_MUST_BE_ROOT_PRIVATE');
+ const raw=fs.readFileSync(OLD_TESTNET_DEPLOYER_KEYFILE,'utf8').trim();
+ if(!/^(?:0x)?[0-9a-f]{64}$/i.test(raw))
+  error('PREVIOUS_TESTNET_DEPLOYER_FILE_FORMAT_INVALID');
+ const wallet=new Wallet(raw.startsWith('0x')?raw:'0x'+raw);
+ if(getAddress(wallet.address)!==OLD_TESTNET_DEPLOYER||getAddress(wallet.address)===ADMIN)
+  error('PREVIOUS_TESTNET_DEPLOYER_ADDRESS_MISMATCH');
+ // Never log the key, and never write or copy it to another file.
+ return wallet;
+}
 function saveMarker(data,create=false){
  fs.mkdirSync(path.dirname(MARKER),{recursive:true,mode:0o700});
  const tmp=MARKER+'.new';
@@ -94,13 +116,17 @@ function saveMarker(data,create=false){
  }
 }
 async function main(){
- if(!['--check','--deploy','--init-deployer'].includes(process.argv[2])||
-    (process.argv[2]==='--check'&&process.argv.length!==3)||
-    (process.argv[2]==='--deploy'&&process.argv.length!==4)||
-    (process.argv[2]==='--init-deployer'&&process.argv.length!==3))
-  error('USAGE_INIT_DEPLOYER_CHECK_OR_DEPLOY_ENCRYPTED_TESTNET_KEYSTORE');
+ const mode=process.argv[2];
+ if(!['--check','--deploy','--init-deployer','--check-old-testnet-deployer',
+       '--deploy-old-testnet-deployer'].includes(mode)||
+    (mode==='--check'&&process.argv.length!==3)||
+    (mode==='--check-old-testnet-deployer'&&process.argv.length!==3)||
+    (mode==='--deploy-old-testnet-deployer'&&process.argv.length!==3)||
+    (mode==='--deploy'&&process.argv.length!==4)||
+    (mode==='--init-deployer'&&process.argv.length!==3))
+  error('USAGE_CHECK_OLD_DEPLOYER_OR_ENCRYPTED_TESTNET_SIGNER');
  if(process.getuid?.()!==0)error('ROOT_REQUIRED_FOR_PRIVATE_DEPLOYMENT_RECORD');
- if(process.argv[2]==='--init-deployer'){
+ if(mode==='--init-deployer'){
   if(fs.existsSync(ENCRYPTED_DEPLOYER))error('TESTNET_DEPLOYER_KEYSTORE_ALREADY_EXISTS');
   const password=await passwordPrompt();
   if(password.length<12)error('TESTNET_KEYSTORE_PASSWORD_MUST_BE_AT_LEAST_12_CHARS');
@@ -119,7 +145,8 @@ async function main(){
   console.log('V3_EXISTING_DEPLOYMENT_INTENT '+JSON.stringify({
    status:existing.status,contract:existing.contract||null,txHash:existing.txHash||null
   }));
-  if(process.argv[2]==='--deploy')error('V3_DEPLOYMENT_ALREADY_ATTEMPTED_RECONCILE_FIRST');
+  if(mode==='--deploy'||mode==='--deploy-old-testnet-deployer')
+   error('V3_DEPLOYMENT_ALREADY_ATTEMPTED_RECONCILE_FIRST');
  }
  const a=artifact();
  const {provider:p,rpc}=await provider();
@@ -132,10 +159,15 @@ async function main(){
    directUserWalletFundsRequired:false,prototypeNotProduction:true,
    userProfitAutoCompoundWithoutAdmin:true
   }));
-  if(process.argv[2]==='--check')return;
-  const encrypted=loadKeystore(process.argv[3]);
-  const password=await passwordPrompt();
-  const wallet=await Wallet.fromEncryptedJson(encrypted,password);
+  if(mode==='--check')return;
+  let wallet;
+  if(mode==='--check-old-testnet-deployer'||mode==='--deploy-old-testnet-deployer'){
+   wallet=loadExistingV2TestnetDeployer();
+  }else{
+   const encrypted=loadKeystore(process.argv[3]);
+   const password=await passwordPrompt();
+   wallet=await Wallet.fromEncryptedJson(encrypted,password);
+  }
   if(getAddress(wallet.address)===ADMIN)error('DEPLOYER_MUST_BE_SEPARATE_FROM_MANAGER_ADMIN');
   const signer=wallet.connect(p),factory=new ContractFactory(a.abi,'0x'+a.evm.bytecode.object,signer);
   const txReq=await factory.getDeployTransaction(ADMIN,TOKEN,FEE);
@@ -144,8 +176,25 @@ async function main(){
   const price=fee.maxFeePerGas??fee.gasPrice;
   if(!price||estimate<=0n||estimate*12n/10n>MAX_GAS||
      estimate*12n/10n*price>MAX_COST)error('V3_DEPLOYMENT_GAS_COST_LIMIT');
-  if(await p.getBalance(wallet.address)<estimate*12n/10n*price)
+  const actualBalance=await p.getBalance(wallet.address);
+  const estimatedRequired=estimate*12n/10n*price;
+  if(mode==='--check-old-testnet-deployer'){
+   console.log('V3_PRIOR_TESTNET_DEPLOYER_CHECK '+JSON.stringify({
+    network:'BNB_TESTNET_ONLY',chainId:97,publicDeployer:wallet.address,
+    testBNB:formatEther(actualBalance),
+    upperBoundGasCostTestBNB:formatEther(estimatedRequired),
+    enoughTestBNB:actualBalance>=estimatedRequired,
+    isNotContractAdmin:wallet.address!==ADMIN,
+    signingKeyStayedOnExistingServer:true,oldV2Unmodified:true,
+    transactionSent:false
+   }));
+   if(actualBalance<estimatedRequired)process.exitCode=2;
+   return;
+  }
+  if(actualBalance<estimatedRequired)
    error('TESTNET_DEPLOYER_HAS_INSUFFICIENT_TBNB');
+  if(!process.stdin.isTTY||!process.stdout.isTTY)
+   error('INTERACTIVE_DEPLOYMENT_CONFIRMATION_REQUIRED');
   const rl=createInterface({input:process.stdin,output:process.stdout});
   const answer=await rl.question('Type DEPLOY NEW V3 BNB TESTNET ONLY: ');
   rl.close();
