@@ -1,0 +1,48 @@
+name: Global V2 100-account isolated simulation
+on:
+  pull_request:
+    paths:
+      - 'scripts/global-v2-100-account-lab.mjs'
+      - 'contracts/v2/**'
+      - 'website/src/V2Dashboard.tsx'
+      - 'website/src/v2-classic-shell.css'
+      - '.github/workflows/global-v2-100-lab.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hundred-accounts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - name: Run 100 independent local wallet and MOCK token stress scenarios
+        run: node scripts/global-v2-100-account-lab.mjs
+      - name: Validate test-only report and all requested financial figures
+        run: |
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('reports/global-v2-local-100-account-report.json'));
+          if(r.mode!=='LOCAL_GANACHE_SIMULATION_ONLY'||r.token!=='MOCK_ERC20_NOT_REAL_USDT'||
+            r.deployedPublicV2Touched!==false||r.accountsCreated!==100||
+            r.grossRecordedPrincipalMockUsd!=='1000000'||r.fundingVaultCashMockUsd!=='500000'||
+            r.principalCashShortfallAtStart!=='500000'||r.managerApprovals!==100||
+            r.paidWithdrawals!==100||r.checkinsOnChain!==100||
+            r.endingUnfundedPrincipalMockUnits!=='500000000000000000000000'||
+            r.result!=='PASS')
+            throw Error('V2_LAB_RESULT_MISMATCH');
+          console.log('V2_100_ACCOUNT_REPORT_VALIDATED');
+          JS
+      - name: Attach locally generated simulation report (no private keys)
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-v2-local-100-accounts
+          path: reports/global-v2-local-100-account-report.json
+          retention-days: 14
