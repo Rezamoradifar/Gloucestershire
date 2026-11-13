@@ -204,3 +204,54 @@ export async function sendV2Action(walletProvider:Eip1193Provider,wallet:string,
  if(!receipt||receipt.status!==1)throw Error('Transaction not confirmed.');
  return receipt.hash as string;
 }
+
+export async function readV2AdminRequests(walletProvider:Eip1193Provider,wallet:string,page=0){
+ if(!Number.isSafeInteger(page)||page<0||page>100000)throw Error('Invalid withdrawal page.');
+ const {vault,options}=await v2Session(walletProvider,wallet);
+ const role=await vault.WITHDRAWAL_APPROVER_ROLE(options);
+ if(!await vault.hasRole(role,wallet,options))throw Error('Only an approved manager may inspect the admin queue.');
+ const n=Number(await vault.withdrawalCount(options));
+ if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid withdrawal count.');
+ const limit=10;
+ const ids=Array.from({length:Math.max(0,Math.min(limit,n-page*limit))},(_,i)=>n-1-page*limit-i);
+ const rows=await Promise.all(ids.map(async id=>{
+  const r=await vault.withdrawalOf(id,options);
+  return {id,user:getAddress(r.user),asset:getAddress(r.asset),gross:BigInt(r.gross),
+   fee:BigInt(r.fee),positionId:Number(r.positionId),requestedAt:Number(r.requestedAt),
+   status:Number(r.status),principal:Boolean(r.principal)} as V2Withdrawal;
+ }));
+ return {total:n,page,rows};
+}
+
+export type V2AdminMember={
+ wallet:string;registered:boolean;eligible:boolean;kyc:boolean;suspended:boolean;
+ referrer:string;capitalUsd:bigint;lastCheckIn:number;principalUsdt:bigint;profitUsdt:bigint;
+};
+export async function readV2AdminMembers(walletProvider:Eip1193Provider,wallet:string,page=0){
+ if(!Number.isSafeInteger(page)||page<0||page>100000)throw Error('Invalid member page.');
+ const {vault,options}=await v2Session(walletProvider,wallet);
+ const [kycRole,withdrawalRole]=await Promise.all([
+  vault.KYC_ADMIN_ROLE(options),vault.WITHDRAWAL_APPROVER_ROLE(options)
+ ]);
+ const [canKyc,canApprove]=await Promise.all([
+  vault.hasRole(kycRole,wallet,options),vault.hasRole(withdrawalRole,wallet,options)
+ ]);
+ if(!canKyc&&!canApprove)throw Error('The connected wallet is not an authorized manager.');
+ const total=Number(await vault.memberCount(options));
+ if(!Number.isSafeInteger(total)||total<0)throw Error('Invalid member count.');
+ const token=getAddress(await vault.usdt(options));
+ const start=page*10;
+ const ids=Array.from({length:Math.max(0,Math.min(10,total-start))},(_,i)=>start+i);
+ const members=await Promise.all(ids.map(async i=>{
+  const address=getAddress(await vault.memberAt(i,options));
+  const [user,eligible,account]=await Promise.all([
+   vault.users(address,options),vault.isEligible(address,options),vault.accounts(address,token,options)
+  ]);
+  return {wallet:address,registered:Boolean(user.registered),eligible:Boolean(eligible),
+   kyc:Boolean(user.vipKyc),suspended:Boolean(user.suspended),
+   referrer:getAddress(user.referrer),capitalUsd:BigInt(user.capitalUsd),
+   lastCheckIn:Number(user.lastCheckIn),principalUsdt:BigInt(account.principal),
+   profitUsdt:BigInt(account.profit)} as V2AdminMember;
+ }));
+ return {total,page,members};
+}
