@@ -10,23 +10,24 @@ const invalid=():never=>{throw Error('Owner directory returned inconsistent cont
 export class AdminUserApiError extends Error{
  constructor(message:string,public status:number){super(message);}
 }
-export type AdminHead={version:1;chainId:number;vaultAddress:string;deploymentBlock:number;confirmedHead:number;blockHash:string;kind:'head';source:string};
+export type AuditAnchor={version:1;chainId:number;vaultAddress:string;deploymentBlock:number;confirmedHead:number;blockHash:string};
+export type AdminHead=AuditAnchor&{kind:'head';source:string};
 export type RegistryEvent={wallet:string;referrer:string;blockNumber:number;logIndex:number;transactionHash:string};
-export type RegistryWindow=AdminHead&{kind:'registrations';from:number;to:number;events:RegistryEvent[];complete:boolean};
+export type RegistryWindow=AuditAnchor&{kind:'registrations';from:number;to:number;events:RegistryEvent[];complete:boolean};
 export type AccountDetail={symbol:'BNB'|'USDT';address:string;decimals:number;principal:string;profit:string;externalDeposited:string;nextWithdrawal:string;withdrawalCap:string;reinvested:string};
 export type PositionDetail={id:number;symbol:'BNB'|'USDT';principal:string;capitalUsd:string;unlockAt:string;penaltyBps:number};
-export type AdminUser=AdminHead&{kind:'user';wallet:string;profile:{registered:boolean;active:boolean;kycVerified:boolean;referrer:string;activeDirect:string;registeredDirect:string;qualifiedDirect:string;capitalUsd:string;salesUsd:string;tier:number;dailyTargetBps:number};positionCount:number;positionOffset:number;positions:PositionDetail[];assets:AccountDetail[];source:string};
-export type AdminWithdrawals=AdminHead&{kind:'withdrawals';wallet:string;supported:boolean;queueAddress?:string;page?:number;total?:number;requests?:{id:string;asset:string;gross:string;fee:string;net:string;dueAt:string;status:number}[];note?:string;source:string};
+export type AdminUser=AuditAnchor&{kind:'user';wallet:string;profile:{registered:boolean;active:boolean;kycVerified:boolean;referrer:string;activeDirect:string;registeredDirect:string;qualifiedDirect:string;capitalUsd:string;salesUsd:string;tier:number;dailyTargetBps:number};positionCount:number;positionOffset:number;positions:PositionDetail[];assets:AccountDetail[];source:string};
+export type AdminWithdrawals=AuditAnchor&{kind:'withdrawals';wallet:string;supported:boolean;queueAddress?:string;page?:number;total?:number;requests?:{id:string;asset:string;gross:string;fee:string;net:string;dueAt:string;status:number}[];note?:string;source:string};
 const ensureAddress=(value:unknown)=>typeof value==='string'&&isAddress(value);
 const same=(a:unknown,b:unknown)=>ensureAddress(a)&&ensureAddress(b)&&getAddress(a as string)===getAddress(b as string);
-function base(value:unknown):asserts value is AdminHead{
+function base(value:unknown):asserts value is AuditAnchor{
  if(!value||typeof value!=='object'||Array.isArray(value))invalid();
  const d=value as Record<string,unknown>;
  if(d.version!==1||d.chainId!==chainId||!same(d.vaultAddress,vaultAddress)||
   !safe(d.deploymentBlock)||!safe(d.confirmedHead)||Number(d.deploymentBlock)>Number(d.confirmedHead)||
   !validHash(d.blockHash))invalid();
 }
-function ensureHeader(value:AdminHead,head:AdminHead){
+function ensureHeader(value:AuditAnchor,head:AdminHead){
  if(value.confirmedHead!==head.confirmedHead||value.blockHash.toLowerCase()!==head.blockHash.toLowerCase()||
   value.deploymentBlock!==head.deploymentBlock)invalid();
 }
