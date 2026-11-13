@@ -1,97 +1,143 @@
 #!/usr/bin/env bash
-# TESTNET-only, gas-only permissionless V3 auto-accrual service.
-# No V3 deployment, mainnet activation, real fund access or wallet balance mint.
-set -Eeuo pipefail
+# V3 BNB TESTNET keeper only. Never deploy, change website, or transfer rewards.
 set +x
+set -Eeuo pipefail
 umask 077
 BASE="$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
 ETC_DIR=/etc/globaldroptrade
 CONFIG="$ETC_DIR/v3-keeper-testnet.json"
 KEY="$ETC_DIR/v3-keeper-testnet-gas-only.key"
 UNIT=global-v3-compound-keeper-testnet
-STATE=globaldroptrade-v3-keeper
+PROOF=/var/lib/globaldroptrade/v3-prototype/deployment.json
 RELEASE_ROOT=/opt/global-v3-testnet-keeper
+STATE=globaldroptrade-v3-keeper
 PROFILE_LINE=
+PROOF_LINE=
+PROOF_ARGS=()
+SERVICE_PROOF_ARGS=
 case "${GLOBAL_V3_RELEASE_PROFILE:-}" in
  '') ;;
  routed-testnet)
   CONFIG="$ETC_DIR/v3-routed-keeper-testnet.json"
   KEY="$ETC_DIR/v3-routed-keeper-testnet-gas-only.key"
   UNIT=global-v3-routed-compound-keeper-testnet
-  STATE=globaldroptrade-v3-routed-keeper
+  PROOF=/var/lib/globaldroptrade/v3-routed-testnet/deployment.json
   RELEASE_ROOT=/opt/global-v3-routed-testnet-keeper
+  STATE=globaldroptrade-v3-routed-keeper
   PROFILE_LINE='Environment=GLOBAL_V3_RELEASE_PROFILE=routed-testnet'
+  PROOF_LINE="LoadCredential=deployment-proof:$PROOF"
+  PROOF_ARGS=(--proof "$PROOF")
+  SERVICE_PROOF_ARGS='--proof %d/deployment-proof'
   ;;
  *) echo V3_KEEPER_ERROR=V3_RELEASE_PROFILE_INVALID >&2; exit 1 ;;
 esac
 die(){ echo "V3_KEEPER_ERROR=$1" >&2; exit 1; }
-[[ "$(id -u)" -eq 0 ]] || die "ROOT_REQUIRED_FOR_INSTALL"
-[[ "$#" -eq 1 ]] || die "USAGE_INIT_WALLET_CHECK_INSTALL_OR_STATUS"
+[[ "$(id -u)" -eq 0 ]] || die ROOT_REQUIRED_FOR_INSTALL
+[[ $# -eq 1 ]] || die USAGE_INIT_WALLET_CHECK_INSTALL_OR_STATUS
 mode=$1
-case "$mode" in
- --init-wallet|--check|--install|--status) ;;
- *) die "USAGE_INIT_WALLET_CHECK_INSTALL_OR_STATUS" ;;
-esac
-for item in node systemctl; do
- command -v "$item" >/dev/null || die "MISSING_$item"
-done
+case "$mode" in --init-wallet|--check|--install|--status) ;; *) die INVALID_MODE ;; esac
+arch="$(uname -m)"
+case "$arch" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; *) die UNSUPPORTED_ARCH ;; esac
+runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
+[[ -x "$runtime/node" ]] && export PATH="$runtime:$PATH"
+for item in node systemctl; do command -v "$item" >/dev/null || die "MISSING_$item"; done
 node="$(command -v node)"
-[[ -f "$BASE/scripts/global-v3-auto-compound-keeper.mjs" && -f "$BASE/package.json" ]] ||
- die "RUN_FROM_FULL_V3_REPOSITORY_CHECKOUT"
-if [[ "$mode" == --init-wallet ]]; then
- [[ ! -e "$KEY" ]] || die "DEDICATED_KEEPER_WALLET_ALREADY_EXISTS"
- install -d -m 0700 "$ETC_DIR"
- # Generate a NEW, GAS-ONLY disposable testnet signer. NEVER export an
- # admin/funder/customer key. Print ONLY the public wallet address.
- (cd "$BASE"; V3_KEY_PATH="$KEY" "$node" --input-type=module -e '
-  import fs from "node:fs";
-  import {Wallet} from "ethers";
-  const wallet=Wallet.createRandom();
-  fs.writeFileSync(process.env.V3_KEY_PATH,wallet.privateKey+"\n",{flag:"wx",mode:0o600});
-  console.log("V3_KEEPER_GAS_ONLY_PUBLIC_ADDRESS="+wallet.address);
-  console.log("Fund only a SMALL amount of valueless BNB Testnet gas; never real tokens or customer assets.");
- ')
- exit 0
-fi
+[[ -f "$BASE/scripts/global-v3-auto-compound-keeper.mjs" &&
+   -f "$BASE/scripts/v3-keeper-receipt-poll.mjs" && -f "$BASE/package-lock.json" ]] ||
+ die REVIEWED_V3_KEEPER_CHECKOUT_REQUIRED
+cd "$BASE"
 if [[ "$mode" == --status ]]; then
  systemctl status "$UNIT.timer" --no-pager -l || true
- systemctl status "$UNIT.service" --no-pager -l || true
+ journalctl -u "$UNIT.service" -n 40 --no-pager -o cat
  exit 0
 fi
-[[ -f "$CONFIG" && ! -L "$CONFIG" ]] || die "MISSING_PINNED_V3_TESTNET_CONFIG"
-[[ -f "$KEY" && ! -L "$KEY" ]] || die "MISSING_DEDICATED_GAS_ONLY_TESTNET_KEY"
-[[ "$(stat -Lc '%a:%u' "$KEY")" == '600:0' ]] ||
- die "DEDICATED_TESTNET_KEY_MUST_BE_ROOT_0600"
-[[ "$(stat -Lc '%a:%u' "$CONFIG")" == '600:0' ]] ||
- die "V3_CONFIG_MUST_BE_ROOT_0600"
-(cd "$BASE"; "$node" scripts/global-v3-auto-compound-keeper.mjs --check --config "$CONFIG") ||
- die "PUBLIC_TESTNET_V3_RUNTIME_NOT_VERIFIED"
+if [[ "$mode" == --init-wallet ]]; then
+ [[ ! -L "$ETC_DIR" && ! -L "$KEY" ]] || die UNEXPECTED_SYMLINK
+ if [[ ! -d "$ETC_DIR" ]]; then install -d -m 0700 "$ETC_DIR"; fi
+ [[ "$(stat -Lc %u "$ETC_DIR")" == 0 ]] || die CONFIG_DIRECTORY_NOT_ROOT_OWNED
+ if [[ ! -e "$KEY" ]]; then
+  V3_KEY_PATH="$KEY" "$node" --input-type=module -e '
+   import fs from "node:fs";
+   import {Wallet} from "ethers";
+   const wallet=Wallet.createRandom();
+   fs.writeFileSync(process.env.V3_KEY_PATH,wallet.privateKey+"\n",{flag:"wx",mode:0o600});
+  '
+ else
+  echo V3_KEEPER_EXISTING_KEY_PRESERVED
+ fi
+ "$node" scripts/global-v3-auto-compound-keeper.mjs --public-address --key-file "$KEY"
+ echo V3_KEEPER_ADDRESS_IS_FOR_VALUELESS_TESTNET_GAS_ONLY_NOT_TREASURY
+ echo V3_KEEPER_TIMER_INSTALLED=NO
+ exit 0
+fi
+[[ -f "$CONFIG" && ! -L "$CONFIG" ]] || die MISSING_PINNED_V3_TESTNET_CONFIG
+[[ -f "$KEY" && ! -L "$KEY" ]] || die MISSING_DEDICATED_GAS_ONLY_TESTNET_KEY
+[[ "$(stat -Lc '%a:%u' "$KEY")" == '600:0' ]] || die TESTNET_KEY_MUST_BE_ROOT_0600
+[[ "$(stat -Lc '%a:%u' "$CONFIG")" == '600:0' ]] || die V3_CONFIG_MUST_BE_ROOT_0600
+if [[ "${GLOBAL_V3_RELEASE_PROFILE:-}" == routed-testnet ]]; then
+ [[ -f "$PROOF" && ! -L "$PROOF" && "$(stat -Lc '%a:%u' "$PROOF")" == '600:0' ]] ||
+  die ROUTED_DEPLOYMENT_PROOF_MUST_BE_ROOT_0600
+ # The website release runs asynchronously. Do not enable accrual until the
+ # routed release's own systemd journal confirms its verified site switch.
+ site_unit_file=/var/lib/globaldroptrade/v3-routed-testnet/site-install-unit
+ [[ -f "$site_unit_file" && ! -L "$site_unit_file" && "$(stat -Lc '%a:%u' "$site_unit_file")" == '600:0' ]] ||
+  die ROUTED_SITE_INSTALL_UNIT_NOT_VERIFIED
+ site_unit="$(cat "$site_unit_file")"
+ [[ "$site_unit" =~ ^global-v3-site-[a-f0-9]{10}-[0-9]+\.service$ ]] || die ROUTED_SITE_INSTALL_UNIT_INVALID
+ journalctl -u "$site_unit" --no-pager -o cat | grep -Fx 'V3_TESTNET_PRIMARY_DASHBOARD_INSTALLED' >/dev/null ||
+  die ROUTED_WEBSITE_INSTALL_NOT_YET_CONFIRMED
+fi
+# Read-only, but now also verifies signer roles, wallet tBNB, and pause state.
+# No file is installed and no transaction is signed if readiness fails.
+"$node" scripts/global-v3-auto-compound-keeper.mjs --check --config "$CONFIG" --key-file "$KEY" "${PROOF_ARGS[@]}"
+echo V3_KEEPER_PREFLIGHT_PASS=YES
 if [[ "$mode" == --check ]]; then
- echo "V3_KEEPER_PREFLIGHT_PASS=YES"
- echo "V3_KEEPER_TIMER_INSTALLED=NO"
+ echo V3_KEEPER_CHECK_DID_NOT_ENABLE_TIMER_OR_SEND_TRANSACTION
  exit 0
 fi
-
-command -v systemd-analyze >/dev/null || die "MISSING_SYSTEMD_ANALYZE"
-command -v npm >/dev/null || die "MISSING_NPM"
-command -v git >/dev/null || die "MISSING_GIT"
+for command in npm git flock systemd-analyze; do
+ command -v "$command" >/dev/null || die "MISSING_$command"
+done
+exec 9>"/run/lock/$UNIT-install.lock"
+flock -n 9 || die INSTALL_ALREADY_RUNNING
 [[ ! -e "/etc/systemd/system/$UNIT.service" && ! -e "/etc/systemd/system/$UNIT.timer" ]] ||
- die "KEEPER_TIMER_ALREADY_INSTALLED_REVIEW_BEFORE_UPGRADE"
+ die KEEPER_TIMER_ALREADY_INSTALLED_REVIEW_BEFORE_UPGRADE
+git -C "$BASE" diff --quiet HEAD -- scripts/global-v3-auto-compound-keeper.mjs \
+ scripts/v3-keeper-receipt-poll.mjs scripts/install-global-v3-keeper-timer.sh package.json package-lock.json ||
+ die LOCAL_KEEPER_CHANGES_REQUIRE_REVIEW
 sha="$(git -C "$BASE" rev-parse HEAD)"
-[[ "$sha" =~ ^[a-f0-9]{40}$ ]] || die "REPOSITORY_COMMIT_SHA_INVALID"
-# Freeze the exact reviewed script and dependency lock outside the mutable
-# Global website checkout. Future git switches cannot change the running job.
+[[ "$sha" =~ ^[a-f0-9]{40}$ ]] || die INVALID_COMMIT_SHA
 RELEASE="$RELEASE_ROOT/releases/$sha"
-[[ ! -e "$RELEASE" ]] || die "PINNED_KEEPER_RELEASE_ALREADY_EXISTS_REVIEW_BEFORE_RETRY"
-install -d -m 0755 "$RELEASE/scripts"
-install -m 0644 "$BASE/scripts/global-v3-auto-compound-keeper.mjs" "$RELEASE/scripts/"
-install -m 0644 "$BASE/package.json" "$BASE/package-lock.json" "$RELEASE/"
-(cd "$RELEASE"; npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
-"$node" --check "$RELEASE/scripts/global-v3-auto-compound-keeper.mjs"
-chmod -R go-w "$RELEASE"
-cat > "/etc/systemd/system/$UNIT.service" <<EOF
+stage=''; units=''
+cleanup(){
+ [[ -z "$stage" || ! -d "$stage" ]] || rm -rf -- "$stage"
+ [[ -z "$units" || ! -d "$units" ]] || rm -rf -- "$units"
+}
+trap cleanup EXIT
+install -d -m 0755 "$RELEASE_ROOT" "$RELEASE_ROOT/releases"
+if [[ ! -e "$RELEASE" ]]; then
+ stage="$(mktemp -d "$RELEASE_ROOT/releases/.staging.XXXXXX")"
+ chmod 0755 "$stage"
+ install -d -m 0755 "$stage/scripts"
+ install -m 0644 scripts/global-v3-auto-compound-keeper.mjs scripts/v3-keeper-receipt-poll.mjs "$stage/scripts/"
+ install -m 0644 package.json package-lock.json "$stage/"
+ # The dynamic service user must read JS/dependencies. Never change key modes.
+ (umask 022; cd "$stage"; npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+ chmod -R u+rwX,go+rX,go-w "$stage"
+ "$node" --check "$stage/scripts/global-v3-auto-compound-keeper.mjs"
+ mv -T "$stage" "$RELEASE"
+ stage=''
+else
+ [[ -d "$RELEASE" && ! -L "$RELEASE" && "$(stat -Lc %u "$RELEASE")" == 0 ]] || die INVALID_EXISTING_RELEASE
+ for file in scripts/global-v3-auto-compound-keeper.mjs scripts/v3-keeper-receipt-poll.mjs package.json package-lock.json; do
+  cmp -s "$BASE/$file" "$RELEASE/$file" || die PINNED_KEEPER_RELEASE_MISMATCH
+ done
+fi
+(cd "$RELEASE"; "$node" --input-type=module -e 'await import("./scripts/global-v3-auto-compound-keeper.mjs");')
+units="$(mktemp -d /tmp/global-v3-keeper-units.XXXXXX)"
+cat > "$units/$UNIT.service" <<EOF
 [Unit]
-Description=BNB Testnet V3 permissionless daily plus compounded claim keeper (no manager role)
+Description=BNB Testnet V3 permissionless internal daily and compound credits
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=$CONFIG
@@ -101,10 +147,12 @@ ConditionPathExists=$KEY
 Type=oneshot
 DynamicUser=yes
 WorkingDirectory=$RELEASE
-ExecStart=$node $RELEASE/scripts/global-v3-auto-compound-keeper.mjs --run --config %d/keeper-config --key-file %d/keeper-gas-key
+ExecStart=$node $RELEASE/scripts/global-v3-auto-compound-keeper.mjs --run --config %d/keeper-config --key-file %d/keeper-gas-key $SERVICE_PROOF_ARGS
 LoadCredential=keeper-config:$CONFIG
 LoadCredential=keeper-gas-key:$KEY
+$PROOF_LINE
 StateDirectory=$STATE
+StateDirectoryMode=0700
 $PROFILE_LINE
 ProtectSystem=strict
 ProtectHome=yes
@@ -118,13 +166,10 @@ LockPersonality=yes
 RestrictSUIDSGID=yes
 UMask=0077
 TimeoutStartSec=1800
-
-[Install]
-WantedBy=multi-user.target
 EOF
-cat > "/etc/systemd/system/$UNIT.timer" <<EOF
+cat > "$units/$UNIT.timer" <<EOF
 [Unit]
-Description=Hourly permissionless V3 TESTNET auto-compound accrual check
+Description=Hourly BNB Testnet V3 eligible internal accrual check
 
 [Timer]
 OnCalendar=hourly
@@ -135,13 +180,15 @@ Unit=$UNIT.service
 [Install]
 WantedBy=timers.target
 EOF
-systemd-analyze verify "/etc/systemd/system/$UNIT.service" "/etc/systemd/system/$UNIT.timer" ||
- die "UNITS_DID_NOT_VALIDATE"
+systemd-analyze verify "$units/$UNIT.service" "$units/$UNIT.timer" || die UNITS_DID_NOT_VALIDATE
+install -m 0644 "$units/$UNIT.service" "$units/$UNIT.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now "$UNIT.timer"
+systemctl start --no-block "$UNIT.service"
 echo "V3_AUTO_COMPOUND_KEEPER_TIMER_INSTALLED=$UNIT.timer"
 echo "V3_PINNED_KEEPER_RELEASE=$sha"
-echo "V3_AUTO_COMPOUND_KEEPER_TESTNET_ONLY=TRUE"
-echo "V3_ADMIN_APPROVAL_REQUIRED_FOR_ACCRUAL=FALSE"
-echo "V3_KEEPER_MAY_ACCRUE_ONLY_IF_USER_CHECKIN_ELIGIBLE=TRUE"
-echo "V3_KEEPER_STATUS=systemctl status $UNIT.timer --no-pager"
+echo V3_AUTO_COMPOUND_KEEPER_TESTNET_ONLY=TRUE
+echo V3_ADMIN_APPROVAL_REQUIRED_FOR_ACCRUAL=FALSE
+echo V3_KEEPER_MAY_ACCRUE_ONLY_IF_USER_CHECKIN_ELIGIBLE=TRUE
+echo V3_FIRST_RUN_REQUESTED_NOT_YET_VERIFIED
+echo "V3_KEEPER_LOG_COMMAND=journalctl -u $UNIT.service -n 60 --no-pager -o cat"

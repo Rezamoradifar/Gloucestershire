@@ -23,7 +23,12 @@ export function v3CycleView(positions:V3WalletPosition[],blockTime:number,
  // Solidity rounds each position's components independently.
  const estimatedDaily=live.reduce((sum,p)=>sum+p.principal*rate/10_000n,0n);
  const estimatedCompound=live.reduce((sum,p)=>sum+p.compoundedBasis*rate/10_000n,0n);
- return {now,nextAt,secondsRemaining,activityRemaining,estimatedDaily,estimatedCompound};
+ // A continuously moving display estimate only. The contract does not credit
+ // partial periods; actual amounts remain unchanged until a confirmed accrual.
+ const elapsed=(p:V3WalletPosition)=>BigInt(Math.min(V3_PERIOD_SECONDS,Math.max(0,now-p.lastAccruedAt)));
+ const progressDaily=live.reduce((sum,p)=>sum+(p.principal*rate/10_000n)*elapsed(p)/BigInt(V3_PERIOD_SECONDS),0n);
+ const progressCompound=live.reduce((sum,p)=>sum+(p.compoundedBasis*rate/10_000n)*elapsed(p)/BigInt(V3_PERIOD_SECONDS),0n);
+ return {now,nextAt,secondsRemaining,activityRemaining,estimatedDaily,estimatedCompound,progressDaily,progressCompound};
 }
 export function v3Countdown(seconds:number){
  const n=Math.max(0,Math.floor(seconds));

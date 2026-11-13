@@ -5,6 +5,7 @@
 import {Coins,Info,ShieldAlert} from 'lucide-react';
 import {v3PrepareUserClaims,type V3ClaimLedger} from './v3-claim-balance';
 import {formatV3Amount} from './v3-format';
+import DigitalValue from './DigitalValue';
 import './v3-claims-readout.css';
 
 export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3ClaimLedger}){
@@ -18,21 +19,21 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
   <div className="gv3-claims-heading"><h2><Coins size={19}/> Internal Current · BNB Testnet</h2>
    <small>Confirmed block {claims.block.toLocaleString('en-US')}</small></div>
   <div className="gv3-current-total"><small>Available internal account credit</small>
-   <strong>{formatV3Amount(claims.internalCurrent)} {unit}</strong>
+   <strong><DigitalValue size="hero" value={formatV3Amount(claims.internalCurrent)} unit={unit}/></strong>
    <span>Recorded in your account; daily accrual does not transfer tokens to your wallet.</span></div>
   <div className="gv3-claim-grid">
    <div><small>Daily claims available</small>
-    <strong>{formatV3Amount(claims.outstandingDaily)} {unit}</strong></div>
+    <strong><DigitalValue value={formatV3Amount(claims.outstandingDaily)} unit={unit}/></strong></div>
    <div><small>Profit-on-profit claims available</small>
-    <strong>{formatV3Amount(claims.outstandingCompound)} {unit}</strong></div>
+    <strong><DigitalValue value={formatV3Amount(claims.outstandingCompound)} unit={unit}/></strong></div>
    <div><small>Referral claims available</small>
-    <strong>{formatV3Amount(claims.outstandingReferral)} {unit}</strong></div>
+    <strong><DigitalValue value={formatV3Amount(claims.outstandingReferral)} unit={unit}/></strong></div>
    <div><small>Network milestone claims available</small>
-    <strong>{formatV3Amount(claims.outstandingNetwork)} {unit}</strong></div>
+    <strong><DigitalValue value={formatV3Amount(claims.outstandingNetwork)} unit={unit}/></strong></div>
    <div><small>Reserved for pending requests</small>
-    <strong>{formatV3Amount(claims.pendingInternal)} {unit}</strong></div>
+    <strong><DigitalValue value={formatV3Amount(claims.pendingInternal)} unit={unit}/></strong></div>
    <div><small>Maximum for one new request under current cooldown/cap</small>
-    <strong>{formatV3Amount(claims.maxSingleRequest)} {unit}</strong></div>
+    <strong><DigitalValue value={formatV3Amount(claims.maxSingleRequest)} unit={unit}/></strong></div>
   </div>
   <p className="gv3-claims-warning"><Info size={17}/> These amounts are recorded TESTNET claims, not transferable wallet funds.
    Total V3 cash shortfall is {formatV3Amount(claims.overallUnfundedLiability)} {unit}.

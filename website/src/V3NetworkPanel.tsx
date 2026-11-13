@@ -3,6 +3,7 @@ import {ArrowUpRight,Network,Users} from 'lucide-react';
 import type {V3Snapshot} from './v3-chain';
 import type {V3Action} from './v3-actions';
 import {formatV3Amount as money} from './v3-format';
+import DigitalValue from './DigitalValue';
 
 const short=(address:string)=>address.slice(0,9)+'…'+address.slice(-6);
 const stages=[500,1000,3000,5000,10000,30000,50000,100000,300000,500000,1000000,3000000,5000000,10000000];
@@ -20,15 +21,15 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
   <section className="gv3-network-hero"><div><span className="gv3-kicker">NETWORK & REFERRALS</span>
    <h2>Progress with a clear view</h2><p>Qualification, referral claims and milestone rewards come from the verified V3 test contract.</p></div><Network size={27}/>
    <div className="gv3-network-stats">
-    <div><small>Qualified directs</small><strong>{view.qualifiedDirects} <em>/ {view.requiredDirects}</em></strong><span>Each direct holds at least 100 TEST principal</span></div>
-    <div><small>Balanced qualifying volume</small><strong>{money(view.qualifiedVolume)} <em>/ {money(view.requiredVolume)}</em></strong><span>Branch caps apply to the upgrade</span></div>
-    <div><small>Current / maximum rate</small><strong>{view.dailyRateBps/100}% <em>/ {view.maximumRateBps/100}%</em></strong><span>Both conditions must be met for the maximum</span></div>
+    <div><small>Qualified directs</small><strong><DigitalValue value={String(view.qualifiedDirects)}/><em>/ {view.requiredDirects}</em></strong><span>Each direct holds at least 100 TEST principal</span></div>
+    <div><small>Balanced qualifying volume</small><strong><DigitalValue value={money(view.qualifiedVolume)}/><em>/ {money(view.requiredVolume)}</em></strong><span>Branch caps apply to the upgrade</span></div>
+    <div><small>Current / maximum rate</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/><em>/ {view.maximumRateBps/100}%</em></strong><span>Both conditions must be met for the maximum</span></div>
    </div>
   </section>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Recorded team claims</h3><Users size={18}/></div>
    <div className="gv2-detail"><span>Referrer</span><b>{/^0x0{40}$/i.test(view.referrer)?'None':view.referrer}</b></div>
-   <div className="gv2-detail"><span>Available referral claim</span><b>{money(view.referralAvailable)} TEST</b></div>
-   <div className="gv2-detail"><span>Available network milestone claim</span><b>{money(view.networkAvailable)} TEST</b></div>
+   <div className="gv2-detail"><span>Available referral claim</span><b><DigitalValue value={money(view.referralAvailable)} unit="TEST"/></b></div>
+   <div className="gv2-detail"><span>Available network milestone claim</span><b><DigitalValue value={money(view.networkAvailable)} unit="TEST"/></b></div>
    <div className="gv2-detail"><span>Reserved milestone claim</span><b>{money(view.networkReserved)} TEST</b></div>
    <div className="gv2-detail"><span>Lifetime recorded milestone claims</span><b>{money(view.cumulativeNetwork)} TEST</b></div>
    <p>These are test claims. Manager approval, actual test-token funding and a confirmed payout remain separate steps.</p>
