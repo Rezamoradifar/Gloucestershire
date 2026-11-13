@@ -206,3 +206,30 @@
 @media(prefers-reduced-motion:reduce){
  .gv2-classic .gv2-premium-shortcut-grid button,.gv2-classic .gv2-classic-quick-grid button{transition:none;transform:none}
 }
+
+/* Small, neutral contract transparency text replaces the oversized warning card.
+   Important risk information remains accessible without dominating the account UI. */
+.gv2-classic .gv2-contract-disclosure{
+ margin-top:17px;padding:0;border:0;background:transparent;box-shadow:none;
+ color:#9caebd;font-size:11px;line-height:1.7;
+}
+.gv2-classic .gv2-contract-disclosure>p{
+ display:flex;align-items:flex-start;gap:8px;margin:0 0 8px;
+ font-size:11px;line-height:1.65;color:#b7c2c9;
+}
+.gv2-classic .gv2-contract-disclosure>p svg{
+ width:15px;height:15px;flex-shrink:0;margin-top:2px;color:#c6aa75;
+}
+.gv2-classic .gv2-contract-disclosure summary{
+ display:list-item;width:fit-content;padding:3px 0;cursor:pointer;
+ color:#d9c18e;font-size:11px;text-decoration:underline;text-underline-offset:3px;
+}
+.gv2-classic .gv2-contract-disclosure details>p{
+ max-width:750px;margin:10px 0 0;padding:0;
+ font-size:11px;line-height:1.75;color:#acbbc4;
+}
+.gv2-classic .gv2-contract-disclosure summary:focus-visible{outline:2px solid #d8c18d;outline-offset:3px}
+@media(max-width:600px){
+ .gv2-classic .gv2-contract-disclosure{margin-top:12px}
+ .gv2-classic .gv2-contract-disclosure>p{font-size:10px;line-height:1.6}
+}
