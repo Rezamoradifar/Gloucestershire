@@ -19,7 +19,7 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
    <small>Confirmed on-chain block {claims.block.toLocaleString('en-US')}</small>
   </div>
   <div className="gv3-internal-current">
-   <span>Current داخلی حساب · سود ثبت‌شده قابل درخواست</span>
+   <span>Current داخلی حساب · سود ثبت‌شده، نه وجه نقد قابل پرداخت</span>
    <strong data-testid="v3-internal-current">{v2Money(claims.internalCurrent,18,6)} <small>{unit}</small></strong>
    <p><Wallet size={15}/> Only internal ledger credit. No daily reward or profit-on-profit token was sent to your wallet.</p>
   </div>
