@@ -10,3 +10,20 @@
 .gv3-claims-warning svg{flex-shrink:0;margin-top:2px}
 .gv3-claims-error{display:flex;align-items:center;gap:10px;color:#ffd5c2}
 @media(max-width:540px){.gv3-claims-readout{padding:14px}.gv3-claim-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Verified Current داخلی — visible, precise, separate from wallet funds. */
+.gv3-internal-current{padding:20px 22px;border:1px solid #c1a16888;border-radius:15px;background:linear-gradient(130deg,#243937,#162732);display:grid;gap:9px;margin-bottom:15px}
+.gv3-internal-current>span{font-size:13px;font-weight:650;line-height:1.6;color:#e5d1a2}
+.gv3-internal-current>strong{font-size:clamp(24px,4vw,40px);font-variant-numeric:tabular-nums;color:#fff1c9;font-weight:800;line-height:1.25;overflow-wrap:anywhere}
+.gv3-internal-current>strong small{font-size:clamp(12px,1.9vw,15px);font-weight:600;color:#d0c1a4}
+.gv3-internal-current>p{display:flex;gap:8px;align-items:flex-start;color:#cbd9d9;font-size:12px;line-height:1.6;margin:0}
+.gv3-internal-current>p svg{flex-shrink:0;margin-top:2px;color:#e6c981}
+.gv3-claim-grid>div span{font-size:11px;line-height:1.6;color:#aebfc2}
+.gv3-internal-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:13px}
+.gv3-internal-summary>div{min-width:0;display:grid;gap:8px;background:#172b34;border:1px solid #4d5f65;padding:12px 15px;border-radius:11px}
+.gv3-internal-summary small{font-size:11px;color:#c8c9ba;line-height:1.5}
+.gv3-internal-summary b{font-size:15px;color:#f2ddb0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+@media(max-width:540px){
+ .gv3-internal-current{padding:15px 14px}
+ .gv3-internal-summary{grid-template-columns:minmax(0,1fr)}
+}
