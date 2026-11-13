@@ -77,11 +77,18 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
 
     mapping(address => User) public users;
     mapping(address => Position[]) private positions;
+    // Exact outstanding claim split: dashboard must not reconstruct this split
+    // from cumulative totals after withdrawals/reinvestment.
+    mapping(address => mapping(uint256 => uint256)) public claimableDaily;
+    mapping(address => mapping(uint256 => uint256)) public claimableCompound;
+    mapping(uint256 => uint256) public reservedDailyByRequest;
+    mapping(uint256 => uint256) public reservedCompoundByRequest;
     Withdrawal[] private withdrawals;
     mapping(address => uint256[]) private userWithdrawalIds;
 
     event DepositRetained(address indexed user,uint256 indexed positionId,uint256 amount);
     event DailyClaimAccrued(address indexed user,uint256 indexed positionId,uint256 personal,uint256 compounded,uint256 total,uint256 at);
+    event ProfitClaimSplitReserved(uint256 indexed requestId,uint256 personal,uint256 compounded);
     event ReferralClaimAccrued(address indexed upline,address indexed source,uint8 level,uint256 amount);
     event ProfitReinvested(address indexed user,uint256 indexed fromPosition,uint256 newPositionId,uint256 amount);
     event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee);
@@ -244,6 +251,8 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         p.lastAccruedAt=uint64(block.timestamp);
         p.availableProfit+=gross;
         p.compoundedBasis+=gross;
+        claimableDaily[who][positionId]+=personal;
+        claimableCompound[who][positionId]+=compound;
         p.cumulativeDaily+=personal;
         p.cumulativeCompound+=compound;
         profitLiability+=gross;
@@ -282,6 +291,9 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         if(u.capital+amount>50_000 ether&&!u.vipKyc)revert NotEligible();
         p.availableProfit-=amount;
         p.compoundedBasis-=amount;
+        uint256 personalUsed=Math.min(amount,claimableDaily[msg.sender][positionId]);
+        claimableDaily[msg.sender][positionId]-=personalUsed;
+        claimableCompound[msg.sender][positionId]-=(amount-personalUsed);
         profitLiability-=amount;
         principalLiability+=amount;
         u.capital+=amount;
@@ -307,8 +319,15 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         _beginRequest(msg.sender);
         p.availableProfit-=amount;
         p.compoundedBasis-=amount; // pending profit MUST NOT continue compounding
+        uint256 personalPart=Math.min(amount,claimableDaily[msg.sender][positionId]);
+        uint256 compoundPart=amount-personalPart;
+        claimableDaily[msg.sender][positionId]-=personalPart;
+        claimableCompound[msg.sender][positionId]-=compoundPart;
         p.reservedProfit+=amount;
         id=_addWithdrawal(msg.sender,positionId,amount,0,0);
+        reservedDailyByRequest[id]=personalPart;
+        reservedCompoundByRequest[id]=compoundPart;
+        emit ProfitClaimSplitReserved(id,personalPart,compoundPart);
     }
     function requestReferral(uint256 amount) external nonReentrant active returns(uint256 id) {
         User storage u=users[msg.sender];
@@ -411,7 +430,7 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         Withdrawal storage r=withdrawals[id];
         if(r.status!=0&&r.status!=1)revert WrongState();
         r.status=4;
-        _release(r);
+        _release(id,r);
         emit WithdrawalReleased(id,4);
     }
     function cancelWithdrawal(uint256 id) external {
@@ -419,10 +438,10 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         if(msg.sender!=r.beneficiary||(r.status!=0&&r.status!=1)||
            block.timestamp<uint256(r.requestedAt)+WITHDRAWAL_COOLDOWN)revert Locked();
         r.status=5;
-        _release(r);
+        _release(id,r);
         emit WithdrawalReleased(id,5);
     }
-    function _release(Withdrawal storage r) private {
+    function _release(uint256 id,Withdrawal storage r) private {
         User storage u=users[r.beneficiary];
         u.pendingRequest=false;
         if(r.kind==1){
@@ -432,6 +451,10 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
             p.reservedProfit-=r.gross;
             p.availableProfit+=r.gross;
             p.compoundedBasis+=r.gross;
+            claimableDaily[r.beneficiary][r.positionId]+=reservedDailyByRequest[id];
+            claimableCompound[r.beneficiary][r.positionId]+=reservedCompoundByRequest[id];
+            delete reservedDailyByRequest[id];
+            delete reservedCompoundByRequest[id];
         }else{
             u.referralReserved-=r.gross;
             u.referralAvailable+=r.gross;
