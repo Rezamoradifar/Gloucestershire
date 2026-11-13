@@ -1,0 +1,28 @@
+name: Isolated Global V2 prototype checks
+on:
+  pull_request:
+    paths:
+      - 'contracts/v2/**'
+      - 'scripts/compile-global-v2.mjs'
+      - 'test/global-v2-prototype.test.mjs'
+      - '.github/workflows/global-v2-prototype.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  solc-and-local-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - name: Compile immutable V2 prototype with size gate
+        run: node scripts/compile-global-v2.mjs
+      - name: Test isolated funded accounting and manager-controlled withdrawals
+        run: node --test --test-concurrency=1 test/global-v2-prototype.test.mjs
