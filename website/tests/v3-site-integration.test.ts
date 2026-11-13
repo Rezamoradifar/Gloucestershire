@@ -15,14 +15,15 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   expect(v3ParseReleaseConfig({...confirmed,deploymentTx:'0x000'})).toBe(null);
   expect(v3ParseReleaseConfig(confirmed)?.address).toBe(confirmed.address);
  });
- it('always keeps original V2 dashboard available, and gates new primary V3 route',()=>{
+ it('retires the V2 entry point in a verified V3 release',()=>{
   const root=file('Root.tsx');
-  expect(root).toContain("const DashboardV2=lazy(()=>import('./V2Dashboard'))");
+  expect(root).toContain("const DashboardV2=!v3Only?lazy(()=>import('./V2Dashboard')):null");
   expect(root).toContain("const DashboardV3=lazy(()=>import('./V3Dashboard'))");
-  expect(root).toContain("location.hash==='#v2-dashboard'");
+  expect(root).toContain("if(location.hash==='#v2-dashboard')return v3Only?'v3':'v2'");
   expect(root).toContain("location.hash==='#v3-dashboard'");
   expect(root).toContain("VITE_V3_PRIMARY_DASHBOARD==='verified-testnet'");
   expect(root).toContain("if(location.hash==='#dashboard')return v3Primary?'v3':'v2'");
+  expect(file('V3Dashboard.tsx')).not.toContain('href="#v2-dashboard"');
  });
  it('V3 money reads require verified bytecode and do not import old V2 contract state',()=>{
   const code=file('v3-chain.ts');

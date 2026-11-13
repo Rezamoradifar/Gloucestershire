@@ -37,6 +37,13 @@ grep -RilF '0xA98D8d3709f5D3730BAD5d76C334731784e7CF07' website/dist/assets --in
 if grep -RilE '0x4c0f6141b18971db4b14e45c0be8cddb09febc14|/api/trades\?limit|/api/config' website/dist/assets --include='*.js' >/dev/null; then
  echo "V2_SITE_OLD_CONTRACT_REFERENCE_DETECTED"; exit 1;
 fi
+if [ "${GLOBAL_V3_RELEASE_PROFILE:-}" = routed-testnet ]; then
+ [ "${VITE_V3_PRIMARY_DASHBOARD:-}" = verified-testnet ] || { echo "V3_SITE_PRIMARY_FLAG_MISSING"; exit 1; }
+ if find website/dist/assets -maxdepth 1 -type f -name 'V2Dashboard-*.js' -print -quit | grep -q . ||
+    grep -RilE 'Open existing V2 dashboard|V2 ON-CHAIN TRANSPARENCY|Global V2 testnet terms' website/dist/assets --include='*.js' >/dev/null; then
+  echo "V3_SITE_RETIRED_FRONTEND_DETECTED"; exit 1;
+ fi
+fi
 echo "V2_SITE_BUILD_AND_TEST_PASS"
 
 stage=$(mktemp -d /opt/global-v2-site-stage.XXXXXX)
@@ -138,6 +145,14 @@ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.
 cmp -s "$stage/api-before.json" "$stage/api-after.json" || { echo "V2_SITE_BACKEND_CHANGED"; exit 1; }
 
 changed=0
+# Once the new HTML, every current hashed JS/CSS asset and the unchanged API
+# have been verified, remove only obsolete hashed web assets from this served
+# directory. Other release directories, backups and accounting data are not
+# within this operation. On failure the current site remains installed and the
+# wrapper does not report the full release as complete.
+if [ "${GLOBAL_V3_RELEASE_PROFILE:-}" = routed-testnet ]; then
+ python3 scripts/prune-retired-v3-site-assets.py --site-root "$site_root" --dist website/dist --apply
+fi
 trap - EXIT INT TERM
 rm -rf -- "$stage"
 echo "V2_SITE_ONLY_INSTALLED"

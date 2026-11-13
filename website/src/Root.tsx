@@ -1,23 +1,18 @@
 import {lazy,Suspense,useEffect,useState} from 'react';
 import Landing from './Landing';
 import LoadingBoundary from './LoadingBoundary';
-import {v3ParseReleaseConfig} from './v3-site-config';
 
-// Never reuse V2 state in V3, or silently migrate existing accounts.
-// V3 becomes the primary /#dashboard ONLY after a verified deployed code hash
-// is pinned and an authorized operator opts in to this explicit testnet switch.
-const DashboardV2=lazy(()=>import('./V2Dashboard'));
+// A verified V3 release excludes the retired dashboard from its bundle.
+const v3Only=import.meta.env.VITE_V3_PRIMARY_DASHBOARD==='verified-testnet';
+const DashboardV2=!v3Only?lazy(()=>import('./V2Dashboard')):null;
 const DashboardV3=lazy(()=>import('./V3Dashboard'));
-const v3Configured=Boolean(v3ParseReleaseConfig({
- address:import.meta.env.VITE_V3_CONTRACT_ADDRESS,
- runtimeHash:import.meta.env.VITE_V3_RUNTIME_HASH,
- deploymentTx:import.meta.env.VITE_V3_DEPLOYMENT_TX
-}));
-const v3Primary=v3Configured&&
- import.meta.env.VITE_V3_PRIMARY_DASHBOARD==='verified-testnet';
+// If a V3 release has incomplete identity values it remains locked, rather
+// than falling back to a retired contract. The release installer validates all
+// three values before publishing the site.
+const v3Primary=v3Only;
 type Route='landing'|'v2'|'v3';
 function currentRoute():Route{
- if(location.hash==='#v2-dashboard')return 'v2';
+ if(location.hash==='#v2-dashboard')return v3Only?'v3':'v2';
  if(location.hash==='#v3-dashboard')return 'v3';
  if(location.hash==='#dashboard')return v3Primary?'v3':'v2';
  return 'landing';
@@ -44,7 +39,7 @@ export default function Root(){
   <Suspense fallback={<div className="dashboard-loading">Checking pinned V3 BNB Testnet deployment…</div>}>
    <DashboardV3/>
   </Suspense>
-  :route==='v2'?
+  :route==='v2'&&DashboardV2?
   <Suspense fallback={<div className="dashboard-loading">Verifying existing V2 testnet wallet and contract…</div>}>
    <DashboardV2/>
   </Suspense>

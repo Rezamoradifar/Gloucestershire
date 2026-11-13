@@ -218,7 +218,7 @@ export default function V3Dashboard(){
    <div className="sidebar-caption">V3 TEST WORKSPACE</div>
    <nav>{menus.filter(x=>x.id!=='admin'||Boolean(view?.canManage)).map(({id,label,Icon})=>
     <button key={id} onClick={()=>navigate(id)} className={tab===id?'active':''} aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{label}</span></button>)}</nav>
-   <div className="gv2-sidebar-bottom"><a href="#v2-dashboard">Open existing V2 dashboard</a><a href="#">Global landing</a>
+   <div className="gv2-sidebar-bottom"><a href="#">Global landing</a>
     <small>V3 BNB TESTNET · No real assets</small></div>
   </aside>
   {menuOpen&&<button className="gv2-scrim" onClick={()=>setMenuOpen(false)} aria-label="Close navigation"/>}
@@ -240,8 +240,8 @@ export default function V3Dashboard(){
     </div>{config&&<a target="_blank" rel="noreferrer" href={V3_EXPLORER+'/address/'+config.address}>Contract <ExternalLink size={14}/></a>}</section>
     {!config&&<section className="gv2-panel gv3-not-ready" role="status"><ShieldAlert size={26}/>
      <h2>V3 integration is prepared, but activation is locked</h2>
-     <p>No V3 address or hash has been invented. An authorized operator must first deploy the separate V3 BNB Testnet contract, independently verify its bytecode and activate this test page. Existing V2 accounts and balances are unchanged.</p>
-     <a href="#v2-dashboard">Return to verified V2 dashboard <ArrowUpRight size={16}/></a>
+     <p>The testnet contract must be deployed and independently verified before this dashboard can show account data.</p>
+     <a href="#">Return to Global landing <ArrowUpRight size={16}/></a>
     </section>}
     {config&&<><div className="gv3-notice"><Info size={16}/> V3 records <b>unfunded TESTNET contractual claims</b>. These are NOT real USDT, verified business earnings, guaranteed returns or available wallet cash. Manager approval is only for withdrawals; daily profit-on-profit needs an eligible check-in and a gas-paying keeper transaction.</div>
     {error&&<p className="gv2-error" role="alert">{error}</p>}
@@ -263,7 +263,7 @@ export default function V3Dashboard(){
        <div className="gv2-premium-board-main"><div className="gv2-premium-hero-balance">
         <span className="gv2-premium-caption">Recorded V3 principal · not redeemable cash</span>
         <strong>{show(view.capital)} <em>TEST USDT</em></strong>
-        <p>Only blockchain-confirmed records are shown. V2 accounts are not migrated.</p>
+        <p>Only blockchain-confirmed records for this contract are shown.</p>
        </div><div className="gv2-premium-hero-side">
         <small>Internal Current · {view.registered?'Registered':'Unregistered'} · {view.eligible?'Eligible':'Check-in required'}</small>
         <h2>{claims?show(claims.internalCurrent):'—'} TEST USDT</h2>
@@ -328,7 +328,7 @@ export default function V3Dashboard(){
       <div className="gv2-detail"><span>Cumulative V3 test deposits</span><b>{show(view.originalDeposits)}</b></div>
       <div className="gv2-detail"><span>Cumulative manual reinvestments</span><b>{show(view.reinvestments)}</b></div>
       {!view.registered&&<button className="gv2-primary" disabled={busy} onClick={()=>void perform({kind:'register',referrer:referrer||ZeroAddress},'Register this new V3 testnet account?')}>Register V3 wallet</button>}
-      <p>No customer or balance migration from V2 has occurred. Your V2 profile remains at <a href="#v2-dashboard">the existing dashboard</a>.</p>
+      <p>This profile shows only the current contract's confirmed account records.</p>
      </section>}
      {tab==='withdrawals'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Request a V3 testnet withdrawal</h3><Clock3 size={18}/></div>
       <p>Claimed profit is a recorded obligation, not escrowed cash. Manager approval and actual TEST token funding are required before payment.</p>
@@ -367,12 +367,12 @@ export default function V3Dashboard(){
       <div className="gv2-detail"><span>Withdrawals</span><b>Manager-approved; separate funding & payout</b></div>
       <div className="gv2-detail"><span>Principal lock</span><b>90 days, then 30% withdrawal penalty</b></div>
       <a className="gv2-explorer" href={V3_EXPLORER+'/address/'+config.address} target="_blank" rel="noreferrer">Review on BscScan <ExternalLink size={16}/></a>
-      <p>Unaudited isolated testnet prototype. This interface never creates real USDT or a backed investment guarantee. V2 records cannot be migrated silently.</p>
+      <p>Unaudited isolated testnet prototype. This interface never creates real USDT or a backed investment guarantee.</p>
      </section>}
      {tab==='contract'&&<V3PaymentMap/>}
     </div>}
     </>}
-    <footer className="gv2-foot">GLOBAL DROP TRADE · V3 ISOLATED TESTNET · No real deposits or guaranteed yield · <a href="#v2-dashboard">Existing V2 dashboard</a></footer>
+    <footer className="gv2-foot">GLOBAL DROP TRADE · V3 ISOLATED TESTNET · No real deposits or guaranteed yield</footer>
    </main>
   </div>
   <nav className="gv2-mobile-bottom" aria-label="V3 five-tab mobile navigation">
