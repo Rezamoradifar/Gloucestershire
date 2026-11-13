@@ -66,3 +66,45 @@
  .gv2-classic .gv2-history-summary strong{font-size:16px}
  .gv2-classic .gv2-history-scan-actions{gap:18px}
 }
+
+
+/* 13 Nov visual reference: narrow portrait layout from the original Global panel.
+   Layout-only: historical events and RPC errors still come strictly from V2. */
+@media(max-width:600px){
+ .gv2-classic .gv2-classic-history{
+  background:#101824;border:1px solid #344152;box-shadow:none;
+  border-radius:18px;padding:20px 18px 26px;
+ }
+ .gv2-classic .gv2-history-header h2{font-size:20px;line-height:1.35}
+ .gv2-classic .gv2-history-summary{gap:9px;margin:17px 0 19px}
+ .gv2-classic .gv2-history-summary>div{background:#142133;border-color:#384b63;padding:13px;border-radius:12px}
+ .gv2-classic .gv2-history-filters{gap:17px 13px;margin:18px 0 23px}
+ .gv2-classic .gv2-history-filters label{gap:8px}
+ .gv2-classic .gv2-history-filters label>span{font-size:13px;color:#a9b3c2}
+ .gv2-classic .gv2-history-filters :is(input,select){
+  height:53px;background:#132033;border:1px solid #586b85;
+  border-radius:12px;color:#f3f5f9;font-size:15px;padding:11px 15px;
+ }
+ .gv2-classic .gv2-history-table-toolbar{margin:20px 0 16px}
+ .gv2-classic .gv2-history-table-toolbar strong{font-size:14px}
+ .gv2-classic .gv2-history-table-toolbar button{color:#dec18b;font-size:13px}
+ .gv2-classic .gv2-history-rpc-error{font-size:13px;color:#dd9c94;line-height:1.75;margin:13px 0 18px}
+ .gv2-classic .gv2-history-empty{
+  background:#101823;border:1px dashed #344152;border-radius:17px;
+  min-height:120px;padding:28px 20px;color:#afb9c7;font-size:13px;line-height:1.85;
+  margin:18px 0 25px;
+ }
+ .gv2-classic .gv2-history-pages{gap:12px;margin:17px 0 29px}
+ .gv2-classic .gv2-history-pages button{border:1px solid #4b4439;border-radius:11px;padding:12px;font-size:12px}
+ .gv2-classic .gv2-history-pages span{font-size:12px}
+ .gv2-classic .gv2-history-scan-actions{
+  border-top:1px solid #394454;padding-top:23px;gap:22px;
+ }
+ .gv2-classic .gv2-history-scan-actions strong{font-size:15px}
+ .gv2-classic .gv2-history-scan-actions p{font-size:12px;line-height:1.85}
+ .gv2-classic .gv2-history-scan-buttons{gap:11px}
+ .gv2-classic .gv2-history-scan-buttons button{
+  background:#222c3b;border:1px solid #736148;color:#e9d2a7;
+  min-height:52px;font-size:13px;padding:12px 16px;border-radius:12px;
+ }
+}
