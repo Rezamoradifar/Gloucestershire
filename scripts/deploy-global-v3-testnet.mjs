@@ -205,7 +205,8 @@ async function main(){
   let approved=false;
   try{
    for(let attempt=1;attempt<=5;attempt++){
-    const answer=await rl.question('Type DEPLOY NEW V3 BNB TESTNET ONLY: ');
+    process.stdout.write('Type DEPLOY NEW V3 BNB TESTNET ONLY: ');
+    const answer=await rl.question('');
     if(answer.trim()==='DEPLOY NEW V3 BNB TESTNET ONLY'){
      approved=true;
      break;
