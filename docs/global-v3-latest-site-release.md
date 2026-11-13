@@ -21,6 +21,22 @@ V3 retains 100% of **mock TEST-token** deposits inside the new vault. V2 routed 
 
 User-triggered and hourly keeper-triggered **automatic profit-on-profit** on V3 requires recent user check-in, a qualifying 24-hour settlement interval and a gas-funded on-chain transaction, but no manager approval. No absent days are backfilled. A test claim may be unbacked by vault cash; the site explicitly displays total unfunded liabilities. Payout still requires request, manager approval, exact TEST-token escrow or protected existing cash and separately confirmed payment to the original beneficiary. No guarantees.
 
+## Recovery after confirmed V3 deployment — NO second deploy
+
+If the server console contains **V3_PUBLIC_TESTNET_DEPLOYED_AND_VERIFIED** and an actual receipt was saved at `/var/lib/globaldroptrade/v3-prototype/deployment.json`, the contract **already exists**. An ethers `provider destroyed; cancelled request eth_getTransactionReceipt` exception can occur during teardown of an older `TransactionResponse.wait(3)` polling listener after the successful deployment. That exception does **not** authorize re-deployment.
+
+Use the existing code release, or fetch the new reviewed recovery release, then:
+
+```bash
+bash scripts/release-v3-testnet-and-website.sh --install-verified-site
+```
+
+The existing proof is mandatory and is checked against the public BNB Testnet chain-97 transaction receipt, actual deployed runtime hash, pinned compiled creation bytecode, original manager, fee wallet and exact mock token. If the on-chain proof fails, the installer stops before modifying the website; it will never fabricate an address or replay the deployment.
+
+The `--deploy-testnet-and-install` path also now automatically detects an existing successful proof, **skips all signing/contract creation**, verifies it independently and starts the site installation. The earlier ethers `sent.wait(3)` listener has been replaced with bounded read-only receipt + block-height polling for any future testnet deployment. The static site only counts as installed after `V3_TESTNET_PRIMARY_DASHBOARD_INSTALLED` appears in the **systemd service journal**, not merely a service-start acknowledgment.
+
+**Do not** delete the deployment proof, manually import owner keys, re-run `--init-deployer`, or send new mock tokens to create a second copy of the same contract.
+
 ## Staged deployment and release (root on the Global testnet VPS only)
 
 1. In /opt/global-v3-auto fetch the reviewed GitHub commit and check its SHA. Run Node v22 from /opt/globaldroptrade-node/node-v22.23.3-linux-x64/bin (adapt only for correct architecture) and npm ci --ignore-scripts --no-audit --no-fund.
