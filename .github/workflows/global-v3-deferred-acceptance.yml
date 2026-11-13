@@ -5,6 +5,7 @@ on:
       - 'contracts/v3/**'
       - 'scripts/compile-global-v3.mjs'
       - 'test/global-v3-*.test.mjs'
+      - 'docs/global-v3-sequential-acceptance-and-audit-gates.md'
       - '.github/workflows/global-v3-deferred-acceptance.yml'
   workflow_dispatch:
 permissions:
