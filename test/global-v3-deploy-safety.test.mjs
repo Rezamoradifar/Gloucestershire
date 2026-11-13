@@ -23,6 +23,25 @@ test('V3 deploy is a separate opt-in BNB TESTNET-only signing process with on-ch
  for(const prohibited of ['process.env.PRIVATE_KEY','--mainnet','chainId:56','TRANSFER_USDT','token.mint('])
   assert.equal(deploy.includes(prohibited),false,prohibited);
 });
+test('V3 can reuse only the pinned prior testnet deployer, not admin or an arbitrary wallet',()=>{
+ for(const required of [
+  "--check-old-testnet-deployer",
+  "--deploy-old-testnet-deployer",
+  "getAddress('0xCf6Eb63ba4D2174CA2759eff57a720a54416b71d')",
+  "/etc/globaldroptrade/new-deployer-testnet-v1/deployer.key",
+  "if(getAddress(wallet.address)!==OLD_TESTNET_DEPLOYER",
+  "PREVIOUS_V2_TESTNET_SIGNER_FILE_MUST_BE_ROOT_PRIVATE",
+  "V3_PRIOR_TESTNET_DEPLOYER_CHECK",
+  "INTERACTIVE_DEPLOYMENT_CONFIRMATION_REQUIRED",
+  "oldV2Unmodified:true",
+  "transactionSent:false"
+ ])assert.ok(deploy.includes(required),required);
+ // Neither old-admin/owner file nor raw key text should be printed or copied.
+ assert.equal(deploy.includes('owner.key'),false);
+ assert.equal(deploy.includes('console.log(raw)'),false);
+ assert.equal(deploy.includes('process.env.PRIVATE_KEY'),false);
+});
+
 test('gas-only keeper is isolated, separately signed and not allowed to approve withdrawals',()=>{
  for(const expected of [
   'DynamicUser=yes','LoadCredential=keeper-gas-key:',
