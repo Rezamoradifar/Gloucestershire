@@ -29,6 +29,7 @@ test('requires actual V3 deployment proof on BNB Testnet before activating prima
 test('V3 site installer cannot activate unverified V3 or erase existing V2 site/history',()=>{
  const installer=fs.readFileSync(new URL('../scripts/install-v3-site-when-verified.sh',import.meta.url),'utf8');
  const launcher=fs.readFileSync(new URL('../scripts/launch-v3-site-after-deployment.sh',import.meta.url),'utf8');
+ const oneShot=fs.readFileSync(new URL('../scripts/release-v3-testnet-and-website.sh',import.meta.url),'utf8');
  const verified=fs.readFileSync(new URL('../scripts/verify-v3-site-deployment.mjs',import.meta.url),'utf8');
  for(const needed of [
   'node scripts/verify-v3-site-deployment.mjs --check',
@@ -38,6 +39,12 @@ test('V3 site installer cannot activate unverified V3 or erase existing V2 site/
  ])assert.ok(installer.includes(needed),needed);
  assert.ok(launcher.includes('systemd-run'));
  assert.ok(launcher.includes('V3_SITE_SERVICE_STARTED'));
+ assert.ok(oneShot.includes('--check-old-testnet-deployer'));
+ assert.ok(oneShot.includes('--deploy-old-testnet-deployer'));
+ assert.ok(oneShot.includes('V3_TESTNET_RELEASE_STARTED_NOT_YET_COMPLETED'));
+ assert.ok(oneShot.includes('scripts/verify-v3-site-deployment.mjs --check'));
+ assert.ok(oneShot.includes('scripts/launch-v3-site-after-deployment.sh --install'));
+ assert.ok(oneShot.indexOf('--check-old-testnet-deployer')<oneShot.indexOf('--deploy-old-testnet-deployer'));
  assert.ok(verified.includes("rpc.getTransactionReceipt(proof.deploymentTx)"));
  assert.ok(verified.includes("keccak256(code).toLowerCase()!==proof.runtimeHash"));
  assert.ok(verified.includes("getAddress(asset)!==TOKEN"));
