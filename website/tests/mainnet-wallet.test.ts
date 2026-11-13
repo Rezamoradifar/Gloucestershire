@@ -15,15 +15,13 @@ beforeEach(()=>{
 afterEach(async()=>{await wallet?.wallets.disconnect();vi.unstubAllGlobals();vi.unstubAllEnvs();});
 
 describe('BNB mainnet wallet configuration',()=>{
- it('uses verified runtime chain 56 for the mobile proposal and RPC map before requesting account access',async()=>{
+ it('refuses mainnet runtime configuration in the V2-only testnet release',async()=>{
   vi.stubEnv('VITE_CHAIN_ID','');vi.stubEnv('VITE_VAULT_ADDRESS','');
   const fetcher=vi.fn(async()=>Response.json({version:1,chainId:56,vaultAddress:target}));vi.stubGlobal('fetch',fetcher);
-  const config=await import('../src/config');await config.loadRuntimeConfig();
-  expect(config.chainId).toBe(56);expect(config.chainName).toBe('BNB Smart Chain');expect(config.explorer).toBe('https://bscscan.com');
-  wallet=await import('../src/wallet');await wallet.wallets.connect('walletconnect');
-  expect(init).toHaveBeenCalledOnce();expect(init.mock.calls[0][0]).toMatchObject({optionalChains:[56],rpcMap:{56:'https://bsc-dataseed.bnbchain.org'}});
-  expect(Object.keys(init.mock.calls[0][0].rpcMap)).toEqual(['56']);expect(mobile.enable).toHaveBeenCalledOnce();expect(mobile.request).not.toHaveBeenCalled();
-  expect(()=>config.acceptPublicConfig({chainId:97,vaultAddress:target})).toThrow('different contracts');
+  const config=await import('../src/config');
+  await expect(config.loadRuntimeConfig()).rejects.toThrow(/approved isolated V2 testnet/i);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(init).not.toHaveBeenCalled();
  });
  it('adds and selects only mainnet in the SafePal browser when that network is missing',async()=>{
   const request=vi.fn().mockResolvedValue([address]);vi.stubGlobal('window',{safepalProvider:{request}});
