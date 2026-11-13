@@ -17,7 +17,7 @@ export const V2_RPC_SOURCES=Object.freeze([
 // Server tools use separate V2 RPC connections and never inherit the retired
 // vault's TRADES_RPC_URL, which can be 403 or have a different service policy.
 export async function openVerifiedV2ReadProvider({preferred=process.env.GLOBAL_V2_RPC_URL,
- sources=V2_RPC_SOURCES,timeoutMs=10000}={}){
+ sources=V2_RPC_SOURCES,timeoutMs=10000,requireLogs=false}={}){
  const urls=[...new Set([preferred,...sources].filter(Boolean))];
  if(!urls.length||urls.some(url=>typeof url!=='string'||!url.startsWith('https://')))
   throw Error('V2_VERIFIED_RPC_CONFIG_INVALID');
@@ -31,6 +31,12 @@ export async function openVerifiedV2ReadProvider({preferred=process.env.GLOBAL_V
    ]);
    if(Number(BigInt(chain))!==97||code==='0x'||keccak256(code).toLowerCase()!==V2_RPC_CODE_HASH)
     throw Error('V2_VERIFIED_RPC_IDENTITY_MISMATCH');
+   if(requireLogs){
+    // A chain-valid RPC may still block historical eth_getLogs.
+    const logs=await provider.getLogs({address:V2_RPC_VAULT,
+     fromBlock:V2_RPC_DEPLOY_BLOCK,toBlock:V2_RPC_DEPLOY_BLOCK});
+    if(!Array.isArray(logs))throw Error('V2_INDEX_LOG_ACCESS_UNAVAILABLE');
+   }
    return provider;
   }catch{provider?.destroy();}
  }
