@@ -98,7 +98,7 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
   const writable=new Contract(config.address,V3_ABI,signer);
   await writable.getFunction(name).staticCall(...args);
   const sent=await writable.getFunction(name)(...args);
-  const receipt=await sent.wait(3);
+  const receipt=await sent.wait(5);
   if(!receipt||receipt.status!==1)throw Error('V3 TESTNET action was not confirmed on-chain.');
   if(action.kind==='payWithdrawal'&&prior&&
      !eventMatches(receipt,config.address,'WithdrawalPaid',prior.id,prior.beneficiary))
@@ -132,10 +132,10 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
   if(allowance<amount){
    if(allowance>0n){
     const reset=await token.approve(config.address,0n);
-    if((await reset.wait(3))?.status!==1)throw Error('TEST token allowance reset not confirmed.');
+    if((await reset.wait(5))?.status!==1)throw Error('TEST token allowance reset not confirmed.');
    }
    const approval=await token.approve(config.address,amount);
-   if((await approval.wait(3))?.status!==1)throw Error('V3 TEST token approval not confirmed.');
+   if((await approval.wait(5))?.status!==1)throw Error('V3 TEST token approval not confirmed.');
   }
   const check=await v3ReadSession(walletProvider,wallet,config);
   try{
@@ -146,7 +146,7 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
   const vault=new Contract(config.address,V3_ABI,signer);
   await vault.deposit.staticCall(amount,getAddress(referrer));
   const sent=await vault.deposit(amount,getAddress(referrer));
-  const receipt=await sent.wait(3);
+  const receipt=await sent.wait(5);
   if(!receipt||receipt.status!==1)throw Error('V3 TESTNET deposit did not confirm.');
   return receipt.hash as string;
  }finally{provider.destroy();}
@@ -175,10 +175,10 @@ export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet
   if(allowance<amount){
    if(allowance>0n){
     const reset=await token.approve(config.address,0n);
-    if((await reset.wait(3))?.status!==1)throw Error('Funding allowance reset not confirmed.');
+    if((await reset.wait(5))?.status!==1)throw Error('Funding allowance reset not confirmed.');
    }
    const approval=await token.approve(config.address,amount);
-   if((await approval.wait(3))?.status!==1)throw Error('Exact test-token funding allowance not confirmed.');
+   if((await approval.wait(5))?.status!==1)throw Error('Exact test-token funding allowance not confirmed.');
   }
   const recheck=await v3ReadSession(walletProvider,wallet,config);
   try{
@@ -190,7 +190,7 @@ export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet
   const vault=new Contract(config.address,V3_ABI,signer);
   await vault.fundWithdrawal.staticCall(id);
   const tx=await vault.fundWithdrawal(id);
-  const receipt=await tx.wait(3);
+  const receipt=await tx.wait(5);
   if(!receipt||receipt.status!==1)
    throw Error('V3 TESTNET funding did not confirm. Review on-chain receipt before retry.');
   if(!eventMatches(receipt,config.address,'WithdrawalEscrowFunded',id))
