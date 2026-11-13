@@ -129,6 +129,26 @@ test('one funded event atomically records personal profit AND eligible tier-base
  await missing(vault.connect(signers[10]).settleFundedEarnings.staticCall(addresses[2],0,E('5'),id('different-proof')),'Locked');
 });
 
+test('all four uplines receive exact source-tier referral shares when VIP and KYC rules are met',async()=>{
+ await tx(vault.connect(signers[1]).register(ZeroAddress));
+ await tx(vault.setVipKyc(addresses[1],true));
+ await deposit(1,'50001');
+ for(let i=2;i<=4;i++)await deposit(i,'100',addresses[i-1]);
+ await tx(vault.connect(signers[5]).register(addresses[4]));
+ await tx(vault.setVipKyc(addresses[5],true));
+ await deposit(5,'50001',addresses[4]);
+ for(let i=1;i<=5;i++)await active(i);
+ await advance(86401);
+ for(let i=1;i<=5;i++)await active(i);
+ await settle(5,'10','four-level-funded');
+ assert.equal((await vault.accounts(addresses[5],token.target)).profit,E('10'));
+ assert.equal((await vault.accounts(addresses[4],token.target)).profit,E('1.6'));
+ assert.equal((await vault.accounts(addresses[3],token.target)).profit,E('0.8'));
+ assert.equal((await vault.accounts(addresses[2],token.target)).profit,E('0.6'));
+ assert.equal((await vault.accounts(addresses[1],token.target)).profit,E('0.4'));
+ assert.equal(await vault.profitLiability(token.target),E('13.4'));
+});
+
 test('ineligible referrer never gets a referral credit; no robot can make it active',async()=>{
  await deposit(1,'500');await deposit(2,'1000',addresses[1]);
  await active(1);await active(2);
