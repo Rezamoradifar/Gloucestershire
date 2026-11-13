@@ -18,7 +18,7 @@ export default function CustomerStatus({who,connected,disabled,onSubmit,initialC
   catch(e){if(id===revision.current)setError(errorText(e));}
   finally{inFlight.current=false;if(id===revision.current)setLoading(false);}
  }
- return <section className="panel"><div className="panel-title"><h2>Customer activity & KYC</h2></div><p className="muted">An authorized reporter, including an owner with that role, can review a registered customer and explicitly update their activity or KYC status. Active-direct counts follow the contract automatically. Set KYC only after completing your verification process.</p>
+ return <section id="global-customer-status" className="panel"><div className="panel-title"><h2>Customer activity & KYC</h2></div><p className="muted">An authorized reporter, including an owner with that role, can review a registered customer and explicitly update their activity or KYC status. Active-direct counts follow the contract automatically. Set KYC only after completing your verification process.</p>
   <label className="field">Registered customer wallet<input dir="ltr" value={customer} placeholder="0x…" disabled={!connected||busy} onChange={e=>{revision.current++;setCustomer(e.target.value);setLoaded(null);setReview(null);setError('');setNotice('');}}/></label>
   <button className="small-button" type="button" disabled={!connected||busy||!customer.trim()} onClick={()=>void load()}>{loading?'Checking…':'Load customer status'}</button>
   {error&&<p className="inline-error" role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
