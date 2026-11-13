@@ -1,0 +1,16 @@
+.gv2-reward-breakdown{margin:18px 0 22px;background:linear-gradient(130deg,#142b35,#1d2d37)!important;border:1px solid #405967!important}
+.gv2-reward-breakdown .gv2-panel-head h3{display:inline-flex;gap:9px;align-items:center;color:#f1dfb8}
+.gv2-reward-breakdown-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.gv2-reward-breakdown-grid>div{border-radius:12px;border:1px solid #40505c;background:#101e2a;padding:15px 14px;min-width:0;display:flex;flex-direction:column;gap:9px}
+.gv2-reward-breakdown-grid small{font-size:12px;color:#afc3cf;line-height:1.5}
+.gv2-reward-breakdown-grid strong{font-size:clamp(17px,2vw,23px);color:#eedbab;line-height:1.35;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.gv2-reward-breakdown-grid span{font-size:11px;line-height:1.5;color:#9db1bf}
+.gv2-reward-breakdown-grid .gv2-reward-requestable{border-color:#b49a5b;background:linear-gradient(145deg,#283538,#172b32)}
+.gv2-reward-breakdown>p{display:flex;align-items:flex-start;gap:9px;font-size:12px;color:#b9c6d1;line-height:1.65;margin:15px 0}
+.gv2-reward-breakdown>p svg{flex-shrink:0;margin-top:3px;color:#d7b877}
+.gv2-reward-breakdown .gv2-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.gv2-withdrawal-accounting{border-left:3px solid #bb9f69;background:#21313a;padding:10px 15px;margin:14px 0;border-radius:7px}
+.gv2-withdrawal-accounting p{margin:5px 0;line-height:1.6;font-size:12px}
+.gv2-withdrawal-accounting b{color:#f0dab0;font-variant-numeric:tabular-nums}
+@media(max-width:950px){.gv2-reward-breakdown-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.gv2-reward-breakdown-grid{grid-template-columns:minmax(0,1fr)}.gv2-reward-breakdown{padding:16px!important}}
