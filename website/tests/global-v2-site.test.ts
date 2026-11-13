@@ -55,6 +55,22 @@ describe('Global V2 public-site isolation',()=>{
   expect(css).toContain('.gv2-release');
   expect(css).toContain('.gv2-safety-disclosure');
  });
+ it('restores the classic Global sidebar, breadcrumb and mobile navigation with V2-only account data',()=>{
+  const dashboard=read('src/V2Dashboard.tsx');
+  const css=read('src/v2-classic-shell.css');
+  expect(dashboard).toContain('gv2 shell gv2-classic');
+  expect(dashboard).toContain('sidebar gv2-sidebar');
+  expect(dashboard).toContain('workspace gv2-workspace');
+  expect(dashboard).toContain('topbar gv2-classic-topbar');
+  expect(dashboard).toContain('sidebar-caption');
+  expect(dashboard).toContain('navItems.filter');
+  expect(dashboard).toContain('mobile-menu');
+  expect(dashboard).not.toContain("from './chain'");
+  expect(dashboard).not.toContain("import './App'");
+  expect(css).toContain('.gv2-classic .gv2-sidebar');
+  expect(css).toContain('.gv2-classic .gv2-workspace');
+  expect(css).toContain('@media(max-width:960px)');
+ });
  it('uses only a syntax-checked, hash-pinned, rollback-capable installer',()=>{
   const script=read('../ubuntu-global-v2-site.sh');
   expect(script).toContain('V2_SITE_PINNED_SHA_REQUIRED');
