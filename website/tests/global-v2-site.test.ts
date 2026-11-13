@@ -35,11 +35,17 @@ describe('Global V2 public-site isolation',()=>{
   const source=read('src/V2Dashboard.tsx');
   expect(source).toContain('Deposits are disabled');
   expect(source).toContain('System-wide principal without vault cash');
-  expect(source).toContain('approveWithdrawal');
+  const admin=read('src/V2AdminConsole.tsx');
+  const actions=read('src/v2-admin.ts');
+  expect(admin).toContain('V2 manager control center');
+  expect(admin).toContain('Manual VIP/KYC decision');
+  expect(actions).toContain('Withdrawal conditions not satisfied');
+  expect(actions).toContain('approveWithdrawal');
+  expect(actions).toContain('setVipKyc');
   expect(source).toContain('requestPrincipal');
   expect(source).toContain('reinvest');
-  const actions=read('src/v2-chain.ts');
-  expect(actions).not.toMatch(/case 'deposit'/);
+  const chain=read('src/v2-chain.ts');
+  expect(chain).not.toMatch(/case 'deposit'/);
  });
  it('shows compact V2 identity without suppressing material safety warnings',()=>{
   const dashboard=read('src/V2Dashboard.tsx');
