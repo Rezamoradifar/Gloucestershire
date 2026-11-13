@@ -241,6 +241,16 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
        <span>Positions in contract <strong>{profile.positionCount.toLocaleString('en-US')}</strong></span>
       </div>
       <p className="muted">Activity is a reporter-set contract flag. Check-in evidence is separate; recorded credits do not confirm wallet transfers. Snapshot at block {profile.confirmedHead.toLocaleString('en-US')}.</p>
+      <section className="admin-users-subsection" aria-label="Current referral-earning eligibility checks">
+       <h4>Referral earning checks · current status only</h4>
+       <p className="muted">These are current prerequisites from the contract and check-in service, not proof of entitlement for previous periods or a new payment instruction.</p>
+       {!profile.profile.active&&<p className="inline-error">Contract reporter activity: inactive. Current referrals fail the verified-active condition until legitimately attested.</p>}
+       {profile.profile.tier===4&&!profile.profile.kycVerified&&<p className="inline-error">VIP KYC flag is not verified; VIP referral credit requires independent KYC approval.</p>}
+       {activity?.requirementActive&&!activity.activityCurrent&&<p className="inline-error">Current 24-hour activity evidence is missing or expired.</p>}
+       {profile.profile.active&&!(profile.profile.tier===4&&!profile.profile.kycVerified)&&
+         (!activity?.requirementActive||activity.activityCurrent)&&<p className="muted">No current reporter/KYC/check-in blocker was detected, but reward entitlement, capital coverage and historical credits remain unverified.</p>}
+       {!activity&&<p className="muted">Check-in eligibility could not be verified; do not presume it is satisfied.</p>}
+      </section>
       <AccountAssets user={profile}/>
       <div className="admin-users-actions">
        <button className="small-button" type="button" onClick={()=>{onReviewStatus(selected);document.getElementById('global-customer-status')?.scrollIntoView({behavior:'smooth',block:'start'});}}>Prefill reviewed customer status</button>
