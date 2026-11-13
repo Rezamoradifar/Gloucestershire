@@ -55,3 +55,40 @@ test('the full API serves ticket POST routes and persisted tickets survive a ser
   const replied=await call('tickets/'+created.data.id,'POST',{message:'Follow-up after restart'},fresh);assert.equal(replied.status,200);assert.equal(replied.data.messages.length,2);
  }finally{if(server?.listening)await new Promise(resolve=>server.close(resolve));await rm(dir,{recursive:true,force:true});}
 });
+
+test('owner audit sign-in has dedicated signature scope, live owner recheck and ten-minute expiry',async()=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'global-owner-directory-')),file=path.join(dir,'community.json');
+ const owner=Wallet.createRandom(),outsider=Wallet.createRandom();
+ let clock=Date.now(),currentOwner=owner.address;
+ const handler=await createCommunity({file,chainId:97,contract:owner.address,owner:async()=>currentOwner,now:()=>clock});
+ const server=http.createServer((req,res)=>void handler(req,res));
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base=`http://127.0.0.1:${server.address().port}/api/community/`;
+ const request=async(route,body)=>{
+  const res=await fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  return {status:res.status,value:await res.json()};
+ };
+ try{
+  const normal=await request('challenge',{wallet:owner.address});
+  const normalToken=await request('session',{nonce:normal.value.nonce,signature:await owner.signMessage(normal.value.message)});
+  assert.equal(normalToken.status,200);
+  await assert.rejects(handler.authorizeOwner({headers:{authorization:'Bearer '+normalToken.value.token}}),e=>e.status===403);
+  const outside=await request('admin-challenge',{wallet:outsider.address});
+  assert.match(outside.value.message,/read-only access/);
+  const denied=await request('admin-session',{nonce:outside.value.nonce,signature:await outsider.signMessage(outside.value.message)});
+  assert.equal(denied.status,403);
+  const challenge=await request('admin-challenge',{wallet:owner.address});
+  assert.match(challenge.value.message,/owner user-audit sign-in/);
+  assert.notEqual(challenge.value.message,normal.value.message);
+  assert.equal((await request('session',{nonce:challenge.value.nonce,signature:await owner.signMessage(challenge.value.message)})).status,401);
+  const fresh=await request('admin-challenge',{wallet:owner.address});
+  const token=await request('admin-session',{nonce:fresh.value.nonce,signature:await owner.signMessage(fresh.value.message)});
+  assert.equal(token.status,200);assert.equal(token.value.scope,'owner-audit');
+  const auth={headers:{authorization:'Bearer '+token.value.token}};
+  assert.equal(await handler.authorizeOwner(auth),owner.address);
+  currentOwner=outsider.address;
+  await assert.rejects(handler.authorizeOwner(auth),e=>e.status===403);
+  currentOwner=owner.address;clock+=600001;
+  await assert.rejects(handler.authorizeOwner(auth),e=>e.status===401);
+ }finally{await new Promise(resolve=>server.close(resolve));await rm(dir,{recursive:true,force:true});}
+});
