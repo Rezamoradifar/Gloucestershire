@@ -44,14 +44,22 @@ An EVM contract **cannot invoke itself at an arbitrary future time**. On-chain f
 7. Prefer lazy accrual or settlement on specific user/position events to mass distribution across every user, which is unbounded in gas. Optionally expose `settleNextPositionPeriod(user,positionId)` permissionlessly callable by any keeper **only if** funded and policy-bound. Funding exhaustion must result in clear `unfunded` / `not-settled` status, not a false success.
 8. Source-of-yield proof and solvency checks are required. Do not automatically pay referrers from new deposits if earnings are not verified and funded.
 
-### C. Deposits, principal, treasury and withdrawals
+### C. Deposits, principal, treasury and withdrawals (user decisions, 13 Nov 2026)
 
-1. Fix the 20/80 routing mismatch before describing a deposit as a fully backed user balance. Preserve a **separate ledger** for user principal, claimable earnings, reserved payouts, explicit earned fees and unrestricted surplus. If any money is deployed to a strategy, show strategy balance/risk and exact liquidity/withdrawal limits; user principal must not be represented as cash if unavailable.
-2. No unilateral owner sweep of reserved principal/profit/pending withdrawals; treasury draws are restricted to surplus verified after `assets >= liabilities` and strategy safety checks. Introduce multisig/timelock and emergency pause controls with narrowly separated authority.
-3. Normal due withdrawal is `requestWithdrawal`/`claimWithdrawal` permissionlessly executable by the beneficiary or any executor for the **fixed rightful beneficiary**; no manual owner approval if all objective conditions pass. Do not let executor alter recipient or gross amount. An exception queue can require controlled review with auditable reasons.
-4. Funding and liquidity are prerequisites to an actual payment. A due timestamp is not a guarantee when cash is missing. Expose explicit statuses `requested`, `eligible`, `unfunded`, `claimable`, `paid`, `cancelled`.
-5. All principal unlock, fee, penalty, cooldown, claim-cap, compounding and reinvestment rules require explicit approved economic specification. Avoid treating a 72h payout deadline as a promise.
-6. Public user balances must distinguish `accountedPrincipal`, `backedAssets`, `accruedButUnfunded` (if allowed; default disallow), `claimableProfit`, `paidToWallet`, and `pendingWithdrawal`.
+**User-approved design constraints:**
+- **Every withdrawal request must be explicitly approved by the authorized administrator.** No automatic approval by eligibility worker, payout worker, user or permissionless keeper. On-chain approval is an auditable administrator wallet transaction; after approval, execution may be permissionless to the fixed, original requesting wallet only if sufficient backing/liquidity exists.
+- **Withdrawal cooldown: 72 hours (once per three days)**, preserving the existing per-user/per-asset notion unless a later explicit economic decision changes its scope. The *cooldown between withdrawal requests* is distinct from any 72-hour payment queue deadline; do not suggest 72 hours guarantees settlement or that the admin must only log in every third day. In the V2 design the on-chain queue cannot approve on its own.
+- **Deposit routing follows the prior deployed model**, not the earlier proposed automatic-withdrawal redesign: current contract charges two separate 10% payments to fee wallets and routes the remaining 80% to the operations wallet while displaying 100% user gross principal. The agreed instruction is to **preserve the prior routing economics for design**, not a declaration that the resulting 100% credited principal is safely cash-backed.
+- KYC/VIP remains **manual** and under a dedicated admin-only role, independently of withdrawal approval. Account activity / referral eligibility can be contract-derived.
+
+**Non-negotiable solvency disclosure and implementation constraints:**
+1. Do not silently change existing 10%+10%+80% routing. Produce a per-deposit, per-asset reconciliation of amounts moved to fee/operations wallets, gross user principal liability and cash/strategy backing. No promised guaranteed 100% redemption unless independently funded. Existing routing currently creates liabilities in excess of cash retained at vault.
+2. No unilateral owner sweep of reserved principal, credited profit or approved/pending withdrawals; treasury draws restricted to independently verifiable surplus and managed with multisig/timelocks where appropriate. Any claims on operations wallet assets require enforceable custody/escrow or observable return funding; do not claim the balance is safely segregated if it is not.
+3. **Withdrawal state machine:** `requested -> awaiting_admin_approval -> approved -> payable_when_funded -> paid` (plus `cancelled`, `rejected_with_reason`, `unfunded`). Administrator approves the exact request; cannot change recipient, gross amount or asset. The contract enforces eligibility, lock, fee, per-asset 72h cooldown and anti-double-spend. Approved payment can be called by anyone but pays only the user, never the caller. Unapproved requests cannot be paid.
+4. Funding/liquidity is required before actual payout; 72 hours is not an unconditional transfer guarantee. Overdue requests and funding gaps must appear clearly in admin and customer panels with exact reasons. Define a fair and secure cancellation/rejection policy before launch.
+5. The existing source has a 5% profit withdrawal fee, a 30% principal withdrawal penalty after a 90-day lock, a 10% profit-withdrawal cap of cumulative deposits+reinvestments of the selected asset and a 72h cooldown. **These figures still require explicit final confirmation** before new contract code is approved; do not silently substitute other terms. A principal penalty even after the lock is particularly important to disclose or redesign.
+6. Public balances distinguish `accountedPrincipal`, actually backed assets/custody, credited profit, reserved/requested withdrawals, approved yet unfunded amounts, and `paidToWallet`. No misleading cash-sufficiency claims.
+7. No retrospective change to prior deposits, receipt identifiers, 72-hour clocks, wallet balances or old deployment without a separately audited and consented migration.
 
 ### D. Admin UX & indexing
 
@@ -68,7 +76,7 @@ An EVM contract **cannot invoke itself at an arbitrary future time**. On-chain f
 - Fixed 24h economics: one 1000-USD position at a 50-bps/day **sample rate** does not accrue 120 USD over 24h; regression test catches hourly multiplication.
 - 1–4 referral depth, source-tier vs upline-tier policy, KYC gating, zero/unqualified levels, distinct BNB/USDT assets; personal/referral credits atomic, funded and unique.
 - Unfunded period: no event suggests paid reward; no negative budget or unfunded user claim.
-- Withdrawal: user can claim correct amount when due/funded; owner cannot steal backing; reentrancy, same-user double withdrawal, token callback, race and gas bound tests.
+- Withdrawal: admin alone approves *every* exact request; payment of an unapproved request must revert; once approved and funded, anyone may trigger payment to the immutable recipient; 72-hour per-asset cooldown, anti-double-spend, unauthorized-admin, queue rejection/cancellation, race, reentrancy and bounded-gas tests; owner cannot sweep backing.
 - Indexing: historical reconciliation; block reorg rollback; 10k users without full on-chain iteration; server outage does not block contract use.
 - Existing journal: never reset or mutate previous epoch IDs or user balances; export snapshot before any voluntary migration. Separate old/new networks and addresses.
 - Independent security and economic audit, release-by-release E2E testnet rehearsal, and documented migration consent before public real-capital launch.
@@ -77,7 +85,7 @@ An EVM contract **cannot invoke itself at an arbitrary future time**. On-chain f
 
 - **M0 (now):** freeze economic terms and precise daily/hourly basis, withdrawal policy, data/privacy requirements; audit the existing state. No new contract.
 - **M1:** detailed on-chain V2 interfaces, threat model, funding invariant and test vectors. Keep PR #55's reporter automation **off** pending V2 review.
-- **M2:** implement new contract with role separation, on-chain check-in and atomic funded personal+referral settlement, bounded/permissionless withdrawal and events.
+- **M2:** implement new contract with role separation, on-chain check-in and atomic funded personal+referral settlement, admin-approved bounded withdrawals with permissionless *execution after approval* and events.
 - **M3:** deploy isolated testnet V2, register two-plus consented test wallets, verify scenarios including real funded referral event and receipt, wallet independence from VPS, and measured gas.
 - **M4:** publish user/admin frontend with canonical history index; stage and independently audit migration from current vault. **Never silently move client funds**.
 - **M5:** only after audit, solvency review and legal review consider real funds.
