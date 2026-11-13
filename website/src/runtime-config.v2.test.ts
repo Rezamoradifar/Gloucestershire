@@ -15,7 +15,7 @@ describe('V2-only site contract routing',()=>{
   expect(()=>parsePublicConfig({source:'contract-sales-settlements',status:'live',chainId:97,contract:newVault},true)).toThrow(/Legacy contract discovery/i);
  });
  it('uses only no-store public config, never a legacy fallback on 404',async()=>{
-  const fetcher=vi.fn(async()=>({ok:false,status:404}) as Response);
+  const fetcher=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>({ok:false,status:404}) as Response);
   await expect(fetchPublicConfig(fetcher as unknown as typeof fetch)).rejects.toThrow(/unavailable/i);
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(fetcher.mock.calls[0][0]).toBe('/api/config');
