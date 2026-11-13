@@ -1,0 +1,11 @@
+{
+  "_WARNING": "TEMPLATE ONLY. V3 IS NOT DEPLOYED. NEVER USE AN UNVERIFIED OR INVENTED ADDRESS.",
+  "network": "BNB_TESTNET_ONLY",
+  "chainId": 97,
+  "contract": "REPLACE_WITH_ACTUAL_DEPLOYED_V3_ADDRESS",
+  "runtimeHash": "REPLACE_WITH_ACTUAL_DEPLOYED_V3_RUNTIME_HASH",
+  "token": "0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89",
+  "maxMembers": 100,
+  "maxTransactions": 30,
+  "maxPositionsPerMember": 128
+}
