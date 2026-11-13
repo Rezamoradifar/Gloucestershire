@@ -3,7 +3,7 @@
 // Never use this flow for real-money purchases or on a mainnet chain.
 // The deployed V2 routes ALL deposits to external fee/operations addresses,
 // creating gross principal liabilities without keeping principal cash.
-import {BrowserProvider,Contract,ZeroAddress,getAddress,parseUnits,keccak256,type Eip1193Provider} from 'ethers';
+import {BrowserProvider,Contract,ZeroAddress,getAddress,parseUnits,type Eip1193Provider} from 'ethers';
 import {V2_ADDRESS,v2Session,V2_CHAIN_ID} from './v2-chain';
 
 export const V2_TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
