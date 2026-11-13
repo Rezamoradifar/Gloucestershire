@@ -11,6 +11,8 @@ import V2Investment from './V2Investment';
 import V2Network from './V2Network';
 import V2Community from './V2Community';
 import V2Profile from './V2Profile';
+import {summarizeV2UserProfit} from './v2-user-profit-summary';
+import './v2-user-profit-summary.css';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
 import './v2-classic-refinement.css';
@@ -110,6 +112,7 @@ export default function V2Dashboard(){
  async function disconnect(){await wallets.disconnect();setSnapshot(null);setTransaction('');}
 
  const account=snapshot?.accounts.find(a=>a.symbol===symbol);
+ const profitSummary=snapshot&&account?summarizeV2UserProfit(snapshot,account):null;
  const canManage=Boolean(snapshot?.canApprove||snapshot?.canKyc);
  const assetName=(asset:string)=>asset.toLowerCase()===ZeroAddress.toLowerCase()?'BNB':'USDT';
  const decimalsFor=(asset:string)=>asset.toLowerCase()===ZeroAddress.toLowerCase()?18:(snapshot?.accounts[1].decimals??18);
@@ -301,7 +304,18 @@ export default function V2Dashboard(){
      <div className="gv2-metric"><small>Capital · USD</small><strong>{v2Money(snapshot.capitalUsd,18,2)}</strong><span>Recorded principal, not cash</span></div>
      <div className="gv2-metric"><small>VIP verification</small><strong>{snapshot.kyc?'Admin verified':'Unverified'}</strong><span>Manager-only KYC</span></div>
     </div>}
-    {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet} onConfirmed={()=>void refresh()}/>}
+    {section==='overview'&&account&&profitSummary&&<section className="gv2-panel gv2-reward-breakdown" aria-label="Daily rewards, reinvestment and on-chain claimable balances">
+      <div className="gv2-panel-head"><h3><Coins size={19}/> Daily and compounding breakdown</h3><span>BNB Testnet · {symbol}</span></div>
+      <div className="gv2-reward-breakdown-grid">
+       <div><small>Potential daily profit · سود روزانه</small><strong>{v2Money(profitSummary.dailyProjection,account.decimals,6)} {symbol}</strong><span>Conditional 24h ceiling at current tier · {Number(profitSummary.dailyBps)/100}%</span></div>
+       <div><small>Profit on reinvested earnings · سود از سود</small><strong>{v2Money(profitSummary.reinvestmentDailyProjection,account.decimals,6)} {symbol}</strong><span>Part of the daily number above; not an additional payout</span></div>
+       <div><small>Funded profit credited to contract account</small><strong>{v2Money(profitSummary.creditedProfit,account.decimals,6)} {symbol}</strong><span>Verified on chain, not yet transferred to your wallet</span></div>
+       <div className="gv2-reward-requestable"><small>On-chain requestable now · قابل مطالبه</small><strong>{v2Money(profitSummary.contractRequestableNow,account.decimals,6)} {symbol}</strong><span>Limited by credited profit, 72h cooldown and request cap</span></div>
+      </div>
+      <p><Info size={16}/> Daily and reinvestment figures are conditional projections, <b>not accrued or payable balances</b>. Activity now: {profitSummary.eligibleNow?'eligible':'not eligible'}. The deployed V2 only records funded earnings; reinvestment is manual. Upfront treasury funding is not required for the request review workflow.</p>
+      <button type="button" className="gv2-primary" onClick={()=>setSection('withdrawals')}>Review requestable profit <ArrowUpRight size={15}/></button>
+     </section>}
+     {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet} onConfirmed={()=>void refresh()}/>}
     {section==='overview'&&<>
      <section className="gv2-signature-ledger" aria-label="Verified asset accounting">
       <div className="gv2-signature-ledger-header">
@@ -371,12 +385,13 @@ export default function V2Dashboard(){
     {section==='announcements'&&<V2Community mode="announcements" who={wallet} admin={snapshot.canApprove||snapshot.canKyc}/>}
     {section==='withdrawals'&&<>
      <div className="gv2-panel"><div className="gv2-panel-head"><h2>Request manager-approved withdrawal</h2><Clock3 size={18}/></div>
-      <p>Every request requires manager approval. Profit fee: 3%. Cooldown: 72 hours per asset. Principal lock: 90 days, followed by a 30% penalty.</p>
+      <p>Every request requires manager approval. Profit fee: 3%. Cooldown: 72 hours per asset. Principal lock: 90 days, followed by a 30% penalty. On-demand test-token funding is only requested by management when an approved withdrawal is ready for payment; no million-token pre-funding is required.</p>
+      {account&&profitSummary&&<div className="gv2-withdrawal-accounting"><p>Conditional daily amount: <b>{v2Money(profitSummary.dailyProjection,account.decimals)} {symbol}</b> (including projected reinvestment portion <b>{v2Money(profitSummary.reinvestmentDailyProjection,account.decimals)} {symbol}</b>). These figures are not yet funded claims.</p><p>Credited in contract: <b>{v2Money(profitSummary.creditedProfit,account.decimals)} {symbol}</b> · Requestable now: <b>{v2Money(profitSummary.contractRequestableNow,account.decimals)} {symbol}</b>.</p></div>}
       <div className="gv2-field">
        <label htmlFor="gv2-asset">Asset</label><select id="gv2-asset" value={symbol} onChange={e=>{setSymbol(e.target.value as V2Asset);setAmount('');}}>
         <option value="USDT">USDT</option><option value="BNB">BNB</option></select>
        <label htmlFor="gv2-amount">Amount ({symbol})</label><input id="gv2-amount" inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" />
-       <p className="gv2-small">Credited profit: {account?v2Money(account.profit,account.decimals):'—'} · Per-request limit: {account?v2Money(account.cap,account.decimals):'—'} · Next request after: {account?v2Date(account.nextRequestAt):'—'}</p>
+       <p className="gv2-small">On-chain credited: {account?v2Money(account.profit,account.decimals):'—'} · Requestable now: {profitSummary&&account?v2Money(profitSummary.contractRequestableNow,account.decimals):'—'} · Per-request cap: {account?v2Money(account.cap,account.decimals):'—'} · Next request after: {account?v2Date(account.nextRequestAt):'—'}</p>
        <div className="gv2-buttons"><button className="gv2-primary" disabled={busy||!snapshot.registered||account?.requestPending}
          onClick={submitProfitRequest}>Request profit · 3% fee</button>
        <select value={principalPosition} onChange={e=>setPrincipalPosition(e.target.value)} aria-label="Principal position">
