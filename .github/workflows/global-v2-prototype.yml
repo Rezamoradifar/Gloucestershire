@@ -4,7 +4,9 @@ on:
     paths:
       - 'contracts/v2/**'
       - 'scripts/compile-global-v2.mjs'
+      - 'scripts/deploy-global-v2-testnet.mjs'
       - 'test/global-v2-prototype.test.mjs'
+      - 'test/global-v2-deployment.test.mjs'
       - '.github/workflows/global-v2-prototype.yml'
   workflow_dispatch:
 permissions:
@@ -25,4 +27,4 @@ jobs:
       - name: Compile immutable V2 prototype with size gate
         run: node scripts/compile-global-v2.mjs
       - name: Test isolated funded accounting and manager-controlled withdrawals
-        run: node --test --test-concurrency=1 test/global-v2-prototype.test.mjs
+        run: node --test --test-concurrency=1 test/global-v2-prototype.test.mjs test/global-v2-deployment.test.mjs
