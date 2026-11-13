@@ -10,6 +10,7 @@ const valid={
  admin:'0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632',
  feeReceiver:'0x74015dedf36677485793f1714ec7bd4893907b26',
  runtimeHash:'0x'+'a'.repeat(64),txHash:'0x'+'b'.repeat(64),
+ creationBytecodeHash:'0x'+'c'.repeat(64),
  blockNumber:145000000,deployedV2Unmodified:true
 };
 test('requires actual V3 deployment proof on BNB Testnet before activating primary dashboard',()=>{
@@ -21,6 +22,7 @@ test('requires actual V3 deployment proof on BNB Testnet before activating prima
   {...valid,admin:'0x3333333333333333333333333333333333333333'},
   {...valid,feeReceiver:'0x4444444444444444444444444444444444444444'},
   {...valid,runtimeHash:'INVALID'},{...valid,txHash:null},
+  {...valid,creationBytecodeHash:'INVALID'},
   {...valid,blockNumber:0},{...valid,deployedV2Unmodified:false}
  ])assert.throws(()=>validateV3DeploymentProof(broken));
 });
