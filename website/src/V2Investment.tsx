@@ -73,6 +73,10 @@ export default function V2Investment({snapshot,wallet}:{snapshot:V2Snapshot|null
      </div>
      <label htmlFor="gv2-invest-amount">Amount ({asset})</label>
      <input id="gv2-invest-amount" inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="1000"/>
+     {asset==='USDT'&&<div className="gv2-invest-examples" aria-label="Try a sample capital amount">
+      {['10','501','2501','10001','50001'].map(sample=>
+       <button type="button" key={sample} onClick={()=>{setAmount(sample);setMessage('');}}>{sample} demo USDT</button>)}
+     </div>}
      {asset==='BNB'&&<>
       <label htmlFor="gv2-bnb-price">Hypothetical USD per BNB (not live price)</label>
       <input id="gv2-bnb-price" inputMode="decimal" placeholder="Enter assumed USD price" value={bnbPrice} onChange={e=>setBnbPrice(e.target.value)}/>
@@ -90,6 +94,9 @@ export default function V2Investment({snapshot,wallet}:{snapshot:V2Snapshot|null
       <div><span>Illustrative USD value</span><b>USD {v2Money(preview.usdValue,18,2)}</b></div>
       <div><span>Resulting plan</span><b>{preview.plan}</b></div>
       <div><span>Principal lock / post-lock penalty</span><b>90 days / 30%</b></div>
+      <div><span>Profit withdrawal fee / approval</span><b>3% / manager required</b></div>
+      <div><span>Withdrawal cooldown / gross profit cap</span><b>72 hours / 10% of deposits + reinvest</b></div>
+      <div><span>Activity eligibility</span><b>On-chain wallet check-in every 24h</b></div>
      </div>
      {preview.requiresAdminVipKyc&&<p className="gv2-invest-warning"><AlertTriangle size={16}/> VIP capital requires admin-approved KYC before a real contract deposit.</p>}
      <div className="gv2-buttons">
