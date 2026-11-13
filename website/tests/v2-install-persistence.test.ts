@@ -11,7 +11,8 @@ describe('V2 frontend guarded install remains safe after terminal hangup',()=>{
   expect(wrapper).not.toMatch(/^bash ubuntu-global-v2-site\.sh --check$/m);
   expect(wrapper).toContain('V2_FRONTEND_INSTALL_COMPLETED');
   expect(installer).toContain('V2_SITE_BUILD_AND_TEST_PASS');
-  expect(installer).toContain('npm test --prefix website -- --maxWorkers=2 --minWorkers=1');
+  expect(installer).toContain('npm test --prefix website -- --maxWorkers=2');
+  expect(installer).not.toContain('--minWorkers');
   expect(installer).toContain('npm run build --prefix website');
  });
  it('never installs without SHA pin, checked web root and rollback backups',()=>{
