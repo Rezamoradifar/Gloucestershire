@@ -14,6 +14,7 @@ export const V2_VAULT_ABI=[
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 reinvested,uint64 nextRequestAt,bool requestPending)',
  'function isEligible(address) view returns(bool)',
  'function quoteUsd(address,uint256) view returns(uint256)',
+ 'function paused() view returns(bool)',
  'function memberCount() view returns(uint256)',
  'function memberAt(uint256) view returns(address)',
  'function positionCount(address) view returns(uint256)',
