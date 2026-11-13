@@ -114,8 +114,8 @@ export async function fundAndPayV2ApprovedWithdrawal(
   report('Confirm actual on-demand TEST USDT funding transaction in your wallet.');
   const funded=await vault.fundPrincipalLiquidity(V2_TEST_TOKEN,amount);
   fundingTxHash=funded.hash;
-  report('Funding sent. Waiting for 3 confirmed blocks.',funded.hash);
-  const receipt=await funded.wait(3);
+  report('Funding sent. Waiting for 5 confirmations so V2 pinned reads include this transaction.',funded.hash);
+  const receipt=await funded.wait(5);
   if(!receipt||receipt.status!==1)
    throw Error('Funding not confirmed. Inspect any broadcast transaction before retrying.');
   const fundedEvent=receipt.logs.some(log=>{
