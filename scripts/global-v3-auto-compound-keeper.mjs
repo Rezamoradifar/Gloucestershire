@@ -12,7 +12,6 @@ const TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const RETIRED_V2=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
 const GAS_LIMIT_PER_TX=parseEther('0.005');
 const GAS_LIMIT_PER_RUN=parseEther('0.15');
-const EVENTS=new Interface(ABI);
 const ABI=[
  'function asset() view returns(address)',
  'function MANAGER_ROLE() view returns(bytes32)',
@@ -28,6 +27,7 @@ const ABI=[
  'function accrueDaily(address,uint256)',
  'event DailyClaimAccrued(address indexed user,uint256 indexed positionId,uint256 personal,uint256 compounded,uint256 total,uint256 at)'
 ];
+const EVENTS=new Interface(ABI);
 export function isDueV3Position({principal,lastAccruedAt,eligible,now,paused}){
  if(typeof principal!=='bigint'||principal<0n||!Number.isSafeInteger(lastAccruedAt)||
     !Number.isSafeInteger(now)||now<0||lastAccruedAt<0)throw Error('BAD_VERIFIED_V3_POSITION');
