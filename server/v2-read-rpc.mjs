@@ -1,6 +1,7 @@
 // Strictly read-only same-origin BNB Testnet V2 gateway.
 // The former contract, keys, financial journals and balances are never queried or changed.
 import {FetchRequest,JsonRpcProvider,keccak256,getAddress,isAddress} from 'ethers';
+import {isIP} from 'node:net';
 
 export const V2_RPC_CHAIN=97;
 export const V2_RPC_VAULT=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
@@ -146,7 +147,11 @@ export function createV2ReadGateway({sources=V2_RPC_SOURCES,fetcher=fetch,now=Da
   res.setHeader('Content-Type','application/json; charset=utf-8');
   const send=(code,data)=>{res.writeHead(code);res.end(JSON.stringify(data));};
   if(req.method!=='POST'){res.setHeader('Allow','POST');send(405,{error:'POST only'});return true;}
-  const ip=String(req.socket?.remoteAddress||'unknown');
+  const peer=String(req.socket?.remoteAddress||'unknown');
+  const forwarded=String(req.headers?.['x-global-client-ip']||'');
+  // Nginx overwrites this header; trust it only from the local managed proxy.
+  const local=['127.0.0.1','::1','::ffff:127.0.0.1'].includes(peer);
+  const ip=local&&isIP(forwarded)?forwarded:peer;
   const current=now();
   if(rates.size>5000)for(const [key,r] of rates)if(r.expires<current)rates.delete(key);
   const rate=rates.get(ip)||{count:0,expires:current+60000};
