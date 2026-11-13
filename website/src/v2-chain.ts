@@ -94,7 +94,7 @@ export async function v2Session(walletProvider:Eip1193Provider,wallet:string){
   provider.getBlock(blockNumber),
   provider.getCode(V2_ADDRESS,blockNumber)
  ]);
- if(!block||block.number!==blockNumber||code==='0x'||keccak256(code).toLowerCase()!==V2_CODE_HASH)
+ if(!block||!block.hash||block.number!==blockNumber||code==='0x'||keccak256(code).toLowerCase()!==V2_CODE_HASH)
   throw Error('The verified V2 testnet contract was not found at the expected address and code hash.');
  const vault=new Contract(V2_ADDRESS,V2_VAULT_ABI,provider);
  const fee=await vault.PROFIT_FEE_BPS({blockTag:blockNumber});
@@ -150,7 +150,7 @@ export async function readV2Snapshot(walletProvider:Eip1193Provider,wallet:strin
    status:Number(r.status),principal:Boolean(r.principal)};
  }));
  return {
-  wallet,block:block.number,blockHash:block.hash,asOf:block.timestamp,
+  wallet,block:block.number,blockHash:block.hash!,asOf:block.timestamp,
   registered:Boolean(user.registered),referrer:getAddress(user.referrer),
   kyc:Boolean(user.vipKyc),suspended:Boolean(user.suspended),eligible:Boolean(eligible),
   lastCheckIn:Number(user.lastCheckIn),capitalUsd:BigInt(user.capitalUsd),
