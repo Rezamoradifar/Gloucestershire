@@ -47,19 +47,21 @@ describe('Global V2 public-site isolation',()=>{
   const chain=read('src/v2-chain.ts');
   expect(chain).not.toMatch(/case 'deposit'/);
  });
- it('shows compact V2 identity without suppressing material safety warnings',()=>{
+ it('removes the oversized warning card while retaining concise, expandable material risk disclosure',()=>{
   const dashboard=read('src/V2Dashboard.tsx');
   expect(dashboard).toContain('gv2-release');
   expect(dashboard).toContain('Global V2 · New testnet contract');
-  expect(dashboard).not.toContain('gv2-warning');
-  expect(dashboard).toContain('gv2-safety-disclosure');
-  expect(dashboard).toContain('not approved for real investments');
-  expect(dashboard).toContain('10% + 10%');
+  expect(dashboard).not.toContain('className="gv2-safety-disclosure"');
+  expect(dashboard).toContain('className="gv2-contract-disclosure"');
+  expect(dashboard).toContain('Not approved for real investments');
   expect(dashboard).toContain('Deposits are disabled');
+  expect(dashboard).toContain('10% + 10%');
+  expect(dashboard).toContain('80% to operations');
   expect(dashboard).toContain("Existing users' previous balances");
-  const css=read('src/v2-dashboard.css');
-  expect(css).toContain('.gv2-release');
-  expect(css).toContain('.gv2-safety-disclosure');
+  expect(dashboard).toContain('Contract risks and fund routing');
+  const css=read('src/v2-premium-experience.css');
+  expect(css).toContain('.gv2-contract-disclosure');
+  expect(css).toContain('background:transparent');
  });
  it('restores the classic Global sidebar, breadcrumb and mobile navigation with V2-only account data',()=>{
   const dashboard=read('src/V2Dashboard.tsx');

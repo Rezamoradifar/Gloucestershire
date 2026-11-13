@@ -1,0 +1,235 @@
+/* Global V2 premium panel — visual enhancement only.
+   Never invent balances or change contract actions. Preserves five-tab mobile dock. */
+.gv2-classic{
+ --gv2-gold:#e0bb71;--gv2-gold-light:#f4d897;
+ --gv2-ink:#eaf0f1;--gv2-muted:#a7b7c6;
+ background:radial-gradient(ellipse at 70% -15%,#20403855,transparent 45%),#0a111c;
+}
+.gv2-classic .gv2-workspace{
+ background:radial-gradient(ellipse at 82% 1%,#36504629,transparent 36%),
+            radial-gradient(ellipse at 12% 75%,#182c3b29,transparent 55%),#0b131e;
+}
+.gv2-classic .gv2-classic-topbar{background:#0f1a26ed;border-bottom:1px solid #364352}
+.gv2-classic .gv2-classic-topbar .network-label{
+ border-color:#6d6247;background:#2c302c;color:#edd29b;
+}
+.gv2-classic .gv2-sidebar{
+ background:linear-gradient(165deg,#111d29,#0b131c 73%);
+ border-left-color:#394251;
+}
+.gv2-classic .gv2-sidebar nav button{transition:background .18s ease,color .18s ease}
+.gv2-classic .gv2-sidebar nav button.active{
+ background:linear-gradient(90deg,#6f5a3436,#bda15b1d);color:#f4dcaa;
+}
+.gv2-classic .gv2-wrap{max-width:1480px}
+.gv2-classic .gv2-heading{margin-bottom:17px}
+.gv2-classic .gv2-heading h1{font-weight:760;letter-spacing:-.035em}
+.gv2-classic .gv2-heading p{font-size:12px;color:#9eb0be}
+.gv2-classic .gv2-release{
+ border:1px solid #38584d;border-radius:13px;
+ background:linear-gradient(115deg,#16302a,#172824);color:#dfefe3;
+ box-shadow:inset 0 1px 0 #ffffff0b;
+}
+.gv2-classic .gv2-release-copy strong{color:#f2deae}
+.gv2-classic .gv2-release-copy span{color:#c2d1c9}
+.gv2-classic .gv2-panel:not(.gv2-premium-welcome),
+.gv2-classic .gv2-metric{
+ background:linear-gradient(150deg,#192633,#121e2b);
+ border:1px solid #344758;border-radius:17px;
+ box-shadow:0 9px 28px #02080f20,inset 0 1px 0 #ffffff08;
+}
+.gv2-classic .gv2-panel-head h2,.gv2-classic .gv2-panel-head h3{
+ letter-spacing:-.025em;color:#f0f3f5;
+}
+.gv2-classic .gv2-detail{border-bottom-color:#364452}
+.gv2-classic .gv2-detail b{color:#f0dbb5}
+.gv2-classic .gv2-premium-eyebrow{
+ color:#dec28a;font-size:10px;letter-spacing:.17em;font-weight:750;
+}
+.gv2-classic .gv2-premium-board{
+ position:relative;overflow:hidden;isolation:isolate;
+ margin:4px 0 27px;padding:26px 28px 24px;
+ border:1px solid #85734a9c;border-radius:22px;
+ background:
+  radial-gradient(circle at 94% 20%,#3d584a85,transparent 30%),
+  radial-gradient(circle at 10% -30%,#b48b4c36,transparent 44%),
+  linear-gradient(130deg,#202d32,#15242e 45%,#111e2a 100%);
+ box-shadow:0 22px 65px #02070d42,inset 0 1px 0 #f3d89a27;
+ color:var(--gv2-ink);
+}
+.gv2-classic .gv2-premium-board::before{
+ content:'';position:absolute;width:325px;height:325px;border-radius:50%;
+ right:-105px;top:-210px;border:1px solid #e4bf7124;
+ box-shadow:0 0 0 36px #e4bf7107,0 0 0 85px #e4bf7104;pointer-events:none;z-index:-1;
+}
+.gv2-classic .gv2-premium-board::after{
+ content:'';position:absolute;left:-32%;right:-20%;bottom:-220px;height:240px;
+ background:radial-gradient(ellipse at 50% 5%,#8f784033,transparent 68%);
+ transform:rotate(-7deg);pointer-events:none;z-index:-1;
+}
+.gv2-classic .gv2-premium-board-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid #ffffff1d}
+.gv2-classic .gv2-premium-board-top .gv2-premium-eyebrow{display:inline-flex;align-items:center;gap:10px}
+.gv2-classic .gv2-premium-pulse{display:block;width:8px;height:8px;border-radius:50%;background:#c3dab5;box-shadow:0 0 0 4px #c3dab520}
+.gv2-classic .gv2-premium-wallet{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:650;color:#d0dbdb;background:#ffffff0d;border:1px solid #ffffff23;padding:7px 11px;border-radius:99px}
+.gv2-classic .gv2-premium-wallet svg{color:#e3c17b}
+.gv2-classic .gv2-premium-board-main{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:32px;padding-top:24px;align-items:stretch}
+.gv2-classic .gv2-premium-hero-balance{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
+.gv2-classic .gv2-premium-caption{font-size:12px;color:#b8c7cb;letter-spacing:.005em}
+.gv2-classic .gv2-premium-hero-balance>strong{display:block;font-size:clamp(30px,4.6vw,52px);letter-spacing:-.045em;line-height:1.25;font-weight:750;color:#faf2df;margin:9px 0 7px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.gv2-classic .gv2-premium-hero-balance>p{font-size:11px;color:#aab9bd;line-height:1.6;max-width:400px;margin:0}
+.gv2-classic .gv2-premium-hero-buttons{display:flex;flex-wrap:wrap;gap:9px;margin-top:auto;padding-top:23px}
+.gv2-classic .gv2-premium-hero-buttons button{min-height:43px;font-size:12px;padding:9px 13px}
+.gv2-classic .gv2-premium-hero-buttons .gv2-premium-main-action{
+ border-color:#e8c57d;background:linear-gradient(125deg,#f0d18e,#d7ac61);color:#18232b;font-weight:750;
+ box-shadow:0 7px 18px #0e110e3c;
+}
+.gv2-classic .gv2-premium-hero-buttons .gv2-premium-main-action:hover{background:#f5dba4;border-color:#f5dba4}
+.gv2-classic .gv2-premium-hero-buttons .gv2-premium-quiet-action{border-color:#77766270;background:#ffffff0b;color:#e5e3d8}
+.gv2-classic .gv2-premium-hero-side{
+ background:#07151d68;border:1px solid #75806a37;border-radius:16px;
+ padding:18px 18px 12px;min-width:0;backdrop-filter:blur(8px);
+}
+.gv2-classic .gv2-premium-hero-side>.gv2-premium-caption{font-size:11px;line-height:1.55;display:block;margin-bottom:15px}
+.gv2-classic .gv2-premium-asset{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #ffffff1a;min-width:0}
+.gv2-classic .gv2-premium-token{
+ width:35px;height:35px;flex:0 0 35px;border-radius:12px;display:grid;place-items:center;
+ color:#121d23;background:linear-gradient(140deg,#f3d793,#c79e55);font-size:22px;font-weight:800;
+}
+.gv2-classic .gv2-premium-token.usdt{background:linear-gradient(135deg,#9ddcc7,#5cb9a2);font-size:20px}
+.gv2-classic .gv2-premium-asset>div{min-width:0}
+.gv2-classic .gv2-premium-asset small{display:block;color:#b1c3c5;font-size:11px;margin-bottom:1px}
+.gv2-classic .gv2-premium-asset strong{display:block;color:#f3f1e9;font-size:clamp(16px,2vw,20px);font-weight:700;overflow-wrap:anywhere;line-height:1.3;font-variant-numeric:tabular-nums}
+.gv2-classic .gv2-premium-asset em{font-size:10px;color:#b8b8aa;font-style:normal;font-weight:600}
+.gv2-classic .gv2-premium-hero-meta{display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap;font-size:10px;color:#aab8bb;padding-top:10px;border-top:1px solid #ffffff1a}
+.gv2-classic .gv2-premium-section-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 13px}
+.gv2-classic .gv2-premium-section-intro h2{font-size:clamp(17px,2vw,21px);letter-spacing:-.035em;margin:6px 0 0;color:#f2f3ef}
+.gv2-classic .gv2-premium-section-intro>span{font-size:11px;color:#8da2b1}
+.gv2-classic .gv2-premium-shortcuts{margin:0 0 28px}
+.gv2-classic .gv2-premium-shortcut-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.gv2-classic .gv2-premium-shortcut-grid button{
+ position:relative;display:flex;align-items:flex-start;flex-direction:column;text-align:left;
+ min-width:0;min-height:144px;gap:7px;padding:17px;
+ border:1px solid #364c5b;border-radius:17px;
+ background:linear-gradient(145deg,#1b2a37,#121d29);
+ box-shadow:inset 0 1px 0 #ffffff0c,0 10px 24px #030c1420;
+ transition:transform .18s ease,border-color .18s ease,background .18s ease;
+}
+.gv2-classic .gv2-premium-shortcut-grid button:hover:not(:disabled){
+ transform:translateY(-3px);border-color:#bb9d66;background:linear-gradient(145deg,#263840,#172734);
+}
+.gv2-classic .gv2-premium-shortcut-icon{
+ width:39px;height:39px;border:1px solid #846a443f;border-radius:12px;background:#ae8c4430;
+ color:#edd29a;display:grid;place-items:center;margin-bottom:3px;
+}
+.gv2-classic .gv2-premium-shortcut-grid strong{font-size:13px;color:#f2ede4;font-weight:750}
+.gv2-classic .gv2-premium-shortcut-grid small{font-size:11px;color:#a2b1bf;line-height:1.35}
+.gv2-classic .gv2-premium-shortcut-arrow{position:absolute;right:16px;top:20px;color:#d4ba82}
+.gv2-classic .gv2-premium-metrics-title{margin:0 0 12px}
+.gv2-classic .gv2-metric{border:1px solid #344959;min-height:142px;position:relative;overflow:hidden}
+.gv2-classic .gv2-metric:before{
+ content:'';position:absolute;left:0;top:0;width:3px;height:100%;background:linear-gradient(#e1bf7b,#e1bf7b00);
+ opacity:.75;
+}
+.gv2-classic .gv2-summary{margin:0 0 24px;gap:13px}
+.gv2-classic .gv2-metric small{font-size:11px;letter-spacing:.02em}
+.gv2-classic .gv2-metric strong{font-size:clamp(17px,2.1vw,24px);line-height:1.4;margin:9px 0 6px;color:#f7e8c3}
+.gv2-classic .gv2-metric span{color:#92a9b8}
+.gv2-classic .gv2-premium-welcome{
+ border-radius:23px;min-height:270px;
+ background:radial-gradient(circle at 89% 3%,#c49e5645,transparent 37%),linear-gradient(130deg,#1b302f,#11202e 55%,#14202a);
+ border:1px solid #927c514f;box-shadow:0 18px 45px #050b1540,inset 0 1px 0 #f1d3952c;
+}
+.gv2-classic .gv2-premium-welcome .gv2-classic-welcome-copy{max-width:710px}
+.gv2-classic .gv2-premium-welcome .gv2-classic-welcome-copy h2{font-size:clamp(27px,3.5vw,42px);font-weight:730;line-height:1.17;color:#f7f2e5;letter-spacing:-.045em}
+.gv2-classic .gv2-premium-period{color:var(--gv2-gold-light)}
+.gv2-classic .gv2-premium-welcome .gv2-classic-welcome-copy>p{font-size:12px;max-width:490px;color:#c3d1d2;line-height:1.85}
+.gv2-classic .gv2-premium-welcome .gv2-classic-connect-actions{margin-top:18px}
+.gv2-classic .gv2-premium-perks{display:flex;flex-wrap:wrap;gap:9px;margin:13px 0 6px}
+.gv2-classic .gv2-premium-perks span{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#dddecf;background:#ffffff0c;border:1px solid #ffffff19;border-radius:99px;padding:5px 9px}
+.gv2-classic .gv2-premium-perks svg{color:#d8bf81}
+.gv2-classic .gv2-premium-welcome .gv2-classic-welcome-mark{transform:rotate(-8deg);box-shadow:0 20px 35px #0208114d}
+.gv2-classic .gv2-classic-quick-grid button{border-color:#3d4e5c;transition:transform .2s ease,border-color .2s ease}
+.gv2-classic .gv2-classic-quick-grid button:hover{transform:translateY(-2px)}
+.gv2-classic button:focus-visible{outline:2px solid #f1cf84;outline-offset:2px}
+@media(max-width:1250px){
+ .gv2-classic .gv2-premium-shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gv2-classic .gv2-premium-board-main{gap:18px}
+}
+@media(max-width:960px){
+ .gv2-classic .gv2-premium-board{padding:22px 20px}
+ .gv2-classic .gv2-premium-board-main{grid-template-columns:minmax(0,1fr);gap:20px}
+ .gv2-classic .gv2-premium-hero-buttons{margin-top:0}
+ .gv2-classic .gv2-premium-hero-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 15px}
+ .gv2-classic .gv2-premium-hero-side>.gv2-premium-caption,.gv2-classic .gv2-premium-hero-meta{grid-column:1/-1}
+ .gv2-classic .gv2-premium-shortcut-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .gv2-classic .gv2-premium-shortcut-grid button{padding:13px;min-height:133px}
+}
+@media(max-width:720px){
+ .gv2-classic .gv2-premium-board{border-radius:18px;margin-bottom:22px}
+ .gv2-classic .gv2-premium-hero-side{grid-template-columns:minmax(0,1fr)}
+ .gv2-classic .gv2-premium-hero-side>.gv2-premium-caption,.gv2-classic .gv2-premium-hero-meta{grid-column:auto}
+ .gv2-classic .gv2-premium-shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .gv2-classic .gv2-premium-shortcut-grid button{min-height:125px;padding:13px}
+ .gv2-classic .gv2-premium-section-intro>span{display:none}
+}
+@media(max-width:600px){
+ .gv2-classic .gv2-heading{margin-bottom:12px}
+ .gv2-classic .gv2-heading h1{font-size:25px}
+ .gv2-classic .gv2-premium-board{padding:19px 16px 17px}
+ .gv2-classic .gv2-premium-board-top{gap:8px;padding-bottom:14px}
+ .gv2-classic .gv2-premium-wallet{font-size:10px;padding:6px 9px}
+ .gv2-classic .gv2-premium-board-main{padding-top:15px;gap:16px}
+ .gv2-classic .gv2-premium-hero-balance>strong{font-size:clamp(28px,8.1vw,38px);letter-spacing:-.045em}
+ .gv2-classic .gv2-premium-hero-balance>p{font-size:10px}
+ .gv2-classic .gv2-premium-hero-buttons{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);width:100%;gap:8px;padding-top:18px}
+ .gv2-classic .gv2-premium-hero-buttons button{min-width:0;min-height:45px;padding:8px;font-size:11px}
+ .gv2-classic .gv2-premium-hero-buttons button svg{width:15px;height:15px}
+ .gv2-classic .gv2-premium-hero-side{padding:14px}
+ .gv2-classic .gv2-premium-asset{padding:10px 0}
+ .gv2-classic .gv2-premium-shortcut-grid button{min-height:116px}
+ .gv2-classic .gv2-premium-shortcut-grid strong{font-size:12px}
+ .gv2-classic .gv2-premium-shortcut-grid small{font-size:10px}
+ .gv2-classic .gv2-premium-shortcut-icon{width:34px;height:34px}
+ .gv2-classic .gv2-premium-shortcut-icon svg{width:19px;height:19px}
+ .gv2-classic .gv2-premium-welcome{padding:21px 18px}
+ .gv2-classic .gv2-premium-welcome .gv2-classic-welcome-copy h2{font-size:clamp(27px,7vw,33px)}
+ .gv2-classic .gv2-premium-perks{gap:6px}
+ .gv2-classic .gv2-premium-perks span{font-size:9px;padding:5px 7px}
+}
+@media(max-width:360px){
+ .gv2-classic .gv2-premium-board{padding:16px 12px}
+ .gv2-classic .gv2-premium-hero-buttons{grid-template-columns:minmax(0,1fr)}
+ .gv2-classic .gv2-premium-shortcut-grid{gap:8px}
+ .gv2-classic .gv2-premium-shortcut-grid button{padding:11px 9px}
+ .gv2-classic .gv2-premium-hero-balance>strong{font-size:27px}
+}
+@media(prefers-reduced-motion:reduce){
+ .gv2-classic .gv2-premium-shortcut-grid button,.gv2-classic .gv2-classic-quick-grid button{transition:none;transform:none}
+}
+
+/* Small, neutral contract transparency text replaces the oversized warning card.
+   Important risk information remains accessible without dominating the account UI. */
+.gv2-classic .gv2-contract-disclosure{
+ margin-top:17px;padding:0;border:0;background:transparent;box-shadow:none;
+ color:#9caebd;font-size:11px;line-height:1.7;
+}
+.gv2-classic .gv2-contract-disclosure>p{
+ display:flex;align-items:flex-start;gap:8px;margin:0 0 8px;
+ font-size:11px;line-height:1.65;color:#b7c2c9;
+}
+.gv2-classic .gv2-contract-disclosure>p svg{
+ width:15px;height:15px;flex-shrink:0;margin-top:2px;color:#c6aa75;
+}
+.gv2-classic .gv2-contract-disclosure summary{
+ display:list-item;width:fit-content;padding:3px 0;cursor:pointer;
+ color:#d9c18e;font-size:11px;text-decoration:underline;text-underline-offset:3px;
+}
+.gv2-classic .gv2-contract-disclosure details>p{
+ max-width:750px;margin:10px 0 0;padding:0;
+ font-size:11px;line-height:1.75;color:#acbbc4;
+}
+.gv2-classic .gv2-contract-disclosure summary:focus-visible{outline:2px solid #d8c18d;outline-offset:3px}
+@media(max-width:600px){
+ .gv2-classic .gv2-contract-disclosure{margin-top:12px}
+ .gv2-classic .gv2-contract-disclosure>p{font-size:10px;line-height:1.6}
+}
