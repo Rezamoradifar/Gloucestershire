@@ -42,7 +42,7 @@ describe('V2 manager security and transparent bounded reporting',()=>{
   expect(ui).toContain("kind:'approve'");
   expect(ui).toContain("kind:'reject'");
   expect(ui).toContain('V2HistoryPanel');
-  expect(ui).toContain('manager approval');
+  expect(ui).toContain('Approval is never automatic');
  });
  it('defines only documented withdrawal rejection codes and bounded event ABI',()=>{
   expect(V2_APPROVAL_REASONS.map(x=>x.code)).toEqual([
