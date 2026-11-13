@@ -5,6 +5,7 @@ import {getWalletProvider} from './wallet';
 import {readV2AdminMembers,readV2AdminRequests,V2_EXPLORER,v2Money,v2Date,v2Short,v2WithdrawalStatus,type V2Snapshot,type V2Withdrawal,type V2AdminMember} from './v2-chain';
 import {readV2AdminCustomer,sendV2ManagerAction,V2_APPROVAL_REASONS,type V2AdminCustomer,type V2RejectCode} from './v2-admin';
 import V2HistoryPanel from './V2HistoryPanel';
+import V2TreasuryFunding from './V2TreasuryFunding';
 import './v2-admin.css';
 
 type ListState={total:number;page:number;members:V2AdminMember[]};
@@ -103,6 +104,8 @@ export default function V2AdminConsole({wallet,snapshot,onChanged}:{
    </div>)}
    <p className="gv2-small">These are on-chain contract balances and liabilities, not an independent audit of operations wallet holdings or real external business revenue.</p>
   </section>
+
+  <V2TreasuryFunding wallet={wallet} onChanged={onChanged}/>
 
   <section className="gv2-panel">
    <div className="gv2-panel-head"><h3><Users size={18}/> Registered V2 customers</h3>
