@@ -89,9 +89,11 @@ export const v2WithdrawalStatus=(status:number)=>{
 
 // Read-only RPC endpoints documented by BNB Chain. Never used for signing.
 export const V2_READ_RPCS=[
- 'https://data-seed-prebsc-1-s1.bnbchain.org:8545',
- 'https://data-seed-prebsc-2-s1.bnbchain.org:8545',
- 'https://data-seed-prebsc-1-s2.bnbchain.org:8545'
+ // Current BNB Chain documented testnet endpoints, with independent fallback.
+ 'https://bsc-testnet-dataseed.bnbchain.org',
+ 'https://bsc-testnet.bnbchain.org',
+ 'https://bsc-prebsc-dataseed.bnbchain.org',
+ 'https://bsc-testnet-rpc.publicnode.com'
 ] as const;
 
 export async function v2WithTimeout<T>(promise:Promise<T>,ms:number,message:string):Promise<T>{
@@ -110,9 +112,16 @@ export async function v2PickReadSource<T>(sources:ReadonlyArray<()=>Promise<T>>,
  }
 }
 
+// Reuse at most one read-only provider per pinned endpoint. A new provider for
+// every 45-second refresh can leak background polling and exhaust public RPC quotas.
+const v2ReadProviders=new Map<string,JsonRpcProvider>();
 const v2ReadProvider=(url:string)=>{
- const request=new FetchRequest(url);request.timeout=9000;
- return new JsonRpcProvider(request,V2_CHAIN_ID,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+ const existing=v2ReadProviders.get(url);
+ if(existing)return existing;
+ const request=new FetchRequest(url);request.timeout=8000;
+ const provider=new JsonRpcProvider(request,V2_CHAIN_ID,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
+ v2ReadProviders.set(url,provider);
+ return provider;
 };
 
 export async function v2Session(walletProvider:Eip1193Provider,wallet:string){
