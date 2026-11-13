@@ -1,0 +1,236 @@
+/* Global V2 Signature Dashboard · authored visual layer.
+   Design only. All money values originate in the verified V2 snapshot.
+   Works with the original five-tab dock and the existing functional routes. */
+.gv2-classic{
+ --sig-bg:#080f1b;
+ --sig-surface:#111d2a;
+ --sig-surface-2:#172536;
+ --sig-border:#344456;
+ --sig-gold:#e8c783;
+ --sig-gold-soft:#ae8754;
+ --sig-cream:#fff5de;
+ --sig-mute:#a8b9ca;
+ background:var(--sig-bg);color:#ebf0f5;
+}
+.gv2-classic .gv2-workspace{
+ background:radial-gradient(ellipse 1100px 620px at 90% -120px,#24404446,transparent 67%),
+            radial-gradient(ellipse 620px 500px at 10% 54%,#14294436,transparent 65%),
+            var(--sig-bg);
+}
+.gv2-classic .gv2-wrap{max-width:1480px}
+.gv2-classic .gv2-sidebar{
+ background:linear-gradient(180deg,#111d2a,#0b1522 56%,#0a131e);
+ border-left:1px solid #344253;
+}
+.gv2-classic .gv2-sidebar .brand-icon{
+ background:linear-gradient(130deg,#f4d9a0,#c99b52);
+ box-shadow:0 9px 24px #d6ae6630,inset 0 1px 0 #fff6d5;
+}
+.gv2-classic .gv2-sidebar nav button.active{background:#d2ab6530;color:#f9db9d}
+.gv2-classic .gv2-sidebar nav button:focus-visible{outline:2px solid #f0d595;outline-offset:2px}
+.gv2-classic .gv2-heading h1{color:#f8f9fb;letter-spacing:-.055em;font-weight:770}
+.gv2-classic .gv2-heading p{color:#acbdcc;max-width:670px}
+.gv2-classic .gv2-classic-topbar{background:#111d2af2;border-bottom-color:#334456}
+.gv2-classic .gv2-classic-topbar .wallet-button{
+ border-color:#e5c27a;color:#18212c;background:linear-gradient(135deg,#f5d99c,#d6ad66);
+ box-shadow:0 4px 17px #05081228;
+}
+.gv2-classic .gv2-release{
+ display:flex;align-items:center;gap:10px;min-height:0;margin:0 0 21px;
+ padding:10px 15px;background:linear-gradient(120deg,#15251f,#14202c);
+ border:1px solid #486250;border-radius:12px;
+ box-shadow:inset 0 1px 0 #ffffff0b;
+}
+.gv2-classic .gv2-release>svg{width:17px;height:17px;color:#ddc68b}
+.gv2-classic .gv2-release-copy{gap:2px}
+.gv2-classic .gv2-release-copy strong{font-size:12px;color:#e7dab4}
+.gv2-classic .gv2-release-copy span{font-size:11px;color:#bacdc1;line-height:1.45}
+.gv2-classic .gv2-release>a{font-size:11px;color:#eed39c}
+.gv2-classic .gv2-premium-board{
+ background:
+  radial-gradient(ellipse at 110% -20%,#638a6857,transparent 44%),
+  radial-gradient(ellipse at -10% 100%,#a77b3c36,transparent 55%),
+  linear-gradient(117deg,#192934,#111e2e 52%,#182d35);
+ border:1px solid #807154a3;
+ box-shadow:0 25px 70px #02071055,inset 0 1px 0 #f7e4ac35;
+}
+.gv2-classic .gv2-premium-board-top{border-color:#e8d6ad21}
+.gv2-classic .gv2-premium-hero-balance>strong{color:#fff2d4;font-weight:800}
+.gv2-classic .gv2-premium-hero-side{
+ background:#06131e75;border-color:#b9a36b3c;
+}
+.gv2-classic .gv2-premium-hero-meta{color:#acc1c4}
+.gv2-classic .gv2-premium-shortcut-grid button{
+ border-color:#3d5061;background:linear-gradient(145deg,#1c2c3c,#111c2c);
+ box-shadow:0 10px 30px #050a1424,inset 0 1px 0 #ffffff0e;
+}
+.gv2-classic .gv2-premium-shortcut-grid button:hover:not(:disabled){
+ border-color:#dab577;transform:translateY(-2px);
+ background:linear-gradient(145deg,#263d49,#182a3a);
+}
+.gv2-classic .gv2-premium-shortcut-grid button:focus-visible{outline:2px solid #f0d394;outline-offset:2px}
+.gv2-classic .gv2-summary{margin-bottom:30px;gap:13px}
+.gv2-classic .gv2-metric{
+ border-color:#364858;background:linear-gradient(142deg,#172838,#101e2c);
+ min-height:139px;box-shadow:0 8px 26px #03091226;
+}
+.gv2-classic .gv2-metric:before{background:linear-gradient(#e4c180,#e4c18000)}
+.gv2-classic .gv2-metric strong{color:#f7e7c3;font-weight:760}
+.gv2-classic .gv2-metric span{color:#9fbbca}
+
+/* Ledger switcher: keeps quantities and units separate, never sums BNB and USDT. */
+.gv2-classic .gv2-signature-ledger,.gv2-classic .gv2-signature-positions{margin:22px 0 31px;min-width:0}
+.gv2-classic .gv2-signature-ledger-header{
+ display:flex;justify-content:space-between;align-items:end;gap:18px;
+ flex-wrap:wrap;margin-bottom:16px;
+}
+.gv2-classic .gv2-signature-ledger-header>div:first-child{min-width:0}
+.gv2-classic .gv2-signature-ledger-header h2{
+ margin:6px 0 4px;font-size:clamp(19px,2.6vw,24px);
+ letter-spacing:-.035em;color:#f7f7f5;line-height:1.22;
+}
+.gv2-classic .gv2-signature-ledger-header p{margin:0;font-size:12px;color:#a7b6c5;line-height:1.6}
+.gv2-classic .gv2-signature-ledger-header>button{
+ min-height:40px;background:#233141;border:1px solid #4b5f6d;color:#f4daaa;
+ border-radius:11px;font-size:12px;padding:9px 14px;
+}
+.gv2-classic .gv2-signature-asset-switch{
+ display:flex;align-items:center;gap:4px;padding:4px;
+ background:#142030;border:1px solid #415062;border-radius:12px;
+}
+.gv2-classic .gv2-signature-asset-switch button{
+ min-height:36px;padding:7px 18px;border:0;border-radius:9px;
+ font-size:12px;color:#abbecf;background:transparent;font-weight:700;min-width:79px;
+}
+.gv2-classic .gv2-signature-asset-switch button[aria-pressed=true]{
+ background:linear-gradient(125deg,#f0d394,#d4a961);color:#1d2730;box-shadow:0 3px 12px #04091644;
+}
+.gv2-classic .gv2-signature-asset-switch button:focus-visible{outline:2px solid #f4dba9}
+.gv2-classic .gv2-signature-ledger-surface{
+ display:grid;grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);gap:0;
+ border-radius:19px;overflow:hidden;border:1px solid #3b5261;
+ box-shadow:0 16px 37px #02091330;background:linear-gradient(130deg,#192d38,#122031);
+}
+.gv2-classic .gv2-signature-asset-hero{
+ position:relative;display:flex;align-items:flex-start;flex-direction:column;gap:17px;
+ background:radial-gradient(ellipse at 15% 10%,#b6964c2f,transparent 57%),linear-gradient(142deg,#233a42,#162938);
+ padding:28px;min-width:0;border-right:1px solid #4d5b602c;
+}
+.gv2-classic .gv2-signature-currency{
+ width:55px;height:55px;border-radius:17px;display:grid;place-items:center;
+ background:linear-gradient(135deg,#f3d48f,#c39a4d);color:#16272c;
+ border:1px solid #f4dea1;font-size:30px;font-weight:800;
+ box-shadow:0 11px 25px #0004;
+}
+.gv2-classic .gv2-signature-currency.usdt{background:linear-gradient(135deg,#9ee5d0,#59b6a0);border-color:#a9ebda}
+.gv2-classic .gv2-signature-asset-hero>div{min-width:0}
+.gv2-classic .gv2-signature-asset-hero small{color:#c2d1cc;font-size:12px}
+.gv2-classic .gv2-signature-asset-hero strong{
+ display:block;font-size:clamp(21px,3vw,35px);margin:9px 0;color:#fbefce;
+ font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.3;
+}
+.gv2-classic .gv2-signature-asset-hero em{font-size:14px;font-style:normal;font-weight:600;color:#c6d0cc}
+.gv2-classic .gv2-signature-asset-hero span:last-child{display:block;color:#a2b3bb;font-size:11px;line-height:1.65}
+.gv2-classic .gv2-signature-ledger-stats{
+ display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+ gap:0;min-width:0;padding:15px 19px;
+}
+.gv2-classic .gv2-signature-ledger-stats>div{
+ min-width:0;padding:18px 14px;border-bottom:1px solid #ffffff17;
+}
+.gv2-classic .gv2-signature-ledger-stats>div:nth-child(odd){border-right:1px solid #ffffff17}
+.gv2-classic .gv2-signature-ledger-stats>div:nth-last-child(-n+2){border-bottom:none}
+.gv2-classic .gv2-signature-ledger-stats small,.gv2-classic .gv2-signature-ledger-stats span{
+ display:block;font-size:11px;line-height:1.45;color:#a7b7c4;
+}
+.gv2-classic .gv2-signature-ledger-stats strong{
+ display:block;font-size:clamp(14px,2vw,19px);font-weight:720;color:#f8e8c5;
+ font-variant-numeric:tabular-nums;line-height:1.4;margin:7px 0;overflow-wrap:anywhere;
+}
+.gv2-classic .gv2-signature-ledger-footer{
+ display:flex;align-items:flex-start;gap:10px;grid-column:1/-1;padding:12px 20px;
+ background:#1c2a2c;border-top:1px solid #52665254;
+}
+.gv2-classic .gv2-signature-ledger-footer svg{flex-shrink:0;color:#d9bb82;margin-top:2px}
+.gv2-classic .gv2-signature-ledger-footer p{font-size:11px;color:#bbc4bb;line-height:1.65;margin:0}
+.gv2-classic .gv2-signature-ledger-footer strong{font-weight:760;color:#f3d8a0}
+
+/* Position spotlight: only actual indexed V2 positions, never hypothetical profits. */
+.gv2-classic .gv2-signature-position-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.gv2-classic .gv2-signature-position-tile{
+ position:relative;min-width:0;overflow:hidden;border-radius:17px;padding:21px;
+ background:linear-gradient(130deg,#192e3c,#121e2c);border:1px solid #405367;
+ box-shadow:0 9px 28px #030a132b;
+}
+.gv2-classic .gv2-signature-position-tile:after{
+ content:'';position:absolute;right:-30px;top:-44px;width:130px;height:130px;border-radius:50%;
+ border:1px solid #c9a76529;box-shadow:0 0 0 23px #e2c27e08;pointer-events:none;
+}
+.gv2-classic .gv2-signature-position-tile>div{display:flex;align-items:center;gap:10px;color:#c9d8dc;font-size:12px}
+.gv2-classic .gv2-signature-position-symbol{
+ display:grid;place-items:center;width:31px;height:31px;border-radius:10px;
+ background:#d7b76e22;color:#edd08d;border:1px solid #d7b76e44;
+}
+.gv2-classic .gv2-signature-position-tile>strong{
+ display:block;margin:15px 0 5px;font-size:clamp(20px,2.5vw,27px);
+ font-weight:750;color:#f3e6ca;line-height:1.35;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+}
+.gv2-classic .gv2-signature-position-tile em{font-size:13px;font-style:normal;color:#b6c5c8}
+.gv2-classic .gv2-signature-position-tile>p{margin:0 0 10px;color:#aebfc7;font-size:12px}
+.gv2-classic .gv2-signature-position-tile>small{color:#b8c4d2;font-size:11px}
+.gv2-classic .gv2-signature-position-empty{
+ display:flex;align-items:center;gap:13px;min-width:0;flex-wrap:wrap;
+ border-radius:17px;padding:21px 24px;background:#142334;border:1px dashed #455b70;
+}
+.gv2-classic .gv2-signature-position-empty>svg{color:#d5b776;flex-shrink:0}
+.gv2-classic .gv2-signature-position-empty>div{flex:1;min-width:175px}
+.gv2-classic .gv2-signature-position-empty strong{display:block;font-size:13px;color:#f1eadb}
+.gv2-classic .gv2-signature-position-empty span{display:block;font-size:11px;color:#acbbcb;line-height:1.5;margin-top:4px}
+.gv2-classic .gv2-signature-position-empty button{
+ min-height:41px;font-size:12px;color:#efd9a4;background:#253443;border:1px solid #566579;border-radius:10px;
+}
+.gv2-classic .gv2-loading,.gv2-classic .gv2-read-retry{border-color:#425e70}
+.gv2-classic .gv2-loading:before{
+ content:'';display:inline-block;width:14px;height:14px;border:2px solid #f0d394;border-right-color:transparent;
+ border-radius:50%;margin-right:11px;animation:gv2spin .9s linear infinite;vertical-align:-2px;
+}
+.gv2-classic .gv2-mobile-bottom{
+ background:linear-gradient(180deg,#102033,#0d1726);
+ border-top:1px solid #455063;box-shadow:0 -10px 35px #02071080;
+}
+.gv2-classic .gv2-mobile-bottom button[aria-current=page]{
+ background:linear-gradient(130deg,#d3ac6350,#6a573847);
+ border:1px solid #e9c37b29;color:#f6d39d;
+}
+@media(max-width:1100px){
+ .gv2-classic .gv2-signature-ledger-surface{grid-template-columns:minmax(0,1fr)}
+ .gv2-classic .gv2-signature-asset-hero{border-right:0;border-bottom:1px solid #ffffff1c;padding:22px}
+ .gv2-classic .gv2-signature-ledger-stats{padding:9px 14px}
+}
+@media(max-width:720px){
+ .gv2-classic .gv2-signature-ledger-header{align-items:flex-start}
+ .gv2-classic .gv2-signature-asset-switch{width:100%}
+ .gv2-classic .gv2-signature-asset-switch button{flex:1}
+ .gv2-classic .gv2-signature-position-grid{grid-template-columns:minmax(0,1fr);gap:11px}
+ .gv2-classic .gv2-signature-position-tile{padding:18px}
+ .gv2-classic .gv2-signature-ledger-stats{grid-template-columns:repeat(2,minmax(0,1fr));padding:5px 10px}
+ .gv2-classic .gv2-signature-ledger-stats>div{padding:14px 10px}
+}
+@media(max-width:420px){
+ .gv2-classic .gv2-signature-asset-hero{padding:19px}
+ .gv2-classic .gv2-signature-currency{width:49px;height:49px;font-size:26px;border-radius:15px}
+ .gv2-classic .gv2-signature-asset-hero strong{font-size:clamp(23px,7vw,30px)}
+ .gv2-classic .gv2-signature-ledger-stats strong{font-size:15px}
+ .gv2-classic .gv2-signature-ledger-stats span{font-size:10px}
+ .gv2-classic .gv2-signature-ledger-footer{padding:11px 13px}
+ .gv2-classic .gv2-signature-position-empty{padding:16px}
+}
+@media(max-width:350px){
+ .gv2-classic .gv2-signature-ledger-stats{grid-template-columns:minmax(0,1fr)}
+ .gv2-classic .gv2-signature-ledger-stats>div{border-right:0!important;border-bottom:1px solid #ffffff14!important}
+ .gv2-classic .gv2-signature-ledger-stats>div:last-child{border-bottom:none!important}
+}
+@media(prefers-reduced-motion:reduce){
+ .gv2-classic .gv2-signature-position-tile,.gv2-classic .gv2-premium-shortcut-grid button{transition:none!important}
+ .gv2-classic .gv2-loading:before{animation:none}
+}
