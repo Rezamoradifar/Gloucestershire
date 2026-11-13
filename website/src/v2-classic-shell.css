@@ -1,0 +1,42 @@
+/* Restore the original Global desktop/mobile shell around the V2-only data layer.
+   No import or execution of legacy contract modules is permitted. */
+.gv2-classic{--ink:#f4efe2;--muted:#acb9c1;--line:#283841;--yellow:#dfbb72;background:#0c121a;color:#f3f0e7;min-height:100dvh;display:flex}
+.gv2-classic .gv2-sidebar{width:252px;right:0;left:auto;top:0;bottom:0;position:fixed;background:linear-gradient(165deg,#111a23,#0b111a 75%);border-left:1px solid #2e3c47;padding:34px 16px 20px;display:flex;flex-direction:column;z-index:60;overflow-y:auto;box-shadow:-16px 0 38px #060b101f}
+.gv2-classic .gv2-sidebar .brand{margin:4px 10px 32px;display:flex;gap:13px;align-items:center;color:#f5e9cd;text-decoration:none}
+.gv2-classic .gv2-sidebar .brand-icon{background:#ddbd76;border-radius:13px;display:grid;place-items:center;color:#15232a;width:46px;height:46px;font-size:26px;font-weight:900}
+.gv2-classic .gv2-sidebar .brand strong{font-size:24px;letter-spacing:.05em;line-height:1.1}
+.gv2-classic .gv2-sidebar .brand small{display:block;color:#98a7b7;font-size:9px;letter-spacing:.12em}
+.gv2-classic .gv2-sidebar .sidebar-caption{font-size:10px;letter-spacing:.14em;color:#91a1ad;margin:0 17px 11px}
+.gv2-classic .gv2-sidebar nav{display:grid;gap:6px}
+.gv2-classic .gv2-sidebar nav button{width:100%;border:0;border-radius:12px;background:transparent;color:#b6c3cd;display:flex;align-items:center;gap:13px;text-align:left;padding:13px 15px;font-size:13px;font-weight:550}
+.gv2-classic .gv2-sidebar nav button>span{flex:1}
+.gv2-classic .gv2-sidebar nav button:hover,.gv2-classic .gv2-sidebar nav button.active{color:#f1d394;background:linear-gradient(90deg,#bda15b22,#d6bd852a);box-shadow:inset -3px 0 #dabb72}
+.gv2-classic .gv2-sidebar-bottom{margin-top:auto;padding:22px 8px 0;border-top:1px solid #2d3b46;display:grid;gap:14px;color:#91a2af;font-size:12px}
+.gv2-classic .gv2-sidebar-bottom a{color:#dec18a;font-size:12px}
+.gv2-classic .gv2-workspace{width:calc(100% - 252px);margin-right:252px;margin-left:0;min-width:0;background:radial-gradient(circle at 85% 0%,#1f292933,transparent 35%),#0e151d}
+.gv2-classic .gv2-classic-topbar{height:82px;display:flex;justify-content:space-between;align-items:center;gap:18px;padding:0 35px;background:#121a24f2;border-bottom:1px solid #2b3945;backdrop-filter:blur(16px);position:sticky;top:0;z-index:30}
+.gv2-classic .gv2-classic-topbar .breadcrumb{display:flex;align-items:center;gap:10px;color:#9fabb7;font-size:13px;white-space:nowrap}
+.gv2-classic .gv2-classic-topbar .breadcrumb strong{color:#e5d0a0}
+.gv2-classic .gv2-classic-topbar .top-actions{display:flex;align-items:center;gap:14px}
+.gv2-classic .gv2-classic-topbar .network-label{background:#243b33;color:#9bd8ae;border:1px solid #48675d;border-radius:8px;font-size:10px;letter-spacing:.08em;padding:8px 11px}
+.gv2-classic .gv2-classic-topbar .wallet-button{background:#ddbc78;color:#142125;border-radius:10px;border:1px solid #ddbc78;white-space:nowrap;font-weight:700}
+.gv2-classic .gv2-classic-topbar .mobile-menu{display:none!important}
+.gv2-classic .gv2-classic-topbar .icon-button{background:transparent;border:1px solid #3a4851;color:#d8cead;border-radius:10px;width:41px;height:41px;padding:8px}
+.gv2-classic .gv2-wrap{max-width:1440px;padding:35px 36px 70px;margin:0 auto}
+.gv2-classic .gv2-heading{margin-bottom:22px;align-items:flex-start}
+.gv2-classic .gv2-heading h1{font-size:clamp(27px,3vw,37px);font-weight:750}
+.gv2-classic .gv2-heading p{max-width:750px}
+.gv2-classic .gv2-panel,.gv2-classic .gv2-metric{background:linear-gradient(145deg,#17222d,#101a24);border:1px solid #34414c;border-radius:15px;box-shadow:0 10px 30px #070d152b}
+.gv2-classic .gv2-metric{min-height:160px;padding:22px}
+.gv2-classic .gv2-summary{margin-top:22px;gap:16px}
+.gv2-classic .gv2-metric strong{font-size:clamp(18px,2.2vw,27px);color:#efdbab;margin-top:12px}
+.gv2-classic .gv2-nav{display:none}
+.gv2-classic .gv2-asset-row{gap:18px}
+.gv2-classic .gv2-release{border-color:#39554e;background:#1c302b;border-radius:12px}
+.gv2-classic .gv2-section-head{border-bottom:1px solid #2f3c46;padding-bottom:12px}
+.gv2-classic .gv2-page-label{font-size:11px;letter-spacing:.14em;color:#d2b579}
+.gv2-classic .gv2-scrim{display:none}
+.gv2-classic .gv2-sidebar-close{display:none}
+@media(max-width:1180px){.gv2-classic .gv2-sidebar{width:220px}.gv2-classic .gv2-workspace{margin-right:220px;width:calc(100% - 220px)}.gv2-classic .gv2-wrap{padding:26px}.gv2-classic .gv2-classic-topbar{padding:0 24px}}
+@media(max-width:960px){.gv2-classic .gv2-sidebar{width:min(84vw,350px);transform:translateX(102%);transition:transform .2s ease;z-index:80}.gv2-classic .gv2-sidebar.open{transform:translateX(0)}.gv2-classic .gv2-sidebar-close{display:inline-flex;position:absolute;right:16px;top:11px}.gv2-classic .gv2-workspace{margin:0;width:100%}.gv2-classic .gv2-classic-topbar .mobile-menu{display:inline-flex!important}.gv2-classic .gv2-scrim{display:block;position:fixed;inset:0;background:#050a12a8;border:0;border-radius:0;z-index:70;width:100%;height:100%}.gv2-classic .gv2-classic-topbar{min-height:72px;height:auto;padding:12px 18px}.gv2-classic .gv2-wrap{padding:25px 18px 50px}.gv2-classic .gv2-heading{flex-direction:column;gap:14px}}
+@media(max-width:600px){.gv2-classic .gv2-classic-topbar .breadcrumb{gap:6px}.gv2-classic .gv2-classic-topbar .network-label{display:none}.gv2-classic .gv2-classic-topbar .wallet-button{font-size:11px;padding:8px;max-width:190px}.gv2-classic .gv2-classic-topbar{gap:7px;padding:11px 12px}.gv2-classic .gv2-wrap{padding:18px 13px 45px}.gv2-classic .gv2-summary{gap:9px}.gv2-classic .gv2-metric{min-height:112px;padding:14px}.gv2-classic .gv2-metric strong{font-size:17px}.gv2-classic .gv2-heading h1{font-size:26px}}
