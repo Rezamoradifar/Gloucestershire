@@ -58,6 +58,7 @@ export default function V3Dashboard(){
  const [referrer,setReferrer]=useState(ZeroAddress);
  const [requestKind,setRequestKind]=useState<'profit'|'principal'|'referral'|'network'>('profit');
  const [adminQueue,setAdminQueue]=useState<{count:number;page:number;requests:V3Withdrawal[]}|null>(null);
+ const [branchPage,setBranchPage]=useState(0),[groupPage,setGroupPage]=useState(0);
  const revision=useRef(0);
  const config=v3ReleaseConfig;
 
@@ -87,12 +88,12 @@ export default function V3Dashboard(){
   if(!provider||!wallet||chain!==97||!config){setView(null);setLoading(false);return;}
   setLoading(true);setError('');
   try{
-   const result=await readV3Snapshot(provider,wallet,config,tab==='team');
+   const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null);
    if(id===revision.current&&getWalletProvider()===provider)setView(result);
   }catch(e){
    if(id===revision.current){setView(null);setError(e instanceof Error?e.message:'V3 verification failed.');}
   }finally{if(id===revision.current)setLoading(false);}
- },[wallet,chain,config,tab]);
+ },[wallet,chain,config,tab,branchPage,groupPage]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
   if(!config||!wallet||chain!==97)return;
@@ -309,7 +310,8 @@ export default function V3Dashboard(){
         }}>Reinvest recorded TEST claim</button></div></section>
      </>}
      {tab==='team'&&(view.networkLoaded?
-      <V3NetworkPanel view={view} busy={busy} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}/>:
+      <V3NetworkPanel view={view} busy={busy||loading} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
+       onBranchPage={setBranchPage} onGroupPage={setGroupPage}/>:
       <section className="gv2-panel" role="status">Loading verified network branches and groups…</section>)}
      {tab==='history'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Recent confirmed withdrawals</h3><span>Last {view.withdrawals.length} of {view.withdrawCount}</span></div>
       {view.withdrawals.map(r=>withdrawItem(r))}

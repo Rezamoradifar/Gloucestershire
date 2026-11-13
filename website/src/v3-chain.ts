@@ -7,6 +7,7 @@ import {BrowserProvider,Contract,FetchRequest,JsonRpcProvider,getAddress,
 import {V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
  type V3SiteReleaseConfig} from './v3-site-config';
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
+import {v3PageRange} from './v3-pagination';
 
 export const V3_EXPLORER='https://testnet.bscscan.com';
 const V3_EXPECTED_MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
@@ -125,6 +126,7 @@ export type V3Snapshot={
  networkAvailable:bigint;networkReserved:bigint;cumulativeNetwork:bigint;
  networkBranches:V3NetworkBranch[];networkBranchCount:number;
  networkGroups:V3NetworkGroup[];networkGroupCount:number;networkLoaded:boolean;
+ networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  withdrawCount:number;memberCount:number;totalWithdrawalCount:number;
  walletTestTokenBalance:bigint;allowance:bigint;gasWei:bigint;
@@ -191,7 +193,8 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
  }
 }
 export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig,includeNetworkDetails=false):Promise<V3Snapshot>{
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,
+ networkPage:{branches:number;groups:number}|null=null):Promise<V3Snapshot>{
  const {vault,provider,options,block}=await v3ReadSession(walletProvider,wallet,config);
  try{
  wallet=getAddress(wallet);
@@ -212,15 +215,19 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   vault.networkReserved(wallet,options),vault.cumulativeNetwork(wallet,options),
   vault.qualifiedDirects(wallet,options)
  ]);
- const [rawBranches,rawGroups]=includeNetworkDetails?
+ const [rawBranches,rawGroups]=networkPage?
   await Promise.all([vault.networkBranchCount(wallet,options),vault.rewardGroupCount(wallet,options)]):[0n,0n];
  const branchCount=toSafeCount(rawBranches,'network branch');
  const groupCount=toSafeCount(rawGroups,'network group');
- const networkBranches=await Promise.all(Array.from({length:Math.min(branchCount,50)},async(_,index)=>{
+ const branchRange=v3PageRange(branchCount,networkPage?.branches??0,20);
+ const groupRange=v3PageRange(groupCount,networkPage?.groups??0,20);
+ const networkBranches=await Promise.all(Array.from({length:branchRange.length},async(_,offset)=>{
+  const index=branchRange.start+offset;
   const address=getAddress(await vault.networkBranch(wallet,index,options));
   return {address,volume:BigInt(await vault.branchVolumeUsd(wallet,address,options))};
  }));
- const networkGroups=await Promise.all(Array.from({length:Math.min(groupCount,20)},async(_,id)=>{
+ const networkGroups=await Promise.all(Array.from({length:groupRange.length},async(_,offset)=>{
+  const id=groupRange.start+offset;
   const progress=await vault.rewardProgress(wallet,id,options),stage=Number(progress.stage);
   if(stage<0||stage>14)throw Error('Invalid V3 network stage.');
   const terms=stage<14?await vault.rewardStage(stage,options):null;
@@ -292,7 +299,8 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   requiredDirects:toSafeCount(terms.directs,'required directs'),requiredVolume:BigInt(terms.target),
   maximumRateBps:Number(terms.maximumBps),networkAvailable:BigInt(netAvailable),
   networkReserved:BigInt(netReserved),cumulativeNetwork:BigInt(netCumulative),
-  networkBranches,networkBranchCount:branchCount,networkGroups,networkGroupCount:groupCount,networkLoaded:includeNetworkDetails,
+  networkBranches,networkBranchCount:branchCount,networkGroups,networkGroupCount:groupCount,networkLoaded:Boolean(networkPage),
+  networkBranchPage:branchRange.page,networkGroupPage:groupRange.page,
   canManage:Boolean(canManage),canFund:Boolean(canFund),
   positions,withdrawals,withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
