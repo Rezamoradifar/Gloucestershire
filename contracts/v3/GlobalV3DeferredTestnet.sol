@@ -149,11 +149,23 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
         users[who].referrer=referrer;
     }
     function checkIn() external active {
-        User storage u=users[msg.sender];
+        _checkIn(msg.sender);
+    }
+    /// @notice One signed activity transaction can also record every mature
+    /// position in this explicitly bounded list; no privileged daily signer.
+    function checkInAndAccrue(uint256[] calldata positionIds) external nonReentrant active {
+        if(positionIds.length>20)revert Invalid();
+        _checkIn(msg.sender);
+        for(uint256 i=0;i<positionIds.length;i++){
+            _accrueDaily(msg.sender,positionIds[i]);
+        }
+    }
+    function _checkIn(address who) private {
+        User storage u=users[who];
         if(!u.registered||u.suspended)revert NotEligible();
         if(u.lastCheckIn!=0&&block.timestamp<uint256(u.lastCheckIn)+1 hours)revert Locked();
         u.lastCheckIn=uint64(block.timestamp);
-        emit CheckIn(msg.sender,block.timestamp);
+        emit CheckIn(who,block.timestamp);
     }
     function isEligible(address who) public view returns(bool) {
         User storage u=users[who];
@@ -216,6 +228,9 @@ contract GlobalV3DeferredTestnet is AccessControl, ReentrancyGuard {
     /// anyone may call this transaction when check-in and 24-hour interval pass.
     /// The resulting on-chain claim is recorded EVEN IF cash has not been funded.
     function accrueDaily(address who,uint256 positionId) external nonReentrant active {
+        _accrueDaily(who,positionId);
+    }
+    function _accrueDaily(address who,uint256 positionId) private {
         if(!isEligible(who))revert NotEligible();
         Position storage p=positions[who][positionId];
         if(p.principal==0||block.timestamp<uint256(p.lastAccruedAt)+ONE_DAY)revert Locked();
