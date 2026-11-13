@@ -53,7 +53,7 @@ before(async()=>{
  addresses=await Promise.all(signers.map(s=>s.getAddress()));
  token=await deploy('MockToken',[18]);
  feed=await deploy('MockFeed',[100000000n]);
- vault=await deploy('GlobalV2Prototype',[addresses[0],token.target,feed.target,feed.target,86400,addresses[11]]);
+ vault=await deploy('GlobalV2Prototype',[addresses[0],token.target,feed.target,feed.target,604800,addresses[11]]);
  assert.ok(artifact('GlobalV2Prototype').evm.deployedBytecode.object.length/2<=24576);
  await tx(vault.grantRole(await vault.REVENUE_FUNDER_ROLE(),addresses[10]));
  await tx(token.mint(addresses[10],E('1000000')));
