@@ -16,6 +16,7 @@ import './v2-classic-shell.css';
 import './v2-classic-refinement.css';
 import './v2-mobile-dock.css';
 import './v2-responsive-complete.css';
+import './v2-premium-experience.css';
 
 type Section='overview'|'invest'|'positions'|'team'|'history'|'profile'|'tickets'|'announcements'|'withdrawals'|'admin'|'contract';
 const navItems=[
@@ -203,8 +204,8 @@ export default function V2Dashboard(){
    </header>
   <main className="gv2-wrap">
    <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE · V2 TESTNET</span>
-    <h1>{navItems.find(x=>x.id===section)?.label??'Account overview'}</h1>
-    <p>Full account workspace · balances, team, rewards, positions and manager controls on the new V2 network.</p>
+    <h1>{section==='overview'?'My dashboard':navItems.find(x=>x.id===section)?.label??'Account overview'}</h1>
+    <p>{section==='overview'?'Your personal account, positions, rewards and activity — all in one place.':'Your Global V2 workspace, powered by verified on-chain account records.'}</p>
    </div>
     {wallet&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17} className={loading?'gv2-spin':''}/> Refresh</button>}
    </div>
@@ -220,11 +221,12 @@ export default function V2Dashboard(){
    {notice&&<p className="gv2-message" role="status">{notice}{transaction&&<> · <a href={explorerTx(transaction)} target="_blank" rel="noopener noreferrer">View transaction <ExternalLink size={14}/></a></>}</p>}
 
    {!wallet&&section==='overview'&&<div className="gv2-account-entry">
-    <div className="gv2-classic-welcome gv2-panel">
+    <div className="gv2-classic-welcome gv2-panel gv2-premium-welcome">
      <div className="gv2-classic-welcome-copy">
-      <small>GLOBAL DROP TRADE · ACCOUNT CENTER</small>
-      <h2>Your original Global workspace, upgraded for V2.</h2>
-      <p>Open your personal account, positions, team and settlement history with your wallet. Only verified V2 blockchain information is displayed.</p>
+      <small>GLOBAL DROP TRADE · PRIVATE ACCOUNT</small>
+      <h2>One powerful place for your Global world<span className="gv2-premium-period">.</span></h2>
+      <p>Explore positions, network, funded rewards and history in one refined workspace. Your financial records appear only after on-chain verification.</p>
+      <div className="gv2-premium-perks"><span><ShieldCheck size={14}/> Pinned V2 contract</span><span><History size={14}/> On-chain history</span><span><Wallet size={14}/> Wallet access</span></div>
       <div className="gv2-classic-connect-actions">
        <button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}><Wallet size={17}/> {connecting?'Connecting…':'Connect wallet'}</button>
        <button disabled={connecting||!walletConnectReady} onClick={()=>void connect('walletconnect')}>WalletConnect / Mobile</button>
@@ -255,6 +257,43 @@ export default function V2Dashboard(){
    {section==='history'&&!snapshot&&<V2HistoryPanel requester={wallet} subject={wallet} token={''}/>}
    {!snapshot&&(['positions','team','profile'] as Section[]).includes(section)&&<section className="gv2-panel gv2-empty-workspace"><h2>{navItems.find(item=>item.id===section)?.label}</h2><p>{wallet?'Your wallet is connected, but account records have not loaded yet. Retry the blockchain read above.':'Connect your V2 wallet to load verified records for this section.'} Old contract balances are not imported.</p>{!wallet&&<button onClick={()=>void connect('injected')} disabled={connecting}><Wallet size={17}/> Connect wallet</button>}</section>}
    {snapshot&&<div className="gv2-content">
+    {section==='overview'&&<>
+     <section className="gv2-premium-board" aria-label="Verified V2 account summary">
+      <div className="gv2-premium-board-top">
+       <span className="gv2-premium-eyebrow"><span className="gv2-premium-pulse" aria-hidden="true"/> GLOBAL PRIVATE WORKSPACE</span>
+       <span className="gv2-premium-wallet"><Wallet size={14}/>{v2Short(wallet)}</span>
+      </div>
+      <div className="gv2-premium-board-main">
+       <div className="gv2-premium-hero-balance">
+        <span className="gv2-premium-caption">Total recorded capital · USD</span>
+        <strong>USD {v2Money(snapshot.capitalUsd,18,2)}</strong>
+        <p>Contract-recorded capital, not available vault cash or a guaranteed redemption.</p>
+        <div className="gv2-premium-hero-buttons">
+         <button className="gv2-premium-main-action" onClick={()=>setSection('positions')}><Layers size={17}/> View positions <ArrowUpRight size={15}/></button>
+         <button className="gv2-premium-quiet-action" onClick={()=>setSection('withdrawals')}><Clock3 size={17}/> Withdrawal requests</button>
+        </div>
+       </div>
+       <div className="gv2-premium-hero-side">
+        <span className="gv2-premium-caption">Credited rewards · not transferred to wallet</span>
+        {snapshot.accounts.map(a=><div className="gv2-premium-asset" key={a.symbol}>
+         <span className={'gv2-premium-token '+a.symbol.toLowerCase()} aria-hidden="true">{a.symbol==='BNB'?'◆':'₮'}</span>
+         <div><small>{a.symbol} · credited profit</small><strong>{v2Money(a.profit,a.decimals)} <em>{a.symbol}</em></strong></div>
+        </div>)}
+        <div className="gv2-premium-hero-meta"><span>{snapshot.registered?'Registered member':'Account not registered'}</span><span>Block {snapshot.block.toLocaleString('en-US')}</span></div>
+       </div>
+      </div>
+     </section>
+     <section className="gv2-premium-shortcuts" aria-label="Quick account actions">
+      <div className="gv2-premium-section-intro"><div><span className="gv2-premium-eyebrow">QUICK ACCESS</span><h2>Everything at your fingertips</h2></div><span>Explore your V2 account</span></div>
+      <div className="gv2-premium-shortcut-grid">
+       <button type="button" onClick={()=>setSection('invest')}><span className="gv2-premium-shortcut-icon"><Coins size={21}/></span><strong>Plans</strong><small>Explore V2 terms</small><ArrowUpRight className="gv2-premium-shortcut-arrow" size={17}/></button>
+       <button type="button" onClick={()=>setSection('team')}><span className="gv2-premium-shortcut-icon"><Users size={21}/></span><strong>My network</strong><small>Team & referrals</small><ArrowUpRight className="gv2-premium-shortcut-arrow" size={17}/></button>
+       <button type="button" onClick={()=>setSection('history')}><span className="gv2-premium-shortcut-icon"><History size={21}/></span><strong>History</strong><small>Verified transactions</small><ArrowUpRight className="gv2-premium-shortcut-arrow" size={17}/></button>
+       <button type="button" onClick={()=>setSection('tickets')}><span className="gv2-premium-shortcut-icon"><Info size={21}/></span><strong>Support</strong><small>Tickets & help</small><ArrowUpRight className="gv2-premium-shortcut-arrow" size={17}/></button>
+      </div>
+     </section>
+    </>}
+    {section==='overview'&&<div className="gv2-premium-section-intro gv2-premium-metrics-title"><div><span className="gv2-premium-eyebrow">ACCOUNT HIGHLIGHTS</span><h2>At a glance</h2></div><span>Current V2 ledger</span></div>}
     <div className="gv2-summary">
      <div className="gv2-metric"><small>Membership</small><strong>{snapshot.registered?'Registered':'Not registered'}</strong><span>On-chain registry</span></div>
      <div className="gv2-metric"><small>24h activity</small><strong>{snapshot.eligible?'Eligible now':'Not eligible'}</strong><span>Live on-chain check-in</span></div>
