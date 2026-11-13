@@ -5,15 +5,20 @@
 // pinned by an operator in a separate file outside this repository.
 import fs from 'node:fs';
 import path from 'node:path';
-import {Contract,FetchRequest,JsonRpcProvider,Wallet,getAddress,keccak256,parseEther,formatEther} from 'ethers';
+import {Contract,FetchRequest,JsonRpcProvider,Wallet,getAddress,keccak256,parseEther,Interface} from 'ethers';
 
 const CHAIN=97,DAY=86400,MAX_GAS=500000n,DEFAULT_LIMIT=100,DEFAULT_TX_LIMIT=30;
 const TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const RETIRED_V2=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
 const GAS_LIMIT_PER_TX=parseEther('0.005');
 const GAS_LIMIT_PER_RUN=parseEther('0.15');
+const EVENTS=new Interface(ABI);
 const ABI=[
  'function asset() view returns(address)',
+ 'function MANAGER_ROLE() view returns(bytes32)',
+ 'function FUNDER_ROLE() view returns(bytes32)',
+ 'function GUARDIAN_ROLE() view returns(bytes32)',
+ 'function hasRole(bytes32,address) view returns(bool)',
  'function paused() view returns(bool)',
  'function memberCount() view returns(uint256)',
  'function memberAt(uint256) view returns(address)',
@@ -142,9 +147,11 @@ async function main(){
   const signer=new Wallet(readDedicatedKey(checkedPath(maybeKey)),provider);
   // A designated permissionless gas-only signer; never the role-holding admin
   // or wallet that controls customer funds.
-  const role=await contract.MANAGER_ROLE?.().catch(()=>null); // optional guarded check
-  if(role&&await contract.hasRole?.(role,signer.address).catch(()=>false))
-   throw Error('USE_A_SEPARATE_GAS_ONLY_KEEPER_NOT_MANAGER');
+  const roles=await Promise.all([
+   contract.MANAGER_ROLE(),contract.FUNDER_ROLE(),contract.GUARDIAN_ROLE()
+  ]);
+  if((await Promise.all(roles.map(role=>contract.hasRole(role,signer.address)))).some(Boolean))
+   throw Error('USE_A_SEPARATE_GAS_ONLY_KEEPER_WITHOUT_ADMIN_ROLES');
   const balance=await provider.getBalance(signer.address);
   if(balance<parseEther('0.001'))throw Error('GAS_ONLY_KEEPER_HAS_TOO_LITTLE_TEST_BNB');
   let sent=0,costLimitTotal=0n,failures=0;
@@ -165,6 +172,16 @@ async function main(){
     const tx=await payable.accrueDaily(item.member,item.positionId,{gasLimit:gas*12n/10n});
     const receipt=await tx.wait(2);
     if(receipt?.status!==1)throw Error('V3_ACCRUAL_NOT_CONFIRMED');
+    const recorded=receipt.logs.some(log=>{
+     if(log.address.toLowerCase()!==config.contract.toLowerCase())return false;
+     try{
+      const e=EVENTS.parseLog({topics:log.topics,data:log.data});
+      return e?.name==='DailyClaimAccrued'&&
+       getAddress(e.args.user)===item.member&&
+       BigInt(e.args.positionId)===BigInt(item.positionId);
+     }catch{return false;}
+    });
+    if(!recorded)throw Error('V3_ACCRUAL_EVENT_NOT_VERIFIED_INSPECT_TX');
     sent++;
     confirmed.push({member:item.member,positionId:item.positionId,tx:receipt.hash});
    }catch(e){
