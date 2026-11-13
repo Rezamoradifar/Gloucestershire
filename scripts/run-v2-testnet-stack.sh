@@ -32,6 +32,17 @@ echo 'V2_STACK_PHASE=INSTALL_FRONTEND_WITH_ROLLBACK'
 # An installed V2 API extension is backward compatible with V1; it does not
 # change the legacy vault address, worker or stored ledger.
 bash ubuntu-global-v2-site.sh --install
+echo 'V2_STACK_PHASE=VERIFY_SERVED_V2_RPC'
+proof=$(mktemp)
+trap 'rm -f -- "$proof"' EXIT
+curl -fsS --noproxy '*' --max-time 25 \
+ --resolve globaldroptrade.com:443:127.0.0.1 \
+ -X POST https://globaldroptrade.com/api/v2/rpc \
+ -H 'Content-Type: application/json' \
+ --data '{"jsonrpc":"2.0","id":97,"method":"eth_chainId","params":[]}' \
+ -o "$proof"
+node -e 'const r=require("fs").readFileSync(process.argv[1],"utf8");const p=JSON.parse(r);if(p.result!=="0x61")process.exit(1)' "$proof"
+echo 'V2_SITE_RPC_HTTPS_READY'
 echo 'V2_TESTNET_STACK_INSTALLED'
 echo 'V2_MAINNET_AND_REAL_CAPITAL_NOT_APPROVED'
 echo 'Old contract data and financial journals were not deleted.'
