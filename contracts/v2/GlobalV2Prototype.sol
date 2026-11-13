@@ -339,7 +339,7 @@ contract GlobalV2Prototype is AccessControl, ReentrancyGuard {
         return cash>reservedProfit?cash-reservedProfit:0;
     }
     function unfundedPrincipal(address asset) external view returns(uint256) {
-        uint256 free=availablePrincipalCash(asset),debt=principalLiability[asset];
+        uint256 free=availablePrincipalCash(asset);uint256 debt=principalLiability[asset];
         return debt>free?debt-free:0;
     }
     function profitWithdrawalCap(address who,address asset) public view returns(uint256) {
