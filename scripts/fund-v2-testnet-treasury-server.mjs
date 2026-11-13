@@ -142,6 +142,9 @@ async function main(){
   const address=getAddress(wallet.address);
   let view=await readState(provider,address);
   console.log('TESTNET_TREASURY_REVIEW '+JSON.stringify(view));
+  // Idempotency across funding methods: do not add another million if the
+  // V2 vault already holds at least that much test-token cash.
+  if(parseUnits(view.currentVaultCash,18)>=EXACT)fail('VAULT_ALREADY_HAS_AT_LEAST_1M_TEST_TOKENS');
   if(!view.readyToSign)fail('FUNDING_WALLET_LACKS_1M_TEST_TOKENS_OR_TEST_BNB_GAS');
   if(!process.stdin.isTTY)fail('NO_INTERACTIVE_CONFIRMATION');
   const rl=createInterface({input:process.stdin,output:process.stdout});
