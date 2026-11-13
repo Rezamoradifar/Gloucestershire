@@ -13,6 +13,7 @@ export const V2_VAULT_ABI=[
  'function users(address) view returns(address referrer,bool registered,bool vipKyc,bool suspended,uint64 lastCheckIn,uint256 capitalUsd)',
  'function accounts(address,address) view returns(uint256 principal,uint256 profit,uint256 externalDeposited,uint256 reinvested,uint64 nextRequestAt,bool requestPending)',
  'function isEligible(address) view returns(bool)',
+ 'function quoteUsd(address,uint256) view returns(uint256)',
  'function memberCount() view returns(uint256)',
  'function memberAt(uint256) view returns(address)',
  'function positionCount(address) view returns(uint256)',
@@ -158,6 +159,22 @@ export async function readV2Snapshot(walletProvider:Eip1193Provider,wallet:strin
   positions,withdrawals,token:getAddress(token),accounts:assets,feeBps:300,cooldownSeconds:259200,
   canApprove:Boolean(canApprove),canKyc:Boolean(canKyc)
  };
+}
+
+// Read-only verified-oracle quote. It never requests an ERC20 allowance,
+ // calls deposit, generates a user balance, or sends any financial transaction.
+export async function readV2InvestmentQuote(
+ walletProvider:Eip1193Provider,wallet:string,asset:string,amount:bigint
+){
+ if(!isAddress(asset)||amount<=0n)throw Error('Invalid read-only quote request.');
+ const {vault,options,block}=await v2Session(walletProvider,wallet);
+ const [approvedToken,decimals]=await Promise.all([vault.usdt(options),vault.tokenDecimals(options)]);
+ const actual=getAddress(asset);
+ if(actual!==ZeroAddress&&actual!==getAddress(approvedToken))
+  throw Error('The proposed asset is not supported by this V2 contract.');
+ const usd=BigInt(await vault.quoteUsd(actual,amount,options));
+ return Object.freeze({asset:actual,amount,usd,block:block.number,
+  decimals:actual===ZeroAddress?18:Number(decimals),status:'QUOTE_ONLY_NO_DEPOSIT' as const});
 }
 
 // Only intended user-initiated actions are available; V2 deposits and revenue

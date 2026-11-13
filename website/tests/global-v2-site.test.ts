@@ -77,6 +77,24 @@ describe('Global V2 public-site isolation',()=>{
   expect(css).toContain('.gv2-classic .gv2-workspace');
   expect(css).toContain('@media(max-width:960px)');
  });
+ it('restores an investment plan and simulated test-deposit entry point without enabling real deposits',()=>{
+  const root=read('src/V2Dashboard.tsx');
+  const panel=read('src/V2Investment.tsx');
+  const preview=read('src/v2-investment-preview.ts');
+  const client=read('src/v2-chain.ts');
+  expect(root).toContain("label:'Invest / plans'");
+  expect(root).toContain("section==='invest'");
+  expect(root).toContain('Preview investment plans');
+  expect(panel).toContain('Run demo investment');
+  expect(panel).toContain('SIMULATION · NO TRANSFERS');
+  expect(panel).toContain('No real BNB/USDT is transferred');
+  expect(panel).toContain('Read V2 oracle quote');
+  expect(preview).toContain('SIMULATION_ONLY_NO_CHAIN_WRITES');
+  expect(client).toContain('readV2InvestmentQuote');
+  expect(client).not.toMatch(/case 'deposit'/);
+  expect(panel).not.toContain('.deposit(');
+  expect(panel).not.toContain('.approve(');
+ });
  it('uses only a syntax-checked, hash-pinned, rollback-capable installer',()=>{
   const script=read('../ubuntu-global-v2-site.sh');
   expect(script).toContain('V2_SITE_PINNED_SHA_REQUIRED');

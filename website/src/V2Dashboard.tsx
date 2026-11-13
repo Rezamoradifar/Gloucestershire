@@ -7,12 +7,14 @@ import {V2_ADDRESS,V2_CHAIN_ID,V2_EXPLORER,V2_CODE_HASH,
  type V2Asset,type V2Action,type V2Snapshot} from './v2-chain';
 import V2HistoryPanel from './V2HistoryPanel';
 import V2AdminConsole from './V2AdminConsole';
+import V2Investment from './V2Investment';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
 
-type Section='overview'|'positions'|'team'|'history'|'withdrawals'|'admin'|'contract';
+type Section='overview'|'invest'|'positions'|'team'|'history'|'withdrawals'|'admin'|'contract';
 const navItems=[
  {id:'overview' as Section,label:'Overview',Icon:LayoutDashboard},
+ {id:'invest' as Section,label:'Invest / plans',Icon:Coins},
  {id:'positions' as Section,label:'My positions',Icon:Layers},
  {id:'team' as Section,label:'Team & referrals',Icon:Users},
  {id:'history' as Section,label:'Verified history',Icon:Clock3},
@@ -195,6 +197,7 @@ export default function V2Dashboard(){
    {!wallet&&<div className="gv2-connect gv2-panel">
     <Wallet size={36}/><h2>Connect to the new Global V2 contract</h2>
     <p>This is a separate, newly deployed contract on BNB Testnet. Connecting your wallet does not transfer funds.</p>
+    <button type="button" onClick={()=>setSection('invest')}>Preview investment plans · no wallet needed</button>
     <div className="gv2-buttons">
      <button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}>Browser wallet</button>
      <button disabled={connecting||!walletConnectReady} onClick={()=>void connect('walletconnect')}>WalletConnect / Mobile</button>
@@ -206,6 +209,7 @@ export default function V2Dashboard(){
    </div>}
    {wallet&&network===V2_CHAIN_ID&&loading&&!snapshot&&<div className="gv2-panel gv2-loading">Verifying V2 contract bytecode and loading on-chain balances…</div>}
 
+   {section==='invest'&&!snapshot&&<V2Investment snapshot={null} wallet={wallet}/>}
    {snapshot&&<div className="gv2-content">
     <div className="gv2-summary">
      <div className="gv2-metric"><small>Membership</small><strong>{snapshot.registered?'Registered':'Not registered'}</strong><span>On-chain registry</span></div>
@@ -213,6 +217,7 @@ export default function V2Dashboard(){
      <div className="gv2-metric"><small>Capital · USD</small><strong>{v2Money(snapshot.capitalUsd,18,2)}</strong><span>Recorded principal, not cash</span></div>
      <div className="gv2-metric"><small>VIP verification</small><strong>{snapshot.kyc?'Admin verified':'Unverified'}</strong><span>Manager-only KYC</span></div>
     </div>
+    {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet}/>}
     {section==='overview'&&<>
      <div className="gv2-section-head"><h2>Asset accounting</h2><span>Verified at block {snapshot.block.toLocaleString('en-US')}</span></div>
      <div className="gv2-asset-row">{snapshot.accounts.map(a=><article key={a.symbol} className="gv2-panel">
@@ -232,7 +237,8 @@ export default function V2Dashboard(){
       </div>:<div className="gv2-buttons"><button className="gv2-primary" disabled={busy||snapshot.suspended||snapshot.lastCheckIn>0&&snapshot.asOf-snapshot.lastCheckIn<3600}
        onClick={()=>void perform({kind:'checkIn'},'Record a new 24-hour on-chain activity check-in.')}><CheckCircle2 size={17}/> Check in (24h)</button>
        <span>Last check-in: {v2Date(snapshot.lastCheckIn)}</span></div>}
-      <p className="gv2-small">Deposit actions are not available through this prototype website. No automatic compounding.</p>
+      <button type="button" className="gv2-primary" onClick={()=>setSection('invest')}>Explore plans and test investment</button>
+      <p className="gv2-small">Real deposits are disabled pending independently verified cash backing; the investment preview is a no-transfer simulation.</p>
      </div>
     </>}
     {section==='positions'&&<div className="gv2-panel">
