@@ -46,8 +46,14 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   assert.equal(await vault.principalLiability(),0n);
   assert.equal(await vault.profitLiability(),0n);
 
-  // All user deposits are real ERC20 transfers on local chain; V3 retains
-  // principal cash rather than routing it out to legacy fee wallets.
+  // Each real local mock-token deposit routes 10% + 10% + 80% to the
+  // original destinations while recording the gross principal liability.
+  const fee1=await vault.FEE_WALLET_1(),fee2=await vault.FEE_WALLET_2();
+  const operations=await vault.OPERATIONS_WALLET();
+  assert.equal(fee1.toLowerCase(),'0x7037cc199499d7a3431285a01e435454eae51265');
+  assert.equal(fee2.toLowerCase(),'0x5bc282a45a8a1d7d9b915f04fc1d4031156d7632');
+  assert.equal(operations.toLowerCase(),'0x8c4ac9b009808a0b49ba77b58e3871e7cdba463c');
+  assert.equal(await vault.DEPOSIT_FEE_EACH_BPS(),1000n);
   for(let i=1;i<=COUNT;i++){
    await done(token.mint(wallets[i],DEPOSIT));
    await done(token.connect(signers[i]).approve(vault.target,DEPOSIT));
@@ -59,9 +65,12 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   assert.equal(await vault.hasRole(await vault.MANAGER_ROLE(),wallets[101]),false);
   assert.equal(await vault.hasRole(await vault.FUNDER_ROLE(),wallets[101]),false);
   assert.equal(await vault.principalLiability(),DEPOSIT*BigInt(COUNT));
-  assert.equal(await token.balanceOf(vault.target),DEPOSIT*BigInt(COUNT));
+  assert.equal(await token.balanceOf(fee1),DEPOSIT*BigInt(COUNT)/10n);
+  assert.equal(await token.balanceOf(fee2),DEPOSIT*BigInt(COUNT)/10n);
+  assert.equal(await token.balanceOf(operations),DEPOSIT*BigInt(COUNT)*8n/10n);
+  assert.equal(await token.balanceOf(vault.target),0n);
   const before=await vault.cashStatus();
-  assert.equal(before[4],0n);
+  assert.equal(before[4],DEPOSIT*BigInt(COUNT));
   await mustFail(vault.connect(signers[5]).accrueDaily.staticCall(wallets[5],0));
   await rpc.request({method:'evm_increaseTime',params:[86461]});
   await rpc.request({method:'evm_mine',params:[]});
@@ -71,13 +80,14 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   for(let i=2;i<=COUNT;i++)await done(vault.connect(signers[101]).accrueDaily(wallets[i],0));
   for(let i=1;i<=COUNT;i++){
    const p=await vault.positionOf(wallets[i],0);
-   assert.equal(p.availableProfit,make(7));
+   // The root qualifies for the documented Growth upgrade; its directs do not.
+   assert.equal(p.availableProfit,make(i===1?12:7));
    assert.equal(p.cumulativeCompound,0n);
   }
   const firstReferral=make('0.7')*99n;
   assert.equal((await vault.users(wallets[1])).referralAvailable,firstReferral);
-  assert.equal(await vault.profitLiability(),make(7)*100n+firstReferral);
-  assert.equal((await vault.cashStatus())[4],await vault.profitLiability());
+  assert.equal(await vault.profitLiability(),make(7)*99n+make(12)+firstReferral);
+  assert.equal((await vault.cashStatus())[4],await vault.principalLiability()+await vault.profitLiability());
   await mustFail(vault.accrueDaily.staticCall(wallets[2],0));
 
   // Exactly one later daily cycle with profit-on-profit on the previous
@@ -176,9 +186,12 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   await done(vault.connect(signers[5]).requestPrincipal(0,make(20)));
   assert.equal((await vault.withdrawalOf(3)).kind,1n);
   await done(vault.approveWithdrawal(3));
-  // V3 retained principal deposits: reserve real available cash instead of
-  // demanding a second 20-token transfer unnecessarily.
-  await done(vault.reserveExistingCash(3));
+  // Routed deposits do not back the vault. The approved principal request
+  // cannot reserve absent cash and must receive its exact separate funding.
+  await mustFail(vault.reserveExistingCash.staticCall(3));
+  await done(token.mint(wallets[0],make(20)));
+  await done(token.approve(vault.target,make(20)));
+  await done(vault.fundWithdrawal(3));
   assert.equal(await vault.principalEscrowed(),make(20));
   await done(vault.payWithdrawal(3));
   assert.equal(await vault.principalEscrowed(),0n);
@@ -200,12 +213,13 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
    status:'PASS',mode:'LOCAL_GANACHE_97_MOCK_ONLY',
    date:new Date().toISOString(),contract:'GLOBAL_V3_NOT_DEPLOYED',
    localAccounts:COUNT,individualWalletSigners:COUNT,
-   initialMockTestDeposits:'100000',allPrincipalRetainedInVault:true,
-   oncePer24HourAccrual:true,firstDayPersonalEarningsPer1000:'7',
+   initialMockTestDeposits:'100000',depositFee1:'10000',depositFee2:'10000',operations:'80000',
+   vaultCashFromDeposits:'0',initialUnfundedPrincipal:'100000',
+   oncePer24HourAccrual:true,baseTierFirstDayPer1000:'7',qualifiedRootFirstDayPer1000:'12',
    secondDayCompoundedProfitPer1000:'0.049',
    onChainAccruedLiabilityWithoutPreFunding:true,
    independentManagerApprovals:true,exactIndividualCashEscrow:true,
-   existingPrincipalCashCanBeReserved:true,noBackfillAfterInactivity:true,
+   principalRequiresActualCash:true,noBackfillAfterInactivity:true,
    oneSignedCheckInAndAccrual:true,permissionlessKeeperNoManagerRole:true,
    enumeratedV3Members:COUNT,
    payoutToImmutableBeneficiary:true,repeatFundingAndPaymentRejected:true,

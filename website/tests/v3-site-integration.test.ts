@@ -51,7 +51,7 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   expect(dashboard).toContain('gv2-mobile-bottom');
   expect(dashboard).toContain('<V3ClaimsReadout verifiedLedger={view.ledger}/>');
   expect(dashboard).toContain('manager-approved');
-  expect(dashboard).toContain('NO 10/10/80 routing');
+  expect(dashboard).toContain('10% to each original fee wallet');
   expect(dashboard).toContain('Unfunded total obligations');
   expect(dashboard).not.toContain('DEMO_BALANCE');
   expect(dashboard).not.toContain('localStorage.setItem');

@@ -14,6 +14,11 @@ export type V3Action=
  | {kind:'checkInAndAccrue';positionIds:number[]}
  | {kind:'requestProfit';positionId:number;amount:bigint}
  | {kind:'requestReferral';amount:bigint}
+ | {kind:'requestNetworkReward';amount:bigint}
+ | {kind:'createRewardGroup';branches:string[]}
+ | {kind:'addRewardBranches';group:number;branches:string[]}
+ | {kind:'prepareNetworkReward';group:number;stage:number;steps:number}
+ | {kind:'claimNetworkRewards';group:number;stage:number;count:number}
  | {kind:'requestPrincipal';positionId:number;amount:bigint}
  | {kind:'reinvest';positionId:number;amount:bigint}
  | {kind:'approveWithdrawal';id:number}
@@ -67,8 +72,25 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
      throw Error('Invalid V3 position or positive amount.');
     name=action.kind;args=[action.positionId,action.amount];break;
    case 'requestReferral':
+   case 'requestNetworkReward':
     if(action.amount<=0n)throw Error('Enter a positive referral claim.');
-    name='requestReferral';args=[action.amount];break;
+    name=action.kind;args=[action.amount];break;
+   case 'createRewardGroup':
+   case 'addRewardBranches':{
+    const branches=action.branches.map(address=>getAddress(address));
+    if(!branches.length||branches.length>64||new Set(branches).size!==branches.length)
+     throw Error('Select between 1 and 64 distinct direct branches.');
+    if(action.kind==='addRewardBranches'&&!validIndex(action.group))throw Error('Invalid network group.');
+    name=action.kind;args=action.kind==='createRewardGroup'?[branches]:[action.group,branches];break;
+   }
+   case 'prepareNetworkReward':
+    if(!validIndex(action.group)||!validIndex(action.stage)||action.stage>=14||
+     !Number.isSafeInteger(action.steps)||action.steps<1||action.steps>64)throw Error('Invalid network preparation.');
+    name=action.kind;args=[action.group,action.stage,action.steps];break;
+   case 'claimNetworkRewards':
+    if(!validIndex(action.group)||!validIndex(action.stage)||action.stage>=14||
+     !Number.isSafeInteger(action.count)||action.count<1||action.stage+action.count>14)throw Error('Invalid network stage claim.');
+    name=action.kind;args=[action.group,action.stage,action.count];break;
    case 'approveWithdrawal':
    case 'rejectWithdrawal':
    case 'reserveExistingCash':
@@ -148,6 +170,17 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
   const sent=await vault.deposit(amount,getAddress(referrer));
   const receipt=await sent.wait(5);
   if(!receipt||receipt.status!==1)throw Error('V3 TESTNET deposit did not confirm.');
+  const expectedFee=amount/10n;
+  const routed=receipt.logs.some((raw:Log)=>{
+   if(raw.address.toLowerCase()!==config.address.toLowerCase())return false;
+   try{
+    const event=EVENTS.parseLog({topics:raw.topics,data:raw.data});
+    return event?.name==='DepositRouted'&&getAddress(event.args.user)===getAddress(wallet)&&
+     BigInt(event.args.amount)===amount&&BigInt(event.args.fee1)===expectedFee&&
+     BigInt(event.args.fee2)===expectedFee&&BigInt(event.args.operations)===amount-2n*expectedFee;
+   }catch{return false;}
+  });
+  if(!routed)throw Error('Deposit routing event was not verified. Inspect the transaction before retrying.');
   return receipt.hash as string;
  }finally{provider.destroy();}
 }

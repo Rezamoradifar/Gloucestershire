@@ -9,9 +9,9 @@ export type V3ClaimPosition={
 };
 export type V3ClaimLedger={
  chainId:number;runtimeVerified:boolean;block:number;
- registered:boolean;suspended:boolean;pendingWithdrawal:boolean;
+ registered:boolean;suspended:boolean;pendingWithdrawal:boolean;paused?:boolean;
  asOf:number;nextRequestAt:number;requestCap:bigint;
- referralAvailable:bigint;principalLiability:bigint;
+ referralAvailable:bigint;networkAvailable?:bigint;principalLiability:bigint;
  profitLiability:bigint;cash:bigint;escrow:bigint;
  positions:V3ClaimPosition[];
 };
@@ -21,7 +21,8 @@ export function v3PrepareUserClaims(ledger:V3ClaimLedger){
   throw Error('V3 chain or contract runtime is unverified; do not display account claims.');
  if(!Number.isSafeInteger(ledger.asOf)||!Number.isSafeInteger(ledger.nextRequestAt)||
   ledger.asOf<0||ledger.nextRequestAt<0)throw Error('Invalid verified block time.');
- const totals=[ledger.requestCap,ledger.referralAvailable,ledger.principalLiability,
+ const networkAvailable=ledger.networkAvailable??0n;
+ const totals=[ledger.requestCap,ledger.referralAvailable,networkAvailable,ledger.principalLiability,
   ledger.profitLiability,ledger.cash,ledger.escrow];
  if(totals.some(x=>x<0n)||ledger.escrow>ledger.cash)
   throw Error('V3 liability or reserved cash is invalid.');
@@ -44,11 +45,16 @@ export function v3PrepareUserClaims(ledger:V3ClaimLedger){
   const requestLimit=p.availableProfit<ledger.requestCap?p.availableProfit:ledger.requestCap;
   if(requestLimit>positionMax)positionMax=requestLimit;
  }
- const eligible=ledger.registered&&!ledger.suspended&&!ledger.pendingWithdrawal&&
+ if(recordedPrincipal>ledger.principalLiability||
+  outstandingDaily+outstandingCompound+ledger.referralAvailable+networkAvailable>ledger.profitLiability)
+  throw Error('Account claims exceed verified global liabilities.');
+ const eligible=ledger.registered&&!ledger.suspended&&!ledger.paused&&!ledger.pendingWithdrawal&&
   ledger.asOf>=ledger.nextRequestAt;
  const referralMax=ledger.referralAvailable<ledger.requestCap?
   ledger.referralAvailable:ledger.requestCap;
- const maxSingleRequest=eligible?(positionMax>referralMax?positionMax:referralMax):0n;
+ const networkMax=networkAvailable<ledger.requestCap?networkAvailable:ledger.requestCap;
+ const otherMax=referralMax>networkMax?referralMax:networkMax;
+ const maxSingleRequest=eligible?(positionMax>otherMax?positionMax:otherMax):0n;
  const accruedUnfunded=ledger.principalLiability+ledger.profitLiability>ledger.cash?
   ledger.principalLiability+ledger.profitLiability-ledger.cash:0n;
  return Object.freeze({
@@ -57,6 +63,7 @@ export function v3PrepareUserClaims(ledger:V3ClaimLedger){
   outstandingDaily,outstandingCompound,
   outstandingPersonal:outstandingDaily+outstandingCompound,
   outstandingReferral:ledger.referralAvailable,
+  outstandingNetwork:networkAvailable,
   cumulativeDaily,cumulativeCompound,
   maxSingleRequest,
   managerCashPayoutConfirmed:false,

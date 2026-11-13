@@ -12,7 +12,7 @@ The new \`GlobalV3DeferredTestnet.accrueDaily(who, positionId)\` records **one c
 
 A single `checkInAndAccrue(positionIds)` wallet signature can check in and record a bounded list (maximum 20) of mature positions. Independent keepers may also call permissionless `accrueDaily`, but neither route creates funds.
 
-The daily tier ceilings mirror the current V2 contract solely for compatibility/testing: Starter 0.50%, Basic 0.70%, Growth 0.90%, Pro 1.10%, VIP 1.30% per eligible daily settlement. **These rates are highly speculative and would require independent commercial evidence and legal review before any real use; they are not guaranteed yields.**
+The test base rates are 0.50%, 0.70%, 0.90%, 1.10% and 1.30%. The documented qualified maxima are 1.00%, 1.20%, 1.50%, 1.80% and 2.00%, requiring the corresponding counts of qualified direct accounts and branch-capped volume. The test contract maintains bounded incremental qualification totals and permits staged milestone claims; token-to-USD parity is simulated, not an oracle. **These rates require independent commercial evidence and legal review before any real use; they are not guaranteed yields.**
 
 ## 2. Profit on profit, without double counting
 
@@ -35,7 +35,7 @@ At all times on the test prototype:
 - \`principalEscrowed\` identifies the already-earmarked principal subset, protecting it from use by another claim.
 - \`reservedForPayout\` is an escrow earmarked to already manager-approved cash-backed requests, not freely spendable treasury cash.
 - \`cashStatus()\` returns actual token cash and the **shortfall** \`max(principalLiability + profitLiability − cash, 0)\`.
-- The original 10/10/80 V2 deposit routing is **not** copied into V3: the V3 deposit retains all mock principal in the vault. This is a material change in business economics, not a migration or a silent terms update.
+- V3 routes external mock-token deposits 10% + 10% + 80% to the original fixed destinations. Gross principal remains a liability while zero of the deposit remains in the vault; the resulting cash shortfall is explicit.
 - When an unfunded profit claim is reinvested, principal liability may grow without cash; **display this uncovered principal explicitly** and forbid claims of fully backed principal unless proven.
 - No money or user data should be migrated from V2 without individually verifiable, independently reviewed authorization and a reconciliation plan.
 
@@ -52,7 +52,7 @@ Independent reviewers must evaluate: reentrancy and ERC20 behavior; token decima
 ## 7. Release and production controls
 
 Do not merge or deploy V3 onto the existing live site merely because tests pass. Release only after:
-1. Explicit decision on changed principal retention and reward economics;
+1. Reconcile the fixed deposit routing, reward economics and independent liquidity plan;
 2. Independent review/audit plus resolved critical findings;
 3. Complete 100-wallet LOCAL acceptance **and** controlled public TESTNET receipt verification;
 4. On-chain liquidity reconciliation and a sustainable revenue source, including a defined source for accrued but unfunded claims;

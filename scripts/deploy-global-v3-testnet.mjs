@@ -16,6 +16,9 @@ const CHAIN=97;
 const ADMIN=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
 const TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const FEE=getAddress('0x74015dedf36677485793f1714ec7bd4893907b26');
+const DEPOSIT_FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
+const DEPOSIT_FEE_2=getAddress('0x5bc282a45a8a1d7d9b915f04fc1d4031156d7632');
+const OPERATIONS=getAddress('0x8c4ac9b009808a0b49ba77b58e3871e7cdba463c');
 const OLD_V2=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
 const MARKER='/var/lib/globaldroptrade/v3-prototype/deployment.json';
 const KEEPER_CONFIG='/etc/globaldroptrade/v3-keeper-testnet.json';
@@ -156,6 +159,8 @@ async function main(){
  try{
   console.log('V3_TESTNET_DEPLOY_PREFLIGHT '+JSON.stringify({
    chainId:97,admin:ADMIN,testToken:TOKEN,feeWallet:FEE,
+   depositFeeWallet1:DEPOSIT_FEE_1,depositFeeWallet2:DEPOSIT_FEE_2,
+   operationsWallet:OPERATIONS,depositFeeEachBps:1000,
    repositoryArtifact:'GlobalV3DeferredTestnet',compiler:a.compiler,
    creationBytecodeHash:keccak256('0x'+a.evm.bytecode.object),
    sourceRpc:rpc,oldV2Unaffected:OLD_V2,
@@ -223,12 +228,16 @@ async function main(){
    if(code==='0x')error('V3_DEPLOYED_RUNTIME_MISSING');
    const verified=new Contract(contract,a.abi,p);
    const managerRole=await verified.MANAGER_ROLE();
-   const [token,feeReceiver,adminAllowed,count]=await Promise.all([
+   const [token,feeReceiver,adminAllowed,count,fee1,fee2,operations,depositFee]=await Promise.all([
     verified.asset(),verified.feeReceiver(),
-    verified.hasRole(managerRole,ADMIN),verified.memberCount()
+    verified.hasRole(managerRole,ADMIN),verified.memberCount(),
+    verified.FEE_WALLET_1(),verified.FEE_WALLET_2(),
+    verified.OPERATIONS_WALLET(),verified.DEPOSIT_FEE_EACH_BPS()
    ]);
    if(getAddress(token)!==TOKEN||getAddress(feeReceiver)!==FEE||
-      !adminAllowed||count!==0n)error('V3_CONTRACT_CONFIGURATION_NOT_VERIFIED');
+      !adminAllowed||count!==0n||getAddress(fee1)!==DEPOSIT_FEE_1||
+      getAddress(fee2)!==DEPOSIT_FEE_2||getAddress(operations)!==OPERATIONS||
+      depositFee!==1000n)error('V3_CONTRACT_CONFIGURATION_NOT_VERIFIED');
    record.status='VERIFIED_BNB_TESTNET_ONLY';record.contract=contract;
    record.runtimeHash=keccak256(code);record.blockNumber=receipt.blockNumber;
    record.confirmedAt=new Date().toISOString();saveMarker(record);
