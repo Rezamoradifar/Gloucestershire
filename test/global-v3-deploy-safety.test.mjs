@@ -25,6 +25,7 @@ test('gas-only keeper is isolated, separately signed and not allowed to approve 
   'DynamicUser=yes','LoadCredential=keeper-gas-key:',
   'LoadCredential=keeper-config:','ProtectSystem=strict',
   'NoNewPrivileges=yes','OnCalendar=hourly',
+  'PINNED_KEEPER_RELEASE','npm ci --omit=dev --ignore-scripts',
   'V3_ADMIN_APPROVAL_REQUIRED_FOR_ACCRUAL=FALSE',
   'V3_KEEPER_MAY_ACCRUE_ONLY_IF_USER_CHECKIN_ELIGIBLE=TRUE'
  ])assert.ok(installer.includes(expected),expected);
