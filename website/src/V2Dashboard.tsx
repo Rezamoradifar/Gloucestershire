@@ -17,6 +17,7 @@ import './v2-classic-refinement.css';
 import './v2-mobile-dock.css';
 import './v2-responsive-complete.css';
 import './v2-premium-experience.css';
+import './v2-signature-dashboard.css';
 
 type Section='overview'|'invest'|'positions'|'team'|'history'|'profile'|'tickets'|'announcements'|'withdrawals'|'admin'|'contract';
 const navItems=[
@@ -265,7 +266,7 @@ export default function V2Dashboard(){
       </div>
       <div className="gv2-premium-board-main">
        <div className="gv2-premium-hero-balance">
-        <span className="gv2-premium-caption">Total recorded capital · USD</span>
+        <span className="gv2-premium-caption">Recorded capital · US dollar equivalent</span>
         <strong>USD {v2Money(snapshot.capitalUsd,18,2)}</strong>
         <p>Contract-recorded capital, not available vault cash or a guaranteed redemption.</p>
         <div className="gv2-premium-hero-buttons">
@@ -279,7 +280,7 @@ export default function V2Dashboard(){
          <span className={'gv2-premium-token '+a.symbol.toLowerCase()} aria-hidden="true">{a.symbol==='BNB'?'◆':'₮'}</span>
          <div><small>{a.symbol} · credited profit</small><strong>{v2Money(a.profit,a.decimals)} <em>{a.symbol}</em></strong></div>
         </div>)}
-        <div className="gv2-premium-hero-meta"><span>{snapshot.registered?'Registered member':'Account not registered'}</span><span>Block {snapshot.block.toLocaleString('en-US')}</span></div>
+        <div className="gv2-premium-hero-meta"><span>{snapshot.registered?'Member registered on V2':'Registration not completed'}</span><span>Confirmed block {snapshot.block.toLocaleString('en-US')}</span></div>
        </div>
       </div>
      </section>
@@ -293,25 +294,54 @@ export default function V2Dashboard(){
       </div>
      </section>
     </>}
-    {section==='overview'&&<div className="gv2-premium-section-intro gv2-premium-metrics-title"><div><span className="gv2-premium-eyebrow">ACCOUNT HIGHLIGHTS</span><h2>At a glance</h2></div><span>Current V2 ledger</span></div>}
-    <div className="gv2-summary">
+    {section==='overview'&&<div className="gv2-premium-section-intro gv2-premium-metrics-title"><div><span className="gv2-premium-eyebrow">ACCOUNT HIGHLIGHTS</span><h2>At a glance</h2></div><span>Confirmed at block {snapshot.block.toLocaleString('en-US')}</span></div>}
+    {section==='overview'&&<div className="gv2-summary">
      <div className="gv2-metric"><small>Membership</small><strong>{snapshot.registered?'Registered':'Not registered'}</strong><span>On-chain registry</span></div>
-     <div className="gv2-metric"><small>24h activity</small><strong>{snapshot.eligible?'Eligible now':'Not eligible'}</strong><span>Live on-chain check-in</span></div>
+     <div className="gv2-metric"><small>24h activity</small><strong>{snapshot.eligible?'Eligible now':'Not eligible'}</strong><span>Wallet-signed activity status</span></div>
      <div className="gv2-metric"><small>Capital · USD</small><strong>{v2Money(snapshot.capitalUsd,18,2)}</strong><span>Recorded principal, not cash</span></div>
      <div className="gv2-metric"><small>VIP verification</small><strong>{snapshot.kyc?'Admin verified':'Unverified'}</strong><span>Manager-only KYC</span></div>
-    </div>
+    </div>}
     {section==='invest'&&<V2Investment snapshot={snapshot} wallet={wallet} onConfirmed={()=>void refresh()}/>}
     {section==='overview'&&<>
-     <div className="gv2-section-head"><h2>Asset accounting</h2><span>Verified at block {snapshot.block.toLocaleString('en-US')}</span></div>
-     <div className="gv2-asset-row">{snapshot.accounts.map(a=><article key={a.symbol} className="gv2-panel">
-      <div className="gv2-panel-head"><strong>{a.symbol}</strong><Coins size={18}/></div>
-      <div className="gv2-detail"><span>Recorded principal</span><b>{v2Money(a.principal,a.decimals)} {a.symbol}</b></div>
-      <div className="gv2-detail"><span>Credited profit (personal + referrals)</span><b>{v2Money(a.profit,a.decimals)} {a.symbol}</b></div>
-      <div className="gv2-detail"><span>External deposits</span><b>{v2Money(a.deposited,a.decimals)}</b></div>
-      <div className="gv2-detail"><span>Manual reinvestments</span><b>{v2Money(a.reinvested,a.decimals)}</b></div>
-      <div className="gv2-detail"><span>Per-request profit cap</span><b>{v2Money(a.cap,a.decimals)}</b></div>
-      <div className="gv2-detail"><span>System-wide principal without vault cash</span><b>{v2Money(a.unfunded,a.decimals)}</b></div>
-     </article>)}</div>
+     <section className="gv2-signature-ledger" aria-label="Verified asset accounting">
+      <div className="gv2-signature-ledger-header">
+       <div><span className="gv2-premium-eyebrow">YOUR ACCOUNTS</span><h2>Asset breakdown</h2>
+        <p>Recorded on-chain figures. Choose an asset to see its exact ledger details.</p></div>
+       <div className="gv2-signature-asset-switch" role="group" aria-label="Account asset">
+        {(['USDT','BNB'] as V2Asset[]).map(item=><button key={item} type="button" aria-pressed={symbol===item} onClick={()=>setSymbol(item)}>{item}</button>)}
+       </div>
+      </div>
+      {account&&<div className="gv2-signature-ledger-surface">
+       <div className="gv2-signature-asset-hero">
+        <span className={'gv2-signature-currency '+symbol.toLowerCase()} aria-hidden="true">{symbol==='BNB'?'◆':'₮'}</span>
+        <div><small>Recorded principal · {symbol}</small>
+         <strong>{v2Money(account.principal,account.decimals)} <em>{symbol}</em></strong>
+         <span>Ledger entry, not funds currently held in your wallet</span>
+        </div>
+       </div>
+       <div className="gv2-signature-ledger-stats">
+        <div><small>Credited profit</small><strong>{v2Money(account.profit,account.decimals)} {symbol}</strong><span>Personal and referral credits</span></div>
+        <div><small>External deposits</small><strong>{v2Money(account.deposited,account.decimals)} {symbol}</strong><span>Recorded by the V2 contract</span></div>
+        <div><small>Reinvested</small><strong>{v2Money(account.reinvested,account.decimals)} {symbol}</strong><span>Manual reinvestments</span></div>
+        <div><small>Profit request cap</small><strong>{v2Money(account.cap,account.decimals)} {symbol}</strong><span>Per request, subject to eligibility</span></div>
+       </div>
+       <div className="gv2-signature-ledger-footer"><ShieldCheck size={17}/><p>System-wide principal without vault cash: <strong>{v2Money(account.unfunded,account.decimals)} {symbol}</strong>. Recorded balances do not guarantee available liquidity.</p></div>
+      </div>}
+     </section>
+     <section className="gv2-signature-positions" aria-label="Your V2 positions">
+      <div className="gv2-signature-ledger-header">
+       <div><span className="gv2-premium-eyebrow">POSITION OVERVIEW</span><h2>Your positions</h2><p>{snapshot.positionsTotal} position(s) recorded on V2</p></div>
+       <button type="button" onClick={()=>setSection('positions')}>View all <ArrowUpRight size={16}/></button>
+      </div>
+      {snapshot.positions.length?<div className="gv2-signature-position-grid">
+       {snapshot.positions.slice(0,2).map(p=><article key={p.id} className="gv2-signature-position-tile">
+        <div><span className="gv2-signature-position-symbol"><Layers size={17}/></span><span>Position #{p.id+1}</span></div>
+        <strong>{v2Money(p.principal,decimalsFor(p.asset))} <em>{assetName(p.asset)}</em></strong>
+        <p>Recorded USD {v2Money(p.capitalUsd,18,2)}</p>
+        <small>Principal lock ends {v2Date(p.openedAt+90*86400)}</small>
+       </article>)}
+      </div>:<div className="gv2-signature-position-empty"><Layers size={22}/><div><strong>No V2 positions recorded</strong><span>Any future on-chain positions will be shown here after verification.</span></div><button type="button" onClick={()=>setSection('invest')}>Explore plans <ArrowUpRight size={14}/></button></div>}
+     </section>
      <div className="gv2-panel"><div className="gv2-panel-head"><h3>On-chain actions</h3><Activity size={18}/></div>
       {!snapshot.registered?<div className="gv2-field"><label htmlFor="gv2-referrer">Inviter's wallet (optional)</label>
        <input id="gv2-referrer" value={referrer} onChange={e=>setReferrer(e.target.value)} placeholder="0x…" spellCheck={false}/>
