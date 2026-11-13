@@ -102,7 +102,7 @@ export default function AdminUserDirectory({who,owner,onReviewStatus}:{
   if(scanning.current||cursor===null||!head||!token)return;
   const id=revision.current,controller=new AbortController();scannerRef.current=controller;
   scanning.current=true;setScanBusy(true);setError('');
-  let current=cursor,buffer:RegistryEvent[]=[];
+  let current:number|null=cursor,buffer:RegistryEvent[]=[];
   try{
    // Four bounded canonical windows per click, rather than unbounded archive
    // scans or silently claiming an unknown global user total.
