@@ -11,23 +11,28 @@ export async function createCommunity({file,owner,chainId,contract,origin='https
  function mutate(fn){const result=queue.then(async()=>{const next=structuredClone(state),value=fn(next),tmp=file+'.'+randomUUID()+'.tmp';try{await writeFile(tmp,JSON.stringify(next),{mode:0o600,flag:'wx'});await rename(tmp,file);}finally{await unlink(tmp).catch(()=>{});}state=next;return value;});queue=result.catch(()=>{});return result;}
  function prune(){for(const map of [challenges,sessions,rates])for(const [key,value] of map)if(value.expires<=now())map.delete(key);}
  async function body(req){let size=0,data='';for await(const chunk of req){size+=chunk.length;if(size>16384)throw fail(413,'Request too large.');data+=chunk;}try{return JSON.parse(data||'{}');}catch{throw fail(400,'Invalid JSON.');}}
- function user(req){prune();const token=(req.headers.authorization||'').replace(/^Bearer /,'');const session=sessions.get(token);if(!session)throw fail(401,'Sign in with your wallet again.');return session.wallet;}
+ function session(req){prune();const token=(req.headers.authorization||'').replace(/^Bearer /,'');const entry=sessions.get(token);if(!entry)throw fail(401,'Sign in with your wallet again.');return entry;}
+ function user(req){return session(req).wallet;}
  async function admin(wallet){let current;try{current=await owner();}catch{throw fail(503,'Could not verify support administrator.');}if(current.toLowerCase()!==wallet.toLowerCase())throw fail(403,'Administrator permission required.');}
  const handle=async function handle(req,res){const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith('/api/community/'))return false;
  const send=(code,value)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
  try{prune();const route=url.pathname.slice('/api/community/'.length),method=req.method;
  if(route==='announcements'&&method==='GET'){send(200,{items:state.announcements.filter(a=>a.published).slice(-100).reverse()});return true;}
- if(route==='challenge'&&method==='POST'){
+ if(['challenge','admin-challenge'].includes(route)&&method==='POST'){
   const peer=req.socket.remoteAddress||'unknown',rate=rates.get(peer)||{count:0,expires:now()+60000};if(++rate.count>60)throw fail(429,'Too many sign-in attempts. Try later.');rates.set(peer,rate);
   const b=await body(req);if(!isAddress(b.wallet))throw fail(400,'Invalid wallet.');if(challenges.size>=1000)throw fail(429,'Try again later.');
   const wallet=getAddress(b.wallet),nonce=randomBytes(24).toString('hex'),expires=now()+300000;
-  const message=`GlobalDropTrade support sign-in\nOrigin: ${origin}\nChain: ${chainId}\nContract: ${contract}\nWallet: ${wallet}\nNonce: ${nonce}\nExpires: ${new Date(expires).toISOString()}\nThis signature authenticates support access only. It does not authorize a transaction.`;
-  challenges.set(nonce,{wallet,message,expires});send(200,{nonce,message});return true;
+  const audit=route==='admin-challenge';
+  const message=`${audit?'GlobalDropTrade owner user-audit sign-in':'GlobalDropTrade support sign-in'}\nOrigin: ${origin}\nChain: ${chainId}\nContract: ${contract}\nWallet: ${wallet}\nNonce: ${nonce}\nExpires: ${new Date(expires).toISOString()}\n${audit?'This signature grants the contract owner read-only access to indexed public user and contract account details. It does not authorize a transaction.':'This signature authenticates support access only. It does not authorize a transaction.'}`;
+  challenges.set(nonce,{wallet,message,expires,scope:audit?'owner-audit':'support'});send(200,{nonce,message});return true;
  }
- if(route==='session'&&method==='POST'){
+ if(['session','admin-session'].includes(route)&&method==='POST'){
   const b=await body(req),challenge=challenges.get(b.nonce);challenges.delete(b.nonce);if(!challenge)throw fail(401,'Sign-in challenge expired or already used.');
   let signer;try{signer=verifyMessage(challenge.message,b.signature);}catch{throw fail(401,'Invalid signature.');}if(signer.toLowerCase()!==challenge.wallet.toLowerCase())throw fail(401,'Signature does not match the wallet.');
-  if(sessions.size>=5000)throw fail(429,'Try later.');const token=randomBytes(32).toString('hex');sessions.set(token,{wallet:challenge.wallet,expires:now()+3600000});send(200,{token,wallet:challenge.wallet});return true;
+  const audit=route==='admin-session';
+  if(challenge.scope!==(audit?'owner-audit':'support'))throw fail(401,'Sign-in challenge has a different purpose.');
+  if(audit)await admin(challenge.wallet);
+  if(sessions.size>=5000)throw fail(429,'Try later.');const token=randomBytes(32).toString('hex');sessions.set(token,{wallet:challenge.wallet,scope:challenge.scope,expires:now()+(audit?600000:3600000)});send(200,{token,wallet:challenge.wallet,scope:challenge.scope});return true;
  }
  const wallet=user(req);
  if(route==='announcements'&&method==='POST'){await admin(wallet);const b=await body(req),title=text(b.title,120),message=text(b.message,6000);const item=await mutate(s=>{if(s.announcements.length>=5000)throw fail(409,'Announcement storage limit reached.');const item={id:randomUUID(),title,message,published:true,createdAt:new Date(now()).toISOString()};s.announcements.push(item);return item;});send(201,item);return true;}
@@ -46,6 +51,6 @@ export async function createCommunity({file,owner,chainId,contract,origin='https
  // Admin requests are never authorized by client-side UI state alone.
  // The token remains in memory, is not logged, and is validated against the
  // live on-chain owner on every protected request.
- handle.authorizeOwner=async req=>{const wallet=user(req);await admin(wallet);return wallet;};
+ handle.authorizeOwner=async req=>{const value=session(req);if(value.scope!=='owner-audit')throw fail(403,'Owner audit authorization required.');await admin(value.wallet);return value.wallet;};
  return handle;
 }
