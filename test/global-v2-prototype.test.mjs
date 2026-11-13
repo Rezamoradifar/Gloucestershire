@@ -215,6 +215,18 @@ test('manager rejection and user cancellation safely restore pending profit with
  assert.equal((await vault.withdrawalOf(1)).status,3n);
 });
 
+
+test('only a KYC administrator may unlock VIP-sized deposits; suspended members cannot add capital',async()=>{
+ await tx(vault.connect(signers[1]).register(ZeroAddress));
+ await missing(vault.connect(signers[1]).deposit.staticCall(token.target,E('50001'),ZeroAddress),'Forbidden');
+ await missing(vault.connect(signers[10]).setVipKyc.staticCall(addresses[1],true),'AccessControlUnauthorizedAccount');
+ await tx(vault.setVipKyc(addresses[1],true));
+ await deposit(1,'50001');
+ assert.equal(await vault.tierOf(addresses[1]),4n);
+ await tx(vault.setSuspended(addresses[1],true));
+ await missing(vault.connect(signers[1]).deposit.staticCall(token.target,E('10'),ZeroAddress),'Forbidden');
+});
+
 test('asset support includes BNB, with the same 20/80 routing and cash-backed profit',async()=>{
  await deposit(1,'100',ZeroAddress,ZeroAddress);
  assert.equal((await vault.accounts(addresses[1],ZeroAddress)).principal,E('100'));
