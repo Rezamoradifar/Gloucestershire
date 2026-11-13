@@ -60,8 +60,10 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   await mustFail(vault.connect(signers[5]).accrueDaily.staticCall(wallets[5],0));
   await rpc.request({method:'evm_increaseTime',params:[86461]});
   await rpc.request({method:'evm_mine',params:[]});
-  for(let i=1;i<=COUNT;i++)await done(vault.connect(signers[i]).checkIn());
-  for(let i=1;i<=COUNT;i++)await done(vault.connect(signers[101]).accrueDaily(wallets[i],0));
+  // One wallet signature can perform both daily check-in and eligible accrual.
+  await done(vault.connect(signers[1]).checkInAndAccrue([0]));
+  for(let i=2;i<=COUNT;i++)await done(vault.connect(signers[i]).checkIn());
+  for(let i=2;i<=COUNT;i++)await done(vault.connect(signers[101]).accrueDaily(wallets[i],0));
   for(let i=1;i<=COUNT;i++){
    const p=await vault.positionOf(wallets[i],0);
    assert.equal(p.availableProfit,make(7));
@@ -99,6 +101,8 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   assert.equal((await vault.positionOf(wallets[2],0)).compoundedBasis,make('9.049'));
   await mustFail(vault.connect(signers[3]).payWithdrawal.staticCall(0));
   await done(vault.approveWithdrawal(0));
+  // Unfunded reward must NEVER spend another user's principal cash.
+  await mustFail(vault.reserveExistingCash.staticCall(0));
   await mustFail(vault.connect(signers[3]).payWithdrawal.staticCall(0));
   // Actual new MOCK tokens must be transferred from approved manager.
   await done(token.mint(wallets[0],make(5)));
@@ -154,13 +158,23 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
   await done(vault.connect(signers[5]).requestPrincipal(0,make(20)));
   assert.equal((await vault.withdrawalOf(3)).kind,1n);
   await done(vault.approveWithdrawal(3));
-  await done(token.mint(wallets[0],make(20)));
-  await done(token.approve(vault.target,make(20)));
-  await done(vault.fundWithdrawal(3));
+  // V3 retained principal deposits: reserve real available cash instead of
+  // demanding a second 20-token transfer unnecessarily.
+  await done(vault.reserveExistingCash(3));
+  assert.equal(await vault.principalEscrowed(),make(20));
   await done(vault.payWithdrawal(3));
+  assert.equal(await vault.principalEscrowed(),0n);
   assert.equal((await vault.positionOf(wallets[5],0)).principal,make(980));
   assert.equal((await vault.withdrawalOf(3)).status,3n);
   assert.equal(await vault.reservedForPayout(),0n);
+
+  // 90 days of inactivity NEVER create 90 unpaid days retroactively.
+  // Check-in + daily accrual uses one wallet-signed transaction.
+  await done(vault.connect(signers[2]).checkInAndAccrue([0]));
+  const pAfterGap=await vault.positionOf(wallets[2],0);
+  assert.equal(pAfterGap.cumulativeDaily,make(21));
+  assert.equal(pAfterGap.cumulativeCompound,make('0.112343'));
+  await mustFail(vault.connect(signers[2]).checkInAndAccrue.staticCall(Array(21).fill(0)));
 
   const summary={
    status:'PASS',mode:'LOCAL_GANACHE_97_MOCK_ONLY',
@@ -171,6 +185,8 @@ test('V3 local-only 100-account accrual, profit-on-profit, request, manager escr
    secondDayCompoundedProfitPer1000:'0.049',
    onChainAccruedLiabilityWithoutPreFunding:true,
    independentManagerApprovals:true,exactIndividualCashEscrow:true,
+   existingPrincipalCashCanBeReserved:true,noBackfillAfterInactivity:true,
+   oneSignedCheckInAndAccrual:true,
    payoutToImmutableBeneficiary:true,repeatFundingAndPaymentRejected:true,
    automaticProfitOnProfit:true,manualReinvestOption:true,
    explicitUnfundedLiabilityReporting:true,oldV2Unchanged:true,
