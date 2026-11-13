@@ -9,7 +9,7 @@ const destinations=[
 export default function V3PaymentMap(){
  return <section className="gv3-payment-map" aria-label="Test deposit and withdrawal payment map">
   <div className="gv3-payment-heading"><div><span className="gv3-kicker">PAYMENT ROUTING</span><h2>Where test deposits go</h2></div><GitBranch size={21}/></div>
-  <p>Each external MOCK token deposit routes to the same fixed destinations as V2. The full deposit is recorded as principal; it is not retained as vault cash. Rounding goes to operations.</p>
+  <p>Each external MOCK token deposit routes to the original fixed destinations. The full deposit is recorded as principal; it is not retained as vault cash. Rounding goes to operations.</p>
   <div className="gv3-routing-bar" aria-hidden="true"><span/><span/><span/></div>
   <div className="gv3-routing-list">{destinations.map(item=><div key={item.address}>
    <span className="gv3-routing-percent">{item.percent}</span><div><strong>{item.label}</strong>

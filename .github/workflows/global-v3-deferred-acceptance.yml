@@ -10,6 +10,8 @@ on:
       - 'scripts/v3-release-profile.mjs'
       - 'scripts/v3-deploy-receipt-poll.mjs'
       - 'scripts/verify-prior-v3-testnet-empty.mjs'
+      - 'scripts/prune-retired-v3-site-assets.py'
+      - 'scripts/test-prune-retired-v3-site-assets.py'
       - 'config/global-v3-testnet-keeper.example.json'
       - 'docs/global-v3-automatic-compound-testnet.md'
       - 'scripts/install-global-v3-keeper-timer.sh'
@@ -41,6 +43,7 @@ jobs:
           node --check scripts/global-v3-auto-compound-keeper.mjs
           node --check scripts/deploy-global-v3-testnet.mjs
           bash -n scripts/install-global-v3-keeper-timer.sh
+          python3 scripts/test-prune-retired-v3-site-assets.py
           node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-deferred-ledger.test.mjs test/global-v3-plan-routing.test.mjs test/global-v3-internal-current.test.mjs test/global-v3-readonly-audit.test.mjs test/global-v3-deploy-safety.test.mjs test/global-v3-routed-release.test.mjs
       - uses: actions/upload-artifact@v4
         if: always()
