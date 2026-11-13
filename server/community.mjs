@@ -13,7 +13,7 @@ export async function createCommunity({file,owner,chainId,contract,origin='https
  async function body(req){let size=0,data='';for await(const chunk of req){size+=chunk.length;if(size>16384)throw fail(413,'Request too large.');data+=chunk;}try{return JSON.parse(data||'{}');}catch{throw fail(400,'Invalid JSON.');}}
  function user(req){prune();const token=(req.headers.authorization||'').replace(/^Bearer /,'');const session=sessions.get(token);if(!session)throw fail(401,'Sign in with your wallet again.');return session.wallet;}
  async function admin(wallet){let current;try{current=await owner();}catch{throw fail(503,'Could not verify support administrator.');}if(current.toLowerCase()!==wallet.toLowerCase())throw fail(403,'Administrator permission required.');}
- return async function handle(req,res){const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith('/api/community/'))return false;
+ const handle=async function handle(req,res){const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith('/api/community/'))return false;
  const send=(code,value)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
  try{prune();const route=url.pathname.slice('/api/community/'.length),method=req.method;
  if(route==='announcements'&&method==='GET'){send(200,{items:state.announcements.filter(a=>a.published).slice(-100).reverse()});return true;}
@@ -42,4 +42,10 @@ export async function createCommunity({file,owner,chainId,contract,origin='https
  throw fail(404,'Route not found.');
  }catch(e){send(e.status||500,{error:e.status?e.message:'Support service unavailable.'});}return true;
  };
+ // Owner-only server authorization reuses the authenticated support session.
+ // Admin requests are never authorized by client-side UI state alone.
+ // The token remains in memory, is not logged, and is validated against the
+ // live on-chain owner on every protected request.
+ handle.authorizeOwner=async req=>{const wallet=user(req);await admin(wallet);return wallet;};
+ return handle;
 }
