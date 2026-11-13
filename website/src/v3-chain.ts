@@ -128,25 +128,25 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
   if(getAddress(asset)!==V3_TEST_TOKEN)throw Error('V3 asset is not the approved TEST USDT token.');
   return {provider,vault,options:{blockTag:block.number},block,config};
  };
- const sources=endpoints.map(url=>async()=>{
+ // Try independent sources sequentially; retain the successful provider only
+ // for the scoped read, so its connection is not destroyed prematurely.
+ for(const url of endpoints){
   const request=new FetchRequest(url);request.timeout=8000;
   const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
-  try{return await verify(provider,true);}
-  finally{provider.destroy();}
- });
- // Public read-only RPC normally works, but the signed user's wallet can
- // serve as a fallback when public mobile reads are rate-limited.
- sources.push(async()=>{
-  const provider=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
-  try{return await verify(provider,false);}
-  finally{provider.destroy();}
- });
- try{return await withTimeout(Promise.any(sources.map(run=>run())),20000);}
- catch{throw Error('Verified V3 BNB Testnet reads unavailable. No financial values will be shown; retry.');}
+  try{return await withTimeout(verify(provider,true),12000);}
+  catch{provider.destroy();}
+ }
+ const browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
+ try{return await withTimeout(verify(browser,false),12000);}
+ catch{
+  browser.destroy();
+  throw Error('Verified V3 BNB Testnet reads unavailable. No financial values will be shown; retry.');
+ }
 }
 export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:string,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig):Promise<V3Snapshot>{
  const {vault,provider,options,block}=await v3ReadSession(walletProvider,wallet,config);
+ try{
  wallet=getAddress(wallet);
  const [user,eligible,nPosition,nWithdraw,tWithdraw,nMember,cap,paused,managerRole,funderRole,cashStatus]=await Promise.all([
   vault.users(wallet,options),vault.isEligible(wallet,options),
@@ -227,4 +227,5 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   gasWei:BigInt(gasWei),ledger
  };
+ }finally{provider.destroy();}
 }
