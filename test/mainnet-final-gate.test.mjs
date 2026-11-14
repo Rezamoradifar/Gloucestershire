@@ -6,6 +6,7 @@ const script=fs.readFileSync('ubuntu-mainnet-final-gate.sh','utf8');
 const doc=fs.readFileSync('MAINNET-FINAL-LAUNCH-20261111.md','utf8');
 
 test('final mainnet gate is read-only and never installs or deploys',()=>{
+ assert.match(script,/GLOBAL_MAINNET_GATE_TARGET=LEGACY_AUTOMATIC_GROUP_VAULT_NOT_V3/);
  assert.match(script,/ubuntu-mainnet\.sh plan/);
  assert.match(script,/ubuntu-mainnet-readiness\.sh check/);
  assert.match(script,/ubuntu-production-automation\.sh --check/);

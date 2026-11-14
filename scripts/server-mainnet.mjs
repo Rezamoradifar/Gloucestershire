@@ -52,6 +52,7 @@ export async function planMainnet(config,artifact,simulationFrom){
  if(request.to!==undefined||BigInt(request.value??0)!==0n||typeof request.data!=='string'||request.data.length/2-1>49152)throw Error('MAINNET_UNSIGNED_CONSTRUCTOR_REQUIRED');
  return {config:c,args,request,report:{
   version:1,kind:'fresh-mainnet-preparation',releaseId:c.releaseId,chainId:56,status:'offline-plan',preparationOnly:true,readyToDeploy:false,
+  targetContractFamily:'LEGACY_AUTOMATIC_GROUP_VAULT_NOT_V3',
   artifact:'AutomaticGroupVault',artifactHash:c.artifactHash,compiler:artifact.compiler,runtimeBytes:compiled.runtimeBytes,
   configurationHash:sha256(JSON.stringify(c)),simulationFrom:from,constructorArguments:args,
   unsignedDeployment:{chainId:56,to:null,value:'0',data:request.data,initcodeHash:keccak256(request.data)},
@@ -152,7 +153,7 @@ async function main(){
   result.report.checkedAt=new Date().toISOString();
   const reportFile=writeReport(parsed.action==='plan'?'unsigned-plan-public.json':'preflight-public.json',result.report);
   console.log(parsed.action==='plan'?'MAINNET_UNSIGNED_FRESH_PLAN_PREPARED':'MAINNET_READ_ONLY_PREFLIGHT_PASSED');
-  console.log(JSON.stringify({version:1,kind:result.report.kind,status:result.report.status,chainId:56,artifact:result.report.artifact,owner:result.config.initialOwner,simulationFrom:result.report.simulationFrom,artifactHash:result.report.artifactHash,initcodeHash:result.report.unsignedDeployment.initcodeHash,readyToDeploy:false,blockers:result.report.blockers,report:reportFile,...noSigning}));
+  console.log(JSON.stringify({version:1,kind:result.report.kind,status:result.report.status,chainId:56,targetContractFamily:result.report.targetContractFamily,artifact:result.report.artifact,owner:result.config.initialOwner,simulationFrom:result.report.simulationFrom,artifactHash:result.report.artifactHash,initcodeHash:result.report.unsignedDeployment.initcodeHash,readyToDeploy:false,blockers:result.report.blockers,report:reportFile,...noSigning}));
  }catch(error){
   const blocker=/^[A-Z][A-Z0-9_]{2,100}$/.test(error?.message??'')?error.message:'MAINNET_READ_ONLY_PREFLIGHT_FAILED';
   const failure={version:1,kind:'fresh-mainnet-preparation-error',status:'blocked',chainId:56,readyToDeploy:false,blocker,checkedAt:new Date().toISOString(),...noSigning};

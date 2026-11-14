@@ -25,6 +25,7 @@ done
 [[ -z "$activation_file" || "$activation_file" = /* ]] || { echo MAINNET_PRIVATE_ACTIVATION_FILE_REQUIRED; exit 1; }
 [[ "$EUID" -eq 0 ]] || { echo ROOT_REQUIRED; exit 1; }
 
+echo "GLOBAL_MAINNET_GATE_TARGET=LEGACY_AUTOMATIC_GROUP_VAULT_NOT_V3"
 echo "GLOBAL_MAINNET_GATE phase=OFFLINE_PLAN"
 bash ubuntu-mainnet.sh plan >/tmp/global-mainnet-plan.$$.json
 trap 'rm -f /tmp/global-mainnet-plan.$$.json' EXIT

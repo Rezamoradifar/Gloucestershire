@@ -33,55 +33,76 @@ export function auditV3Values({cash,principal,profit,escrow,principalEscrow,shor
   shortfallTestUnits:shortfall.toString(),escrowTestUnits:escrow.toString(),
   fullyCovered:shortfall===0n};
 }
+
+// Read every value from the same three-confirmation block. The hash is
+// checked again after the reads, so a reorganization cannot mix snapshots.
+// The runtime hash is supplied by the operator; it is not independent proof
+// of a deployment, a security audit, or the correctness of the business model.
+export async function auditV3Snapshot(provider,address,expectedHash,{
+ makeContract=(at,abi)=>new Contract(at,abi,provider)
+}={}){
+ const vaultAddress=getAddress(address);
+ if(!pattern.test(expectedHash))throw Error('V3_USAGE_CHECK_ADDRESS_RUNTIME_HASH');
+ if(BigInt(await provider.send('eth_chainId',[]))!==97n)throw Error('V3_TESTNET_CHAIN_REQUIRED');
+ const head=await provider.getBlockNumber();
+ if(!Number.isSafeInteger(head)||head<3)throw Error('V3_CONFIRMED_BLOCK_REQUIRED');
+ const blockNumber=head-2,block=await provider.getBlock(blockNumber);
+ if(!block||block.number!==blockNumber||!pattern.test(block.hash))throw Error('V3_CONFIRMED_BLOCK_REQUIRED');
+ const code=await provider.getCode(vaultAddress,blockNumber);
+ if(typeof code!=='string'||!/^0x(?:[a-f0-9]{2})+$/i.test(code)||
+    keccak256(code).toLowerCase()!==expectedHash.toLowerCase())throw Error('V3_RUNTIME_HASH_MISMATCH');
+ const vault=makeContract(vaultAddress,VAULT_ABI),at={blockTag:blockNumber};
+ const [token,values,requests,principalEscrow]=await Promise.all([
+  vault.asset(at),vault.cashStatus(at),vault.withdrawalCount(at),vault.principalEscrowed(at)
+ ]);
+ const tokenAddress=getAddress(token),erc20=makeContract(tokenAddress,TOKEN_ABI);
+ const [cash,decimals]=await Promise.all([erc20.balanceOf(vaultAddress,at),erc20.decimals(at)]);
+ if(Number(decimals)!==18||BigInt(values.cash)!==BigInt(cash))throw Error('V3_TOKEN_CASH_MISMATCH');
+ const summary=auditV3Values({
+  cash:BigInt(cash),principal:BigInt(values.principal),profit:BigInt(values.accruedProfit),
+  escrow:BigInt(values.escrowedCash),principalEscrow:BigInt(principalEscrow),
+  shortfall:BigInt(values.totalCashShortfall)
+ });
+ const count=Number(requests);
+ if(!Number.isSafeInteger(count)||count<0)throw Error('INVALID_WITHDRAWAL_COUNT');
+ const sampleIds=Array.from({length:Math.min(20,count)},(_,i)=>count-i-1);
+ const sampled=await Promise.all(sampleIds.map(async id=>{
+  const w=await vault.withdrawalOf(id,at);
+  const status=Number(w.status),kind=Number(w.kind);
+  if(!Number.isInteger(status)||status<0||status>5||!Number.isInteger(kind)||kind<0||kind>3||
+     BigInt(w.gross)<=0n||BigInt(w.fee)>BigInt(w.gross))throw Error('INVALID_V3_WITHDRAWAL');
+  return {id,beneficiary:getAddress(w.beneficiary),kind,status,grossTestUnits:formatUnits(w.gross,18)};
+ }));
+ const finalBlock=await provider.getBlock(blockNumber);
+ if(!finalBlock||finalBlock.number!==blockNumber||
+    String(finalBlock.hash).toLowerCase()!==block.hash.toLowerCase()||
+    BigInt(await provider.send('eth_chainId',[]))!==97n)throw Error('V3_CONFIRMED_BLOCK_CHANGED');
+ return {chainId:97,address:vaultAddress,expectedHash:expectedHash.toLowerCase(),token:tokenAddress,
+  checkpoint:{block:blockNumber,blockHash:block.hash,observedHead:head,confirmations:3},
+  ...summary,withdrawalCount:count,latest20Only:sampled};
+}
+
 async function main(){
  if(process.argv.length!==5||process.argv[2]!=='--check'||
     !pattern.test(process.argv[4]))throw Error('V3_USAGE_CHECK_ADDRESS_RUNTIME_HASH');
  const address=getAddress(process.argv[3]);
  const expectedHash=process.argv[4].toLowerCase();
- let provider,foundUrl;
+ let report,foundUrl;
  for(const url of urls){
   const req=new FetchRequest(url);req.timeout=9000;
   const p=new JsonRpcProvider(req,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
   try{
-   const [chain,code]=await Promise.all([p.send('eth_chainId',[]),p.getCode(address,'latest')]);
-   if(Number(BigInt(chain))!==97||code==='0x'||
-      keccak256(code).toLowerCase()!==expectedHash)throw Error('V3_NOT_VERIFIED');
-   provider=p;foundUrl=url;break;
-  }catch{p.destroy();}
+   report=await auditV3Snapshot(p,address,expectedHash);foundUrl=url;break;
+  }catch{/* Try a separate public testnet endpoint without reporting partial data. */}
+  finally{p.destroy();}
  }
- if(!provider)throw Error('V3_TESTNET_RUNTIME_NOT_VERIFIED_NO_AUDIT_PERFORMED');
- try{
-  const vault=new Contract(address,VAULT_ABI,provider);
-  const [token,values,requests]=await Promise.all([
-   vault.asset(),vault.cashStatus(),vault.withdrawalCount()
-  ]);
-  const erc20=new Contract(token,TOKEN_ABI,provider);
-  const [cash,decimals]=await Promise.all([erc20.balanceOf(address),erc20.decimals()]);
-  if(Number(decimals)!==18||BigInt(values.cash)!==BigInt(cash))
-   throw Error('V3_TOKEN_CASH_MISMATCH');
-  const summary=auditV3Values({
-   cash:BigInt(cash),principal:BigInt(values.principal),
-   profit:BigInt(values.accruedProfit),escrow:BigInt(values.escrowedCash),
-   principalEscrow:BigInt(await vault.principalEscrowed()),
-   shortfall:BigInt(values.totalCashShortfall)
-  });
-  const count=Number(requests);
-  if(!Number.isSafeInteger(count)||count<0)throw Error('INVALID_WITHDRAWAL_COUNT');
-  const sampleIds=Array.from({length:Math.min(20,count)},(_,i)=>count-i-1);
-  const sampled=await Promise.all(sampleIds.map(async id=>{
-   const w=await vault.withdrawalOf(id);
-   return {id,beneficiary:getAddress(w.beneficiary),kind:Number(w.kind),
-    status:Number(w.status),grossTestUnits:formatUnits(w.gross,18)};
-  }));
-  console.log('V3_READ_ONLY_AUDIT '+JSON.stringify({
-   status:'READ_ONLY_AUDIT_COMPLETE',chainId:97,address,expectedHash,token:getAddress(token),
-   sourceRpc:foundUrl,checkedAt:new Date().toISOString(),...summary,
-   withdrawalCount:count,latest20Only:sampled,
-   warning:'Independent security or economic audit NOT performed; test tokens have no monetary value',
-   transactionSent:false,productionApproved:false
-  }));
-  if(!summary.fullyCovered)process.exitCode=2;
- }finally{provider.destroy();}
+ if(!report)throw Error('V3_TESTNET_RUNTIME_NOT_VERIFIED_NO_AUDIT_PERFORMED');
+ console.log('V3_READ_ONLY_AUDIT '+JSON.stringify({
+  status:'READ_ONLY_AUDIT_COMPLETE',...report,sourceRpc:foundUrl,checkedAt:new Date().toISOString(),
+  warning:'Operator-supplied runtime hash; independent security or economic audit NOT performed; test tokens have no monetary value',
+  transactionSent:false,productionApproved:false
+ }));
+ if(!report.fullyCovered)process.exitCode=2;
 }
 if(import.meta.url===new URL('file://'+process.argv[1]).href){
  main().catch(error=>{
