@@ -12,4 +12,17 @@
 .gv3-claims-warning{display:flex;align-items:flex-start;gap:8px;margin:17px 0 0!important;font-size:12px;color:#d8cbaa!important;line-height:1.7}
 .gv3-claims-warning svg{flex-shrink:0;margin-top:2px}
 .gv3-claims-error{display:flex;align-items:center;gap:10px;color:#ffd5c2}
+/* Temporary signals refer to changes in verified displayed amounts only. */
+.gv3-claims-readout .gv3-claim-value{display:flex;align-items:baseline;gap:8px;min-width:0;max-width:100%}
+.gv3-claims-readout .gv3-claim-value-pulse{display:block;min-width:0;max-width:100%}
+.gv3-claims-readout .gv3-claim-value--up :is(.gv3-digital,.gv3-digital-run,.gv3-digital-mark),
+.gv3-claims-readout .gv3-claim-value--up .gv3-claim-direction{color:#6ef5ad}
+.gv3-claims-readout .gv3-claim-value--down :is(.gv3-digital,.gv3-digital-run,.gv3-digital-mark),
+.gv3-claims-readout .gv3-claim-value--down .gv3-claim-direction{color:#ff808b}
+.gv3-claims-readout .gv3-claim-value--up .gv3-digital-digit{filter:drop-shadow(0 0 5px #36e69199)}
+.gv3-claims-readout .gv3-claim-value--down .gv3-digital-digit{filter:drop-shadow(0 0 5px #ff5b7099)}
+.gv3-claims-readout .gv3-claim-direction{font:700 15px/1 system-ui,sans-serif;flex:none}
+.gv3-claims-readout :is(.gv3-claim-value--up,.gv3-claim-value--down) .gv3-claim-value-pulse{animation:gv3-claim-pulse 1.1s ease-in-out 2}
+@keyframes gv3-claim-pulse{0%,100%{opacity:1}50%{opacity:.48}}
+@media(prefers-reduced-motion:reduce){.gv3-claims-readout :is(.gv3-claim-value--up,.gv3-claim-value--down) .gv3-claim-value-pulse{animation:none}}
 @media(max-width:540px){.gv3-claims-readout{padding:14px}.gv3-claim-grid{grid-template-columns:minmax(0,1fr)}}
