@@ -84,6 +84,12 @@ export const V3_ABI=[
  'event NetworkClaimAccrued(address indexed user,uint256 indexed group,uint256 amount,uint8 stages)',
  'event ProfitReinvested(address indexed user,uint256 indexed fromPosition,uint256 newPositionId,uint256 amount)',
  'event CheckIn(address indexed user,uint256 at)',
+ 'event StatusChanged(address indexed user,bool suspended)',
+ 'event NetworkVolumeQueued(uint256 indexed job,address indexed source,uint256 usd)',
+ 'event RewardGroupCreated(address indexed user,uint256 indexed group,address[] branches)',
+ 'event RewardBranchesAdded(address indexed user,uint256 indexed group,address[] branches)',
+ 'event NetworkRewardPrepared(address indexed user,uint256 indexed group,uint8 stage,uint256 preparedUsd,uint256 cursor)',
+ 'event NetworkRewardEarned(address indexed user,uint256 indexed group,uint8 stage,uint256 volumeUsd,uint256 rewardUsd)',
  'event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee)',
  'event WithdrawalEscrowFunded(uint256 indexed id,address indexed funder,uint256 gross)',
  'event WithdrawalExistingCashReserved(uint256 indexed id,uint256 gross)',
@@ -143,7 +149,8 @@ const toSafeCount=(raw:bigint,label:string)=>{
  return n;
 };
 export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig,requireIndependent=false){
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,requireIndependent=false,startReader=0){
+ if(!Number.isInteger(startReader)||startReader<0||startReader>endpoints.length)throw Error('Invalid V3 reader index.');
  if(!config)throw Error('The V3 testnet contract has not been deployed and verified for this site.');
  if(!isAddress(wallet))throw Error('Connect a valid testnet wallet.');
  wallet=getAddress(wallet);
@@ -187,15 +194,15 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
  };
  // Try independent sources sequentially; retain the successful provider only
  // for the scoped read, so its connection is not destroyed prematurely.
- for(const url of endpoints){
-  const request=new FetchRequest(url);request.timeout=8000;
+ for(let index=startReader;index<endpoints.length;index++){
+  const request=new FetchRequest(endpoints[index]);request.timeout=8000;
   const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
-  try{return await withTimeout(verify(provider,true),12000);}
+  try{return {...await withTimeout(verify(provider,true),12000),readerIndex:index};}
   catch{provider.destroy();}
  }
  if(requireIndependent)throw Error('An independently verified V3 BNB Testnet RPC is unavailable. Check transaction history before retrying.');
  const browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
- try{return await withTimeout(verify(browser,false),12000);}
+ try{return {...await withTimeout(verify(browser,false),12000),readerIndex:endpoints.length};}
  catch{
   browser.destroy();
   throw Error('Verified V3 BNB Testnet reads unavailable. No financial values will be shown; retry.');
