@@ -6,6 +6,15 @@ import {readV3HistoryPage,type V3HistoryAnchor,type V3HistoryPage} from './v3-hi
 import type {V3SiteReleaseConfig} from './v3-site-config';
 import './v3-history.css';
 
+const safeHistoryMessages=new Set([
+ 'The confirmed history block changed. Refresh history.',
+ 'The history block changed while loading. Refresh history.',
+ 'Too many events in this range. Open the contract explorer for this block range.',
+ 'Unable to load the complete activity for these blocks. Please retry or use the block explorer.',
+ 'History anchor or deployment block is no longer verified.',
+ 'No earlier V3 block range is available.'
+]);
+
 export default function V3HistoryPanel({wallet,config}:{wallet:string;config:V3SiteReleaseConfig}){
  const [page,setPage]=useState(0),[version,setVersion]=useState(0);
  const [data,setData]=useState<V3HistoryPage|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
@@ -17,7 +26,8 @@ export default function V3HistoryPanel({wallet,config}:{wallet:string;config:V3S
   if(!provider){setError('Wallet disconnected. Reconnect to load account activity.');setLoading(false);return;}
   void readV3HistoryPage(provider,wallet,config,page,anchor.current).then(result=>{
    if(alive){anchor.current=result.anchor;setData(result);}
-  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:'V3 history is unavailable.');})
+  }).catch(e=>{if(alive)setError(e instanceof Error&&safeHistoryMessages.has(e.message)?e.message:
+   'Unable to load verified activity. Please retry or use the block explorer.');})
    .finally(()=>{if(alive)setLoading(false);});
   return()=>{alive=false;};
  },[wallet,config,page,version]);

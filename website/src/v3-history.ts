@@ -9,6 +9,9 @@ const firstAccount=['DepositRouted','DailyClaimAccrued','ReferralClaimAccrued',
 const secondAccount=['WithdrawalRequested','WithdrawalPaid'];
 const windowSize=2000;
 const maxEvents=200;
+// Keep retries bounded: public BNB RPCs differ in maximum getLogs range.
+const maxLogRequests=64;
+const historyUnavailable='Unable to load the complete activity for these blocks. Please retry or use the block explorer.';
 const topic=(name:string)=>events.getEvent(name)!.topicHash;
 const hash=(value:string)=>/^0x[0-9a-f]{64}$/i.test(value);
 const amount=(value:bigint)=>formatV3Amount(value)+' TEST USDT';
@@ -28,6 +31,27 @@ export function v3HistoryRange(anchor:number,page:number,firstBlock=0){
  return {from:Math.max(firstBlock,to-windowSize+1),to};
 }
 
+// Ethers wraps JSON-RPC errors, so inspect only the error fields used for
+// classification; never show raw RPC payloads, URLs, or provider messages.
+function isLogRangeLimit(error:unknown){
+ const pending:unknown[]=[error],visited=new Set<unknown>();
+ const codes=new Set<number|string>();
+ const messages:string[]=[];
+ while(pending.length&&visited.size<12){
+  const value=pending.shift();
+  if(!value||typeof value!=='object'||visited.has(value))continue;
+  visited.add(value);
+  const entry=value as Record<string,unknown>;
+  if(typeof entry.code==='number'||typeof entry.code==='string')codes.add(entry.code);
+  if(typeof entry.message==='string')messages.push(entry.message.slice(0,1000));
+  for(const key of ['error','info','cause'])if(entry[key])pending.push(entry[key]);
+ }
+ const text=messages.join(' ').toLowerCase();
+ if(codes.has(429)||codes.has('429')||/rate[ -]?limit|too many requests|throttl/.test(text))return false;
+ return codes.has(-32005)||codes.has('-32005')||
+  /block range|range (?:is )?too (?:large|wide)|query returned more than|response size exceeded/.test(text);
+}
+
 // The RPC is queried for the connected wallet only, in a fixed, confirmed
 // block range. The anchor is checked again so pagination cannot silently jump
 // across a changed chain. Returned entries are events, never synthetic sales.
@@ -40,10 +64,27 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
  if(!anchorBlock?.hash||anchorBlock.hash.toLowerCase()!==anchor.hash.toLowerCase())
   throw Error('The confirmed history block changed. Refresh history.');
  const account=zeroPadValue(who,32);
- const [first,second]=await Promise.all([
-  provider.getLogs({address,fromBlock:from,toBlock:to,topics:[firstAccount.map(topic),account]}),
-  provider.getLogs({address,fromBlock:from,toBlock:to,topics:[secondAccount.map(topic),null,account]})
- ]);
+ let requests=0;
+ const scan=async(topics:(string|string[]|null)[],start:number,end:number):Promise<Log[]>=>{
+  if(++requests>maxLogRequests)throw Error(historyUnavailable);
+  let logs:Log[];
+  try{logs=await provider.getLogs({address,fromBlock:start,toBlock:end,topics});}
+  catch(error){
+   if(!isLogRangeLimit(error)||start===end)throw Error(historyUnavailable);
+   const middle=start+Math.floor((end-start)/2);
+   const earlier=await scan(topics,start,middle);
+   const later=await scan(topics,middle+1,end);
+   if(earlier.length+later.length>maxEvents)
+    throw Error('Too many events in this range. Open the contract explorer for this block range.');
+   return [...earlier,...later];
+  }
+  if(logs.length>maxEvents)throw Error('Too many events in this range. Open the contract explorer for this block range.');
+  return logs;
+ };
+ // Sequential requests avoid multiplying rate pressure while preserving the
+ // same complete, non-overlapping block range for both indexed filters.
+ const first=await scan([firstAccount.map(topic),account],from,to);
+ const second=await scan([secondAccount.map(topic),null,account],from,to);
  if(first.length+second.length>maxEvents)
   throw Error('Too many events in this range. Open the contract explorer for this block range.');
  const seen=new Set<string>();

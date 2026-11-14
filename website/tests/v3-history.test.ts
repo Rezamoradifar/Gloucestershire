@@ -50,4 +50,71 @@ describe('wallet-specific confirmed V3 activity',()=>{
   reorganized.getBlock.mockResolvedValueOnce({hash:blockHash}).mockResolvedValueOnce({hash:'0x'+'bb'.repeat(32)});
   await expect(queryV3HistoryWindow(reorganized.provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0)).rejects.toThrow(/changed/);
  });
+ it('splits rejected ranges into complete, non-overlapping smaller ranges',async()=>{
+  const deposit=log('DepositRouted',[wallet,0n,to('100'),to('10'),to('10'),to('80')],4000,0);
+  const paid=log('WithdrawalPaid',[2n,wallet,to('0.97'),to('0.03')],4002,2);
+  const getLogs=vi.fn(async(filter:any)=>{
+   const from=Number(filter.fromBlock),to=Number(filter.toBlock);
+   if(to-from+1>500)throw {code:'UNKNOWN_ERROR',info:{error:{code:-32005,message:'limit exceeded'}}};
+   const event=filter.topics[2]?paid:deposit;
+   return event.blockNumber>=from&&event.blockNumber<=to?[event]:[];
+  });
+  const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+  const page=await queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);
+  expect(page.from).toBe(3001);expect(page.to).toBe(5000);
+  expect(page.items.map(item=>item.title)).toEqual(['Withdrawal paid','Test-token deposit']);
+  expect(getLogs).toHaveBeenCalledTimes(14);
+  for(const isSecond of [false,true]){
+   const ranges=getLogs.mock.calls.map(([filter])=>filter).filter(filter=>Boolean(filter.topics[2])===isSecond&&Number(filter.toBlock)-Number(filter.fromBlock)<500);
+   expect(ranges.map(filter=>[filter.fromBlock,filter.toBlock])).toEqual([[3001,3500],[3501,4000],[4001,4500],[4501,5000]]);
+  }
+ });
+ it('does not retry rate-limited and non-range provider errors or leak provider details',async()=>{
+  for(const failure of [{code:429,message:'Too many requests at https://secret.example/key'},
+   {code:-32005,message:'rate limit exceeded at https://secret.example/key'},
+   {code:'NETWORK_ERROR',message:'https://secret.example/key'}]){
+   const getLogs=vi.fn().mockRejectedValue(failure);
+   const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+   await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0))
+    .rejects.toThrow('Unable to load the complete activity');
+   expect(getLogs).toHaveBeenCalledTimes(1);
+  }
+ });
+ it('fails closed at a single block or the request budget without returning partial history',async()=>{
+  for(const anchor of [{block:5000,hash:blockHash,firstBlock:5000},{block:5000,hash:blockHash,firstBlock:0}]){
+   const getLogs=vi.fn().mockRejectedValue({code:-32005,message:'limit exceeded'});
+   const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+   await expect(queryV3HistoryWindow(provider,contract,wallet,anchor,0)).rejects.toThrow('Unable to load the complete activity');
+   expect(getLogs.mock.calls.length).toBeLessThanOrEqual(64);
+   if(anchor.firstBlock===anchor.block)expect(getLogs).toHaveBeenCalledTimes(1);
+  }
+ });
+ it('discards successfully read events if another part of the range fails',async()=>{
+  const deposit=log('DepositRouted',[wallet,0n,to('100'),to('10'),to('10'),to('80')],4000,0);
+  const getLogs=vi.fn().mockResolvedValueOnce([deposit]).mockRejectedValueOnce({code:429,message:'rate limit exceeded'});
+  const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+  await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0))
+   .rejects.toThrow('Unable to load the complete activity');
+  expect(getLogs).toHaveBeenCalledTimes(2);
+ });
+ it('stops at the bounded request budget when a provider requires tiny ranges',async()=>{
+  const getLogs=vi.fn(async(filter:any)=>{
+   if(Number(filter.toBlock)-Number(filter.fromBlock)+1>31)throw {code:-32005,message:'limit exceeded'};
+   return [];
+  });
+  const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+  await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0))
+   .rejects.toThrow('Unable to load the complete activity');
+  expect(getLogs).toHaveBeenCalledTimes(64);
+ });
+ it('still rejects a changed anchor after split queries',async()=>{
+  const getLogs=vi.fn(async(filter:any)=>{
+   if(Number(filter.toBlock)-Number(filter.fromBlock)>=500)throw {code:-32005,message:'limit exceeded'};
+   return [];
+  });
+  const getBlock=vi.fn().mockResolvedValueOnce({hash:blockHash}).mockResolvedValueOnce({hash:'0x'+'bb'.repeat(32)});
+  const provider={getLogs,getBlock} as unknown as Provider;
+  await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0)).rejects.toThrow(/changed/);
+  expect(getLogs.mock.calls.length).toBeGreaterThan(2);
+ });
 });
