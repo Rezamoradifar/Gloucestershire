@@ -24,8 +24,17 @@ def exercise(mode):
             'scripts/v3-keeper-receipt-poll.mjs','package.json','package-lock.json']:
    (root/f).write_bytes((repo/f).read_bytes())
   for f in ['v3-hourly-keeper-testnet.json','v3-hourly-volume-keeper-gas-only.key',
-            'v3-hourly-keeper-testnet-gas-only.key']:
+            'v3-hourly-keeper-testnet-gas-only.key',
+            'v3-routed-keeper-testnet-gas-only.key','v3-keeper-testnet-gas-only.key']:
    (root/'etc/globaldroptrade'/f).write_text('private-test-fixture')
+  if mode in ('routed_symlink','original_symlink'):
+   key=('v3-routed-keeper-testnet-gas-only.key' if mode=='routed_symlink'
+        else 'v3-keeper-testnet-gas-only.key')
+   path=root/'etc/globaldroptrade'/key
+   path.unlink();path.symlink_to(root/'missing-key')
+  if mode=='missing_optional':
+   for key in ('v3-routed-keeper-testnet-gas-only.key','v3-keeper-testnet-gas-only.key'):
+    (root/'etc/globaldroptrade'/key).unlink()
   (root/'var/lib/globaldroptrade/v3-hourly-testnet/deployment.json').write_text('{}')
   unit=root/'etc/systemd/system/global-v3-hourly-network-volume-testnet.service'
   if mode=='symlink':unit.symlink_to(root/'missing')
@@ -37,7 +46,10 @@ else exec "{real_stat}" "$@"; fi''',
    'git':"if [[ \"$1\" == rev-parse ]]; then printf '%040d\\n' 1; fi; exit 0",
    'node':'''if [[ "$2" == --address ]]; then echo V3_VOLUME_GAS_ONLY_ADDRESS=0x111; exit 0; fi
 if [[ "$2" == --public-address ]]; then
- if [[ "$SIM_MODE" == same ]]; then echo V3_KEEPER_GAS_ONLY_PUBLIC_ADDRESS=0x111
+ if [[ "$SIM_MODE" == same ||
+       ( "$SIM_MODE" == routed_same && "$4" == *v3-routed-keeper-testnet-gas-only.key ) ||
+       ( "$SIM_MODE" == original_same && "$4" == *v3-keeper-testnet-gas-only.key ) ]]; then
+  echo V3_KEEPER_GAS_ONLY_PUBLIC_ADDRESS=0x111
  else echo V3_KEEPER_GAS_ONLY_PUBLIC_ADDRESS=0x222; fi; exit 0
 fi
 if [[ "$2" == --check && "$SIM_MODE" == insufficient ]]; then exit 1; fi
@@ -59,7 +71,7 @@ exec "{real_analyze}" "$@"'''
   p=subprocess.run(['bash',str(root/'scripts/v3-volume-install.sh'),'--install'],
                    cwd=root,env=env,text=True,capture_output=True,timeout=30)
   calls=(root/'systemctl-calls').read_text() if (root/'systemctl-calls').exists() else ''
-  if mode=='ok':
+  if mode in ('ok','missing_optional'):
    assert p.returncode==0,p.stdout+p.stderr
    service=(root/'captured.service').read_text();timer=(root/'captured.timer').read_text()
    assert 'DynamicUser=yes' in service and 'volume-gas-key:' in service
@@ -74,6 +86,7 @@ exec "{real_analyze}" "$@"'''
    if mode=='symlink':assert unit.is_symlink()
    else:assert not unit.exists()
 
-for case in ['ok','same','insufficient','symlink','probe_fail']:
+for case in ['ok','missing_optional','same','routed_same','original_same','routed_symlink','original_symlink',
+             'insufficient','symlink','probe_fail']:
  exercise(case)
 print('PASS isolated volume installer signer, gas, credential, unit and failure guards')

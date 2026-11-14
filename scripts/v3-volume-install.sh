@@ -36,8 +36,22 @@ for file in "$config" "$proof" "$key" "$prior_key"; do
   { echo V3_VOLUME_PRIVATE_INPUT_INVALID; exit 1; }
 done
 volume_address="$("$node" scripts/v3-volume-keeper.mjs --address)"
-prior_address="$("$node" scripts/global-v3-auto-compound-keeper.mjs --public-address --key-file "$prior_key")"
-[[ "${volume_address#*=}" != "${prior_address#*=}" ]] || { echo V3_VOLUME_SIGNER_MUST_BE_SEPARATE; exit 1; }
+# The 24-hour routed keeper and the older original V3 keeper may also be
+# active. Never let this worker share a signer with any known keeper: their
+# independent timers do not share a nonce lock. A missing optional key is OK;
+# an existing unsafe file (including a dangling symlink) fails closed.
+for other_key in "$prior_key" \
+ /etc/globaldroptrade/v3-routed-keeper-testnet-gas-only.key \
+ /etc/globaldroptrade/v3-keeper-testnet-gas-only.key; do
+ if [[ "$other_key" != "$prior_key" && ! -e "$other_key" && ! -L "$other_key" ]]; then
+  continue
+ fi
+ [[ -f "$other_key" && ! -L "$other_key" && "$(stat -Lc '%a:%u' "$other_key")" == '600:0' ]] ||
+  { echo V3_VOLUME_OTHER_KEEPER_KEY_UNSAFE; exit 1; }
+ other_address="$("$node" scripts/global-v3-auto-compound-keeper.mjs --public-address --key-file "$other_key")"
+ [[ "${volume_address#*=}" != "${other_address#*=}" ]] ||
+  { echo V3_VOLUME_SIGNER_MUST_BE_SEPARATE; exit 1; }
+done
 "$node" scripts/v3-volume-keeper.mjs --check
 echo V3_VOLUME_PREFLIGHT_PASS
 if [[ "$mode" == --check ]]; then echo V3_VOLUME_NO_TRANSACTION_SENT; exit 0; fi
