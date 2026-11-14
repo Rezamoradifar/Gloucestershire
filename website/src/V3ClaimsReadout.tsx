@@ -35,8 +35,8 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
    <div><small>Maximum for one new request under current cooldown/cap</small>
     <strong><DigitalValue value={formatV3Amount(claims.maxSingleRequest)} unit={unit}/></strong></div>
   </div>
-  <p className="gv3-claims-warning"><Info size={17}/> These amounts are recorded TESTNET claims, not transferable wallet funds.
-   Total V3 cash shortfall is {formatV3Amount(claims.overallUnfundedLiability)} {unit}.
-   Cash must still be reserved and paid under a separately approved, confirmed transaction.</p>
+  <p className="gv3-claims-warning"><Info size={17}/> Recorded claims are not wallet funds.
+   V3 test-token funding shortfall: {formatV3Amount(claims.overallUnfundedLiability)} {unit}.
+   Withdrawals require approval, funding and a confirmed payment.</p>
  </section>;
 }

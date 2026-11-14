@@ -25,6 +25,8 @@ describe('digital account instruments',()=>{
   expect(html).toContain('CONDITIONAL CYCLE ESTIMATE');
   expect(html).toContain('aria-label="0.00 TEST USDT"');
   expect(html).toContain('aria-label="7.07 TEST USDT"');
+  expect(html).toContain('Next check-in in 01:00:00');
+  expect(html).toContain('disabled=""');
  });
  it('renders separate recorded daily, compound and referral values',()=>{
   const ledger:V3ClaimLedger={chainId:97,runtimeVerified:true,block:1234,asOf:1000,
@@ -37,5 +39,6 @@ describe('digital account instruments',()=>{
   const html=renderToStaticMarkup(<V3ClaimsReadout verifiedLedger={ledger}/>);
   for(const value of ['15.249','14.00','0.049','1.2'])
    expect(html).toContain(`aria-label="${value} TEST USDT"`);
+  expect(html).toContain('funding shortfall: 15.249 TEST USDT');
  });
 });

@@ -21,6 +21,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
  const progress=remaining===null?0:Math.min(1,Math.max(0,1-remaining/V3_PERIOD_SECONDS));
  const due=remaining===0;
  const active=cycle.activityRemaining>0&&view.registered&&!view.suspended&&!view.paused;
+ const checkInWait=view.lastCheckIn>0?Math.max(0,view.lastCheckIn+3600-(view.asOf+elapsed)):0;
  return <section className="gv3-cycle" aria-label="Twenty-four hour position cycle">
   <div className="gv3-cycle-head"><div><span className="gv3-kicker">YOUR DAILY CYCLE</span>
    <h2>Track every eligible period</h2><p>Each position starts its own 24-hour cycle.</p></div>
@@ -51,8 +52,9 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
      <small>At the verified {view.dailyRateBps/100}% test rate, if each position becomes eligible. Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>
     <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Check-in active':'Check in to qualify'}</strong>
-     <small>{active?'Expires in '+v3Countdown(cycle.activityRemaining):'A signed check-in is required for an eligible cycle.'}</small></div>
-     <button type="button" disabled={busy||!view.registered||view.suspended||view.paused} onClick={onCheckIn}>
+     <small>{active?'Expires in '+v3Countdown(cycle.activityRemaining):'A signed check-in is required for an eligible cycle.'}
+      {checkInWait>0&&' · Next check-in in '+v3Countdown(checkInWait)}</small></div>
+     <button type="button" disabled={busy||!view.registered||view.suspended||view.paused||checkInWait>0} onClick={onCheckIn}>
       <RefreshCw size={14}/> Check in</button></div>
    </div>
   </div>

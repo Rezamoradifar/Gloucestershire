@@ -79,6 +79,10 @@ export const V3_ABI=[
  'function payWithdrawal(uint256)',
  'event DailyClaimAccrued(address indexed user,uint256 indexed positionId,uint256 personal,uint256 compounded,uint256 total,uint256 at)',
  'event DepositRouted(address indexed user,uint256 indexed positionId,uint256 amount,uint256 fee1,uint256 fee2,uint256 operations)',
+ 'event ReferralClaimAccrued(address indexed upline,address indexed source,uint8 level,uint256 amount)',
+ 'event NetworkClaimAccrued(address indexed user,uint256 indexed group,uint256 amount,uint8 stages)',
+ 'event ProfitReinvested(address indexed user,uint256 indexed fromPosition,uint256 newPositionId,uint256 amount)',
+ 'event CheckIn(address indexed user,uint256 at)',
  'event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee)',
  'event WithdrawalEscrowFunded(uint256 indexed id,address indexed funder,uint256 gross)',
  'event WithdrawalExistingCashReserved(uint256 indexed id,uint256 gross)',
@@ -175,7 +179,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
     getAddress(depositFee1)!==V3_DEPOSIT_FEE_1||getAddress(depositFee2)!==V3_DEPOSIT_FEE_2||
     getAddress(operations)!==V3_OPERATIONS||BigInt(depositBps)!==1000n)
    throw Error('V3 asset, routing destinations, fees or manager role was not verified.');
-  return {provider,vault,options,block,config};
+  return {provider,vault,options,block,config,deploymentBlock:receipt.blockNumber};
  };
  // Try independent sources sequentially; retain the successful provider only
  // for the scoped read, so its connection is not destroyed prematurely.

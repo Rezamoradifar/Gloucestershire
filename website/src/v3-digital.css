@@ -6,6 +6,15 @@
 .gv3-digital-mark{flex:0 0 auto;display:inline-block;color:currentColor;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:calc(var(--digit-height)*.7);font-weight:700;line-height:1}
 .gv3-digital-mark.colon{font-size:calc(var(--digit-height)*.75);animation:gv3-colon-pulse 2s ease-in-out infinite}
 .gv3-digital-unit{flex:0 0 auto;color:#b9c8c3;font:700 10px/1.3 Inter,system-ui,sans-serif;letter-spacing:.06em;white-space:nowrap}
+/* Legacy metric rules target every nested span. Keep the instrument and its
+   digit run horizontal in cards, including narrow mobile viewports. */
+.gv3-workspace .gv3-digital{display:flex;flex-direction:row;min-width:0}
+.gv3-workspace .gv3-digital-run{display:inline-flex;flex-direction:row;flex-wrap:nowrap;white-space:nowrap}
+.gv3-workspace .gv3-digital-mark{display:inline-block}
+.gv3-workspace .gv2-metric .gv3-digital{color:#f8daa0}
+.gv3-workspace .gv2-metric .gv3-digital-run,.gv3-workspace .gv2-metric .gv3-digital-mark{color:inherit}
+.gv3-workspace .gv2-metric .gv3-digital-mark{font-size:calc(var(--digit-height)*.7)}
+.gv3-workspace .gv2-metric .gv3-digital-unit{font:700 10px/1.3 Inter,system-ui,sans-serif}
 .gv3-digital--hero{--digit-height:39px;color:#ffe3aa}.gv3-digital--clock{--digit-height:39px;color:#f6d18c;justify-content:center}
 @keyframes gv3-colon-pulse{0%,40%,100%{opacity:1}50%,90%{opacity:.4}}
 .gv3-clock-console{min-width:0;width:100%;padding:15px 17px 13px;border:1px solid #967c4e;border-radius:15px;background:radial-gradient(ellipse at 50% -50%,#c6a26330,transparent 70%),linear-gradient(145deg,#0a171e,#061019);box-shadow:inset 0 1px 0 #ffedbd1c,0 12px 32px #01080b70}

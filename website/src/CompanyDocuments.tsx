@@ -3,7 +3,7 @@ import {ArrowUpRight, ImageIcon, X, ZoomIn} from 'lucide-react';
 import {companyDocuments, type CompanyDocument} from './companyDocuments';
 import './company-documents.css';
 
-export default function CompanyDocuments() {
+export default function CompanyDocuments({showSampleImages = true}: {showSampleImages?: boolean}) {
   const [selected, setSelected] = useState<CompanyDocument | null>(null);
   const [failedImages, setFailedImages] = useState<string[]>([]);
   const viewer = useRef<HTMLDialogElement>(null);
@@ -38,7 +38,7 @@ export default function CompanyDocuments() {
           {doc && !unavailable ? <button className="gdt-document-image" onClick={() => setSelected(item)} aria-label={`Enlarge ${item.title.toLowerCase()}`}>
             <img src={doc.image} alt={doc.imageAlt} loading="lazy" onError={() => imageFailed(item.id)}/>
             <span><ZoomIn size={17}/>View document</span>
-          </button> : !doc && item.sampleImage && !failedImages.includes(`sample-${item.id}`) ? <figure className="gdt-document-sample">
+          </button> : !doc && showSampleImages && item.sampleImage && !failedImages.includes(`sample-${item.id}`) ? <figure className="gdt-document-sample">
             <img src={item.sampleImage.src} alt={item.sampleImage.alt} width="1536" height="1024" loading="lazy" decoding="async" onError={() => imageFailed(`sample-${item.id}`)}/>
             <span className="gdt-document-sample-badge">SAMPLE IMAGE</span>
             <figcaption>Illustrative image · Original document pending</figcaption>
