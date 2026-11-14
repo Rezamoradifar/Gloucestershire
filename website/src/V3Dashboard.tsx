@@ -7,16 +7,15 @@ import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History
  Layers,LogOut,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdrawal} from './v3-chain';
-import {V3_TEST_TOKEN} from './v3-site-config';
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQueue,
  type V3Action} from './v3-actions';
 import {v3PrepareUserClaims} from './v3-claim-balance';
 import V3ClaimsReadout from './V3ClaimsReadout';
 import V3CycleCard from './V3CycleCard';
-import V3PaymentMap from './V3PaymentMap';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
+import V3CommercePanel from './V3CommercePanel';
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
@@ -31,12 +30,11 @@ import './v2-signature-dashboard.css';
 import './v3-dashboard.css';
 import './v1-v3-dashboard.css';
 
-type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'admin'|'contract';
+type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'admin';
 const menus=[
  {id:'overview' as Tab,label:'Overview',Icon:Home},
  {id:'positions' as Tab,label:'My positions',Icon:Layers},
  {id:'team' as Tab,label:'Referral network',Icon:Users},
- {id:'contract' as Tab,label:'Contract transparency',Icon:ShieldCheck},
  {id:'withdrawals' as Tab,label:'Withdrawal requests',Icon:Coins},
  {id:'history' as Tab,label:'History',Icon:History},
  {id:'profile' as Tab,label:'Profile',Icon:UserRound},
@@ -239,9 +237,10 @@ export default function V3Dashboard(){
     <div><strong>GLOBAL</strong><small>ARBITRAGE &amp; DROPSHIPPING</small></div></a>
    <div className="sidebar-caption">YOUR WORKSPACE</div>
    <nav>{menus.filter(x=>x.id!=='admin'||Boolean(view?.canManage)).map(({id,label,Icon})=>
-    <button key={id} onClick={()=>navigate(id)} className={tab===id?'active':''} aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{label}</span>{tab===id&&<ChevronRight size={15}/>}</button>)}</nav>
+    <button key={id} onClick={()=>navigate(id)} className={tab===id?'active':''} aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{label}</span>{tab===id&&<ChevronRight size={15}/>}</button>)}
+    <button type="button" onClick={()=>{window.location.hash='#marketplace';}}><Coins size={19}/><span>Products &amp; sales</span></button></nav>
    <div className="gv2-sidebar-bottom"><div className="gv1-sidebar-network"><span>◆</span><div><strong>BNB Testnet</strong><small>Test environment</small></div></div>
-    <div className="gv1-sidebar-note"><ShieldCheck size={17}/><span>Original payment addresses<br/><small>Visible on the blockchain</small></span></div>
+    <div className="gv1-sidebar-note"><ShieldCheck size={17}/><span>Account activity<br/><small>Available in your history</small></span></div>
     <a href="#">Back to website</a></div>
   </aside>
   {menuOpen&&<button className="gv2-scrim" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"/>}
@@ -259,8 +258,8 @@ export default function V3Dashboard(){
     </div>{wallet&&config&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17}/> Refresh</button>}</div>
     <section className="gv2-release"><ShieldCheck size={19}/><div className="gv2-release-copy">
      <strong>Isolated Global V3 test environment</strong>
-     <span>{config?short(config.address)+' · verified runtime required before any wallet action':'The current testnet contract has not yet been verified.'}</span>
-    </div>{config&&<a target="_blank" rel="noreferrer" href={V3_EXPLORER+'/address/'+config.address}>Contract <ExternalLink size={14}/></a>}</section>
+     <span>{config?'Account data is checked before wallet actions.':'The current testnet account connection has not yet been verified.'}</span>
+    </div></section>
     {!config&&<section className="gv2-panel gv3-not-ready" role="status"><ShieldAlert size={26}/>
      <h2>V3 integration is prepared, but activation is locked</h2>
      <p>The testnet contract must be deployed and independently verified before this dashboard can show account data.</p>
@@ -286,6 +285,7 @@ export default function V3Dashboard(){
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
      onDeposit={()=>void deposit()} onWithdraw={()=>request('profit')} onReinvest={reinvest}
      onNetwork={()=>navigate('team')} onConnect={()=>void connect('injected')} onWalletConnect={()=>void connect('walletconnect')}/>}
+    {tab==='overview'&&<V3CommercePanel/>}
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy} onCheckIn={checkIn} onPositions={()=>navigate('positions')}/>
@@ -311,14 +311,13 @@ export default function V3Dashboard(){
        {!view.positions.length&&<p>No independently verified V3 positions exist in this wallet.</p>}
       </section>
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
-       <p>Each external test deposit follows the original 10% / 10% / 80% routing. The recorded principal is a claim, not cash retained in the vault.</p>
+       <p>100% of each test deposit is routed to designated wallets, including fee wallets. It does not remain as cash in the vault or establish product spending.</p>
        <div className="gv3-input-row"><label htmlFor="v3-deposit">Amount (TEST USDT)</label><input id="v3-deposit" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" placeholder="1000"/>
         {!view.registered&&<><label htmlFor="v3-parent">Referrer (optional)</label>
          <input id="v3-parent" value={referrer} onChange={e=>setReferrer(e.target.value)} /></>}
         <small>Wallet balance: {show(view.walletTestTokenBalance)} MOCK TEST USDT</small>
         <button className="gv2-primary" disabled={busy||view.paused} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
-      <V3PaymentMap/>
       <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.</p>
        <div className="gv3-input-row"><label htmlFor="v3-reinvest-id">Position</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
         {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1}</option>)}</select>
@@ -374,18 +373,6 @@ export default function V3Dashboard(){
        <div className="gv2-buttons"><button disabled={busy||adminQueue.page===0} onClick={()=>void readQueue(adminQueue.page-1)}>Newer requests</button>
         <button disabled={busy||(adminQueue.page+1)*20>=adminQueue.count} onClick={()=>void readQueue(adminQueue.page+1)}>Older requests</button></div></>}
      </section>}
-     {tab==='contract'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>V3 source and verification</h3><ShieldCheck size={18}/></div>
-      <div className="gv2-detail"><span>Network</span><b>BNB Testnet (97)</b></div>
-      <div className="gv2-detail"><span>Contract</span><b>{config.address}</b></div>
-      <div className="gv2-detail"><span>Pinned bytecode hash</span><b>{config.runtimeHash}</b></div>
-      <div className="gv2-detail"><span>Deployment TX</span><b>{config.deploymentTx}</b></div>
-      <div className="gv2-detail"><span>Asset</span><b>{V3_TEST_TOKEN} · MOCK TUSDT</b></div>
-      <div className="gv2-detail"><span>Withdrawals</span><b>Manager-approved; separate funding & payout</b></div>
-      <div className="gv2-detail"><span>Principal lock</span><b>90 days, then 30% withdrawal penalty</b></div>
-      <a className="gv2-explorer" href={V3_EXPLORER+'/address/'+config.address} target="_blank" rel="noreferrer">Review on BscScan <ExternalLink size={16}/></a>
-      <p>Unaudited isolated testnet prototype. This interface never creates real USDT or a backed investment guarantee.</p>
-     </section>}
-     {tab==='contract'&&<V3PaymentMap/>}
     </div>}
     </>}
     <footer className="gv2-foot">GLOBAL DROP TRADE · V3 ISOLATED TESTNET · No real deposits or guaranteed yield</footer>

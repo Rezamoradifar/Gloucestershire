@@ -37,7 +37,7 @@ describe('wallet-specific confirmed V3 activity',()=>{
   expect(page.items[0].value).toBe('0.97 TEST USDT');
   expect(page.items[1].detail).toContain('Profit-on-profit 0.02 TEST USDT');
   expect(page.items[1].value).toBe('1.02 TEST USDT');
-  expect(page.items[2].detail).toContain('10% / 10% / 80%');
+  expect(page.items[2].detail).toContain('Routed to designated wallets');
   expect(src.getLogs.mock.calls[0][0].topics[1]).toBe(zeroPadValue(wallet,32));
   expect(src.getLogs.mock.calls[1][0].topics[2]).toBe(zeroPadValue(wallet,32));
  });

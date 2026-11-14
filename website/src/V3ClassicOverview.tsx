@@ -64,7 +64,7 @@ export default function V3ClassicOverview(props:Props){
       {invalidInvite&&!referrer.trim()&&<span role="status" className="gv1-inline-warning">Invitation is invalid. Enter a valid address or continue without one.</span>}</label>}
      {requiresPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
      <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Requests need manager approval and actual test-token funding.':
-      mode==='reinvest'?'Recorded profit creates a new 90-day locked position.':'Minimum 10 TEST USDT; the original 10% / 10% / 80% routing applies.'}</p>
+      mode==='reinvest'?'Recorded profit creates a new 90-day locked position.':'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 TEST USDT.'}</p>
      <button type="submit" className="gv2-primary gv1-action" disabled={!usable}>
       {mode==='deposit'?'Review test deposit':mode==='withdraw'?'Review withdrawal request':'Review reinvestment'} <ArrowRight size={16}/></button>
      {!view&&<div className="gv1-connect-actions"><button type="button" disabled={connecting} onClick={onConnect}><Wallet size={15}/> Connect wallet</button>

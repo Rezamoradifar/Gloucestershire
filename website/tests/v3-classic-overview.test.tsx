@@ -32,6 +32,7 @@ describe('classic Global layout with current V3 data',()=>{
   for(const value of ['1,000.00','15.249','14.049'])expect(html).toContain(`aria-label="${value} TEST"`);
   expect(html).toContain('Basic');
   expect(html).toContain('2 / 6');
-  expect(html).toContain('10% / 10% / 80%');
+  expect(html).toContain('100% of a test deposit is routed to designated wallets, including fee wallets');
+  expect(html).toContain('This does not establish product spending.');
  });
 });

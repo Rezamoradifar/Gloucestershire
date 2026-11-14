@@ -1,0 +1,16 @@
+.gv3-commerce{margin:20px 0 26px;padding:22px;border:1px solid #343a43;border-radius:18px;background:linear-gradient(135deg,#171a22,#101319);color:#edf0f2}
+.gv3-commerce-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.gv3-commerce-head h2{margin:5px 0;font-size:19px;color:#f1f2f5}
+.gv3-commerce-head p{margin:0;color:#a7b0bb;font-size:12px;line-height:1.5}
+.gv3-commerce-kicker{color:#cbb982;font-size:10px;font-weight:700;letter-spacing:.12em}
+.gv3-commerce-head button{display:inline-grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border:1px solid #414753;border-radius:10px;background:#1b1f28;color:#dce3e9}
+.gv3-commerce-head button:disabled{opacity:.5}
+.gv3-commerce-status{display:flex;align-items:center;gap:7px;margin:17px 0;color:#c8d2d5;font-size:11px}
+.gv3-commerce-status span{width:7px;height:7px;border-radius:50%;background:#c2ad70}
+.gv3-commerce-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.gv3-commerce-grid>div{display:grid;align-content:start;gap:7px;min-width:0;padding:15px;border:1px solid #363e49;border-radius:12px;background:#0d1119}
+.gv3-commerce-grid svg{color:#d5bd7d}.gv3-commerce-grid small{color:#aebbc1;font-size:11px}
+.gv3-commerce-grid strong{font-size:25px;line-height:1.2;color:#f2dfac}
+.gv3-commerce-grid span,.gv3-commerce-updated{color:#a2aeb8;font-size:10px;line-height:1.5}
+.gv3-commerce>a{display:inline-flex;align-items:center;gap:6px;margin-top:16px;color:#e5ce94;text-decoration:underline;font-size:12px}
+@media(max-width:480px){.gv3-commerce{padding:16px}.gv3-commerce-grid{grid-template-columns:1fr}.gv3-commerce-head h2{font-size:17px}}
