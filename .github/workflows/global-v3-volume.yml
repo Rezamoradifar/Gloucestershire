@@ -1,0 +1,36 @@
+name: V3 hourly testnet volume automation
+on:
+  pull_request:
+    paths:
+      - 'contracts/v3/**'
+      - 'scripts/v3-volume-keeper.mjs'
+      - 'scripts/v3-volume-install.sh'
+      - 'scripts/test-v3-volume-install.py'
+      - 'scripts/compile-global-v3-hourly-testnet.mjs'
+      - 'scripts/global-v3-auto-compound-keeper.mjs'
+      - 'scripts/v3-keeper-receipt-poll.mjs'
+      - 'test/v3-volume-keeper.test.mjs'
+      - 'test/global-v3-network-volume-chain.test.mjs'
+      - '.github/workflows/global-v3-volume.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-testnet-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test bounded scanning, local chain, systemd and safety guards
+        run: |
+          node --check scripts/v3-volume-keeper.mjs
+          bash -n scripts/v3-volume-install.sh
+          python3 scripts/test-v3-volume-install.py
+          node --test --test-concurrency=1 test/v3-volume-keeper.test.mjs test/global-v3-network-volume-chain.test.mjs
