@@ -268,6 +268,30 @@ describe('V3 verified transaction reads',()=>{
   expect(result).not.toContain('SECRET_CODE');
   expect(state.depositSends).toHaveLength(0);
  });
+ it('reports a whitelisted nested wallet code without leaking message or payload and never retries',async()=>{
+  state.sendFailure={code:'UNKNOWN_ERROR',error:{code:-32000,message:'provider secret RPC token'},payload:{secret:'must-not-appear'}};
+  const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(result).toContain('code UNKNOWN_ERROR; wallet code -32000');
+  expect(result).toContain('Check your wallet transaction history before retrying');
+  expect(result).not.toContain('secret');
+  expect(result).not.toContain('payload');
+  expect(state.signer.sendUncheckedTransaction).toHaveBeenCalledTimes(1);
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('recognizes a nested gas warning using fixed wording only',async()=>{
+  state.sendFailure={code:'UNKNOWN_ERROR',info:{error:{code:-32000,message:'not enough to pay for miners SECRET'}}};
+  const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(result).toContain('Wallet reports insufficient funds for gas.');
+  expect(result).not.toContain('SECRET');
+  expect(state.signer.sendUncheckedTransaction).toHaveBeenCalledTimes(1);
+ });
+ it('does not expose unknown nested wallet codes or messages',async()=>{
+  state.sendFailure={code:'UNKNOWN_ERROR',error:{code:123456,message:'secret custom response'}};
+  const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(result).not.toContain('123456');
+  expect(result).not.toContain('secret');
+  expect(result).toContain('Check your wallet transaction history before retrying');
+ });
  it('preserves a clear declined status without exposing the wallet error message',async()=>{
   state.sendFailure={code:4001,message:'sensitive wallet details'};
   const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
