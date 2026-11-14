@@ -352,7 +352,12 @@ export default function V3Dashboard(){
       <div className="gv2-detail"><span>Next new withdrawal allowed after</span><b>{date(view.nextRequestAt)}</b></div>
       <div className="gv2-detail"><span>Cumulative V3 test deposits</span><b>{show(view.originalDeposits)}</b></div>
       <div className="gv2-detail"><span>Cumulative manual reinvestments</span><b>{show(view.reinvestments)}</b></div>
-      {!view.registered&&<button className="gv2-primary" disabled={busy} onClick={register}>Register V3 wallet</button>}
+      {!view.registered&&<div className="gv3-input-row">
+       <label htmlFor="v3-profile-referrer">Referrer wallet or invitation link (optional)</label>
+       <input id="v3-profile-referrer" value={referrer} onChange={e=>setReferrer(e.target.value)} autoComplete="off"/>
+       <small>Leave empty to register without a referrer. A selected referrer must already be registered in this test contract and cannot be changed after registration.</small>
+       <button className="gv2-primary" disabled={busy||view.paused} onClick={register}>Register V3 wallet</button>
+      </div>}
       <p>This profile shows only the current contract's confirmed account records.</p>
      </section>}
      {tab==='withdrawals'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Request a V3 testnet withdrawal</h3><Clock3 size={18}/></div>
