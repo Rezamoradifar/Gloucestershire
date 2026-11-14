@@ -68,6 +68,7 @@ beforeEach(()=>{
   return state.receiptMode==='bad-hash'?'0xnot-a-hash':hash;
  })};
  state.verifiedProvider={kind:'verified',destroy:vi.fn(),
+  getFeeData:vi.fn(async()=>({gasPrice:250000000n})),
   getBlock:vi.fn(async(tag:any)=>tag==='latest'?{gasLimit:30000000n}:{hash:blockHash}),
   getBlockNumber:vi.fn(async()=>105),
   getTransaction:vi.fn(async()=>state.receiptMode==='missing-tx'?null:state.txMutation?state.txMutation(state.lastTx):state.lastTx),
@@ -103,7 +104,7 @@ describe('V3 verified transaction reads',()=>{
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).resolves.toBe(state.receipt.hash);
   expect(state.approvalSends).toEqual([amount]);
   expect(state.depositSends).toHaveLength(1);
-  expect(state.signer.sendUncheckedTransaction).toHaveBeenCalledWith(expect.objectContaining({to:'0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89',gasLimit:125000n}));
+  expect(state.signer.sendUncheckedTransaction).toHaveBeenCalledWith(expect.objectContaining({to:'0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89',gasLimit:125000n,gasPrice:250000000n}));
   expect(state.depositSends[0]).toEqual([amount,ZeroAddress,{gasLimit:125000n}]);
   expect(state.reads.filter(x=>x==='allowance').length).toBeGreaterThanOrEqual(2);
   expect(state.reads).toContain('deposit:static');
@@ -157,6 +158,24 @@ describe('V3 verified transaction reads',()=>{
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('gas limit');
   expect(state.approvalSends).toHaveLength(0);
   expect(state.depositSends).toHaveLength(0);
+ });
+ it.each([null,0n,100000000001n])('does not send when testnet gas price is invalid or excessive: %s',async(price)=>{
+  state.verifiedProvider.getFeeData.mockResolvedValue({gasPrice:price});
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow(/gas price|gas fee/);
+  expect(state.signer.sendUncheckedTransaction).not.toHaveBeenCalled();
+ });
+ it('does not send when network gas price cannot be read',async()=>{
+  state.verifiedProvider.getFeeData.mockRejectedValue(Error('PRIVATE_RPC_ERROR'));
+  const message=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(message).toContain('Unable to verify the TESTNET gas price');
+  expect(message).not.toContain('PRIVATE_RPC_ERROR');
+  expect(state.signer.sendUncheckedTransaction).not.toHaveBeenCalled();
+ });
+ it('rejects an excessive total testnet transaction fee even when the gas price is within its cap',async()=>{
+  state.readToken.approve.estimateGas.mockResolvedValue(1000000n);
+  state.verifiedProvider.getFeeData.mockResolvedValue({gasPrice:100000000000n});
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('gas fee exceeds');
+  expect(state.signer.sendUncheckedTransaction).not.toHaveBeenCalled();
  });
  it('does not proceed when the approval broadcast has an unknown outcome',async()=>{
   state.sendFailure=Error('RPC_BROADCAST_UNCERTAIN');
