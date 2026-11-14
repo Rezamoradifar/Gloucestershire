@@ -143,7 +143,7 @@ const toSafeCount=(raw:bigint,label:string)=>{
  return n;
 };
 export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig){
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,requireIndependent=false){
  if(!config)throw Error('The V3 testnet contract has not been deployed and verified for this site.');
  if(!isAddress(wallet))throw Error('Connect a valid testnet wallet.');
  wallet=getAddress(wallet);
@@ -193,6 +193,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
   try{return await withTimeout(verify(provider,true),12000);}
   catch{provider.destroy();}
  }
+ if(requireIndependent)throw Error('An independently verified V3 BNB Testnet RPC is unavailable. Check transaction history before retrying.');
  const browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
  try{return await withTimeout(verify(browser,false),12000);}
  catch{

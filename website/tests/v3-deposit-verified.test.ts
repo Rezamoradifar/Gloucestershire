@@ -5,7 +5,7 @@ const state=vi.hoisted(()=>({
  allowance:0n,balance:100000000000000000000n,registered:false,paused:false,
  failSessionAt:0,sessionCount:0,failSimulation:false,failSimulationName:'',approvalStatus:1,
  readToken:null as any,writeToken:null as any,readVault:null as any,writeVault:null as any,
- verifiedProvider:null as any,signer:{kind:'signer'},receipt:null as any,
+ verifiedProvider:null as any,signer:null as any,receipt:null as any, lastTx:null as any, sendFailure:null as any, receiptMode:'ok', txMutation:null as any,
  approvalSends:[] as bigint[],depositSends:[] as any[],registerSends:[] as any[],reads:[] as string[]
 }));
 vi.mock('ethers',async(importOriginal)=>{
@@ -33,7 +33,7 @@ vi.mock('../src/v3-chain',async(importOriginal)=>{
  })};
 });
 
-import {V3_ABI} from '../src/v3-chain';
+import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession} from '../src/v3-chain';
 import {sendV3Action,sendV3TestTokenDeposit} from '../src/v3-actions';
 
 const wallet='0x1000000000000000000000000000000000000001';
@@ -41,24 +41,46 @@ const vault='0x2000000000000000000000000000000000000002';
 const amount=parseEther('10');
 const config={address:vault,runtimeHash:'0x'+'1'.repeat(64),deploymentTx:'0x'+'2'.repeat(64)};
 const provider={request:vi.fn(async({method}:{method:string})=>method==='eth_accounts'?[wallet]:method==='eth_chainId'?'0x61':undefined)};
-const tx=(onConfirmed:()=>void=()=>{},approval=false)=>({hash:'0x'+'a'.repeat(64),wait:vi.fn(async(confirmations:number)=>{
- expect(confirmations).toBe(5);if(!approval||state.approvalStatus===1)onConfirmed();
- return approval?{...state.receipt,status:state.approvalStatus}:state.receipt;
-})});
 const simulated=(name:string)=>Object.assign(vi.fn(),{
  staticCall:vi.fn(async()=>{state.reads.push(name+':static');if(state.failSimulation||state.failSimulationName===name)throw Error('SIMULATION_FAILED');return true;}),
  estimateGas:vi.fn(async()=>{state.reads.push(name+':estimate');return 100000n;})
 });
 
 beforeEach(()=>{
+ vi.mocked(v3ReadSession).mockClear();
  state.allowance=0n;state.balance=parseEther('100');state.registered=false;state.paused=false;
  state.failSessionAt=0;state.sessionCount=0;state.failSimulation=false;state.failSimulationName='';state.approvalStatus=1;
  provider.request.mockImplementation(async({method}:{method:string})=>method==='eth_accounts'?[wallet]:method==='eth_chainId'?'0x61':undefined);
  state.approvalSends=[];state.depositSends=[];state.registerSends=[];state.reads=[];
  const i=new Interface(V3_ABI);
  const event=i.encodeEventLog(i.getEvent('DepositRouted')!,[wallet,0,amount,amount/10n,amount/10n,amount*8n/10n]);
- state.receipt={status:1,hash:'0x'+'a'.repeat(64),logs:[{address:vault,...event}]};
- state.verifiedProvider={kind:'verified',destroy:vi.fn(),getBlock:vi.fn(async()=>({gasLimit:30000000n}))};
+ const hash='0x'+'a'.repeat(64),blockHash='0x'+'b'.repeat(64);
+ state.receipt={status:1,hash,from:wallet,to:vault,blockNumber:101,blockHash,logs:[{address:vault,...event}]};
+ state.lastTx=null;state.sendFailure=null;state.receiptMode='ok';state.txMutation=null;
+ state.signer={kind:'signer',sendUncheckedTransaction:vi.fn(async(tx:any)=>{
+  if(state.sendFailure)throw state.sendFailure;
+  state.lastTx={...tx,chainId:97n,hash,from:wallet};
+  const token=String(tx.to).toLowerCase()==='0x000cdf5f6e3b4761721a5f76205bae6c8523ab89';
+  const parsed=new Interface(token?V3_TEST_TOKEN_ABI:V3_ABI).parseTransaction({data:tx.data});
+  if(parsed?.name==='approve')state.approvalSends.push(BigInt(parsed.args[1]));
+  if(parsed?.name==='deposit')state.depositSends.push([parsed.args[0],parsed.args[1],{gasLimit:tx.gasLimit}]);
+  if(parsed?.name==='register')state.registerSends.push([parsed.args[0],{gasLimit:tx.gasLimit}]);
+  return state.receiptMode==='bad-hash'?'0xnot-a-hash':hash;
+ })};
+ state.verifiedProvider={kind:'verified',destroy:vi.fn(),
+  getBlock:vi.fn(async(tag:any)=>tag==='latest'?{gasLimit:30000000n}:{hash:blockHash}),
+  getBlockNumber:vi.fn(async()=>105),
+  getTransaction:vi.fn(async()=>state.receiptMode==='missing-tx'?null:state.txMutation?state.txMutation(state.lastTx):state.lastTx),
+  getTransactionReceipt:vi.fn(async()=>{
+   if(state.receiptMode==='timeout')throw Error('RPC_UNAVAILABLE');
+   if(state.receiptMode==='missing-receipt')return null;
+   const last=state.lastTx;
+   if(last?.to?.toLowerCase()==='0x000cdf5f6e3b4761721a5f76205bae6c8523ab89'){
+    const parsed=new Interface(V3_TEST_TOKEN_ABI).parseTransaction({data:last.data});
+    if(state.approvalStatus===1&&state.receiptMode!=='no-allowance')state.allowance=BigInt(parsed!.args[1]);
+   }
+   return {...state.receipt,to:last.to,status:state.approvalSends.length&&last.to.toLowerCase()==='0x000cdf5f6e3b4761721a5f76205bae6c8523ab89'?state.approvalStatus:1};
+  })};
  const approveRead=simulated('approve');
  const depositRead=simulated('deposit');
  const registerRead=simulated('register');
@@ -73,15 +95,7 @@ beforeEach(()=>{
   deposit:depositRead,register:registerRead,
   getFunction:vi.fn((name:string)=>name==='deposit'?depositRead:name==='register'?registerRead:undefined)
  };
- state.writeToken={approve:vi.fn(async(_to:string,value:bigint)=>{
-  state.approvalSends.push(value);
-  return tx(()=>{state.allowance=value;},true);
- })};
- state.writeVault={
-  deposit:vi.fn(async(...args:any[])=>{state.depositSends.push(args);return tx();}),
-  register:vi.fn(async(...args:any[])=>{state.registerSends.push(args);return tx();}),
-  getFunction:vi.fn((name:string)=>name==='deposit'?state.writeVault.deposit:state.writeVault.register)
- };
+
 });
 
 describe('V3 verified transaction reads',()=>{
@@ -89,11 +103,12 @@ describe('V3 verified transaction reads',()=>{
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).resolves.toBe(state.receipt.hash);
   expect(state.approvalSends).toEqual([amount]);
   expect(state.depositSends).toHaveLength(1);
-  expect(state.writeToken.approve).toHaveBeenCalledWith(vault,amount,{gasLimit:125000n});
+  expect(state.signer.sendUncheckedTransaction).toHaveBeenCalledWith(expect.objectContaining({to:'0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89',gasLimit:125000n}));
   expect(state.depositSends[0]).toEqual([amount,ZeroAddress,{gasLimit:125000n}]);
   expect(state.reads.filter(x=>x==='allowance').length).toBeGreaterThanOrEqual(2);
   expect(state.reads).toContain('deposit:static');
   expect(state.readVault.deposit.staticCall).toHaveBeenCalledWith(amount,ZeroAddress,expect.objectContaining({from:wallet}));
+  expect(vi.mocked(v3ReadSession).mock.calls.every(call=>call[3]===true)).toBe(true);
  });
  it('resets a nonzero allowance before setting the exact new amount',async()=>{
   state.allowance=1n;
@@ -102,7 +117,7 @@ describe('V3 verified transaction reads',()=>{
   expect(state.depositSends).toHaveLength(1);
  });
  it('does not send a deposit if the confirmed allowance is still insufficient',async()=>{
-  state.writeToken.approve=vi.fn(async()=>{state.approvalSends.push(amount);return tx();});
+  state.receiptMode='no-allowance';
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow();
   expect(state.approvalSends).toHaveLength(1);
   expect(state.depositSends).toHaveLength(0);
@@ -115,7 +130,7 @@ describe('V3 verified transaction reads',()=>{
  });
  it('does not deposit when approval receipt fails',async()=>{
   state.approvalStatus=0;
-  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('not confirmed');
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('could not be independently confirmed');
   expect(state.approvalSends).toEqual([amount]);
   expect(state.depositSends).toHaveLength(0);
  });
@@ -144,13 +159,65 @@ describe('V3 verified transaction reads',()=>{
   expect(state.depositSends).toHaveLength(0);
  });
  it('does not proceed when the approval broadcast has an unknown outcome',async()=>{
-  state.writeToken.approve.mockRejectedValue(Error('RPC_BROADCAST_UNCERTAIN'));
+  state.sendFailure=Error('RPC_BROADCAST_UNCERTAIN');
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('Check your wallet transaction history before retrying');
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('checks actual transaction intent against the independent reader',async()=>{
+  state.txMutation=(tx:any)=>({...tx,data:'0x1234'});
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow();
+  expect(state.approvalSends).toEqual([amount]);
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it.each([
+  ['wrong account',(tx:any)=>({...tx,from:'0x3000000000000000000000000000000000000003'})],
+  ['wrong target',(tx:any)=>({...tx,to:'0x3000000000000000000000000000000000000003'})],
+  ['wrong chain',(tx:any)=>({...tx,chainId:56n})],
+  ['native value',(tx:any)=>({...tx,value:1n})]
+ ])('rejects a confirmed transaction with %s',async(_label,mutation)=>{
+  state.txMutation=mutation;
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('independently confirmed');
+  expect(state.approvalSends).toEqual([amount]);
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('rejects a chain reorganization even after enough confirmations',async()=>{
+  state.verifiedProvider.getBlock.mockImplementation(async(tag:any)=>tag==='latest'?{gasLimit:30000000n}:{hash:'0x'+'c'.repeat(64)});
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('independently confirmed');
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('stops if the confirmation depth drops before final validation',async()=>{
+  state.verifiedProvider.getBlockNumber.mockResolvedValueOnce(105).mockResolvedValue(104);
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('independently confirmed');
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('stops on missing confirmed transaction data and preserves its hash',async()=>{
+  state.receiptMode='missing-tx';
+  const message=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(message).toContain('0x'+'a'.repeat(64));
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('stops when the verified receipt cannot be read',async()=>{
+  state.receiptMode='timeout';
+  const message=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(message).toContain('0x'+'a'.repeat(64));
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('preserves the approval hash if independent verification becomes unavailable after submission',async()=>{
+  state.failSessionAt=3;
+  const message=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(message).toContain('0x'+'a'.repeat(64));
+  expect(message).toContain('receipt before retrying');
+  expect(state.approvalSends).toEqual([amount]);
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('rejects an invalid wallet transaction hash without continuing',async()=>{
+  state.receiptMode='bad-hash';
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow();
   expect(state.depositSends).toHaveLength(0);
  });
  it('retains the validated ethers broadcast hash without copying raw error details',async()=>{
   const hash='0x'+'b'.repeat(64);
-  state.writeToken.approve.mockRejectedValue({code:'NETWORK_ERROR',info:{sendTransactionHash:hash},message:'sensitive RPC URL'});
+  state.sendFailure={code:'NETWORK_ERROR',info:{sendTransactionHash:hash},message:'sensitive RPC URL'};
   const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
   expect(result).toContain(hash);
   expect(result).toContain('NETWORK_ERROR');
@@ -159,7 +226,7 @@ describe('V3 verified transaction reads',()=>{
   expect(state.depositSends).toHaveLength(0);
  });
  it('does not display malformed hash data or unknown wallet error details',async()=>{
-  state.writeToken.approve.mockRejectedValue({code:'SECRET_CODE',info:{sendTransactionHash:'0xsecret'},message:'secret RPC token'});
+  state.sendFailure={code:'SECRET_CODE',info:{sendTransactionHash:'0xsecret'},message:'secret RPC token'};
   const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
   expect(result).toContain('Check your wallet transaction history before retrying');
   expect(result).not.toContain('secret');
@@ -167,14 +234,14 @@ describe('V3 verified transaction reads',()=>{
   expect(state.depositSends).toHaveLength(0);
  });
  it('preserves a clear declined status without exposing the wallet error message',async()=>{
-  state.writeToken.approve.mockRejectedValue({code:4001,message:'sensitive wallet details'});
+  state.sendFailure={code:4001,message:'sensitive wallet details'};
   const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
   expect(result).toBe('TEST token approval was declined in your wallet.');
   expect(state.depositSends).toHaveLength(0);
  });
  it('treats a known hash as uncertain even when the wallet also reports rejection',async()=>{
   const hash='0x'+'c'.repeat(64);
-  state.writeToken.approve.mockRejectedValue({code:'ACTION_REJECTED',info:{sendTransactionHash:hash}});
+  state.sendFailure={code:'ACTION_REJECTED',info:{sendTransactionHash:hash}};
   const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
   expect(result).toContain(hash);
   expect(result).toContain('Check its receipt before retrying');
