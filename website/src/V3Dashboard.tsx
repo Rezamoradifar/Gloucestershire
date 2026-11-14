@@ -362,7 +362,7 @@ export default function V3Dashboard(){
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy} onCheckIn={checkIn} onPositions={()=>navigate('positions')}/>
-      <V3ClaimsReadout verifiedLedger={view.ledger}/>
+      {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger}/>}
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
        <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="TEST"/></strong><span>Including profit-on-profit</span></div>
