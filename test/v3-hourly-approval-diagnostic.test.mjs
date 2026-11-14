@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Interface} from 'ethers';
-import {diagnose,TOKEN,USER,VAULT} from '../scripts/diagnose-v3-hourly-approval.mjs';
+import {diagnose,diagnoseWithFallback,TOKEN,USER,VAULT} from '../scripts/diagnose-v3-hourly-approval.mjs';
 
 const abi=new Interface(['event Approval(address indexed owner,address indexed spender,uint256 value)',
  'function approve(address spender,uint256 value)','function allowance(address owner,address spender) view returns(uint256)']);
@@ -47,4 +47,44 @@ test('historical scans are capped and truncation is visible',async()=>{
 });
 test('rejects any chain other than BNB testnet',async()=>{
  const {provider}=mock();provider.send=async()=> '0x38';await assert.rejects(diagnose(provider),/WRONG_CHAIN/);
+});
+
+test('splits nested RPC range-limit responses and retains complete matching data',async()=>{
+ const {provider,seen}=mock();const original=provider.getLogs;
+ provider.getLogs=async filter=>{
+  if(filter.toBlock-filter.fromBlock+1>80){seen.push(filter);throw {info:{error:{code:-32005,message:'limit exceeded'}}};}
+  return original(filter);
+ };
+ const result=await diagnose(provider);
+ assert.equal(result.confirmedApprovals.length,1);
+ assert.ok(seen.some(item=>item.toBlock-item.fromBlock+1<=80));
+ assert.ok(seen.length<120);
+});
+
+test('rate limits stop immediately and do not produce partial results',async()=>{
+ const {provider}=mock();let requests=0;
+ provider.getLogs=async()=>{requests++;throw {code:-32005,message:'rate limit exceeded'};};
+ await assert.rejects(diagnose(provider),/DIAGNOSTIC_RPC_LOGS/);
+ assert.equal(requests,1);
+});
+
+test('fallback starts a complete fresh scan on another source, sanitizing errors',async()=>{
+ const first=mock().provider;first.getLogs=async()=>{throw Error('secret endpoint detail');};
+ const second=mock().provider;first.destroy=()=>{};second.destroy=()=>{};
+ const out=await diagnoseWithFallback(url=>url==='a'?first:second,['a','b']);
+ assert.equal(out.source,'b');assert.equal(out.result.confirmedApprovals.length,1);
+ assert.deepEqual(out.failures,[{source:'a',stage:'DIAGNOSTIC_RPC_LOGS'}]);
+ const failed=await diagnoseWithFallback(()=>first,['a']);
+ assert.equal(failed.result,null);assert.doesNotMatch(JSON.stringify(failed),/secret endpoint detail/);
+});
+
+test('gas balance and representative approval estimate never send a transaction',async()=>{
+ const {provider}=mock();provider.getBalance=async()=>500000000000000000n;
+ provider.getFeeData=async()=>({gasPrice:1000000000n});
+ provider.estimateGas=async tx=>{assert.equal(tx.from,USER);assert.equal(tx.to,TOKEN);assert.equal(tx.value,0n);return 50000n;};
+ provider.sendTransaction=()=>{throw Error('MUST_NOT_SEND');};
+ const result=await diagnose(provider);
+ assert.equal(result.gas.testBNB,'0.5');assert.equal(result.gas.approveUnits,'50000');
+ assert.equal(result.gas.illustrativeFeeTestBNB,'0.00005');
+ assert.match(result.gas.note,/wallet fees may differ/);
 });
