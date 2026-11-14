@@ -44,7 +44,7 @@ jobs:
           node --check scripts/deploy-global-v3-testnet.mjs
           bash -n scripts/install-global-v3-keeper-timer.sh
           python3 scripts/test-prune-retired-v3-site-assets.py
-          node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-deferred-ledger.test.mjs test/global-v3-plan-routing.test.mjs test/global-v3-internal-current.test.mjs test/global-v3-readonly-audit.test.mjs test/global-v3-deploy-safety.test.mjs test/global-v3-routed-release.test.mjs
+          node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-deferred-ledger.test.mjs test/global-v3-plan-routing.test.mjs test/global-v3-internal-current.test.mjs test/global-v3-readonly-audit.test.mjs test/global-v3-chain-boundary.test.mjs test/global-v3-deploy-safety.test.mjs test/global-v3-routed-release.test.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
