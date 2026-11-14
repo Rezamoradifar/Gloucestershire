@@ -9,7 +9,9 @@ import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdrawal} from './v3-chain';
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQueue,
- type V3Action} from './v3-actions';
+ type V3Action,type V3TransactionProgress} from './v3-actions';
+import {V3TransactionProgressTracker,v3TransactionProgressText} from './v3-transaction-progress';
+import {diagnoseV3Wallet,type V3WalletDiagnostic} from './v3-wallet-diagnostic';
 import {v3PrepareUserClaims} from './v3-claim-balance';
 import {V3_PERIOD_SECONDS} from './v3-cycle';
 import {V3_HOURLY_TEST} from './v3-site-config';
@@ -56,8 +58,14 @@ export default function V3Dashboard(){
  const [tab,setTab]=useState<Tab>('overview'),[menuOpen,setMenuOpen]=useState(false),[walletOpen,setWalletOpen]=useState(false);
  const [wallet,setWallet]=useState(''),[chain,setChain]=useState<number|null>(null);
  const [connecting,setConnecting]=useState(false),[loading,setLoading]=useState(false);
- const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[readError,setReadError]=useState(''),[notice,setNotice]=useState('');
  const [txHash,setTxHash]=useState(''),[view,setView]=useState<V3Snapshot|null>(null);
+ const [transactionProgress,setTransactionProgress]=useState<V3TransactionProgress|null>(null);
+ const [reviewRequired,setReviewRequired]=useState(false);
+ const [reviewDetail,setReviewDetail]=useState<{message:string;hash?:string}|null>(null);
+ const reviewRequiredRef=useRef(false),inFlight=useRef(false);
+ const [walletDiagnostic,setWalletDiagnostic]=useState<V3WalletDiagnostic|null>(null),[diagnosing,setDiagnosing]=useState(false);
+ const diagnosticVersion=useRef(0);
  const [value,setValue]=useState(''),[selectedPosition,setSelectedPosition]=useState('0');
  const [referrer,setReferrer]=useState(()=>{
   const invite=readReferralInvite(typeof window==='undefined'?'':window.location.search);
@@ -90,6 +98,7 @@ export default function V3Dashboard(){
   let alive=true,version=0;
   const sync=async()=>{
    const current=++version,p=getWalletProvider();
+   diagnosticVersion.current++;setWalletDiagnostic(null);setDiagnosing(false);
    revision.current++;
    setView(null);setAdminQueue(null);
    if(!p){if(alive){setWallet('');setChain(null);}return;}
@@ -104,18 +113,18 @@ export default function V3Dashboard(){
    }catch{if(alive&&current===version){setWallet('');setChain(null);}}
   };
   const stop=wallets.subscribe(()=>{void sync();});void sync();
-  return()=>{alive=false;version++;stop();};
+  return()=>{alive=false;version++;diagnosticVersion.current++;stop();};
  },[]);
  const refresh=useCallback(async()=>{
   const id=++revision.current;
   const provider=getWalletProvider();
-  if(!provider||!wallet||chain!==97||!config){setView(null);setLoading(false);return;}
-  setLoading(true);setError('');
+  if(!provider||!wallet||chain!==97||!config){setView(null);setReadError('');setLoading(false);return;}
+  setLoading(true);
   try{
    const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null);
-   if(id===revision.current&&getWalletProvider()===provider)setView(result);
+   if(id===revision.current&&getWalletProvider()===provider){setView(result);setReadError('');}
   }catch(e){
-   if(id===revision.current){setView(null);setError(e instanceof Error?e.message:'V3 verification failed.');}
+   if(id===revision.current){setView(null);setReadError('Unable to load verified account data. Retry or use the wallet connection check.');}
   }finally{if(id===revision.current)setLoading(false);}
  },[wallet,chain,config,tab,branchPage,groupPage]);
  useEffect(()=>{void refresh();},[refresh]);
@@ -152,25 +161,49 @@ export default function V3Dashboard(){
   catch{setError('Disconnected from this site. If your wallet still shows an active session, disconnect it in your wallet app.');}
   finally{setView(null);setAdminQueue(null);setConnecting(false);}
  }
+ async function checkWallet(){
+  const p=getWalletProvider();if(!p||!wallet||diagnosing)return;
+  const version=++diagnosticVersion.current;setDiagnosing(true);setWalletDiagnostic(null);
+  try{
+   const result=await diagnoseV3Wallet(p,wallet,config);
+   if(version===diagnosticVersion.current&&p===getWalletProvider())setWalletDiagnostic(result);
+  }catch{if(version===diagnosticVersion.current)setError('Wallet diagnostics could not be completed.');}
+  finally{if(version===diagnosticVersion.current)setDiagnosing(false);}
+ }
+ function acknowledgeReview(){reviewRequiredRef.current=false;setReviewRequired(false);setReviewDetail(null);setTransactionProgress(null);setError('');}
  function chosenReferrer(){
   const input=referrer.trim();
   if(!input||input.toLowerCase()===ZeroAddress.toLowerCase())return ZeroAddress;
   return reviewReferralForDeposit(input,window.location.origin,wallet)||ZeroAddress;
  }
  async function perform(action:V3Action,description:string){
-  if(busy||!wallet||!config||chain!==97||!view)return;
+  if(busy||inFlight.current)return;
+  if(!wallet){setError('Connect your wallet before continuing.');return;}
+  if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
+  if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
+  if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
+  if(action.kind==='register'&&reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
   if(!window.confirm(description+'\n\nBNB TESTNET ONLY · Mock TUSDT has no monetary value.\nV3 contract: '+config.address+'\nThe wallet must sign this separate blockchain transaction. Continue?'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
-  setBusy(true);setError('');setNotice('Confirm the V3 TESTNET transaction in your connected wallet…');setTxHash('');
+  inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice(action.kind==='register'?'Checking registration…':'Confirm the V3 TESTNET transaction in your connected wallet…');setTxHash('');
+  const tracker=new V3TransactionProgressTracker();
+  let progressHash:string|undefined;
+  const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
-   const hash=await sendV3Action(p,wallet,action,config);
+   const hash=await sendV3Action(p,wallet,action,config,action.kind==='register'?report:undefined);
    setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(view.canManage)await readQueue(adminQueue?.page??0);
-  }catch(e){setNotice('');setError(e instanceof Error?e.message:'V3 action not confirmed.');}
-  finally{setBusy(false);}
+  }catch(e){const message=e instanceof Error?e.message:'V3 action not confirmed.';setNotice('');setError(message);
+   if(action.kind==='register'&&tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+  finally{inFlight.current=false;setBusy(false);}
  }
  async function deposit(){
-  if(!view||!config||busy)return;
+  if(busy||inFlight.current)return;
+  if(!wallet){setError('Connect your wallet before continuing.');return;}
+  if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
+  if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
+  if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
+  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
   let n:bigint;
   try{n=amount(value);}catch(e){setError((e as Error).message);return;}
   if(n>view.walletTestTokenBalance){setError('Connected wallet lacks this amount of mock TUSDT.');return;}
@@ -181,14 +214,18 @@ export default function V3Dashboard(){
    '\nReferrer: '+(parent===ZeroAddress?'None':parent)+' (permanent after first registration).'+
    '\nYour test deposit routes 10% to each original fee wallet and 80% to the original operations wallet. Gross principal is recorded but is not held as vault cash.'+
    '\nThis is not a real-money deposit and future yields/withdrawals are not guaranteed. Approve token (if needed) and confirm the deposit?'))return;
-  const p=getWalletProvider();if(!p)return;
-  setBusy(true);setError('');setNotice('Review TEST token approval and V3 deposit in wallet…');setTxHash('');
+  const p=getWalletProvider();if(!p){setError('Wallet disconnected. Reconnect before continuing.');return;}
+  inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice('Checking the test deposit…');setTxHash('');
+  const tracker=new V3TransactionProgressTracker();
+  let progressHash:string|undefined;
+  const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
-   const tx=await sendV3TestTokenDeposit(p,wallet,n,parent,config);
+   const tx=await sendV3TestTokenDeposit(p,wallet,n,parent,config,report);
    setTxHash(tx);setNotice('Mock TEST token deposit confirmed in V3.');setValue('');
    await refresh();
-  }catch(e){setNotice('');setError(e instanceof Error?e.message:'V3 deposit not confirmed.');}
-  finally{setBusy(false);}
+  }catch(e){const message=e instanceof Error?e.message:'V3 deposit not confirmed.';setNotice('');setError(message);
+   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+  finally{inFlight.current=false;setBusy(false);}
  }
  async function readQueue(page=0){
   const p=getWalletProvider();if(!p||!config||!wallet)return;
@@ -288,7 +325,14 @@ export default function V3Dashboard(){
     </section>}
     {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
     {error&&<p className="gv2-error" role="alert">{error}</p>}
+    {readError&&<p className="gv2-error" role="alert">{readError}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
+    {transactionProgress&&<p className="gv2-message" role="status">{busy?'Current step: ':'Last step: '}{v3TransactionProgressText(transactionProgress)}{' '}
+     {transactionProgress.hash&&<a href={V3_EXPLORER+'/tx/'+transactionProgress.hash} target="_blank" rel="noreferrer">View transaction <ExternalLink size={14}/></a>}</p>}
+    {reviewRequired&&<section className="gv3-notice" role="alert"><ShieldAlert size={18}/><div>
+     <strong>Check wallet activity before retrying.</strong><p>A request may have been sent. This reminder lasts only while this page remains open; check the transaction before reloading or trying again.</p>
+     {reviewDetail&&<p>{reviewDetail.message} {reviewDetail.hash&&<a href={V3_EXPLORER+'/tx/'+reviewDetail.hash} target="_blank" rel="noreferrer">View transaction <ExternalLink size={14}/></a>}</p>}
+     <button type="button" disabled={busy} onClick={acknowledgeReview}>I checked wallet history</button></div></section>}
     {!wallet&&tab!=='overview'&&<section className="gv2-panel gv3-connect"><Wallet size={31}/><h2>Connect your BNB Testnet wallet</h2>
      <p>No balance is shown before the V3 code hash and selected wallet are independently verified.</p>
      <div className="gv2-buttons"><button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}>Browser wallet</button>
@@ -299,6 +343,14 @@ export default function V3Dashboard(){
     {wallet&&chain===97&&loading&&!view&&<section className="gv2-panel">Verifying pinned V3 runtime and account balances…</section>}
     {wallet&&chain===97&&!loading&&!view&&<section className="gv2-panel"><h3>Verified V3 account unavailable</h3>
      <button onClick={()=>void refresh()}>Retry blockchain verification</button></section>}
+    {tab==='profile'&&wallet&&<section className="gv2-panel"><h3>Wallet connection check</h3>
+     <p>Compare the selected wallet and its BNB Testnet balance with an independent network read. No transaction or signature is requested.</p>
+     <button type="button" disabled={diagnosing||busy} onClick={()=>void checkWallet()}>{diagnosing?'Checking wallet…':'Check wallet connection'}</button>
+     {walletDiagnostic&&<div role="status"><p>Wallet: {walletDiagnostic.wallet.status} · Network: {walletDiagnostic.wallet.chainId??'unavailable'} · Selected account: {walletDiagnostic.wallet.accountMatches===null?'unavailable':walletDiagnostic.wallet.accountMatches?'matches':'does not match'}</p>
+      <p>Wallet RPC balance: {walletDiagnostic.wallet.testBNB===null?'unavailable':walletDiagnostic.wallet.testBNB+' tBNB'}</p>
+      <p>Independent RPC: {walletDiagnostic.independent.status} · Block: {walletDiagnostic.independent.block??'unavailable'} · Balance: {walletDiagnostic.independent.testBNB===null?'unavailable':walletDiagnostic.independent.testBNB+' tBNB'}</p>
+      <p>Balances can differ across blocks or RPCs; this check does not prove a wallet transaction will succeed.</p></div>}
+    </section>}
     {tab==='overview'&&view&&<div className="gv3-sync-line" aria-live="off"><span className="gv3-live-status">{loading?'CHECKING BLOCKCHAIN':'AUTO REFRESH · 20 SEC'}</span>
      <span>Verified block {view.block.toLocaleString('en-US')} · {date(view.asOf)}</span></div>}
     {tab==='overview'&&<V3ClassicOverview view={view} busy={busy} loading={loading} connecting={connecting}
@@ -337,7 +389,7 @@ export default function V3Dashboard(){
         {!view.registered&&<><label htmlFor="v3-parent">Referrer (optional)</label>
          <input id="v3-parent" value={referrer} onChange={e=>setReferrer(e.target.value)} /></>}
         <small>Wallet balance: {show(view.walletTestTokenBalance)} MOCK TEST USDT</small>
-        <button className="gv2-primary" disabled={busy||view.paused} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
+        <button className="gv2-primary" disabled={busy||view.paused||reviewRequired} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
       <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.</p>
        <div className="gv3-input-row"><label htmlFor="v3-reinvest-id">Position</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
@@ -367,7 +419,7 @@ export default function V3Dashboard(){
        <label htmlFor="v3-profile-referrer">Referrer wallet or invitation link (optional)</label>
        <input id="v3-profile-referrer" value={referrer} onChange={e=>setReferrer(e.target.value)} autoComplete="off"/>
        <small>Leave empty to register without a referrer. A selected referrer must already be registered in this test contract and cannot be changed after registration.</small>
-       <button className="gv2-primary" disabled={busy||view.paused} onClick={register}>Register V3 wallet</button>
+       <button className="gv2-primary" disabled={busy||view.paused||reviewRequired} onClick={register}>Register V3 wallet</button>
       </div>}
       <p>This profile shows only the current contract's confirmed account records.</p>
      </section>}

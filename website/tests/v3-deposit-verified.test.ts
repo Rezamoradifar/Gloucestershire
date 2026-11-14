@@ -163,6 +163,22 @@ describe('V3 verified transaction reads',()=>{
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('Check your wallet transaction history before retrying');
   expect(state.depositSends).toHaveLength(0);
  });
+ it('reports a validated hash when a wallet broadcast error contains one, without sending a deposit',async()=>{
+  const hash='0x'+'c'.repeat(64);
+  state.sendFailure={code:'NETWORK_ERROR',info:{sendTransactionHash:hash}};
+  const updates:any[]=[];
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config,update=>updates.push(update))).rejects.toThrow(hash);
+  expect(updates.at(-1)).toEqual({step:'verification',action:'token_approval',hash});
+  expect(state.signer.sendUncheckedTransaction).toHaveBeenCalledTimes(1);
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('does not expose an invalid hash from a wallet error',async()=>{
+  state.sendFailure={code:'NETWORK_ERROR',info:{sendTransactionHash:'0xunsafe'}};
+  const updates:any[]=[];
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config,update=>updates.push(update))).rejects.toThrow('Check your wallet transaction history');
+  expect(updates.at(-1)).toEqual({step:'wallet_request',action:'token_approval'});
+  expect(state.signer.sendUncheckedTransaction).toHaveBeenCalledTimes(1);
+ });
  it('checks actual transaction intent against the independent reader',async()=>{
   state.txMutation=(tx:any)=>({...tx,data:'0x1234'});
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow();
@@ -257,5 +273,22 @@ describe('V3 verified transaction reads',()=>{
   expect(state.readVault.register.staticCall).toHaveBeenCalledWith(ZeroAddress,expect.objectContaining({from:wallet}));
   expect(state.registerSends).toHaveLength(1);
   expect(state.registerSends[0]).toEqual([ZeroAddress,{gasLimit:125000n}]);
+ });
+ it('reports registration steps only when each step is reached',async()=>{
+  const steps:any[]=[];
+  await sendV3Action(provider as any,wallet,{kind:'register',referrer:ZeroAddress},config,step=>steps.push(step));
+  expect(steps.map(step=>step.step)).toEqual(['preflight','simulation','wallet_request','verification','confirmed']);
+  expect(steps[3].hash).toMatch(/^0x[0-9a-f]{64}$/);
+  expect(steps[4].hash).toBe(steps[3].hash);
+ });
+ it('does not report a wallet request when testnet simulation fails',async()=>{
+  const steps:any[]=[];state.failSimulation=true;
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config,step=>steps.push(step))).rejects.toThrow('SIMULATION_FAILED');
+  expect(steps.map(step=>step.step)).toEqual(['preflight','simulation']);
+  expect(state.approvalSends).toHaveLength(0);
+ });
+ it('keeps the transaction flow independent of presentation callback errors',async()=>{
+  await expect(sendV3Action(provider as any,wallet,{kind:'register',referrer:ZeroAddress},config,()=>{throw Error('UI_FAILURE');})).resolves.toBe(state.receipt.hash);
+  expect(state.registerSends).toHaveLength(1);
  });
 });
