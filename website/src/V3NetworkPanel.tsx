@@ -4,6 +4,7 @@ import type {V3Snapshot} from './v3-chain';
 import type {V3Action} from './v3-actions';
 import {formatV3Amount as money} from './v3-format';
 import DigitalValue from './DigitalValue';
+import V3ReferralInvite from './V3ReferralInvite';
 
 const short=(address:string)=>address.slice(0,9)+'…'+address.slice(-6);
 const stages=[500,1000,3000,5000,10000,30000,50000,100000,300000,500000,1000000,3000000,5000000,10000000];
@@ -26,6 +27,7 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
     <div><small>Current / maximum rate</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/><em>/ {view.maximumRateBps/100}%</em></strong><span>Both conditions must be met for the maximum</span></div>
    </div>
   </section>
+  <V3ReferralInvite view={view}/>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Recorded team claims</h3><Users size={18}/></div>
    <div className="gv2-detail"><span>Referrer</span><b>{/^0x0{40}$/i.test(view.referrer)?'None':view.referrer}</b></div>
    <div className="gv2-detail"><span>Available referral claim</span><b><DigitalValue value={money(view.referralAvailable)} unit="TEST"/></b></div>
