@@ -44,12 +44,12 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
     </div>
    </div>
    <div className="gv3-cycle-side">
-    <div className="gv3-cycle-forecast"><span className="gv3-kicker">LIVE ESTIMATED PROGRESS</span>
-     <strong><DigitalValue value={money(cycle.progressDaily+cycle.progressCompound)} unit="TEST USDT"/></strong>
+    <div className="gv3-cycle-forecast"><span className="gv3-kicker gv3-forecast-kicker">LIVE ESTIMATED PROGRESS</span>
+     <strong className="gv3-forecast-main"><DigitalValue value={money(cycle.progressDaily+cycle.progressCompound)} unit="TEST USDT"/></strong>
      <p>A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.</p>
-     <div><span>Daily estimate so far</span><b><DigitalValue value={money(cycle.progressDaily)}/></b></div>
-     <div><span>Profit-on-profit estimate so far</span><b><DigitalValue value={money(cycle.progressCompound)}/></b></div>
-     <div><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="TEST USDT"/></b></div>
+     <div className="gv3-forecast-row gv3-forecast-row--daily"><span>Daily estimate so far</span><b><DigitalValue value={money(cycle.progressDaily)}/></b></div>
+     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>Profit-on-profit estimate so far</span><b><DigitalValue value={money(cycle.progressCompound)}/></b></div>
+     <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="TEST USDT"/></b></div>
      <small>At the verified {view.dailyRateBps/100}% test rate, if each position becomes eligible. Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>
     <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Check-in active':'Check in to qualify'}</strong>
