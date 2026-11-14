@@ -4,7 +4,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ZeroAddress,getAddress,formatUnits} from 'ethers';
 import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,Info,
- Layers,LogOut,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
+ Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdrawal} from './v3-chain';
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQueue,
@@ -18,6 +18,7 @@ import V3NetworkPanel from './V3NetworkPanel';
 import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
 import V3CommercePanel from './V3CommercePanel';
+import V3WalletControl from './V3WalletControl';
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
@@ -133,7 +134,13 @@ export default function V3Dashboard(){
   catch(e){setError(walletConnectionError(e));}
   finally{setConnecting(false);}
  }
- async function disconnect(){await wallets.disconnect();setView(null);setAdminQueue(null);}
+ async function disconnect(){
+  if(busy||connecting)return;
+  setConnecting(true);setError('');setNotice('');setTxHash('');
+  try{await wallets.disconnect();setNotice('Wallet disconnected from this site.');}
+  catch{setError('Disconnected from this site. If your wallet still shows an active session, disconnect it in your wallet app.');}
+  finally{setView(null);setAdminQueue(null);setConnecting(false);}
+ }
  function chosenReferrer(){
   const input=referrer.trim();
   if(!input||input.toLowerCase()===ZeroAddress.toLowerCase())return ZeroAddress;
@@ -250,8 +257,7 @@ export default function V3Dashboard(){
    <header className="topbar gv2-classic-topbar">
     <div className="breadcrumb"><button ref={menuTrigger} className="icon-button mobile-menu" aria-label="Open menu" aria-controls="v3-dashboard-menu" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19}/></button><span>Dashboard</span><ChevronRight size={14}/><strong>{menus.find(x=>x.id===tab)?.label}</strong></div>
     <div className="top-actions"><span className="network-label">V3 · TESTNET</span>
-     {wallet?<button className="wallet-button" onClick={()=>void disconnect()}><LogOut size={16}/>{short(wallet)}</button>
-      :<button className="wallet-button" disabled={connecting} onClick={()=>void connect('injected')}><Wallet size={17}/>{connecting?'Connecting…':'Connect wallet'}</button>}</div>
+     <V3WalletControl address={wallet} busy={connecting||busy} onConnect={()=>void connect('injected')} onDisconnect={()=>void disconnect()}/></div>
    </header>
    <main className="gv2-wrap">
     {V3_HOURLY_TEST&&<div className="gv3-notice" role="status"><Info size={16}/>
