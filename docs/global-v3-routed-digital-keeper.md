@@ -40,6 +40,15 @@ hashes means the keeper found matching confirmed testnet accrual events; verify
 the event and internal account values before treating the cycle as accepted.
 No unattended accrual is proven until the VPS timer and actual run are checked.
 
+For the already installed website revision beginning `145f90b247`,
+`scripts/start-v3-routed-keeper-145f.sh` locates that exact clean checkout,
+checks that no unknown keeper units would be overwritten, rechecks the verified
+testnet deployment, preserves any existing gas-only key, and installs the
+timer only if the existing keeper checks pass. It prints
+`V3_ROUTED_KEEPER_WAITING_FOR_TESTNET_GAS` when the dedicated public wallet
+needs testnet gas. Re-running after funding preserves the wallet. An active
+timer or queued first run is not evidence that an accrual transaction succeeded.
+
 These changes and all associated test tokens remain on BNB Testnet. Public
 testnet acceptance, gas funding and independent security and economic review
 are still needed before any real-asset launch.

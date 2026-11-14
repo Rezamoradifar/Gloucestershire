@@ -6,6 +6,8 @@ on:
       - 'scripts/compile-global-v3.mjs'
       - 'scripts/audit-global-v3-readonly.mjs'
       - 'scripts/global-v3-auto-compound-keeper.mjs'
+      - 'scripts/start-v3-routed-keeper-145f.sh'
+      - 'scripts/test-v3-routed-keeper-resume.py'
       - 'scripts/deploy-global-v3-testnet.mjs'
       - 'scripts/v3-release-profile.mjs'
       - 'scripts/v3-deploy-receipt-poll.mjs'
@@ -43,6 +45,8 @@ jobs:
           node --check scripts/global-v3-auto-compound-keeper.mjs
           node --check scripts/deploy-global-v3-testnet.mjs
           bash -n scripts/install-global-v3-keeper-timer.sh
+          bash -n scripts/start-v3-routed-keeper-145f.sh
+          python3 scripts/test-v3-routed-keeper-resume.py
           python3 scripts/test-prune-retired-v3-site-assets.py
           node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-deferred-ledger.test.mjs test/global-v3-plan-routing.test.mjs test/global-v3-internal-current.test.mjs test/global-v3-readonly-audit.test.mjs test/global-v3-chain-boundary.test.mjs test/global-v3-deploy-safety.test.mjs test/global-v3-routed-release.test.mjs
       - uses: actions/upload-artifact@v4
