@@ -123,3 +123,9 @@
 .gv3-workspace .gv3-wallet-disconnect:focus-visible{outline:2px solid #f5d792;outline-offset:3px}
 .gv3-workspace .gv3-wallet-disconnect:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:480px){.gv3-workspace .gv2-classic-topbar .breadcrumb>strong,.gv3-workspace .gv2-classic-topbar .breadcrumb>svg{display:none}.gv3-wallet-address{font-size:11px}.gv3-workspace .gv3-wallet-disconnect{padding:0 9px;font-size:11px}}
+.gv3-workspace .wallet-picker{margin:auto;padding:22px;max-width:460px;max-height:calc(100dvh - 32px);overflow:auto;border:1px solid #756748;border-radius:18px;background:#151a22;color:#f2ead8;box-shadow:0 20px 80px #000b}
+.gv3-workspace .wallet-picker::backdrop{background:#05080dcc;backdrop-filter:blur(4px)}
+.gv3-workspace .wallet-picker .panel-title{display:flex;align-items:center;justify-content:space-between}
+.gv3-workspace .wallet-picker .icon-button{display:grid;place-items:center;width:44px;height:44px;color:#e9d5a7;background:#242830;border:1px solid #544e40;border-radius:10px}
+.gv3-workspace .wallet-picker .muted,.gv3-workspace .wallet-mobile-guide p{color:#bdc6ce;line-height:1.6}
+.gv3-workspace .wallet-mobile-guide summary{color:#eed6a0;cursor:pointer;font-weight:700}

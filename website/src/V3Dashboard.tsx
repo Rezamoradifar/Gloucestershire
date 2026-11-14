@@ -2,6 +2,7 @@
 // shell and five-tab mobile navigation. Uses verified on-chain TEST claims only;
 // it can never display fabricated deposits, profits or cash.
 import {useCallback,useEffect,useRef,useState} from 'react';
+import {flushSync} from 'react-dom';
 import {ZeroAddress,getAddress,formatUnits} from 'ethers';
 import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,Info,
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
@@ -19,6 +20,7 @@ import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
 import V3CommercePanel from './V3CommercePanel';
 import V3WalletControl from './V3WalletControl';
+import WalletPicker from './WalletPicker';
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
@@ -51,7 +53,7 @@ const date=(seconds:number)=>seconds?new Date(seconds*1000).toLocaleString('en-U
 const kinds=['Profit','Principal','Referral','Network milestone'] as const;
 const statuses=['Requested','Manager approved','Cash escrowed','Paid','Rejected','Cancelled'] as const;
 export default function V3Dashboard(){
- const [tab,setTab]=useState<Tab>('overview'),[menuOpen,setMenuOpen]=useState(false);
+ const [tab,setTab]=useState<Tab>('overview'),[menuOpen,setMenuOpen]=useState(false),[walletOpen,setWalletOpen]=useState(false);
  const [wallet,setWallet]=useState(''),[chain,setChain]=useState<number|null>(null);
  const [connecting,setConnecting]=useState(false),[loading,setLoading]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
@@ -133,6 +135,15 @@ export default function V3Dashboard(){
   try{await wallets.connect(kind);}
   catch(e){setError(walletConnectionError(e));}
   finally{setConnecting(false);}
+ }
+ function openWalletPicker(){
+  if(busy||connecting)return;
+  setError('');setNotice('');setWalletOpen(true);
+ }
+ function chooseWallet(kind:WalletKind){
+  // Close the native dialog before WalletConnect opens its own modal.
+  flushSync(()=>setWalletOpen(false));
+  void connect(kind);
  }
  async function disconnect(){
   if(busy||connecting)return;
@@ -257,7 +268,7 @@ export default function V3Dashboard(){
    <header className="topbar gv2-classic-topbar">
     <div className="breadcrumb"><button ref={menuTrigger} className="icon-button mobile-menu" aria-label="Open menu" aria-controls="v3-dashboard-menu" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19}/></button><span>Dashboard</span><ChevronRight size={14}/><strong>{menus.find(x=>x.id===tab)?.label}</strong></div>
     <div className="top-actions"><span className="network-label">V3 · TESTNET</span>
-     <V3WalletControl address={wallet} busy={connecting||busy} onConnect={()=>void connect('injected')} onDisconnect={()=>void disconnect()}/></div>
+     <V3WalletControl address={wallet} busy={connecting||busy} onConnect={openWalletPicker} onDisconnect={()=>void disconnect()}/></div>
    </header>
    <main className="gv2-wrap">
     {V3_HOURLY_TEST&&<div className="gv3-notice" role="status"><Info size={16}/>
@@ -294,7 +305,7 @@ export default function V3Dashboard(){
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
      onDeposit={()=>void deposit()} onWithdraw={()=>request('profit')} onReinvest={reinvest}
-     onNetwork={()=>navigate('team')} onConnect={()=>void connect('injected')} onWalletConnect={()=>void connect('walletconnect')}/>}
+     onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}/>}
     {tab==='overview'&&<V3CommercePanel/>}
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
@@ -397,5 +408,7 @@ export default function V3Dashboard(){
    {dock.map(({id,label,Icon})=><button key={id} type="button" onClick={()=>navigate(id)}
     aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{label==='Overview'?'Home':label==='Team & referrals'?'Team':label}</span></button>)}
   </nav>
+  <WalletPicker open={walletOpen} address={wallet} busy={connecting||busy}
+   onClose={()=>setWalletOpen(false)} onConnect={chooseWallet} onDisconnect={()=>void disconnect()}/>
  </div>;
 }
