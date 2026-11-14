@@ -76,11 +76,30 @@ export function validateV3KeeperProof(config,proof){
   throw Error('ROUTED_KEEPER_CONFIG_DEPLOYMENT_PROOF_MISMATCH');
  return {txHash:proof.txHash.toLowerCase(),blockNumber:proof.blockNumber};
 }
+// Newer systemd releases may deliver a root-owned 0440 credential with an
+// ACL for the dynamic service user. A normal filesystem key remains strictly
+// owner-private; the ACL-compatible case is restricted to the exact named
+// file under the systemd-provided credential directory.
+export function isV3SystemdCredential({filename,name,credentialDir,fileUid,fileGid,fileMode,dirUid,dirGid,dirMode}){
+ return typeof credentialDir==='string'&&path.isAbsolute(credentialDir)&&
+  path.resolve(filename)===path.join(path.resolve(credentialDir),name)&&
+  fileUid===0&&fileGid===0&&(fileMode&0o777)===0o440&&
+  dirUid===0&&dirGid===0&&(dirMode&0o027)===0;
+}
+function assertPrivateKeeperFile(filename,name,maxSize,error){
+ const resolved=path.resolve(filename),stat=fs.lstatSync(resolved);
+ if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||stat.size>maxSize)throw Error(error);
+ if(stat.uid===process.getuid()&&(stat.mode&0o077)===0)return;
+ const directory=process.env.CREDENTIALS_DIRECTORY;
+ if(typeof directory!=='string'||!path.isAbsolute(directory))throw Error(error);
+ const parent=fs.lstatSync(directory);
+ if(!parent.isDirectory()||parent.isSymbolicLink()||!isV3SystemdCredential({
+  filename:resolved,name,credentialDir:directory,fileUid:stat.uid,fileGid:stat.gid,
+  fileMode:stat.mode,dirUid:parent.uid,dirGid:parent.gid,dirMode:parent.mode
+ }))throw Error(error);
+}
 function readPrivateProof(filename){
- const stat=fs.lstatSync(filename);
- if(!stat.isFile()||stat.isSymbolicLink()||(stat.mode&0o077)!==0||
-    stat.uid!==process.getuid()||stat.size>30000)
-  throw Error('ROUTED_KEEPER_PROOF_MUST_BE_PRIVATE_AND_OWNED_BY_OPERATOR');
+ assertPrivateKeeperFile(filename,'deployment-proof',30000,'ROUTED_KEEPER_PROOF_MUST_BE_PRIVATE_AND_OWNED_BY_OPERATOR');
  return parseJson(filename);
 }
 export function v3KeeperCursorPath(profile){
@@ -134,9 +153,7 @@ async function verifiedProvider(config,proof){
  throw Error('V3_PUBLIC_TESTNET_DEPLOYMENT_NOT_VERIFIED_OR_RPC_UNAVAILABLE');
 }
 function readDedicatedKey(filename){
- const st=fs.lstatSync(filename);
- if(!st.isFile()||st.isSymbolicLink()||(st.mode&0o077)!==0||st.uid!==process.getuid()||st.size>128)
-  throw Error('KEEPER_DEDICATED_TESTNET_KEY_MUST_BE_PRIVATE_0600_AND_OWNED_BY_OPERATOR');
+ assertPrivateKeeperFile(filename,'keeper-gas-key',128,'KEEPER_DEDICATED_TESTNET_KEY_MUST_BE_PRIVATE_0600_AND_OWNED_BY_OPERATOR');
  const key=fs.readFileSync(filename,'utf8').trim();
  if(!/^0x[0-9a-f]{64}$/i.test(key))throw Error('INVALID_DEDICATED_GAS_ONLY_TESTNET_KEY');
  return key;
@@ -168,6 +185,16 @@ export async function scan(contract,head,config,cursor){
 }
 async function main(){
  const args=process.argv.slice(2);
+ if(args[0]==='--probe-systemd-credential'){
+  if(args.length!==1||!process.env.CREDENTIALS_DIRECTORY||!path.isAbsolute(process.env.CREDENTIALS_DIRECTORY))
+   throw Error('V3_SYSTEMD_CREDENTIAL_PROBE_INVALID');
+  const sample=path.join(process.env.CREDENTIALS_DIRECTORY,'keeper-gas-key');
+  assertPrivateKeeperFile(sample,'keeper-gas-key',128,'V3_SYSTEMD_CREDENTIAL_PROBE_INVALID');
+  if(fs.readFileSync(sample,'utf8')!=='GLOBAL_V3_TESTNET_CREDENTIAL_PROBE\n')
+   throw Error('V3_SYSTEMD_CREDENTIAL_PROBE_INVALID');
+  console.log('V3_SYSTEMD_CREDENTIAL_PROBE_PASS');
+  return;
+ }
  if(args[0]==='--public-address'){
   if(args.length!==3||args[1]!=='--key-file')throw Error('V3_KEEPER_ADDRESS_USAGE_INVALID');
   const wallet=new Wallet(readDedicatedKey(path.resolve(args[2])));

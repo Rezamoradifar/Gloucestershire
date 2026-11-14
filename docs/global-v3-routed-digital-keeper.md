@@ -49,6 +49,18 @@ timer only if the existing keeper checks pass. It prints
 needs testnet gas. Re-running after funding preserves the wallet. An active
 timer or queued first run is not evidence that an accrual transaction succeeded.
 
+An older systemd may reject the `%d` unit specifier even when it supports
+`LoadCredential`. The keeper installer uses the documented
+`${CREDENTIALS_DIRECTORY}` form in `ExecStart` and requires systemd 247 or newer
+for secure credential delivery. Before writing the timer units, a transient
+DynamicUser probe loads disposable text, never the real key, to verify that
+the keeper can read systemd credentials on that host. A failed probe stops the
+installation. `scripts/retry-v3-routed-keeper-fixed.sh`
+rechecks the existing proof, key, balance and site before retrying the isolated
+testnet timer. It preserves the existing key and refuses to overwrite existing
+unit files. A first-run request remains unconfirmed until its journal and
+actual chain events are checked.
+
 These changes and all associated test tokens remain on BNB Testnet. Public
 testnet acceptance, gas funding and independent security and economic review
 are still needed before any real-asset launch.
