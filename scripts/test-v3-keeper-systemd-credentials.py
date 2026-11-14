@@ -16,7 +16,8 @@ def exercise(version, profile='routed-testnet', existing_symlink=False, fail_ver
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         for directory in ['bin', 'scripts', 'etc/globaldroptrade', 'etc/systemd/system',
-                          'var/lib/globaldroptrade/v3-routed-testnet', 'run/lock', 'tmp']:
+                          'var/lib/globaldroptrade/v3-routed-testnet',
+                          'var/lib/globaldroptrade/v3-hourly-testnet', 'run/lock', 'tmp']:
             (root / directory).mkdir(parents=True, exist_ok=True)
         original = (repo / 'scripts/install-global-v3-keeper-timer.sh').read_text()
         original = re.sub(r'/(?:opt|etc|var|run|tmp)/', lambda match: str(root) + match.group(0), original)
@@ -25,12 +26,16 @@ def exercise(version, profile='routed-testnet', existing_symlink=False, fail_ver
                      'scripts/v3-keeper-receipt-poll.mjs', 'package.json', 'package-lock.json']:
             (root / name).write_bytes((repo / name).read_bytes())
         for name in ['v3-routed-keeper-testnet.json', 'v3-routed-keeper-testnet-gas-only.key',
-                     'v3-keeper-testnet.json', 'v3-keeper-testnet-gas-only.key']:
+                     'v3-keeper-testnet.json', 'v3-keeper-testnet-gas-only.key',
+                     'v3-hourly-keeper-testnet.json', 'v3-hourly-keeper-testnet-gas-only.key']:
             (root / 'etc/globaldroptrade' / name).write_text('private-test-fixture')
         (root / 'var/lib/globaldroptrade/v3-routed-testnet/deployment.json').write_text('{}')
+        (root / 'var/lib/globaldroptrade/v3-hourly-testnet/deployment.json').write_text('{}')
         (root / 'var/lib/globaldroptrade/v3-routed-testnet/site-install-unit').write_text(
             'global-v3-site-145f90b247-1794657880.service\n')
-        service = root / 'etc/systemd/system/global-v3-routed-compound-keeper-testnet.service'
+        service_name = ('global-v3-hourly-compound-keeper-testnet.service'
+                        if profile == 'hourly-testnet' else 'global-v3-routed-compound-keeper-testnet.service')
+        service = root / 'etc/systemd/system' / service_name
         if existing_symlink:
             service.symlink_to(root / 'missing-destination')
         stubs = {
@@ -54,11 +59,12 @@ if [[ "$SIM_VERIFY_FAIL" == 1 ]]; then echo 'Invalid slot' >&2; exit 1; fi
 if grep -F '%d/' "$service" >/dev/null; then echo 'Invalid slot' >&2; exit 1; fi
 grep -F '{credential_dir}/keeper-config' "$service" >/dev/null || exit 1
 grep -F '{credential_dir}/keeper-gas-key' "$service" >/dev/null || exit 1
-if [[ "$SIM_PROFILE" == routed-testnet ]]; then
+if [[ "$SIM_PROFILE" == routed-testnet || "$SIM_PROFILE" == hourly-testnet ]]; then
  grep -F '{credential_dir}/deployment-proof' "$service" >/dev/null || exit 1
 fi
 if grep -F '/tmp/SHOULD_NOT_EXPAND' "$service" >/dev/null; then exit 1; fi
 cp "$service" "{root}/captured.service"
+cp "$3" "{root}/captured.timer"
 exec "{real_analyze}" "$@"
 """,
         }
@@ -70,8 +76,8 @@ exec "{real_analyze}" "$@"
                'CREDENTIALS_DIRECTORY': '/tmp/SHOULD_NOT_EXPAND', 'SIM_PROFILE': profile,
                'SIM_VERIFY_FAIL': '1' if fail_verify else '0',
                'SIM_PROBE_FAIL': '1' if fail_probe else '0'}
-        if profile == 'routed-testnet':
-            env['GLOBAL_V3_RELEASE_PROFILE'] = 'routed-testnet'
+        if profile in ('routed-testnet', 'hourly-testnet'):
+            env['GLOBAL_V3_RELEASE_PROFILE'] = profile
         else:
             env.pop('GLOBAL_V3_RELEASE_PROFILE', None)
         result = subprocess.run(['bash', str(root / 'scripts/install-global-v3-keeper-timer.sh'), '--install'],
@@ -95,12 +101,19 @@ exec "{real_analyze}" "$@"
             assert credential_dir + '/keeper-config' in unit
             assert credential_dir + '/keeper-gas-key' in unit
             assert '%d/' not in unit and '/tmp/SHOULD_NOT_EXPAND' not in unit
-            assert (credential_dir + '/deployment-proof' in unit) == (profile == 'routed-testnet')
+            assert (credential_dir + '/deployment-proof' in unit) == (profile in ('routed-testnet', 'hourly-testnet'))
+            timer = (root / 'captured.timer').read_text()
+            if profile == 'hourly-testnet':
+                assert 'OnCalendar=*:0/2' in timer and 'RandomizedDelaySec=5s' in timer
+                assert 'GLOBAL_V3_RELEASE_PROFILE=hourly-testnet' in unit
+            else:
+                assert 'OnCalendar=hourly' in timer
             assert 'enable --now' in calls and 'start --no-block' in calls
             assert '--probe-systemd-credential' in (root / 'probe-calls').read_text()
             assert 'private-test-fixture' not in result.stdout + result.stderr
 
 exercise(249)
+exercise(249, 'hourly-testnet')
 exercise(257, 'original')
 exercise(246)
 exercise(249, existing_symlink=True)

@@ -1,4 +1,5 @@
 import {useState,type FormEvent} from 'react';
+import {V3_HOURLY_TEST} from './v3-site-config';
 import {ArrowDownLeft,ArrowRight,ArrowUpRight,Coins,Layers,LockKeyhole,Wallet} from 'lucide-react';
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as money} from './v3-format';
@@ -81,7 +82,7 @@ export default function V3ClassicOverview(props:Props){
      <div className="gv1-plan-detail"><span>Eligible volume</span><b>{view?`${money(view.qualifiedVolume)} / ${money(view.requiredVolume)}`:'—'}</b></div>
      <button type="button" className="gv1-text-button" onClick={onNetwork}>Explore referral network <ArrowRight size={15}/></button>
     </section>
-    <section className="gv1-panel gv1-cycle-preview"><ClockIcon/><div><h3>24-hour daily cycle</h3>
+    <section className="gv1-panel gv1-cycle-preview"><ClockIcon/><div><h3>{V3_HOURLY_TEST?'One-hour test cycle':'24-hour daily cycle'}</h3>
      <p>{view?'The live timer and separate profit details are shown below.':'Connect your wallet to load the live cycle.'}</p></div></section>
    </aside>
   </div>

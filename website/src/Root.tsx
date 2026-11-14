@@ -1,6 +1,7 @@
 import {lazy,Suspense,useEffect,useState} from 'react';
 import Landing from './Landing';
 import LoadingBoundary from './LoadingBoundary';
+import {V3_HOURLY_TEST} from './v3-site-config';
 
 // A verified V3 release excludes the retired dashboard from its bundle.
 const v3Only=import.meta.env.VITE_V3_PRIMARY_DASHBOARD==='verified-testnet';
@@ -12,6 +13,7 @@ const DashboardV3=lazy(()=>import('./V3Dashboard'));
 const v3Primary=v3Only;
 type Route='landing'|'v2'|'v3';
 function currentRoute():Route{
+ if(V3_HOURLY_TEST&&(!location.hash||location.hash==='#'))return 'v3';
  if(location.hash==='#v2-dashboard')return v3Only?'v3':'v2';
  if(location.hash==='#v3-dashboard')return 'v3';
  if(location.hash==='#dashboard')return v3Primary?'v3':'v2';

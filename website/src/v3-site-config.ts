@@ -4,6 +4,8 @@
 import {getAddress,isAddress} from 'ethers';
 
 export const V3_TESTNET_CHAIN_ID=97;
+// An opt-in build for a separately deployed and verified test contract only.
+export const V3_HOURLY_TEST=import.meta.env.VITE_V3_HOURLY_TEST==='isolated-1h';
 export const V3_TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 export const V3_OLD_V2_ADDRESS=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
 export type V3SiteReleaseConfig={address:string;runtimeHash:string;deploymentTx:string};

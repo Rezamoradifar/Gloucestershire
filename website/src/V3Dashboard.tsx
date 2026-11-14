@@ -10,6 +10,8 @@ import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdr
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQueue,
  type V3Action} from './v3-actions';
 import {v3PrepareUserClaims} from './v3-claim-balance';
+import {V3_PERIOD_SECONDS} from './v3-cycle';
+import {V3_HOURLY_TEST} from './v3-site-config';
 import V3ClaimsReadout from './V3ClaimsReadout';
 import V3CycleCard from './V3CycleCard';
 import V3NetworkPanel from './V3NetworkPanel';
@@ -190,7 +192,7 @@ export default function V3Dashboard(){
   finally{setBusy(false);}
  }
  const claims=view?v3PrepareUserClaims(view.ledger):null;
- const due=view?.positions.filter(p=>p.principal>0n&&view.asOf>=p.lastAccruedAt+86400).slice(0,20).map(p=>p.id)??[];
+ const due=view?.positions.filter(p=>p.principal>0n&&view.asOf>=p.lastAccruedAt+V3_PERIOD_SECONDS).slice(0,20).map(p=>p.id)??[];
  const checkIn=()=>void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
   due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?');
  const request=(kind=requestKind)=>{
@@ -252,6 +254,8 @@ export default function V3Dashboard(){
       :<button className="wallet-button" disabled={connecting} onClick={()=>void connect('injected')}><Wallet size={17}/>{connecting?'Connecting…':'Connect wallet'}</button>}</div>
    </header>
    <main className="gv2-wrap">
+    {V3_HOURLY_TEST&&<div className="gv3-notice" role="status"><Info size={16}/>
+     SEPARATE ONE-HOUR TEST CONTRACT. Accounts and claims here do not appear on the existing 24-hour deployment. Test tokens only.</div>}
     <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE</span>
      <h1>{tab==='overview'?'Account overview':menus.find(x=>x.id===tab)?.label}</h1>
      <p>{tab==='overview'?'Your capital, recorded profit and withdrawal availability.':'Your verified testnet account and current contract information.'}</p>
@@ -302,7 +306,7 @@ export default function V3Dashboard(){
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>My verified V3 positions</h3><span>{view.positions.length} entries</span></div>
        {view.positions.map(p=><article className="gv3-position-card" key={p.id}>
         <div><strong>Position #{p.id+1}{p.fromReinvestment?' · from manual reinvestment':''}</strong>
-         <small>Opened {date(p.openedAt)} · Next eligible accrual after {date(p.lastAccruedAt+86400)}</small></div>
+         <small>Opened {date(p.openedAt)} · Next eligible accrual after {date(p.lastAccruedAt+V3_PERIOD_SECONDS)}</small></div>
         <div><b><DigitalValue value={show(p.principal)} unit="TEST"/></b><small>Original principal entry</small></div>
         <div><b><DigitalValue value={show(p.availableDaily)} unit="TEST"/></b><small>Daily available claims</small>
          <b><DigitalValue value={show(p.availableCompound)} unit="TEST"/></b><small>Profit-on-profit available claims</small></div>

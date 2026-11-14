@@ -151,6 +151,11 @@ test('routed keeper rejects any config not matching the verified new deployment'
   {...proof,blockNumber:0}
  ])assert.throws(()=>validateV3KeeperProof(config,wrong),/PROOF_MISMATCH/);
  assert.notEqual(v3KeeperCursorPath(''),v3KeeperCursorPath('routed-testnet'));
+ assert.notEqual(v3KeeperCursorPath('hourly-testnet'),v3KeeperCursorPath('routed-testnet'));
+ assert.throws(()=>validateV3KeeperProof({...config,periodSeconds:3600},proof),/HOURLY_DEPLOYMENT_PROOF_REQUIRED/);
+ assert.deepEqual(validateV3KeeperProof({...config,periodSeconds:3600},
+  {...proof,profile:'ISOLATED_HOURLY_TESTNET_ONLY',accrualPeriodSeconds:3600}),
+  {txHash:proof.txHash,blockNumber:12345});
  assert.throws(()=>v3KeeperCursorPath('../other'),/V3_RELEASE_PROFILE_INVALID/);
 });
 

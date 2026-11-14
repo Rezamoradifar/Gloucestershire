@@ -4,7 +4,7 @@
 // No default/fabricated V3 address, old V2 state, mainnet, or demo balances.
 import {BrowserProvider,Contract,FetchRequest,JsonRpcProvider,getAddress,
  isAddress,keccak256,ZeroAddress,type Eip1193Provider} from 'ethers';
-import {V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
+import {V3_HOURLY_TEST,V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
  type V3SiteReleaseConfig} from './v3-site-config';
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
 import {v3PageRange} from './v3-pagination';
@@ -17,6 +17,7 @@ export const V3_DEPOSIT_FEE_2=getAddress('0x5bc282a45a8a1d7d9b915f04fc1d4031156d
 export const V3_OPERATIONS=getAddress('0x8c4ac9b009808a0b49ba77b58e3871e7cdba463c');
 export const V3_ABI=[
  'function asset() view returns(address)',
+ 'function ACCRUAL_PERIOD() view returns(uint256)',
  'function feeReceiver() view returns(address)',
  'function FEE_WALLET_1() view returns(address)',
  'function FEE_WALLET_2() view returns(address)',
@@ -179,6 +180,9 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
     getAddress(depositFee1)!==V3_DEPOSIT_FEE_1||getAddress(depositFee2)!==V3_DEPOSIT_FEE_2||
     getAddress(operations)!==V3_OPERATIONS||BigInt(depositBps)!==1000n)
    throw Error('V3 asset, routing destinations, fees or manager role was not verified.');
+  // Never show an accelerated clock against the existing 24-hour contract.
+  if(V3_HOURLY_TEST&&BigInt(await vault.ACCRUAL_PERIOD(options))!==3600n)
+   throw Error('The isolated hourly test contract period was not verified.');
   return {provider,vault,options,block,config,deploymentBlock:receipt.blockNumber};
  };
  // Try independent sources sequentially; retain the successful provider only
