@@ -185,6 +185,37 @@ export async function checkV3Registration(vault:Contract,wallet:string,referrer:
   if(!parent.registered)throw Error('The referrer is not registered on this V3 test contract. Use an address registered here, or leave the referrer empty if you do not have one.');
  }
 }
+
+// Check immutable referral and eligibility rules before asking for a token
+// approval. The checks use the verified block, and run again before deposit.
+export async function checkV3DepositAccount(vault:Contract,wallet:string,referrer:string,
+ amount:bigint,options:{blockTag:number}){
+ const who=getAddress(wallet),parent=getAddress(referrer);
+ if(parent===who)throw Error('A wallet cannot be its own referrer.');
+ const user=await vault.users(who,options);
+ if(user.registered){
+  if(!isAddress(user.referrer))throw Error('The registered referral address could not be verified. Refresh before continuing.');
+  if(getAddress(user.referrer)!==parent)
+   throw Error('The selected referrer does not match this account’s permanent referrer on this test contract. Refresh before continuing.');
+ }else if(parent!==ZeroAddress){
+  const sponsor=await vault.users(parent,options);
+  if(!sponsor.registered)
+   throw Error('This referrer is not registered on this V3 test contract. Ask them to register here first. Only continue without a referrer if that is your intended choice.');
+ }
+ if(user.suspended)throw Error('This V3 test account is suspended.');
+ let capital:bigint;
+ try{capital=BigInt(user.capital);}catch{throw Error('The V3 test account balance could not be verified. Refresh before continuing.');}
+ if(capital<0n)throw Error('The V3 test account balance could not be verified. Refresh before continuing.');
+ if(capital+amount>50_000n*10n**18n&&!user.vipKyc)
+  throw Error('This deposit requires VIP verification on the V3 test contract.');
+}
+
+function isV3InvalidRevert(error:unknown){
+ const e=error as {data?:unknown;info?:{error?:{data?:unknown}}}|null;
+ const nested=e?.info?.error?.data;
+ const candidates=[e?.data,nested,typeof nested==='object'&&nested!==null?(nested as {data?:unknown}).data:null];
+ return candidates.some(value=>typeof value==='string'&&value.toLowerCase()==='0x6dac6a09');
+}
 export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
  action:V3Action,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
  if(action.kind==='register')progress(onProgress,{step:'preflight',action:'registration'});
@@ -302,8 +333,10 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
    token.balanceOf(wallet,s.options),token.allowance(wallet,config!.address,s.options),
    s.vault.paused(s.options)
   ]);
-  if(paused||BigInt(balance)<amount)throw Error('V3 testnet paused or wallet lacks actual TEST USDT tokens.');
+  if(paused)throw Error('Deposits are paused on this V3 test contract.');
+  if(BigInt(balance)<amount)throw Error('This wallet does not have enough TEST USDT on this V3 test network.');
   if(BigInt(allowance)<0n)throw Error('Invalid token allowance');
+  await checkV3DepositAccount(s.vault,wallet,referrer,amount,s.options);
   return {token,allowance:BigInt(allowance)};
  }
  let s=await v3ReadSession(walletProvider,wallet,config,true);
@@ -349,7 +382,11 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
    const confirmedAllowance=(await state(check)).allowance;
    if(confirmedAllowance<amount)throw Error('Approved token allowance is not confirmed. Retry only after verifying the transaction.');
    progress(onProgress,{step:'simulation',action:'test_deposit'});
-   depositGas=await checkedGas(check,check.vault,'deposit',[amount,getAddress(referrer)],wallet);
+   try{depositGas=await checkedGas(check,check.vault,'deposit',[amount,getAddress(referrer)],wallet);}
+   catch(error){
+    if(isV3InvalidRevert(error))throw Error('The test deposit was rejected during simulation. Check the account’s permanent referrer and test-token compatibility; no deposit was sent.');
+    throw error;
+   }
   }finally{check.provider.destroy();}
   const receipt=await submitVerified(walletProvider,wallet,signer,config,config.address,
    EVENTS.encodeFunctionData('deposit',[amount,getAddress(referrer)]),depositGas,'TESTNET deposit','test_deposit',onProgress);
