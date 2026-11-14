@@ -96,6 +96,53 @@
 @media(max-width:600px){.gv3-cycle,.gv3-payment-map{padding:17px 15px;border-radius:17px}.gv3-cycle-body{gap:12px;margin-top:17px}.gv3-cycle-clock{padding:14px;gap:14px}.gv3-clock-ring{flex-basis:112px;width:112px;height:112px;padding:5px}.gv3-clock-ring strong{font-size:16px}.gv3-clock-ring small{font-size:9px}.gv3-cycle-copy h3{font-size:14px}.gv3-cycle-copy p,.gv3-cycle-copy small{font-size:10px}.gv3-cycle-side{grid-template-columns:1fr}.gv3-activity{flex-wrap:nowrap}.gv3-routing-list{gap:8px}.gv3-routing-list>div{padding:11px}.gv3-cycle-state{font-size:10px}}
 @media(max-width:350px){.gv3-cycle-clock{flex-direction:column;align-items:flex-start}.gv3-activity{flex-wrap:wrap}.gv3-activity button{margin-left:28px}}
 @media(prefers-reduced-motion:reduce){.gv3-cycle *{transition:none!important;animation:none!important}}
+
+/* The estimate is visually prominent, while its explanatory copy stays legible. */
+.gv2-classic.gv3-workspace .gv3-cycle .gv3-cycle-forecast{
+ padding:22px;border-color:#5d7468;border-radius:18px;
+ background:radial-gradient(ellipse at 100% 0,#2e806b28,transparent 56%),#111b20;
+ box-shadow:inset 0 1px #ffffff0d,0 12px 30px #030c1033
+}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-kicker{
+ display:flex;align-items:center;gap:8px;color:#aee9cf;font-size:11px;letter-spacing:.12em
+}
+.gv3-forecast-kicker::before{content:'';width:8px;height:8px;flex:none;border-radius:50%;background:#74e6ad;box-shadow:0 0 10px #74e6ad77}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-main{margin:14px 0 9px}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-main .gv3-digital{
+ --digit-height:clamp(34px,8vw,46px);color:#8af1c7;flex-wrap:wrap;gap:8px 11px
+}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-main .gv3-digital-unit{
+ color:#d2e5dc;font-size:11px;font-weight:800
+}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast p{
+ max-width:58ch;margin:0 0 15px;color:#c5d5d3;font-size:13px;line-height:1.6
+}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row{
+ display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+ gap:8px 14px;min-width:0;padding:12px 0;border-color:#a1c6b932
+}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row>span{
+ flex:1 1 145px;min-width:0;color:#e2eceb;font-size:13px;font-weight:700;line-height:1.35
+}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row>b{flex:0 1 auto;min-width:0;max-width:100%}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row .gv3-digital{
+ --digit-height:clamp(25px,5.5vw,30px);flex-wrap:wrap;gap:5px 8px
+}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row--daily .gv3-digital{color:#82dff2}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row--compound .gv3-digital{color:#d5baff}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row--cycle .gv3-digital{color:#ffd998}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-digital-digit .lit{stroke:currentColor;stroke-width:.75;stroke-linejoin:round}
+.gv2-classic.gv3-workspace .gv3-cycle-forecast>small{color:#b9cacc;font-size:12px;line-height:1.6}
+.gv2-classic.gv3-workspace .gv3-cycle .gv3-activity{padding:16px;border-color:#4d7b68;background:#102821}
+.gv2-classic.gv3-workspace .gv3-cycle .gv3-activity strong{font-size:14px;font-weight:750}
+.gv2-classic.gv3-workspace .gv3-cycle .gv3-activity small{font-size:12px;line-height:1.5}
+.gv2-classic.gv3-workspace .gv3-cycle .gv3-activity button{min-height:44px;padding:10px 13px;font-size:12px}
+@media(max-width:380px){
+ .gv2-classic.gv3-workspace .gv3-cycle .gv3-cycle-forecast{padding:17px}
+ .gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row>b{width:100%}
+ .gv2-classic.gv3-workspace .gv3-cycle-forecast .gv3-forecast-row .gv3-digital{justify-content:flex-start}
+}
+
 .gv3-network-hero{position:relative;overflow:hidden;margin:16px 0 20px;padding:26px;border:1px solid #667269;border-radius:20px;background:radial-gradient(ellipse at 100% 0,#8a9b6e44,transparent 45%),linear-gradient(125deg,#213941,#122333);box-shadow:inset 0 1px #fff2d31a}
 .gv3-network-hero>svg{position:absolute;right:26px;top:26px;color:#e0c58c}
 .gv3-network-hero h2{margin:8px 0 5px;color:#fff3d8;font-size:clamp(22px,3vw,30px);letter-spacing:-.035em}
