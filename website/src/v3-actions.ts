@@ -80,7 +80,8 @@ async function checkWalletStillSelected(provider:Eip1193Provider,wallet:string){
 async function sendWalletTransaction<T>(send:()=>Promise<T>,label:string,onHash?:(hash:string)=>void):Promise<T>{
  try{return await send();}
  catch(error){
-  const e=error as {code?:unknown;info?:{sendTransactionHash?:unknown}}|null;
+  const e=error as {code?:unknown;error?:{code?:unknown;message?:unknown};
+   info?:{sendTransactionHash?:unknown;error?:{code?:unknown;message?:unknown}}}|null;
   // Ethers can report a hash even if its post-broadcast transaction lookup fails.
   // Never copy arbitrary wallet messages, RPC URLs, or unvalidated error data.
   const candidate=e?.info?.sendTransactionHash;
@@ -92,7 +93,16 @@ async function sendWalletTransaction<T>(send:()=>Promise<T>,label:string,onHash?
    'UNKNOWN_ERROR','UNSUPPORTED_OPERATION'
   ]);
   const code=typeof e?.code==='number'||typeof e?.code==='string'?e.code:undefined;
-  const diagnostic=code!==undefined&&safeCodes.has(code)?' (code '+code+')':'';
+  // Ethers wraps EIP-1193 errors under error or info.error. Only show standard
+  // numeric wallet codes and a fixed category, never wallet messages or payloads.
+  const walletCodes=new Set([-32603,-32601,-32002,-32000,4001,4100,4200,4900,4901]);
+  const nested=[e?.error,e?.info?.error];
+  const walletCode=nested.map(item=>item?.code).find(value=>typeof value==='number'&&walletCodes.has(value));
+  const walletReportsFunds=code==='INSUFFICIENT_FUNDS'||nested.some(item=>
+   typeof item?.message==='string'&&/insufficient funds|not enough.{0,80}(?:miners|gas)|insufficient.{0,80}(?:gas|fee)/i.test(item.message));
+  const codes=[code!==undefined&&safeCodes.has(code)?'code '+code:'',
+   walletCode!==undefined?'wallet code '+walletCode:''].filter(Boolean).join('; ');
+  const diagnostic=(codes?' ('+codes+')':'')+(walletReportsFunds?' Wallet reports insufficient funds for gas.':'');
   if(hash){onHash?.(hash);throw Error(label+' transaction '+hash+' could not be verified'+diagnostic+'. Check its receipt before retrying.');}
   if(code===4001||code==='ACTION_REJECTED')throw Error(label+' was declined in your wallet.');
   throw Error(label+' could not be verified'+diagnostic+'. Check your wallet transaction history before retrying.');
