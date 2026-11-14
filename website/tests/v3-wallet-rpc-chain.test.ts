@@ -47,7 +47,7 @@ describe('V3 wallet read RPC isolation on a local EVM',()=>{
    const config={address,runtimeHash:keccak256(await rpc.getCode(address)),deploymentTx:vault.deploymentTransaction()!.hash};
    const denied:string[]=[],sent:string[]=[];
    const walletProvider={request:async({method,params}:any)=>{
-    if(method==='eth_call'||method==='eth_estimateGas'){
+    if(['eth_call','eth_estimateGas','eth_getTransactionByHash','eth_getTransactionReceipt'].includes(method)){
      denied.push(method);throw Error('WALLET_READ_RPC_BLOCKED');
     }
     if(method==='eth_accounts'||method==='eth_requestAccounts')return [wallet];
