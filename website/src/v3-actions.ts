@@ -28,7 +28,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group';
  hash?:string;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
@@ -172,6 +172,38 @@ const eventMatches=(receipt:{logs:readonly Log[]},address:string,name:string,id:
   }catch{return false;}
  });
 };
+const groupEventMatches=(receipt:{logs:readonly Log[]},contract:string,wallet:string,
+ action:Extract<V3Action,{kind:'createRewardGroup'|'addRewardBranches'}>)=>receipt.logs.some(raw=>{
+ if(raw.address.toLowerCase()!==contract.toLowerCase())return false;
+ try{
+  const event=EVENTS.parseLog({topics:raw.topics,data:raw.data});
+  const expected=action.kind==='createRewardGroup'?'RewardGroupCreated':'RewardBranchesAdded';
+  if(event?.name!==expected||getAddress(event.args.user)!==getAddress(wallet))return false;
+  if(action.kind==='addRewardBranches'&&BigInt(event.args.group)!==BigInt(action.group))return false;
+  const actual=Array.from(event.args.branches as readonly string[],address=>getAddress(address));
+  const requested=action.branches.map(address=>getAddress(address));
+  return actual.length===requested.length&&actual.every((address,index)=>address===requested[index]);
+ }catch{return false;}
+});
+
+// Read the permanent parent and group assignment at the same verified block.
+// The contract remains authoritative if a branch is assigned concurrently.
+export async function checkV3GroupBranches(vault:Contract,wallet:string,branches:string[],options:{blockTag:number}){
+ const who=getAddress(wallet),addresses=branches.map(address=>getAddress(address));
+ if(!addresses.length||addresses.length>64||new Set(addresses).size!==addresses.length)
+  throw Error('Select between 1 and 64 distinct direct branches.');
+ for(let start=0;start<addresses.length;start+=5){
+  const checks=await Promise.all(addresses.slice(start,start+5).map(async address=>{
+   const [user,grouped]=await Promise.all([vault.users(address,options),vault.groupedBranch(who,address,options)]);
+   return {user,grouped};
+  }));
+  for(const {user,grouped} of checks){
+   if(grouped)throw Error('A selected branch is already in a reward group. Refresh the team and select an available branch.');
+   if(!user.registered||!isAddress(user.referrer)||getAddress(user.referrer)!==who)
+    throw Error('A selected branch is not a registered direct referral of this wallet. Refresh the team and check the branch.');
+  }
+ }
+}
 // Check the same confirmed contract snapshot used for the rest of the action.
 // The contract remains authoritative when the signed transaction is sent.
 export async function checkV3Registration(vault:Contract,wallet:string,referrer:string,options:{blockTag:number}){
@@ -219,7 +251,9 @@ function isV3InvalidRevert(error:unknown){
 export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
  action:V3Action,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
  if(action.kind==='register')progress(onProgress,{step:'preflight',action:'registration'});
- const context=await v3ReadSession(walletProvider,wallet,config);
+ const groupAction=action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
+ if(groupAction)progress(onProgress,{step:'preflight',action:'network_group'});
+ const context=await v3ReadSession(walletProvider,wallet,config,groupAction);
  const {vault,options}=context;
  let name:string,args:unknown[];
  let prior:V3Withdrawal|null=null;
@@ -257,6 +291,7 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
     if(!branches.length||branches.length>64||new Set(branches).size!==branches.length)
      throw Error('Select between 1 and 64 distinct direct branches.');
     if(action.kind==='addRewardBranches'&&!validIndex(action.group))throw Error('Invalid network group.');
+    await checkV3GroupBranches(vault,wallet,branches,options);
     name=action.kind;args=action.kind==='createRewardGroup'?[branches]:[action.group,branches];break;
    }
    case 'prepareNetworkReward':
@@ -288,14 +323,25 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
   }
  }finally{context.provider.destroy();}
  if(!config)throw Error('V3 is not deployed.');
- // Verify registration simulation independently of the wallet's read RPC.
+ // Verify registration and group actions independently of the wallet's read RPC.
  let registrationGas:CheckedTestGas|undefined;
- const recheck=await v3ReadSession(walletProvider,wallet,config,action.kind==='register');
+ let groupGas:CheckedTestGas|undefined;
+ const recheck=await v3ReadSession(walletProvider,wallet,config,action.kind==='register'||groupAction);
  try{
   if(action.kind==='register'){
    await checkV3Registration(recheck.vault,wallet,action.referrer,recheck.options);
    progress(onProgress,{step:'simulation',action:'registration'});
    registrationGas=await checkedGas(recheck,recheck.vault,name,args,wallet);
+  }
+  if(action.kind==='createRewardGroup'||action.kind==='addRewardBranches'){
+   await checkV3GroupBranches(recheck.vault,wallet,action.branches,recheck.options);
+   progress(onProgress,{step:'simulation',action:'network_group'});
+   try{groupGas=await checkedGas(recheck,recheck.vault,name,args,wallet);}
+   catch(error){
+    if((error as {code?:unknown})?.code==='CALL_EXCEPTION')
+     throw Error('The group request was rejected during testnet simulation. Refresh the team and check the selected branches. No transaction was sent.');
+    throw error;
+   }
   }
  }finally{recheck.provider.destroy();}
  const provider=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
@@ -304,6 +350,13 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
   if(registrationGas!==undefined){
    const data=EVENTS.encodeFunctionData(name,args);
    const receipt=await submitVerified(walletProvider,wallet,signer,config,config.address,data,registrationGas,'Registration','registration',onProgress);
+   return receipt.hash;
+  }
+  if(groupGas!==undefined&&(action.kind==='createRewardGroup'||action.kind==='addRewardBranches')){
+   const data=EVENTS.encodeFunctionData(name,args);
+   const receipt=await submitVerified(walletProvider,wallet,signer,config,config.address,data,groupGas,'Reward group','network_group',onProgress);
+   if(!groupEventMatches(receipt,config.address,wallet,action))
+    throw Error('The group transaction was confirmed but its event could not be verified. Check wallet history before retrying.');
    return receipt.hash;
   }
   const writable=new Contract(config.address,V3_ABI,signer);

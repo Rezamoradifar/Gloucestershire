@@ -16,6 +16,15 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
  const [selected,setSelected]=useState<string[]>([]);
  const [group,setGroup]=useState('0');
  useEffect(()=>{setSelected([]);setGroup('0');},[view.wallet]);
+ // Keep off-page selections, but remove any visible branch assigned since the
+ // previous verified snapshot, including after a successful group action.
+ useEffect(()=>{
+  const assigned=new Set(view.networkBranches.filter(branch=>branch.grouped).map(branch=>branch.address.toLowerCase()));
+  setSelected(current=>{
+   const next=current.filter(address=>!assigned.has(address.toLowerCase()));
+   return next.length===current.length?current:next;
+  });
+ },[view.networkBranches]);
  const toggle=(address:string)=>setSelected(current=>current.includes(address)?current.filter(x=>x!==address):[...current,address]);
  const visibleGroup=view.networkGroups.find(g=>String(g.id)===group)?.id??view.networkGroups[0]?.id;
  return <div className="gv3-network">
@@ -38,10 +47,11 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
    <button onClick={onWithdraw} className="gv2-primary">Open withdrawal requests <ArrowUpRight size={15}/></button>
   </section>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Direct branches</h3><span>Page {view.networkBranchPage+1} · {view.networkBranchCount} total</span></div>
-   <p>Choose direct branches to form a group. A branch can belong to only one group. Volume is in test-token units.</p>
-   <div className="gv3-branch-list">{view.networkBranches.map(branch=><label key={branch.address}>
-    <input type="checkbox" checked={selected.includes(branch.address)} disabled={busy||(!selected.includes(branch.address)&&selected.length>=64)} onChange={()=>toggle(branch.address)}/>
-    <span><strong>{short(branch.address)}</strong><small>{branch.address}</small></span><b>{money(branch.volume)} TEST</b>
+   <p>Select available direct branches to create a group or add them to an existing group. Each branch can belong to only one group. Volume is in test-token units.</p>
+   <div className="gv3-branch-list">{view.networkBranches.map(branch=><label className={branch.grouped?'gv3-branch-assigned':undefined} key={branch.address}>
+    <input type="checkbox" checked={!branch.grouped&&selected.includes(branch.address)} disabled={busy||branch.grouped||(!selected.includes(branch.address)&&selected.length>=64)} onChange={()=>toggle(branch.address)}/>
+    <span><strong>{short(branch.address)}</strong><small>{branch.address}</small>
+     <small className="gv3-branch-status">{branch.grouped?'Already in a reward group':'Available to add'}</small></span><b>{money(branch.volume)} TEST</b>
    </label>)}</div>
    {!view.networkBranches.length&&<p>No verified direct branch volume is recorded yet.</p>}
    <div className="gv2-buttons"><button disabled={busy||view.networkBranchPage===0} onClick={()=>onBranchPage(view.networkBranchPage-1)}>Previous branches</button>

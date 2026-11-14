@@ -155,6 +155,9 @@
 .gv3-branch-list label{display:flex;align-items:center;gap:12px;min-width:0;padding:12px;border:1px solid #425864;border-radius:11px;background:#0b1a27}
 .gv3-branch-list input{accent-color:#d6b676;flex:0 0 17px;width:17px;height:17px}.gv3-branch-list label>span{display:grid;gap:3px;min-width:0;flex:1}
 .gv3-branch-list strong,.gv3-branch-list b{font-size:12px;color:#f0dfbd}.gv3-branch-list small{font-size:10px;color:#9fb4be;overflow-wrap:anywhere}
+.gv3-branch-list .gv3-branch-status{font-size:12px;font-weight:700;color:#a7dfc1}
+.gv3-branch-list .gv3-branch-assigned{border-color:#657175;background:#17242c}
+.gv3-branch-list .gv3-branch-assigned .gv3-branch-status{color:#e4c083}
 .gv3-network-group{display:grid;grid-template-columns:1.1fr 1fr .8fr;gap:14px;align-items:start;padding:17px 0;border-bottom:1px solid #354a55}
 .gv3-network-group h4{margin:6px 0;color:#f5edda}.gv3-network-group>div{display:grid;gap:6px;min-width:0}.gv3-network-group small{color:#a8bbc2;font-size:11px}
 .gv3-network-group strong{color:#f0dab0;font-size:12px;font-variant-numeric:tabular-nums}.gv3-network-group .gv3-queue-actions{grid-column:1/-1;display:flex}

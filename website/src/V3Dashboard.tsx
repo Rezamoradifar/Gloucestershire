@@ -183,7 +183,8 @@ export default function V3Dashboard(){
   if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
-  if(action.kind==='register'&&reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  const trackedAction=action.kind==='register'||action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
+  if(trackedAction&&reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
   if(!window.confirm(description+'\n\nBNB TESTNET ONLY · Mock TUSDT has no monetary value.\nV3 contract: '+config.address+'\nThe wallet must sign this separate blockchain transaction. Continue?'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice(action.kind==='register'?'Checking registration…':'Confirm the V3 TESTNET transaction in your connected wallet…');setTxHash('');
@@ -191,11 +192,11 @@ export default function V3Dashboard(){
   let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
-   const hash=await sendV3Action(p,wallet,action,config,action.kind==='register'?report:undefined);
+   const hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(view.canManage)await readQueue(adminQueue?.page??0);
   }catch(e){const message=e instanceof Error?e.message:'V3 action not confirmed.';setNotice('');setError(message);
-   if(action.kind==='register'&&tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+   if(trackedAction&&tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
   finally{inFlight.current=false;setBusy(false);}
  }
  async function deposit(){

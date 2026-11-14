@@ -21,13 +21,13 @@ vi.mock('../src/v3-chain',async(importOriginal)=>{
 import {sendV3Action,sendV3TestTokenDeposit} from '../src/v3-actions';
 
 describe('V3 wallet read RPC isolation on a local EVM',()=>{
- it('registers, resets allowance, approves and deposits using verified read calls',async()=>{
+ it('registers, deposits and manages groups using verified read calls',async()=>{
   const previous=process.cwd();
   let artifact;
   try{process.chdir('..');artifact=compileHourly();}finally{process.chdir(previous);}
   const mock='0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89';
   const tokenArtifact=JSON.parse(fs.readFileSync('../artifacts/MockToken.json','utf8'));
-  const eip=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},miner:{blockGasLimit:30000000},wallet:{totalAccounts:3,defaultBalance:50}});
+  const eip=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},miner:{blockGasLimit:30000000},wallet:{totalAccounts:5,defaultBalance:50}});
   g.eip=eip;
   const rpc=new BrowserProvider(eip as any,undefined,{cacheTimeout:-1});
   rpc.pollingInterval=20;
@@ -78,6 +78,29 @@ describe('V3 wallet read RPC isolation on a local EVM',()=>{
    expect((await vault.positionOf(wallet,0)).principal).toBe(parseEther('10'));
    expect(await token.allowance(wallet,address)).toBe(0n);
    expect(sent).toHaveLength(4); // registration, reset, approval, deposit
+   // An already grouped branch must never be submitted again. An available
+   // direct branch can be added through a wallet that cannot perform reads.
+   const branchOne=await rpc.getSigner(2),branchTwo=await rpc.getSigner(3);
+   const first=await branchOne.getAddress(),second=await branchTwo.getAddress();
+   await (await vault.connect(branchOne).getFunction('register')(wallet)).wait();
+   await (await vault.connect(branchTwo).getFunction('register')(wallet)).wait();
+   await (await vault.connect(user).getFunction('createRewardGroup')([first])).wait();
+   for(let i=0;i<6;i++)await eip.request({method:'evm_mine',params:[]});
+   await expect(sendV3Action(walletProvider as any,wallet,{kind:'createRewardGroup',branches:[first,second]},config))
+    .rejects.toThrow('already in a reward group');
+   expect(sent).toHaveLength(4);
+   const groupHash=await sendV3Action(walletProvider as any,wallet,{kind:'addRewardBranches',group:0,branches:[second]},config);
+   expect(groupHash).toMatch(/^0x[0-9a-f]{64}$/);
+   expect(await vault.groupedBranch(wallet,second)).toBe(true);
+   expect(sent).toHaveLength(5);
+   const branchThree=await rpc.getSigner(4),third=await branchThree.getAddress();
+   await (await vault.connect(branchThree).getFunction('register')(wallet)).wait();
+   for(let i=0;i<6;i++)await eip.request({method:'evm_mine',params:[]});
+   const newGroup=await sendV3Action(walletProvider as any,wallet,{kind:'createRewardGroup',branches:[third]},config);
+   expect(newGroup).toMatch(/^0x[0-9a-f]{64}$/);
+   expect(await vault.rewardGroupCount(wallet)).toBe(2n);
+   expect(await vault.groupedBranch(wallet,third)).toBe(true);
+   expect(sent).toHaveLength(6);
    expect(denied).toEqual([]);
   }finally{rpc.destroy();await (eip as any).disconnect();}
  },120000);

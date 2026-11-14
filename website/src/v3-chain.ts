@@ -38,6 +38,7 @@ export const V3_ABI=[
  'function networkBranchCount(address) view returns(uint256)',
  'function networkBranch(address,uint256) view returns(address)',
  'function branchVolumeUsd(address,address) view returns(uint256)',
+ 'function groupedBranch(address,address) view returns(bool)',
  'function rewardGroupCount(address) view returns(uint256)',
  'function rewardProgress(address,uint256) view returns(uint8 stage,uint256 preparedUsd,uint256 cursor,uint256 branches)',
  'function rewardStage(uint256) pure returns(uint256 volumeUsd,uint256 rewardUsd)',
@@ -124,7 +125,7 @@ export type V3Withdrawal={
  id:number;beneficiary:string;positionId:number;gross:bigint;fee:bigint;
  requestedAt:number;status:number;kind:number
 };
-export type V3NetworkBranch={address:string;volume:bigint};
+export type V3NetworkBranch={address:string;volume:bigint;grouped:boolean};
 export type V3NetworkGroup={id:number;stage:number;prepared:bigint;branches:number;target:bigint;reward:bigint};
 export type V3Snapshot={
  wallet:string;block:number;asOf:number;hash:string;registered:boolean;
@@ -237,11 +238,19 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
  const groupCount=toSafeCount(rawGroups,'network group');
  const branchRange=v3PageRange(branchCount,networkPage?.branches??0,20);
  const groupRange=v3PageRange(groupCount,networkPage?.groups??0,20);
- const networkBranches=await Promise.all(Array.from({length:branchRange.length},async(_,offset)=>{
-  const index=branchRange.start+offset;
-  const address=getAddress(await vault.networkBranch(wallet,index,options));
-  return {address,volume:BigInt(await vault.branchVolumeUsd(wallet,address,options))};
- }));
+ const networkBranches:V3NetworkBranch[]=[];
+ // Keep public RPC concurrency bounded while reading the extra assignment flag.
+ for(let start=0;start<branchRange.length;start+=5){
+  const count=Math.min(5,branchRange.length-start);
+  const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
+   const address=getAddress(await vault.networkBranch(wallet,branchRange.start+start+offset,options));
+   const [volume,grouped]=await Promise.all([
+    vault.branchVolumeUsd(wallet,address,options),vault.groupedBranch(wallet,address,options)
+   ]);
+   return {address,volume:BigInt(volume),grouped:Boolean(grouped)};
+  }));
+  networkBranches.push(...page);
+ }
  const networkGroups=await Promise.all(Array.from({length:groupRange.length},async(_,offset)=>{
   const id=groupRange.start+offset;
   const progress=await vault.rewardProgress(wallet,id,options),stage=Number(progress.stage);
