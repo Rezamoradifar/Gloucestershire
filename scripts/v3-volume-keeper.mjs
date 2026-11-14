@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Contract,FetchRequest,Interface,JsonRpcProvider,Wallet,ZeroAddress,getAddress,keccak256,parseEther,formatEther} from 'ethers';
-import {isV3SystemdCredential,validateV3KeeperProof} from './global-v3-auto-compound-keeper.mjs';
+import {isV3SystemdCredential,keeperReadiness,validateV3KeeperProof} from './global-v3-auto-compound-keeper.mjs';
 import {waitV3KeeperReceipt} from './v3-keeper-receipt-poll.mjs';
 
 const TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
@@ -24,6 +24,22 @@ const ABI=[
 ];
 const EVENTS=new Interface(ABI), MAX_SCAN=100, MAX_TX=10, STEPS=8;
 const MAX_GAS=2000000n, MAX_TX_COST=parseEther('0.005'), MAX_RUN_COST=parseEther('0.03');
+
+// Report only public chain data before rejecting an unready signer.  This
+// distinguishes insufficient gas from paused/privileged conditions without
+// disclosing the private credential or sending a transaction.
+export function reportVolumeReadiness({contract,wallet,balance,privileged,paused,source},report=console.log){
+ const readiness=keeperReadiness({balance,privileged,paused});
+ const reasons=[];
+ if(!readiness.enoughTestBNB)reasons.push('INSUFFICIENT_TEST_BNB');
+ if(readiness.paused)reasons.push('CONTRACT_PAUSED');
+ if(readiness.privileged)reasons.push('SIGNER_HAS_PRIVILEGED_ROLE');
+ const detail={chainId:97,contract,wallet,testBNB:formatEther(balance),...readiness,
+  reasons,source,transactionSent:false};
+ report('V3_VOLUME_READINESS '+JSON.stringify(detail));
+ if(!readiness.ready)throw Error('V3_VOLUME_SIGNER_NOT_READY');
+ return detail;
+}
 function readPrivate(filename,name,max){
  const resolved=path.resolve(filename),s=fs.lstatSync(resolved);
  if(!s.isFile()||s.isSymbolicLink()||s.size<1||s.size>max)throw Error('V3_VOLUME_PRIVATE_FILE_INVALID');
@@ -119,9 +135,8 @@ async function main(){
   const [balance,paused,roleFlags]=await Promise.all([rpc.getBalance(signer.address),vault.paused(),
    Promise.all(roles.map(role=>vault.hasRole(role,signer.address)))]);
   const privileged=roleFlags.some(Boolean);
-  if(privileged||paused||balance<parseEther('0.001'))throw Error('V3_VOLUME_SIGNER_NOT_READY');
-  console.log('V3_VOLUME_READINESS '+JSON.stringify({chainId:97,contract:config.settings.contract,
-   wallet:signer.address,testBNB:formatEther(balance),privileged,paused,source:url,transactionSent:false}));
+  reportVolumeReadiness({contract:config.settings.contract,wallet:signer.address,
+   balance,privileged,paused:Boolean(paused),source:url});
   const cursor=mode==='--run'?readCursor():0, plan=await planVolumeJob(vault,cursor);
   console.log('V3_VOLUME_PREFLIGHT '+JSON.stringify(plan));
   if(mode==='--check')return;

@@ -23,6 +23,14 @@ def exercise(mode):
   for f in ['scripts/v3-volume-keeper.mjs','scripts/global-v3-auto-compound-keeper.mjs',
             'scripts/v3-keeper-receipt-poll.mjs','package.json','package-lock.json']:
    (root/f).write_bytes((repo/f).read_bytes())
+  if mode in ('release_reuse','release_mismatch'):
+   release=root/'opt/global-v3-hourly-volume-keeper/releases'/('0'*39+'1')
+   (release/'scripts').mkdir(parents=True)
+   for f in ['scripts/v3-volume-keeper.mjs','scripts/global-v3-auto-compound-keeper.mjs',
+             'scripts/v3-keeper-receipt-poll.mjs','package.json','package-lock.json']:
+    (release/f).write_bytes((root/f).read_bytes())
+   if mode=='release_mismatch':
+    (release/'scripts/v3-volume-keeper.mjs').write_text('tampered\n')
   for f in ['v3-hourly-keeper-testnet.json','v3-hourly-volume-keeper-gas-only.key',
             'v3-hourly-keeper-testnet-gas-only.key',
             'v3-routed-keeper-testnet-gas-only.key','v3-keeper-testnet-gas-only.key']:
@@ -54,7 +62,7 @@ if [[ "$2" == --public-address ]]; then
 fi
 if [[ "$2" == --check && "$SIM_MODE" == insufficient ]]; then exit 1; fi
 exit 0''',
-   'npm':'mkdir -p node_modules; exit 0',
+   'npm':f'echo npm >> "{root}/npm-calls"; mkdir -p node_modules; exit 0',
    'journalctl':'exit 0',
    'systemctl':f'''if [[ "$1" == --version ]]; then echo 'systemd 249 (mock)'; exit 0; fi
 if [[ "$1" == cat ]]; then exit 1; fi
@@ -71,7 +79,7 @@ exec "{real_analyze}" "$@"'''
   p=subprocess.run(['bash',str(root/'scripts/v3-volume-install.sh'),'--install'],
                    cwd=root,env=env,text=True,capture_output=True,timeout=30)
   calls=(root/'systemctl-calls').read_text() if (root/'systemctl-calls').exists() else ''
-  if mode in ('ok','missing_optional'):
+  if mode in ('ok','missing_optional','release_reuse'):
    assert p.returncode==0,p.stdout+p.stderr
    service=(root/'captured.service').read_text();timer=(root/'captured.timer').read_text()
    assert 'DynamicUser=yes' in service and 'volume-gas-key:' in service
@@ -80,13 +88,15 @@ exec "{real_analyze}" "$@"'''
    assert 'OnCalendar=*:0/2' in timer
    assert 'enable --now' in calls and 'start --no-block' in calls
    assert 'private-test-fixture' not in p.stdout+p.stderr
+   if mode=='release_reuse':assert not (root/'npm-calls').exists()
   else:
    assert p.returncode!=0,(mode,p.stdout,p.stderr)
    assert not calls,(mode,calls)
    if mode=='symlink':assert unit.is_symlink()
    else:assert not unit.exists()
+   if mode=='release_mismatch':assert 'V3_VOLUME_RELEASE_MISMATCH' in p.stdout+p.stderr
 
-for case in ['ok','missing_optional','same','routed_same','original_same','routed_symlink','original_symlink',
-             'insufficient','symlink','probe_fail']:
+for case in ['ok','missing_optional','release_reuse','release_mismatch','same','routed_same','original_same',
+             'routed_symlink','original_symlink','insufficient','symlink','probe_fail']:
  exercise(case)
 print('PASS isolated volume installer signer, gas, credential, unit and failure guards')
