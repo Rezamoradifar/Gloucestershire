@@ -40,7 +40,7 @@ test('offline mainnet plan uses the approved owner and current ordinary fresh co
  const c=config(),a=artifact(),result=await planMainnet(c,a);
  assert.equal(result.report.readyToDeploy,false);assert.equal(result.report.status,'offline-plan');assert.equal(result.report.simulationFrom,null);
  assert.deepEqual([result.report.signerOpened,result.report.keysRead,result.report.transactionsSigned,result.report.transactionsSent],[false,false,0,0]);
- assert.equal(result.report.chainId,56);assert.equal(result.report.artifact,'AutomaticGroupVault');assert.equal(result.report.artifactHash,mainnetPreparationPolicy.artifactHash);
+ assert.equal(result.report.chainId,56);assert.equal(result.report.artifact,'AutomaticGroupVault');assert.equal(result.report.targetContractFamily,'LEGACY_AUTOMATIC_GROUP_VAULT_NOT_V3');assert.equal(result.report.artifactHash,mainnetPreparationPolicy.artifactHash);
  assert.equal(result.report.economics.periodSeconds,86400);assert.equal(result.report.economics.withdrawalApprovalRequired,true);assert.equal(result.report.trustModel.ownerMayWithdrawAllLiquidAssets,true);
  assert.ok(result.report.blockers.includes('MAINNET_RPC_PREFLIGHT_REQUIRED'));assert.ok(result.report.blockers.includes('MAINNET_RECIPIENT_CONFIRMATION_REQUIRED'));
  const encoded='0x'+result.request.data.slice(2+a.evm.bytecode.object.length),decoded=AbiCoder.defaultAbiCoder().decode(['address','address','address','address','uint256','address[]','address'],encoded);

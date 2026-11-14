@@ -27,6 +27,11 @@ contract's eligibility conditions. Its operation on any server is not proven
 by a frontend build. Withdrawals require actual mock-token cash, approval,
 funding and a confirmed payout; changing the interface cannot create funds.
 
+The read-only liquidity checker reads all reported balances and request samples
+at one three-confirmation block and rejects a changed block hash. The expected
+runtime hash remains operator-supplied, and a single RPC is not an independent
+security or financial audit.
+
 ## Remaining integrations
 
 - The retailer search depends on configured external Amazon/eBay API
