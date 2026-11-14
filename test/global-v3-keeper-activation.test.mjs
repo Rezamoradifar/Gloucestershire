@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {Wallet,parseEther} from 'ethers';
-import {keeperReadiness,validateV3KeeperProof,v3KeeperCursorPath,scan} from '../scripts/global-v3-auto-compound-keeper.mjs';
+import {keeperReadiness,validateV3KeeperProof,v3KeeperCursorPath,scan,isV3SystemdCredential} from '../scripts/global-v3-auto-compound-keeper.mjs';
 import {waitV3KeeperReceipt} from '../scripts/v3-keeper-receipt-poll.mjs';
 
 const worker=fileURLToPath(new URL('../scripts/global-v3-auto-compound-keeper.mjs',import.meta.url));
@@ -58,6 +58,30 @@ test('address command rejects world-readable and symlink signing files',()=>{
   const link=path.join(dir,'link.key');fs.symlinkSync(key,link);
   const linked=spawnSync(process.execPath,[worker,'--public-address','--key-file',link],{encoding:'utf8'});
   assert.notEqual(linked.status,0);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('systemd root-owned ACL credential is accepted only in its exact private credential directory',()=>{
+ const config={filename:'/run/credentials/test.service/keeper-gas-key',name:'keeper-gas-key',
+  credentialDir:'/run/credentials/test.service',fileUid:0,fileGid:0,fileMode:0o100440,
+  dirUid:0,dirGid:0,dirMode:0o40750};
+ assert.equal(isV3SystemdCredential(config),true);
+ for(const change of [
+  {filename:'/tmp/keeper-gas-key'}, {name:'deployment-proof'}, {credentialDir:'relative'},
+  {fileUid:42},{fileGid:42},{fileMode:0o100444},{fileMode:0o100460},
+  {dirUid:42},{dirGid:42},{dirMode:0o40770},{dirMode:0o40755}
+ ])assert.equal(isV3SystemdCredential({...config,...change}),false);
+});
+test('systemd credential probe accepts only its exact disposable sample',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'v3-credential-probe-'));
+ try{
+  const sample=path.join(dir,'keeper-gas-key');
+  fs.writeFileSync(sample,'GLOBAL_V3_TESTNET_CREDENTIAL_PROBE\n',{mode:0o400});
+  const env={...process.env,CREDENTIALS_DIRECTORY:dir};
+  const pass=spawnSync(process.execPath,[worker,'--probe-systemd-credential'],{env,encoding:'utf8'});
+  assert.equal(pass.status,0,pass.stderr);assert.match(pass.stdout,/V3_SYSTEMD_CREDENTIAL_PROBE_PASS/);
+  fs.chmodSync(sample,0o600);fs.writeFileSync(sample,'incorrect sample\n');fs.chmodSync(sample,0o400);
+  const fail=spawnSync(process.execPath,[worker,'--probe-systemd-credential'],{env,encoding:'utf8'});
+  assert.notEqual(fail.status,0);assert.match(fail.stderr,/V3_SYSTEMD_CREDENTIAL_PROBE_INVALID/);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
 const hash='0x'+'a'.repeat(64);

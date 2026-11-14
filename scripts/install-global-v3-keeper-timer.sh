@@ -27,7 +27,7 @@ case "${GLOBAL_V3_RELEASE_PROFILE:-}" in
   PROFILE_LINE='Environment=GLOBAL_V3_RELEASE_PROFILE=routed-testnet'
   PROOF_LINE="LoadCredential=deployment-proof:$PROOF"
   PROOF_ARGS=(--proof "$PROOF")
-  SERVICE_PROOF_ARGS='--proof %d/deployment-proof'
+  SERVICE_PROOF_ARGS='--proof ${CREDENTIALS_DIRECTORY}/deployment-proof'
   ;;
  *) echo V3_KEEPER_ERROR=V3_RELEASE_PROFILE_INVALID >&2; exit 1 ;;
 esac
@@ -42,6 +42,12 @@ runtime="/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin"
 [[ -x "$runtime/node" ]] && export PATH="$runtime:$PATH"
 for item in node systemctl; do command -v "$item" >/dev/null || die "MISSING_$item"; done
 node="$(command -v node)"
+if [[ "$mode" == --install ]]; then
+ version_line="$(systemctl --version)" || die SYSTEMD_VERSION_UNAVAILABLE
+ read -r systemd_name systemd_major _ <<< "$version_line"
+ [[ "$systemd_name" == systemd && "$systemd_major" =~ ^[0-9]+$ && "$systemd_major" -ge 247 ]] ||
+  die SYSTEMD_247_OR_NEWER_REQUIRED_FOR_SECURE_CREDENTIALS
+fi
 [[ -f "$BASE/scripts/global-v3-auto-compound-keeper.mjs" &&
    -f "$BASE/scripts/v3-keeper-receipt-poll.mjs" && -f "$BASE/package-lock.json" ]] ||
  die REVIEWED_V3_KEEPER_CHECKOUT_REQUIRED
@@ -95,23 +101,28 @@ if [[ "$mode" == --check ]]; then
  echo V3_KEEPER_CHECK_DID_NOT_ENABLE_TIMER_OR_SEND_TRANSACTION
  exit 0
 fi
-for command in npm git flock systemd-analyze; do
+for command in npm git flock systemd-analyze systemd-run; do
  command -v "$command" >/dev/null || die "MISSING_$command"
 done
 exec 9>"/run/lock/$UNIT-install.lock"
 flock -n 9 || die INSTALL_ALREADY_RUNNING
-[[ ! -e "/etc/systemd/system/$UNIT.service" && ! -e "/etc/systemd/system/$UNIT.timer" ]] ||
+[[ ! -e "/etc/systemd/system/$UNIT.service" && ! -L "/etc/systemd/system/$UNIT.service" &&
+   ! -e "/etc/systemd/system/$UNIT.timer" && ! -L "/etc/systemd/system/$UNIT.timer" ]] ||
  die KEEPER_TIMER_ALREADY_INSTALLED_REVIEW_BEFORE_UPGRADE
+if systemctl cat "$UNIT.service" >/dev/null 2>&1 || systemctl cat "$UNIT.timer" >/dev/null 2>&1; then
+ die KEEPER_TIMER_ALREADY_INSTALLED_REVIEW_BEFORE_UPGRADE
+fi
 git -C "$BASE" diff --quiet HEAD -- scripts/global-v3-auto-compound-keeper.mjs \
  scripts/v3-keeper-receipt-poll.mjs scripts/install-global-v3-keeper-timer.sh package.json package-lock.json ||
  die LOCAL_KEEPER_CHANGES_REQUIRE_REVIEW
 sha="$(git -C "$BASE" rev-parse HEAD)"
 [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || die INVALID_COMMIT_SHA
 RELEASE="$RELEASE_ROOT/releases/$sha"
-stage=''; units=''
+stage=''; units=''; probe=''
 cleanup(){
  [[ -z "$stage" || ! -d "$stage" ]] || rm -rf -- "$stage"
  [[ -z "$units" || ! -d "$units" ]] || rm -rf -- "$units"
+ [[ -z "$probe" || ! -d "$probe" ]] || rm -rf -- "$probe"
 }
 trap cleanup EXIT
 install -d -m 0755 "$RELEASE_ROOT" "$RELEASE_ROOT/releases"
@@ -134,6 +145,25 @@ else
  done
 fi
 (cd "$RELEASE"; "$node" --input-type=module -e 'await import("./scripts/global-v3-auto-compound-keeper.mjs");')
+# Probe systemd's real DynamicUser credential delivery with disposable text.
+# Never copy or expose the real keeper key to this diagnostic service.
+probe="$(mktemp -d /tmp/global-v3-keeper-credential-probe.XXXXXX)"
+printf 'GLOBAL_V3_TESTNET_CREDENTIAL_PROBE\n' > "$probe/sample"
+chmod 600 "$probe/sample"
+probe_unit="global-v3-keeper-cred-probe-$(printf %.10s "$sha")-$$"
+if ! systemd-run --quiet --wait --collect --unit="$probe_unit" \
+ --property=Type=oneshot --property=DynamicUser=yes \
+ --property="WorkingDirectory=$RELEASE" --property="LoadCredential=keeper-gas-key:$probe/sample" \
+ --property=ProtectSystem=strict --property=ProtectHome=yes --property=PrivateTmp=yes \
+ --property=PrivateDevices=yes --property=ProtectKernelTunables=yes \
+ --property=ProtectKernelModules=yes --property=ProtectControlGroups=yes \
+ --property=NoNewPrivileges=yes --property=LockPersonality=yes \
+ --property=RestrictSUIDSGID=yes --property=UMask=0077 --property=TimeoutStartSec=60 \
+ "$node" "$RELEASE/scripts/global-v3-auto-compound-keeper.mjs" --probe-systemd-credential; then
+ echo "V3_KEEPER_CREDENTIAL_PROBE_UNIT=$probe_unit.service" >&2
+ die SYSTEMD_CREDENTIAL_PROBE_FAILED
+fi
+echo V3_SYSTEMD_CREDENTIAL_PROBE_PASS
 units="$(mktemp -d /tmp/global-v3-keeper-units.XXXXXX)"
 cat > "$units/$UNIT.service" <<EOF
 [Unit]
@@ -147,7 +177,7 @@ ConditionPathExists=$KEY
 Type=oneshot
 DynamicUser=yes
 WorkingDirectory=$RELEASE
-ExecStart=$node $RELEASE/scripts/global-v3-auto-compound-keeper.mjs --run --config %d/keeper-config --key-file %d/keeper-gas-key $SERVICE_PROOF_ARGS
+ExecStart=$node $RELEASE/scripts/global-v3-auto-compound-keeper.mjs --run --config \${CREDENTIALS_DIRECTORY}/keeper-config --key-file \${CREDENTIALS_DIRECTORY}/keeper-gas-key $SERVICE_PROOF_ARGS
 LoadCredential=keeper-config:$CONFIG
 LoadCredential=keeper-gas-key:$KEY
 $PROOF_LINE

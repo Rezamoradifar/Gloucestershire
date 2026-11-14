@@ -5,6 +5,9 @@ on:
       - 'scripts/global-v3-auto-compound-keeper.mjs'
       - 'scripts/v3-keeper-receipt-poll.mjs'
       - 'scripts/install-global-v3-keeper-timer.sh'
+      - 'scripts/retry-v3-routed-keeper-fixed.sh'
+      - 'scripts/test-v3-keeper-systemd-credentials.py'
+      - 'scripts/test-v3-keeper-compat-retry.py'
       - 'test/global-v3-keeper-activation.test.mjs'
       - 'test/global-v3-routed-keeper-chain.test.mjs'
       - '.github/workflows/v3-keeper-activation.yml'
@@ -29,6 +32,9 @@ jobs:
           node --check scripts/global-v3-auto-compound-keeper.mjs
           node --check scripts/v3-keeper-receipt-poll.mjs
           bash -n scripts/install-global-v3-keeper-timer.sh
+          bash -n scripts/retry-v3-routed-keeper-fixed.sh
+          python3 scripts/test-v3-keeper-systemd-credentials.py
+          python3 scripts/test-v3-keeper-compat-retry.py
       - name: Offline keeper activation and safety tests
         run: |
           node --test --test-concurrency=1 test/global-v3-auto-compound-keeper.test.mjs test/global-v3-keeper-activation.test.mjs test/global-v3-deploy-safety.test.mjs test/global-v3-routed-keeper-chain.test.mjs
