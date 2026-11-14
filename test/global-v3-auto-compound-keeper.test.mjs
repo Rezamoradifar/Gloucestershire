@@ -6,6 +6,12 @@ import {isDueV3Position} from '../scripts/global-v3-auto-compound-keeper.mjs';
 
 const now=86400*10;
 const eligible={principal:1000n,lastAccruedAt:now-86400,eligible:true,now,paused:false};
+test('the isolated one-hour profile keeps its own exact maturity period',()=>{
+ const hourly={...eligible,lastAccruedAt:now-3599,periodSeconds:3600};
+ assert.equal(isDueV3Position(hourly),false);
+ assert.equal(isDueV3Position({...hourly,lastAccruedAt:now-3600}),true);
+ assert.throws(()=>isDueV3Position({...hourly,periodSeconds:1}));
+});
 test('daily and profit-on-profit accrue only after real 24h interval and signed user check-in',()=>{
  assert.equal(isDueV3Position(eligible),true);
  assert.equal(isDueV3Position({...eligible,now:now-1}),false);

@@ -15,6 +15,8 @@ PROFILE_LINE=
 PROOF_LINE=
 PROOF_ARGS=()
 SERVICE_PROOF_ARGS=
+TIMER_CALENDAR=hourly
+TIMER_RANDOM=2m
 case "${GLOBAL_V3_RELEASE_PROFILE:-}" in
  '') ;;
  routed-testnet)
@@ -28,6 +30,20 @@ case "${GLOBAL_V3_RELEASE_PROFILE:-}" in
   PROOF_LINE="LoadCredential=deployment-proof:$PROOF"
   PROOF_ARGS=(--proof "$PROOF")
   SERVICE_PROOF_ARGS='--proof ${CREDENTIALS_DIRECTORY}/deployment-proof'
+  ;;
+ hourly-testnet)
+  CONFIG="$ETC_DIR/v3-hourly-keeper-testnet.json"
+  KEY="$ETC_DIR/v3-hourly-keeper-testnet-gas-only.key"
+  UNIT=global-v3-hourly-compound-keeper-testnet
+  PROOF=/var/lib/globaldroptrade/v3-hourly-testnet/deployment.json
+  RELEASE_ROOT=/opt/global-v3-hourly-testnet-keeper
+  STATE=globaldroptrade-v3-hourly-testnet-keeper
+  PROFILE_LINE='Environment=GLOBAL_V3_RELEASE_PROFILE=hourly-testnet'
+  PROOF_LINE="LoadCredential=deployment-proof:$PROOF"
+  PROOF_ARGS=(--proof "$PROOF")
+  SERVICE_PROOF_ARGS='--proof ${CREDENTIALS_DIRECTORY}/deployment-proof'
+  TIMER_CALENDAR='*:0/2'
+  TIMER_RANDOM=5s
   ;;
  *) echo V3_KEEPER_ERROR=V3_RELEASE_PROFILE_INVALID >&2; exit 1 ;;
 esac
@@ -80,9 +96,11 @@ fi
 [[ -f "$KEY" && ! -L "$KEY" ]] || die MISSING_DEDICATED_GAS_ONLY_TESTNET_KEY
 [[ "$(stat -Lc '%a:%u' "$KEY")" == '600:0' ]] || die TESTNET_KEY_MUST_BE_ROOT_0600
 [[ "$(stat -Lc '%a:%u' "$CONFIG")" == '600:0' ]] || die V3_CONFIG_MUST_BE_ROOT_0600
-if [[ "${GLOBAL_V3_RELEASE_PROFILE:-}" == routed-testnet ]]; then
+if [[ "${GLOBAL_V3_RELEASE_PROFILE:-}" == routed-testnet || "${GLOBAL_V3_RELEASE_PROFILE:-}" == hourly-testnet ]]; then
  [[ -f "$PROOF" && ! -L "$PROOF" && "$(stat -Lc '%a:%u' "$PROOF")" == '600:0' ]] ||
   die ROUTED_DEPLOYMENT_PROOF_MUST_BE_ROOT_0600
+fi
+if [[ "${GLOBAL_V3_RELEASE_PROFILE:-}" == routed-testnet ]]; then
  # The website release runs asynchronously. Do not enable accrual until the
  # routed release's own systemd journal confirms its verified site switch.
  site_unit_file=/var/lib/globaldroptrade/v3-routed-testnet/site-install-unit
@@ -202,8 +220,8 @@ cat > "$units/$UNIT.timer" <<EOF
 Description=Hourly BNB Testnet V3 eligible internal accrual check
 
 [Timer]
-OnCalendar=hourly
-RandomizedDelaySec=2m
+OnCalendar=$TIMER_CALENDAR
+RandomizedDelaySec=$TIMER_RANDOM
 Persistent=true
 Unit=$UNIT.service
 

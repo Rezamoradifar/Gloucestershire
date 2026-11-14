@@ -9,7 +9,10 @@ import ThemeSwitch from './ThemeSwitch';
 import Root from './Root';
 import {migrateGlobalV2BrowserOnce} from './v2-cache-cleanup';
 import {migrateGlobalV3BrowserOnce} from './v3-browser-cleanup';
+import {V3_HOURLY_TEST} from './v3-site-config';
 document.documentElement.dataset.appStarted='true';
-if(import.meta.env.VITE_V3_PRIMARY_DASHBOARD==='verified-testnet')void migrateGlobalV3BrowserOnce();
-else void migrateGlobalV2BrowserOnce();
+if(!V3_HOURLY_TEST){
+ if(import.meta.env.VITE_V3_PRIMARY_DASHBOARD==='verified-testnet')void migrateGlobalV3BrowserOnce();
+ else void migrateGlobalV2BrowserOnce();
+}
 createRoot(document.getElementById('root')!).render(<React.StrictMode><><Root/><ThemeSwitch/></></React.StrictMode>);

@@ -16,6 +16,7 @@ const GAS_LIMIT_PER_RUN=parseEther('0.15');
 const MIN_GAS_BALANCE=parseEther('0.001');
 const ABI=[
  'function asset() view returns(address)',
+ 'function ACCRUAL_PERIOD() view returns(uint256)',
  'function FEE_WALLET_1() view returns(address)',
  'function FEE_WALLET_2() view returns(address)',
  'function OPERATIONS_WALLET() view returns(address)',
@@ -35,10 +36,11 @@ const ABI=[
  'event DailyClaimAccrued(address indexed user,uint256 indexed positionId,uint256 personal,uint256 compounded,uint256 total,uint256 at)'
 ];
 const EVENTS=new Interface(ABI);
-export function isDueV3Position({principal,lastAccruedAt,eligible,now,paused}){
+export function isDueV3Position({principal,lastAccruedAt,eligible,now,paused,periodSeconds=DAY}){
  if(typeof principal!=='bigint'||principal<0n||!Number.isSafeInteger(lastAccruedAt)||
-    !Number.isSafeInteger(now)||now<0||lastAccruedAt<0)throw Error('BAD_VERIFIED_V3_POSITION');
- return !paused&&eligible&&principal>0n&&now>=lastAccruedAt+DAY;
+    !Number.isSafeInteger(now)||now<0||lastAccruedAt<0||![3600,DAY].includes(periodSeconds))
+  throw Error('BAD_VERIFIED_V3_POSITION');
+ return !paused&&eligible&&principal>0n&&now>=lastAccruedAt+periodSeconds;
 }
 export function keeperReadiness({balance,privileged,paused}){
  if(typeof balance!=='bigint'||balance<0n||typeof privileged!=='boolean'||typeof paused!=='boolean')
@@ -50,7 +52,7 @@ export function keeperReadiness({balance,privileged,paused}){
  });
 }
 const parseJson=filename=>JSON.parse(fs.readFileSync(path.resolve(filename),'utf8'));
-function checkedConfig(filename){
+function checkedConfig(filename,profile){
  const raw=parseJson(filename);
  if(raw?.network!=='BNB_TESTNET_ONLY'||raw?.chainId!==CHAIN||
    typeof raw?.contract!=='string'||typeof raw?.runtimeHash!=='string'||
@@ -59,12 +61,18 @@ function checkedConfig(filename){
  const contract=getAddress(raw.contract);
  if(contract===RETIRED_V2)throw Error('NO_V2_REPLACEMENT_OR_BACKDATED_ACCRUAL');
  if(raw.token!==TOKEN)throw Error('V3_ONLY_PINNED_MOCK_TEST_USDT');
+ const periodSeconds=profile==='hourly-testnet'?3600:DAY;
+ if(profile==='hourly-testnet'){
+  if(raw.profile!=='ISOLATED_HOURLY_TESTNET_ONLY'||raw.accrualPeriodSeconds!==3600)
+   throw Error('V3_HOURLY_TESTNET_CONFIG_REQUIRED');
+ }else if(raw.accrualPeriodSeconds!==undefined&&raw.accrualPeriodSeconds!==DAY)
+  throw Error('V3_STANDARD_24H_CONFIG_REQUIRED');
  const maxMembers=Math.min(DEFAULT_LIMIT,raw.maxMembers??DEFAULT_LIMIT);
  const maxTransactions=Math.min(DEFAULT_TX_LIMIT,raw.maxTransactions??DEFAULT_TX_LIMIT);
  const maxPositions=Math.min(128,raw.maxPositionsPerMember??128);
  if(![maxMembers,maxTransactions,maxPositions].every(n=>Number.isSafeInteger(n)&&n>0))
   throw Error('INVALID_V3_KEEPER_BOUNDS');
- return {contract,runtimeHash:raw.runtimeHash.toLowerCase(),maxMembers,maxTransactions,maxPositions};
+ return {contract,runtimeHash:raw.runtimeHash.toLowerCase(),maxMembers,maxTransactions,maxPositions,periodSeconds};
 }
 export function validateV3KeeperProof(config,proof){
  const hash=value=>typeof value==='string'&&/^0x[0-9a-fA-F]{64}$/.test(value);
@@ -74,6 +82,9 @@ export function validateV3KeeperProof(config,proof){
    proof.runtimeHash.toLowerCase()!==config.runtimeHash||!hash(proof.txHash)||
    !Number.isSafeInteger(proof.blockNumber)||proof.blockNumber<=0)
   throw Error('ROUTED_KEEPER_CONFIG_DEPLOYMENT_PROOF_MISMATCH');
+ if(config.periodSeconds===3600&&
+    (proof.profile!=='ISOLATED_HOURLY_TESTNET_ONLY'||proof.accrualPeriodSeconds!==3600))
+  throw Error('V3_HOURLY_DEPLOYMENT_PROOF_REQUIRED');
  return {txHash:proof.txHash.toLowerCase(),blockNumber:proof.blockNumber};
 }
 // Newer systemd releases may deliver a root-owned 0440 credential with an
@@ -105,6 +116,7 @@ function readPrivateProof(filename){
 export function v3KeeperCursorPath(profile){
  if(profile===undefined||profile==='')return '/var/lib/globaldroptrade-v3-keeper/cursor.json';
  if(profile==='routed-testnet')return '/var/lib/globaldroptrade-v3-routed-keeper/cursor.json';
+ if(profile==='hourly-testnet')return '/var/lib/globaldroptrade-v3-hourly-testnet-keeper/cursor.json';
  throw Error('V3_RELEASE_PROFILE_INVALID');
 }
 function readCursor(filename){
@@ -133,6 +145,8 @@ async function verifiedProvider(config,proof){
       keccak256(code).toLowerCase()!==config.runtimeHash)throw Error('V3_UNVERIFIED_RUNTIME');
    const contract=new Contract(config.contract,ABI,provider);
    if(getAddress(await contract.asset())!==TOKEN)throw Error('V3_TOKEN_NOT_PINNED_TEST_ASSET');
+   if(config.periodSeconds===3600&&BigInt(await contract.ACCRUAL_PERIOD())!==3600n)
+    throw Error('V3_HOURLY_CONTRACT_PERIOD_NOT_VERIFIED');
    if(proof){
     const [receipt,height,fee1,fee2,operations,bps]=await Promise.all([
      provider.getTransactionReceipt(proof.txHash),provider.getBlockNumber(),
@@ -177,7 +191,7 @@ export async function scan(contract,head,config,cursor){
   for(let j=first;j<end;j++){
    const p=await contract.positionOf(member,j);
    if(isDueV3Position({principal:BigInt(p.principal),lastAccruedAt:Number(p.lastAccruedAt),
-     eligible:true,now:head.timestamp,paused:false}))selected.push({member,positionId:j});
+     eligible:true,now:head.timestamp,paused:false,periodSeconds:config.periodSeconds??DAY}))selected.push({member,positionId:j});
   }
   if(end<count)return {members:size,selected,start,next:{member:index,position:end},paused:false};
  }
@@ -213,10 +227,11 @@ async function main(){
  }
  const configArg=options['--config'],maybeKey=options['--key-file'],proofArg=options['--proof'];
  if(!configArg||(mode==='--run'&&!maybeKey))throw Error('V3_KEEPER_ARGUMENTS_INVALID');
- const config=checkedConfig(configArg);
  const profile=process.env.GLOBAL_V3_RELEASE_PROFILE;
+ const config=checkedConfig(configArg,profile);
  const cursorPath=v3KeeperCursorPath(profile);
- if((profile==='routed-testnet')!==Boolean(proofArg))throw Error('ROUTED_KEEPER_PROOF_REQUIRED');
+ if((profile==='routed-testnet'||profile==='hourly-testnet')!==Boolean(proofArg))
+  throw Error('ROUTED_KEEPER_PROOF_REQUIRED');
  const proof=proofArg?validateV3KeeperProof(config,readPrivateProof(path.resolve(proofArg))):null;
  const {provider,contract,url}=await verifiedProvider(config,proof);
  try{
@@ -242,6 +257,7 @@ async function main(){
   const plan=await scan(contract,head,config,readCursor(cursorPath));
   console.log('V3_AUTO_COMPOUND_PREFLIGHT '+JSON.stringify({
    chainId:CHAIN,contract:config.contract,block:head.number,source:url,
+   accrualPeriodSeconds:config.periodSeconds,
    paused:plan.paused,registered:plan.members,scannedFrom:plan.start,
    dueCount:plan.selected.length,nextCursor:plan.next,duePreview:plan.selected.slice(0,10),
    operatorApprovalRequired:false,profitOnProfitAutomatic:true,transferPerformed:false

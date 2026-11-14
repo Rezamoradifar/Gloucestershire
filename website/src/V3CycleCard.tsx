@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {ArrowRight,Clock3,RefreshCw,ShieldCheck} from 'lucide-react';
 import type {V3Snapshot} from './v3-chain';
 import {v3Countdown,v3CycleView,V3_PERIOD_SECONDS} from './v3-cycle';
+import {V3_HOURLY_TEST} from './v3-site-config';
 import {formatV3Amount as money} from './v3-format';
 import DigitalValue from './DigitalValue';
 
@@ -22,9 +23,9 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
  const due=remaining===0;
  const active=cycle.activityRemaining>0&&view.registered&&!view.suspended&&!view.paused;
  const checkInWait=view.lastCheckIn>0?Math.max(0,view.lastCheckIn+3600-(view.asOf+elapsed)):0;
- return <section className="gv3-cycle" aria-label="Twenty-four hour position cycle">
+ return <section className="gv3-cycle" aria-label={V3_HOURLY_TEST?'One-hour test position cycle':'Twenty-four hour position cycle'}>
   <div className="gv3-cycle-head"><div><span className="gv3-kicker">YOUR DAILY CYCLE</span>
-   <h2>Track every eligible period</h2><p>Each position starts its own 24-hour cycle.</p></div>
+   <h2>Track every eligible period</h2><p>Each position starts its own {V3_HOURLY_TEST?'one-hour test':'24-hour'} cycle.</p></div>
    <span className={'gv3-cycle-state '+(active?'active':'')}><span/> {active?'Activity active':'Check-in required'}</span></div>
   <div className="gv3-cycle-body">
    <div className="gv3-cycle-clock">
@@ -32,7 +33,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
      <div className="gv3-clock-console-head"><span>DAILY CYCLE</span><Clock3/></div>
      <DigitalValue size="clock" value={remaining===null?'--:--:--':v3Countdown(remaining)}
       label={remaining===null?'No active position':`Estimated time remaining ${v3Countdown(remaining)}`}/>
-     <div className="gv3-clock-console-foot"><span>{remaining===null?'NO POSITION':due?'DUE · VERIFY ON CHAIN':'HOURS : MIN : SEC'}</span><span>24H</span></div>
+     <div className="gv3-clock-console-foot"><span>{remaining===null?'NO POSITION':due?'DUE · VERIFY ON CHAIN':'HOURS : MIN : SEC'}</span><span>{V3_HOURLY_TEST?'1H TEST':'24H'}</span></div>
      <div className="gv3-clock-progress" aria-hidden="true"><span style={{width:`${progress*100}%`}}/></div>
     </div>
     <div className="gv3-cycle-copy"><span className="gv3-kicker">NEXT POSITION</span>
