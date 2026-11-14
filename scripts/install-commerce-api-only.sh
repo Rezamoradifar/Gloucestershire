@@ -43,6 +43,15 @@ done
 [[ -d "$commerce_previous/node_modules" && ! -L "$commerce_previous/node_modules" ]] || { echo COMMERCE_API_DEPENDENCIES_MISSING; exit 1; }
 [[ "$(git hash-object "$commerce_previous/server/trades-api.mjs")" == 5cae7c3c414386fecb82a0226b43237c3445001d ]] || { echo COMMERCE_LIVE_API_VERSION_REVIEW_REQUIRED; exit 1; }
 [[ ! -e "$commerce_previous/server/commerce-ebay.mjs" && ! -L "$commerce_previous/server/commerce-ebay.mjs" ]] || { echo COMMERCE_EXISTING_MODULE_REVIEW_REQUIRED; exit 1; }
+# A release-directory switch must not redirect a relative customer-data path.
+node --env-file="$commerce_env" --input-type=module - <<'JS'
+import path from 'node:path';
+for(const key of ['COMMUNITY_DATA_FILE','V2_COMMUNITY_DATA_FILE','DAILY_ACTIVITY_FILE','GLOBAL_AUTOMATION_PUBLIC_STATUS']){
+ if(process.env[key]&&!path.isAbsolute(process.env[key])){
+  console.error('COMMERCE_RELATIVE_DATA_PATH_REVIEW_REQUIRED='+key);process.exitCode=1;
+ }
+}
+JS
 node --check server/trades-api.mjs
 node --check server/commerce-ebay.mjs
 node --test test/commerce-ebay.test.mjs

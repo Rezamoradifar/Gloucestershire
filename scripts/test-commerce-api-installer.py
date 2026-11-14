@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory() as temporary:
         'git': f'''if [[ "$1" == rev-parse ]]; then echo {expected}
 elif [[ "$1" == hash-object && "$(cat "$2")" == known-reviewed-api-fixture ]]; then echo 5cae7c3c414386fecb82a0226b43237c3445001d
 else exec "{real_git}" "$@"; fi''',
-        'node': f'if [[ "$1" == --test || "$1" == --env-file=* ]]; then exit 0; else exec "{real_node}" "$@"; fi',
+        'node': f'if [[ "$1" == --test || ( "$1" == --env-file=* && $# -gt 3 ) ]]; then exit 0; else exec "{real_node}" "$@"; fi',
         'systemctl': f'if [[ "$1" == restart ]]; then echo restart >> "{root}/restarts"; fi; exit 0',
         'curl': f'''target=''
 url=''
@@ -97,5 +97,10 @@ esac''',
     (previous / 'server').chmod(0o777)
     unsafe = run('--install')
     assert unsafe.returncode != 0 and 'COMMERCE_API_PERMISSIONS_UNSAFE' in unsafe.stdout
+    assert not (root / 'restarts').exists() and current.resolve() == previous
+    (previous / 'server').chmod(0o755)
+    envfile.write_text('TRADES_CHAIN_ID=97\nCOMMUNITY_DATA_FILE=relative/community.json\n')
+    relative = run('--install')
+    assert relative.returncode != 0 and 'COMMERCE_RELATIVE_DATA_PATH_REVIEW_REQUIRED' in relative.stderr
     assert not (root / 'restarts').exists() and current.resolve() == previous
     print('PASS: read-only preflight, staged API, configuration preservation, rollback and unknown-release refusal')
