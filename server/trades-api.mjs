@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {createMarketplace} from './marketplace.mjs';
+import {createCommerceStatus} from './commerce-ebay.mjs';
 import {realpathSync} from 'node:fs';
 import {createCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
@@ -131,7 +132,7 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
@@ -141,6 +142,10 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Commun
   if(dailyActivity&&await dailyActivity(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
   const url=new URL(req.url,'http://localhost');
+  if(url.pathname==='/api/commerce/status'){
+   try{return send(200,await commerce.get());}
+   catch{return send(503,{version:1,source:'ebay',status:'unavailable',paidOrders:null,commercialProfit:null,profitStatus:'unverified_costs_and_fees'});}
+  }
   if(migration&&await migration(req,res,url))return;
   if(await marketplace(req,res,url))return;
   if(url.pathname==='/api/event-history/window'){

@@ -67,7 +67,7 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
     const gross=BigInt(a.amount),fee1=BigInt(a.fee1),fee2=BigInt(a.fee2),operations=BigInt(a.operations);
     if(fee1!==gross/10n||fee2!==gross/10n||fee1+fee2+operations!==gross)
      throw Error('V3 deposit routing does not reconcile.');
-    title='Test-token deposit';detail='Position #'+number(BigInt(a.positionId))+' · 10% / 10% / 80% routing';value=amount(gross);break;
+    title='Test-token deposit';detail='Position #'+number(BigInt(a.positionId))+' · Routed to designated wallets';value=amount(gross);break;
    }
    case 'DailyClaimAccrued':{
     const daily=BigInt(a.personal),compound=BigInt(a.compounded),total=BigInt(a.total);
