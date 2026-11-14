@@ -3,6 +3,7 @@ import {Interface,ZeroAddress,parseEther} from 'ethers';
 
 const state=vi.hoisted(()=>({
  allowance:0n,balance:100000000000000000000n,registered:false,paused:false,
+ referrerRegistered:false,storedReferrer:'',suspended:false,vipKyc:false,capital:0n,
  failSessionAt:0,sessionCount:0,failSimulation:false,failSimulationName:'',approvalStatus:1,
  readToken:null as any,writeToken:null as any,readVault:null as any,writeVault:null as any,
  verifiedProvider:null as any,signer:null as any,receipt:null as any, lastTx:null as any, sendFailure:null as any, receiptMode:'ok', txMutation:null as any,
@@ -49,6 +50,7 @@ const simulated=(name:string)=>Object.assign(vi.fn(),{
 beforeEach(()=>{
  vi.mocked(v3ReadSession).mockClear();
  state.allowance=0n;state.balance=parseEther('100');state.registered=false;state.paused=false;
+ state.referrerRegistered=false;state.storedReferrer=ZeroAddress;state.suspended=false;state.vipKyc=false;state.capital=0n;
  state.failSessionAt=0;state.sessionCount=0;state.failSimulation=false;state.failSimulationName='';state.approvalStatus=1;
  provider.request.mockImplementation(async({method}:{method:string})=>method==='eth_accounts'?[wallet]:method==='eth_chainId'?'0x61':undefined);
  state.approvalSends=[];state.depositSends=[];state.registerSends=[];state.reads=[];
@@ -92,7 +94,9 @@ beforeEach(()=>{
  };
  state.readVault={
   paused:vi.fn(async()=>state.paused),
-  users:vi.fn(async()=>({registered:state.registered})),
+  users:vi.fn(async(address:string)=>address.toLowerCase()===wallet.toLowerCase()?
+   {registered:state.registered,referrer:state.storedReferrer,suspended:state.suspended,vipKyc:state.vipKyc,capital:state.capital}:
+   {registered:state.referrerRegistered}),
   deposit:depositRead,register:registerRead,
   getFunction:vi.fn((name:string)=>name==='deposit'?depositRead:name==='register'?registerRead:undefined)
  };
@@ -100,6 +104,63 @@ beforeEach(()=>{
 });
 
 describe('V3 verified transaction reads',()=>{
+ it('rejects an unregistered referrer before requesting any token approval',async()=>{
+  const referrer='0x3000000000000000000000000000000000000003';
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,referrer,config))
+   .rejects.toThrow('referrer is not registered on this V3 test contract');
+  expect(state.signer.sendUncheckedTransaction).not.toHaveBeenCalled();
+  expect(state.readVault.users).toHaveBeenCalledWith(referrer,expect.objectContaining({blockTag:99}));
+ });
+ it('accepts a referrer registered on this test contract',async()=>{
+  state.referrerRegistered=true;
+  const referrer='0x3000000000000000000000000000000000000003';
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,referrer,config)).resolves.toBe(state.receipt.hash);
+  expect(state.approvalSends).toEqual([amount]);
+  expect(state.depositSends[0][1]).toBe(referrer);
+ });
+ it('rejects a different permanent referrer before any wallet transaction',async()=>{
+  state.registered=true;
+  state.storedReferrer='0x3000000000000000000000000000000000000003';
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config))
+   .rejects.toThrow('does not match this account’s permanent referrer');
+  expect(state.signer.sendUncheckedTransaction).not.toHaveBeenCalled();
+ });
+ it('accepts the existing permanent referrer for a registered account',async()=>{
+  state.registered=true;
+  state.storedReferrer='0x3000000000000000000000000000000000000003';
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,state.storedReferrer,config)).resolves.toBe(state.receipt.hash);
+ });
+ it('rechecks the referrer after an approval before sending a deposit',async()=>{
+  const referrer='0x3000000000000000000000000000000000000003';
+  state.readVault.users.mockImplementation(async(address:string)=>address.toLowerCase()===wallet.toLowerCase()?
+   {registered:false,referrer:ZeroAddress,suspended:false,vipKyc:false,capital:0n}:
+   {registered:state.approvalSends.length===0});
+  const message=await sendV3TestTokenDeposit(provider as any,wallet,amount,referrer,config).catch(e=>e.message);
+  expect(message).toContain('referrer is not registered');
+  expect(message).toContain('Last token approval/reset:');
+  expect(state.approvalSends).toEqual([amount]);
+  expect(state.depositSends).toEqual([]);
+ });
+ it('rejects a suspended account or a VIP-restricted deposit before any wallet transaction',async()=>{
+  state.suspended=true;
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('suspended');
+  state.suspended=false;state.capital=parseEther('49995');
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('VIP verification');
+  expect(state.signer.sendUncheckedTransaction).not.toHaveBeenCalled();
+ });
+ it('allows the exact VIP threshold without requiring VIP verification',async()=>{
+  state.capital=parseEther('49990');
+  await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).resolves.toBe(state.receipt.hash);
+ });
+ it('explains Invalid() during deposit simulation without revealing raw RPC payload',async()=>{
+  state.allowance=amount;
+  state.readVault.deposit.staticCall.mockRejectedValue({data:'0x6dac6a09',message:'sensitive URL'});
+  const message=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(message).toContain('rejected during simulation');
+  expect(message).toContain('no deposit was sent');
+  expect(message).not.toContain('sensitive URL');
+  expect(state.signer.sendUncheckedTransaction).not.toHaveBeenCalled();
+ });
  it('reads allowance and simulates against the verified provider before sending approval and deposit',async()=>{
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).resolves.toBe(state.receipt.hash);
   expect(state.approvalSends).toEqual([amount]);

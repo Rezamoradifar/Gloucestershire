@@ -40,6 +40,11 @@ describe('V3 wallet read RPC isolation on a local EVM',()=>{
    const factory=new ContractFactory(artifact.abi,'0x'+artifact.evm.bytecode.object,owner);
    const vault=await factory.deploy('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632',mock,'0x74015dedf36677485793f1714ec7bd4893907b26');
    await vault.waitForDeployment();
+   // A sponsor on a separate older deployment is not a sponsor here.
+   const older=await factory.deploy('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632',mock,'0x74015dedf36677485793f1714ec7bd4893907b26');
+   await older.waitForDeployment();
+   const oldReferrer=await owner.getAddress();
+   await (await older.getFunction('register')(ZeroAddress)).wait();
    await (await token.mint(wallet,parseEther('100'))).wait();
    await (await token.connect(user).getFunction('approve')(await vault.getAddress(),1n)).wait();
    for(let i=0;i<6;i++)await eip.request({method:'evm_mine',params:[]});
@@ -58,6 +63,12 @@ describe('V3 wallet read RPC isolation on a local EVM',()=>{
     }
     return result;
    }};
+   expect((await older.users(oldReferrer)).registered).toBe(true);
+   expect((await vault.users(oldReferrer)).registered).toBe(false);
+   await expect(sendV3TestTokenDeposit(walletProvider as any,wallet,parseEther('10'),oldReferrer,config))
+    .rejects.toThrow('referrer is not registered on this V3 test contract');
+   expect(sent).toEqual([]);
+   expect(await token.allowance(wallet,address)).toBe(1n);
    const registration=await sendV3Action(walletProvider as any,wallet,{kind:'register',referrer:ZeroAddress},config);
    expect(registration).toMatch(/^0x[0-9a-f]{64}$/);
    expect((await vault.users(wallet)).registered).toBe(true);
