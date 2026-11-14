@@ -148,6 +148,38 @@ describe('V3 verified transaction reads',()=>{
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('Check your wallet transaction history before retrying');
   expect(state.depositSends).toHaveLength(0);
  });
+ it('retains the validated ethers broadcast hash without copying raw error details',async()=>{
+  const hash='0x'+'b'.repeat(64);
+  state.writeToken.approve.mockRejectedValue({code:'NETWORK_ERROR',info:{sendTransactionHash:hash},message:'sensitive RPC URL'});
+  const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(result).toContain(hash);
+  expect(result).toContain('NETWORK_ERROR');
+  expect(result).toContain('Check its receipt before retrying');
+  expect(result).not.toContain('sensitive RPC URL');
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('does not display malformed hash data or unknown wallet error details',async()=>{
+  state.writeToken.approve.mockRejectedValue({code:'SECRET_CODE',info:{sendTransactionHash:'0xsecret'},message:'secret RPC token'});
+  const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(result).toContain('Check your wallet transaction history before retrying');
+  expect(result).not.toContain('secret');
+  expect(result).not.toContain('SECRET_CODE');
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('preserves a clear declined status without exposing the wallet error message',async()=>{
+  state.writeToken.approve.mockRejectedValue({code:4001,message:'sensitive wallet details'});
+  const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(result).toBe('TEST token approval was declined in your wallet.');
+  expect(state.depositSends).toHaveLength(0);
+ });
+ it('treats a known hash as uncertain even when the wallet also reports rejection',async()=>{
+  const hash='0x'+'c'.repeat(64);
+  state.writeToken.approve.mockRejectedValue({code:'ACTION_REJECTED',info:{sendTransactionHash:hash}});
+  const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
+  expect(result).toContain(hash);
+  expect(result).toContain('Check its receipt before retrying');
+  expect(state.depositSends).toHaveLength(0);
+ });
  it('stops before sending if the verified account session changes',async()=>{
   state.failSessionAt=2;
   await expect(sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config)).rejects.toThrow('WALLET_ACCOUNT_CHANGED');

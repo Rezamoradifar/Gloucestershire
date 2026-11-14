@@ -63,9 +63,22 @@ async function waitForConfirmed(tx:{hash:string;wait:(n:number)=>Promise<{status
 async function sendWalletTransaction<T>(send:()=>Promise<T>,label:string):Promise<T>{
  try{return await send();}
  catch(error){
-  const e=error as {code?:number|string}|null;
-  if(e?.code===4001||e?.code==='ACTION_REJECTED')throw error;
-  throw Error(label+' could not be verified. Check your wallet transaction history before retrying.');
+  const e=error as {code?:unknown;info?:{sendTransactionHash?:unknown}}|null;
+  // Ethers can report a hash even if its post-broadcast transaction lookup fails.
+  // Never copy arbitrary wallet messages, RPC URLs, or unvalidated error data.
+  const candidate=e?.info?.sendTransactionHash;
+  const hash=typeof candidate==='string'&&/^0x[0-9a-fA-F]{64}$/.test(candidate)?candidate:'';
+  const safeCodes=new Set<number|string>([
+   -32603,-32601,-32002,-32000,4001,4100,4200,4900,4901,
+   'ACTION_REJECTED','BAD_DATA','CALL_EXCEPTION','CANCELLED','INSUFFICIENT_FUNDS',
+   'INVALID_ARGUMENT','NETWORK_ERROR','NONCE_EXPIRED','SERVER_ERROR','TIMEOUT',
+   'UNKNOWN_ERROR','UNSUPPORTED_OPERATION'
+  ]);
+  const code=typeof e?.code==='number'||typeof e?.code==='string'?e.code:undefined;
+  const diagnostic=code!==undefined&&safeCodes.has(code)?' (code '+code+')':'';
+  if(hash)throw Error(label+' transaction '+hash+' could not be verified'+diagnostic+'. Check its receipt before retrying.');
+  if(code===4001||code==='ACTION_REJECTED')throw Error(label+' was declined in your wallet.');
+  throw Error(label+' could not be verified'+diagnostic+'. Check your wallet transaction history before retrying.');
  }
 }
 const eventMatches=(receipt:{logs:readonly Log[]},address:string,name:string,id:number,beneficiary?:string)=>{
