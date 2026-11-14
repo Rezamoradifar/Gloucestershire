@@ -40,6 +40,19 @@ const eventMatches=(receipt:{logs:readonly Log[]},address:string,name:string,id:
   }catch{return false;}
  });
 };
+// Check the same confirmed contract snapshot used for the rest of the action.
+// The contract remains authoritative when the signed transaction is sent.
+export async function checkV3Registration(vault:Contract,wallet:string,referrer:string,options:{blockTag:number}){
+ if(!isAddress(referrer)||getAddress(referrer)===getAddress(wallet))
+  throw Error('Choose a valid V3 referral address or leave the referrer empty.');
+ const [paused,user]=await Promise.all([vault.paused(options),vault.users(wallet,options)]);
+ if(paused)throw Error('Registration is paused on the V3 test contract.');
+ if(user.registered)throw Error('This wallet is already registered on this V3 test contract. Refresh your account.');
+ if(getAddress(referrer)!==ZeroAddress){
+  const parent=await vault.users(getAddress(referrer),options);
+  if(!parent.registered)throw Error('The referrer is not registered on this V3 test contract. Use an address registered here, or leave the referrer empty if you do not have one.');
+ }
+}
 export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
  action:V3Action,config:V3SiteReleaseConfig|null=v3ReleaseConfig){
  const context=await v3ReadSession(walletProvider,wallet,config);
@@ -55,8 +68,7 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
   }
   switch(action.kind){
    case 'register':
-    if(!isAddress(action.referrer)||getAddress(action.referrer)===getAddress(wallet))
-     throw Error('Choose a valid V3 referral address or the zero address.');
+    await checkV3Registration(vault,wallet,action.referrer,options);
     name='register';args=[getAddress(action.referrer)];break;
    case 'checkIn':name='checkIn';args=[];break;
    case 'checkInAndAccrue':
