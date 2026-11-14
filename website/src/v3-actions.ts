@@ -42,8 +42,13 @@ const roleFor=(action:V3Action):'manager'|null=>
 // Wallet providers sometimes cannot answer eth_call despite supporting signing.
 // Use the verified read session for simulation and gas estimation.
 const MAX_TESTNET_ACTION_GAS=8_000_000n;
+// A bounded legacy fee suggestion for wallets which need an explicit gasPrice.
+// This is testnet-only and is not proof that a particular wallet accepts it.
+const MAX_TESTNET_GAS_PRICE=100_000_000_000n;
+const MAX_TESTNET_ACTION_FEE=10_000_000_000_000_000n;
+type CheckedTestGas={gasLimit:bigint;gasPrice:bigint};
 async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
- name:string,args:unknown[],wallet:string){
+ name:string,args:unknown[],wallet:string):Promise<CheckedTestGas>{
  const method=contract.getFunction(name);
  const result=await method.staticCall(...args,{from:wallet,...session.options});
  if(result===false)throw Error('TESTNET token simulation returned false.');
@@ -53,7 +58,16 @@ async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,cont
  const limit=(estimate*125n+99n)/100n;
  if(limit>MAX_TESTNET_ACTION_GAS||limit>latest.gasLimit)
   throw Error('TESTNET action exceeds the permitted gas limit.');
- return limit;
+ // Read the network fee independently; never guess or fall back after a send.
+ let gasPrice:bigint;
+ try{
+  const fees=await session.provider.getFeeData();
+  if(fees.gasPrice===null)throw Error('NO_GAS_PRICE');
+  gasPrice=BigInt(fees.gasPrice);
+ }catch{throw Error('Unable to verify the TESTNET gas price. Try again later.');}
+ if(gasPrice<=0n||gasPrice>MAX_TESTNET_GAS_PRICE||limit*gasPrice>MAX_TESTNET_ACTION_FEE)
+  throw Error('TESTNET estimated gas fee exceeds the permitted limit.');
+ return {gasLimit:limit,gasPrice};
 }
 async function checkWalletStillSelected(provider:Eip1193Provider,wallet:string){
  const [chain,accounts]=await Promise.all([
@@ -88,12 +102,12 @@ async function sendWalletTransaction<T>(send:()=>Promise<T>,label:string,onHash?
 // the hash; the independently verified reader must confirm the exact call and
 // a canonical five-confirmation receipt before another action can be sent.
 async function submitVerified(walletProvider:Eip1193Provider,wallet:string,signer:JsonRpcSigner,
- config:V3SiteReleaseConfig,to:string,data:string,gasLimit:bigint,label:string,
+ config:V3SiteReleaseConfig,to:string,data:string,gas:CheckedTestGas,label:string,
  action:V3TransactionProgress['action'],onProgress?:V3TransactionProgressCallback):Promise<TransactionReceipt>{
  await checkWalletStillSelected(walletProvider,wallet);
  progress(onProgress,{step:'wallet_request',action});
  const hash=await sendWalletTransaction(()=>signer.sendUncheckedTransaction({
-  from:wallet,to,data,value:0n,gasLimit
+  from:wallet,to,data,value:0n,gasLimit:gas.gasLimit,gasPrice:gas.gasPrice
  }),label,hash=>progress(onProgress,{step:'verification',action,hash}));
  if(typeof hash!=='string'||!/^0x[0-9a-fA-F]{64}$/.test(hash))
   throw Error(label+' returned an invalid transaction reference. Check wallet history before retrying.');
@@ -234,7 +248,7 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
  }finally{context.provider.destroy();}
  if(!config)throw Error('V3 is not deployed.');
  // Verify registration simulation independently of the wallet's read RPC.
- let registrationGas:bigint|undefined;
+ let registrationGas:CheckedTestGas|undefined;
  const recheck=await v3ReadSession(walletProvider,wallet,config,action.kind==='register');
  try{
   if(action.kind==='register'){
@@ -293,7 +307,7 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
   if(allowance<amount){
    if(allowance>0n){
     s=await v3ReadSession(walletProvider,wallet,config,true);
-    let resetGas:bigint;
+    let resetGas:CheckedTestGas;
     try{
      const current=await state(s);
      if(current.allowance!==allowance)throw Error('TEST token allowance changed. Refresh before continuing.');
@@ -308,7 +322,7 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
     if(allowance!==0n)throw Error('Allowance reset was not confirmed. Check the transaction before retrying.');
    }
    s=await v3ReadSession(walletProvider,wallet,config,true);
-   let approvalGas:bigint;
+   let approvalGas:CheckedTestGas;
    try{
     const current=await state(s);
     if(current.allowance!==0n)throw Error('TEST token allowance changed. Refresh before continuing.');
@@ -320,7 +334,7 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
    lastApprovalHash=approval.hash;
   }
   const check=await v3ReadSession(walletProvider,wallet,config,true);
-  let depositGas:bigint;
+  let depositGas:CheckedTestGas;
   try{
    const confirmedAllowance=(await state(check)).allowance;
    if(confirmedAllowance<amount)throw Error('Approved token allowance is not confirmed. Retry only after verifying the transaction.');
