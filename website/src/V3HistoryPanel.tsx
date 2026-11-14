@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {ExternalLink,History,RefreshCw} from 'lucide-react';
 import {getWalletProvider} from './wallet';
 import {V3_EXPLORER} from './v3-chain';
-import {readV3HistoryPage,type V3HistoryAnchor,type V3HistoryPage} from './v3-history';
+import {readV3HistoryPage,type V3HistoryAnchor,type V3HistoryCategory,type V3HistoryPage} from './v3-history';
 import type {V3SiteReleaseConfig} from './v3-site-config';
 import './v3-history.css';
 
@@ -17,6 +17,7 @@ const safeHistoryMessages=new Set([
 
 export default function V3HistoryPanel({wallet,config}:{wallet:string;config:V3SiteReleaseConfig}){
  const [page,setPage]=useState(0),[version,setVersion]=useState(0);
+ const [category,setCategory]=useState<'all'|V3HistoryCategory>('all');
  const [data,setData]=useState<V3HistoryPage|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
  const anchor=useRef<V3HistoryAnchor|null>(null);
  useEffect(()=>{
@@ -32,22 +33,27 @@ export default function V3HistoryPanel({wallet,config}:{wallet:string;config:V3S
   return()=>{alive=false;};
  },[wallet,config,page,version]);
  const refresh=()=>{anchor.current=null;setPage(0);setVersion(v=>v+1);};
+ const visible=data?.items.filter(item=>category==='all'||item.category===category)??[];
+ const filters=[['all','All'],['deposits','Deposits'],['earnings','Claims'],['withdrawals','Withdrawals'],['account','Account']] as const;
  return <section className="gv2-panel gv3-history" aria-labelledby="gv3-history-title">
   <div className="gv2-panel-head"><div><h3 id="gv3-history-title"><History size={19}/> On-chain account activity</h3>
-   <p>Confirmed V3 test-token events for this connected wallet.</p></div>
+   <p>Confirmed activity for your connected wallet on this test contract.</p></div>
    <button type="button" disabled={loading} onClick={refresh}><RefreshCw size={15}/> Refresh</button></div>
   {loading&&<p role="status">Loading confirmed activity from BNB Testnet…</p>}
   {error&&<p className="gv2-error" role="alert">{error}</p>}
   {data&&<>
    <p className="gv3-history-range">Blocks {data.from.toLocaleString('en-US')}–{data.to.toLocaleString('en-US')} · anchored to block {data.anchor.block.toLocaleString('en-US')}</p>
-   {data.items.length?<div className="gv3-history-list">{data.items.map(item=><article className="gv3-history-row" key={item.key}>
+   <div className="gv3-history-filters" aria-label="Filter activity in these blocks">{filters.map(([id,label])=><button type="button" key={id} aria-pressed={category===id} onClick={()=>setCategory(id)}>{label}</button>)}</div>
+   <p className="gv3-history-count">{visible.length} {visible.length===1?'event':'events'} in these blocks{category!=='all'?' · filter applies to this page':''}</p>
+   {visible.length?<div className="gv3-history-list">{visible.map(item=><article className="gv3-history-row" key={item.key}>
     <div><strong>{item.title}</strong><small>{item.detail}</small><small>Block {item.block.toLocaleString('en-US')}</small></div>
     <div>{item.value&&<b>{item.value}</b>}<a href={V3_EXPLORER+'/tx/'+item.transaction} target="_blank" rel="noreferrer">Transaction <ExternalLink size={14}/></a></div>
-   </article>)}</div>:<p>No matching events in these blocks. Earlier blocks may contain activity.</p>}
+   </article>)}</div>:<p>No matching events in these blocks. Choose All or browse older blocks.</p>}
    <div className="gv2-buttons"><button type="button" disabled={loading||page===0} onClick={()=>setPage(p=>p-1)}>Newer blocks</button>
     <button type="button" disabled={loading||data.from===data.anchor.firstBlock} onClick={()=>setPage(p=>p+1)}>Older blocks</button></div>
   </>}
-  <p className="gv2-small">Accrued claims are not payments. Only a paid withdrawal event records a token transfer to the beneficiary. The displayed range is limited; use the explorer for complete history.</p>
-  <a className="gv2-explorer" href={V3_EXPLORER+'/address/'+config.address+'#events'} target="_blank" rel="noreferrer">Open V3 contract events <ExternalLink size={14}/></a>
+  <p className="gv2-small">Claims are account credits, not wallet payments. Approval is permission, not a deposit. Browse older blocks to review earlier confirmed events from this test contract. Pending and failed transactions remain in your wallet or the explorer.</p>
+  <div className="gv3-history-links"><a className="gv2-explorer" href={V3_EXPLORER+'/address/'+wallet} target="_blank" rel="noreferrer">Open wallet on explorer <ExternalLink size={14}/></a>
+  <a className="gv2-explorer" href={V3_EXPLORER+'/address/'+config.address+'#events'} target="_blank" rel="noreferrer">Open contract events <ExternalLink size={14}/></a></div>
  </section>;
 }

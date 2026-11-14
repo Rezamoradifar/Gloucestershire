@@ -1,6 +1,7 @@
 import {describe,expect,it,vi} from 'vitest';
 import {Interface,parseEther,zeroPadValue,type Log,type Provider} from 'ethers';
 import {V3_ABI} from '../src/v3-chain';
+import {V3_TEST_TOKEN} from '../src/v3-site-config';
 import {queryV3HistoryWindow,v3HistoryRange} from '../src/v3-history';
 
 const iface=new Interface(V3_ABI);
@@ -14,7 +15,7 @@ const log=(name:string,values:unknown[],blockNumber:number,index:number):Log=>{
  return {...encoded,address:contract,blockNumber,index,removed:false,transactionHash:'0x'+String(index+1).padStart(64,'0')} as Log;
 };
 function source(first:Log[],second:Log[]=[]){
- const getLogs=vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+ const getLogs=vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second).mockResolvedValue([]);
  const getBlock=vi.fn().mockResolvedValue({hash:blockHash});
  return {getLogs,getBlock,provider:{getLogs,getBlock} as unknown as Provider};
 }
@@ -41,6 +42,23 @@ describe('wallet-specific confirmed V3 activity',()=>{
   expect(src.getLogs.mock.calls[0][0].topics[1]).toBe(zeroPadValue(wallet,32));
   expect(src.getLogs.mock.calls[1][0].topics[2]).toBe(zeroPadValue(wallet,32));
  });
+
+ it('records only approvals to this contract and separates network details from claims',async()=>{
+  const approvalInterface=new Interface(['event Approval(address indexed owner,address indexed spender,uint256 value)']);
+  const encoded=approvalInterface.encodeEventLog(approvalInterface.getEvent('Approval')!,[wallet,contract,to('100')]);
+  const approval={...encoded,address:V3_TEST_TOKEN,blockNumber:4001,index:2,removed:false,transactionHash:'0x'+'03'.padStart(64,'0')} as Log;
+  const network=log('NetworkRewardEarned',[wallet,0n,0n,to('500'),to('35')],4000,0);
+  const getLogs=vi.fn().mockResolvedValueOnce([network]).mockResolvedValueOnce([]).mockResolvedValueOnce([approval]);
+  const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+  const page=await queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);
+  expect(page.items.map(item=>item.title)).toEqual(['Test-token approval','Network milestone completed']);
+  expect(page.items[0].detail).toContain('not a deposit');
+  expect(page.items[1].detail).toContain('Included in the network claim');
+  expect(getLogs.mock.calls[2][0].topics.slice(1)).toEqual([zeroPadValue(wallet,32),zeroPadValue(contract,32)]);
+  const wrong=approvalInterface.encodeEventLog(approvalInterface.getEvent('Approval')!,[wallet,other,to('100')]);
+  getLogs.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([{...approval,...wrong}]);
+  await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0)).rejects.toThrow('wallet mismatch');
+ });
  it('rejects mismatched wallet, altered routing and changed block anchor',async()=>{
   const wrongUser=source([log('CheckIn',[other,4000n],4000,0)]);
   await expect(queryV3HistoryWindow(wrongUser.provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0)).rejects.toThrow(/wallet mismatch/);
@@ -56,6 +74,7 @@ describe('wallet-specific confirmed V3 activity',()=>{
   const getLogs=vi.fn(async(filter:any)=>{
    const from=Number(filter.fromBlock),to=Number(filter.toBlock);
    if(to-from+1>500)throw {code:'UNKNOWN_ERROR',info:{error:{code:-32005,message:'limit exceeded'}}};
+   if(filter.address===V3_TEST_TOKEN)return [];
    const event=filter.topics[2]?paid:deposit;
    return event.blockNumber>=from&&event.blockNumber<=to?[event]:[];
   });
@@ -63,9 +82,9 @@ describe('wallet-specific confirmed V3 activity',()=>{
   const page=await queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);
   expect(page.from).toBe(3001);expect(page.to).toBe(5000);
   expect(page.items.map(item=>item.title)).toEqual(['Withdrawal paid','Test-token deposit']);
-  expect(getLogs).toHaveBeenCalledTimes(14);
+  expect(getLogs).toHaveBeenCalledTimes(21);
   for(const isSecond of [false,true]){
-   const ranges=getLogs.mock.calls.map(([filter])=>filter).filter(filter=>Boolean(filter.topics[2])===isSecond&&Number(filter.toBlock)-Number(filter.fromBlock)<500);
+   const ranges=getLogs.mock.calls.map(([filter])=>filter).filter(filter=>filter.address===contract&&Boolean(filter.topics[2])===isSecond&&Number(filter.toBlock)-Number(filter.fromBlock)<500);
    expect(ranges.map(filter=>[filter.fromBlock,filter.toBlock])).toEqual([[3001,3500],[3501,4000],[4001,4500],[4501,5000]]);
   }
  });

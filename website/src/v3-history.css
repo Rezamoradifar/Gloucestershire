@@ -1,12 +1,18 @@
-.gv3-history .gv2-panel-head h3{display:flex;align-items:center;gap:8px}
-.gv3-history .gv2-panel-head p{margin:5px 0 0;font-size:12px}
+.gv3-history .gv2-panel-head h3{display:flex;align-items:center;gap:9px}
+.gv3-history .gv2-panel-head p{margin:6px 0 0;font-size:14px;line-height:1.55;color:#c4d2d5}
 .gv3-history .gv2-panel-head button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
-.gv3-history-range{font-size:11px;color:#a8b6be!important}
-.gv3-history-list{display:grid;gap:8px}
-.gv3-history-row{display:flex;justify-content:space-between;gap:14px;padding:14px;border:1px solid #353d46;border-radius:12px;background:#10151d}
-.gv3-history-row>div{display:grid;align-content:start;gap:5px;min-width:0}
+.gv3-history-range,.gv3-history-count{font-size:13px!important;line-height:1.55;color:#c2d1d5!important}
+.gv3-history-filters{display:flex;gap:8px;flex-wrap:wrap;margin:15px 0 5px}
+.gv2-classic.gv3-workspace .gv3-history-filters button{min-height:40px;padding:8px 13px;border:1px solid #526275;border-radius:999px;background:#14202a;color:#d7e1e6;font-size:13px;font-weight:650}
+.gv2-classic.gv3-workspace .gv3-history-filters button[aria-pressed=true]{background:#203d3a;border-color:#8fd0b7;color:#bff5da}
+.gv3-history-list{display:grid;gap:10px}
+.gv3-history-row{display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid #43515e;border-radius:14px;background:#101a22}
+.gv3-history-row>div{display:grid;align-content:start;gap:6px;min-width:0}
 .gv3-history-row>div:last-child{justify-items:end;text-align:right}
-.gv3-history-row strong,.gv3-history-row b{font-size:13px;color:#f4e5c0;overflow-wrap:anywhere}
-.gv3-history-row small{font-size:11px;line-height:1.5;color:#a9b6bf;overflow-wrap:anywhere}
-.gv3-history-row a{display:inline-flex;align-items:center;gap:5px;color:#d8c38c;font-size:11px;text-decoration:underline}
+.gv3-history-row strong{font-size:15px;line-height:1.4;color:#f7edda;overflow-wrap:anywhere}
+.gv3-history-row b{font-size:16px;color:#9fe8cf;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.gv3-history-row small{font-size:13px;line-height:1.55;color:#c0cdd2;overflow-wrap:anywhere}
+.gv3-history-row a{display:inline-flex;align-items:center;gap:6px;color:#f0d798;font-size:13px;text-decoration:underline}
+.gv3-history-links{display:flex;gap:8px 22px;flex-wrap:wrap}
+.gv3-history-links .gv2-explorer{margin:12px 0 2px}
 @media(max-width:420px){.gv3-history-row{flex-wrap:wrap}.gv3-history-row>div:last-child{justify-items:start;text-align:left}}

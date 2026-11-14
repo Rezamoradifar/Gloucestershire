@@ -20,6 +20,7 @@ import V3CycleCard from './V3CycleCard';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
+import V3WithdrawalHistory from './V3WithdrawalHistory';
 import V3CommercePanel from './V3CommercePanel';
 import V3WalletControl from './V3WalletControl';
 import WalletPicker from './WalletPicker';
@@ -401,11 +402,7 @@ export default function V3Dashboard(){
       <V3NetworkPanel view={view} busy={busy||loading} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
        onBranchPage={setBranchPage} onGroupPage={setGroupPage}/>:
       <section className="gv2-panel" role="status">Loading verified network branches and groups…</section>)}
-     {tab==='history'&&<><V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><section className="gv2-panel"><div className="gv2-panel-head"><h3>Recent withdrawal requests</h3><span>Last {view.withdrawals.length} of {view.withdrawCount}</span></div>
-      {view.withdrawals.map(r=>withdrawItem(r))}
-      {!view.withdrawals.length&&<p>No V3 withdrawals have been confirmed or requested for this wallet.</p>}
-      <p className="gv2-small">The request index shows current on-chain status for this V3 contract.</p>
-     </section></>}
+     {tab==='history'&&<><V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><V3WithdrawalHistory key={'withdraw-'+view.wallet} wallet={view.wallet} config={config}/></>}
      {tab==='profile'&&<section className="gv2-panel"><h3>Verified V3 profile</h3>
       <div className="gv2-detail"><span>Wallet</span><b>{wallet}</b></div>
       <div className="gv2-detail"><span>Registration</span><b>{view.registered?'Registered on V3':'Not registered'}</b></div>
