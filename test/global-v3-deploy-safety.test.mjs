@@ -46,7 +46,7 @@ test('gas-only keeper is isolated, separately signed and not allowed to approve 
  for(const expected of [
   'DynamicUser=yes','LoadCredential=keeper-gas-key:',
   'LoadCredential=keeper-config:','ProtectSystem=strict',
-  'NoNewPrivileges=yes','OnCalendar=hourly',
+  'NoNewPrivileges=yes','TIMER_CALENDAR=hourly',
   'PINNED_KEEPER_RELEASE','npm ci --omit=dev --ignore-scripts',
   'V3_ADMIN_APPROVAL_REQUIRED_FOR_ACCRUAL=FALSE',
   'V3_KEEPER_MAY_ACCRUE_ONLY_IF_USER_CHECKIN_ELIGIBLE=TRUE'
