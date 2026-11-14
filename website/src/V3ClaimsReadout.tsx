@@ -5,7 +5,7 @@
 import {Coins,Info,ShieldAlert} from 'lucide-react';
 import {v3PrepareUserClaims,type V3ClaimLedger} from './v3-claim-balance';
 import {formatV3Amount} from './v3-format';
-import DigitalValue from './DigitalValue';
+import V3ClaimValue from './V3ClaimValue';
 import './v3-claims-readout.css';
 
 export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3ClaimLedger}){
@@ -19,21 +19,21 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
   <div className="gv3-claims-heading"><h2><Coins size={19}/> Internal Current · BNB Testnet</h2>
    <small>Confirmed block {claims.block.toLocaleString('en-US')}</small></div>
   <div className="gv3-current-total"><small>Available internal account credit</small>
-   <strong><DigitalValue size="hero" value={formatV3Amount(claims.internalCurrent)} unit={unit}/></strong>
+   <strong><V3ClaimValue size="hero" value={claims.internalCurrent} block={claims.block}/></strong>
    <span>Recorded in your account; daily accrual does not transfer tokens to your wallet.</span></div>
   <div className="gv3-claim-grid">
    <div><small>Daily claims available</small>
-    <strong><DigitalValue value={formatV3Amount(claims.outstandingDaily)} unit={unit}/></strong></div>
+    <strong><V3ClaimValue value={claims.outstandingDaily} block={claims.block}/></strong></div>
    <div><small>Profit-on-profit claims available</small>
-    <strong><DigitalValue value={formatV3Amount(claims.outstandingCompound)} unit={unit}/></strong></div>
+    <strong><V3ClaimValue value={claims.outstandingCompound} block={claims.block}/></strong></div>
    <div><small>Referral claims available</small>
-    <strong><DigitalValue value={formatV3Amount(claims.outstandingReferral)} unit={unit}/></strong></div>
+    <strong><V3ClaimValue value={claims.outstandingReferral} block={claims.block}/></strong></div>
    <div><small>Network milestone claims available</small>
-    <strong><DigitalValue value={formatV3Amount(claims.outstandingNetwork)} unit={unit}/></strong></div>
+    <strong><V3ClaimValue value={claims.outstandingNetwork} block={claims.block}/></strong></div>
    <div><small>Reserved for pending requests</small>
-    <strong><DigitalValue value={formatV3Amount(claims.pendingInternal)} unit={unit}/></strong></div>
+    <strong><V3ClaimValue value={claims.pendingInternal} block={claims.block}/></strong></div>
    <div><small>Maximum for one new request under current cooldown/cap</small>
-    <strong><DigitalValue value={formatV3Amount(claims.maxSingleRequest)} unit={unit}/></strong></div>
+    <strong><V3ClaimValue value={claims.maxSingleRequest} block={claims.block}/></strong></div>
   </div>
   <p className="gv3-claims-warning"><Info size={17}/> Recorded claims are not wallet funds.
    V3 test-token funding shortfall: {formatV3Amount(claims.overallUnfundedLiability)} {unit}.
