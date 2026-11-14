@@ -16,6 +16,7 @@ import V3CycleCard from './V3CycleCard';
 import V3PaymentMap from './V3PaymentMap';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3ClassicOverview from './V3ClassicOverview';
+import V3HistoryPanel from './V3HistoryPanel';
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
@@ -265,7 +266,7 @@ export default function V3Dashboard(){
      <p>The testnet contract must be deployed and independently verified before this dashboard can show account data.</p>
      <a href="#">Return to Global landing <ArrowUpRight size={16}/></a>
     </section>}
-    {config&&<><div className="gv3-notice"><Info size={16}/> V3 records <b>unfunded TESTNET contractual claims</b>. These are NOT real USDT, verified business earnings, guaranteed returns or available wallet cash. Withdrawals are manager-approved and require funding; daily profit-on-profit needs an eligible check-in and a gas-paying keeper transaction.</div>
+    {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
     {error&&<p className="gv2-error" role="alert">{error}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
     {!wallet&&tab!=='overview'&&<section className="gv2-panel gv3-connect"><Wallet size={31}/><h2>Connect your BNB Testnet wallet</h2>
@@ -328,11 +329,11 @@ export default function V3Dashboard(){
       <V3NetworkPanel view={view} busy={busy||loading} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
        onBranchPage={setBranchPage} onGroupPage={setGroupPage}/>:
       <section className="gv2-panel" role="status">Loading verified network branches and groups…</section>)}
-     {tab==='history'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Recent confirmed withdrawals</h3><span>Last {view.withdrawals.length} of {view.withdrawCount}</span></div>
+     {tab==='history'&&<><V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><section className="gv2-panel"><div className="gv2-panel-head"><h3>Recent withdrawal requests</h3><span>Last {view.withdrawals.length} of {view.withdrawCount}</span></div>
       {view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 withdrawals have been confirmed or requested for this wallet.</p>}
-      <p className="gv2-small">This page shows the on-chain recent-request index only; it does not invent historical deposits or import old contract data. For full V3 event history, a verified event indexer is required.</p>
-     </section>}
+      <p className="gv2-small">The request index shows current on-chain status for this V3 contract.</p>
+     </section></>}
      {tab==='profile'&&<section className="gv2-panel"><h3>Verified V3 profile</h3>
       <div className="gv2-detail"><span>Wallet</span><b>{wallet}</b></div>
       <div className="gv2-detail"><span>Registration</span><b>{view.registered?'Registered on V3':'Not registered'}</b></div>
