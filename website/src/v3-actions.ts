@@ -28,6 +28,46 @@ export type V3Action=
 const validIndex=(n:number)=>Number.isSafeInteger(n)&&n>=0;
 const roleFor=(action:V3Action):'manager'|null=>
  ['approveWithdrawal','rejectWithdrawal','reserveExistingCash'].includes(action.kind)?'manager':null;
+// Wallet providers sometimes cannot answer eth_call despite supporting signing.
+// Use the verified read session for simulation and gas estimation.
+const MAX_TESTNET_ACTION_GAS=8_000_000n;
+async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
+ name:string,args:unknown[],wallet:string){
+ const method=contract.getFunction(name);
+ const result=await method.staticCall(...args,{from:wallet,...session.options});
+ if(result===false)throw Error('TESTNET token simulation returned false.');
+ const estimate=BigInt(await method.estimateGas(...args,{from:wallet}));
+ const latest=await session.provider.getBlock('latest');
+ if(estimate<=0n||!latest||latest.gasLimit<=0n)throw Error('Unable to verify the TESTNET gas estimate.');
+ const limit=(estimate*125n+99n)/100n;
+ if(limit>MAX_TESTNET_ACTION_GAS||limit>latest.gasLimit)
+  throw Error('TESTNET action exceeds the permitted gas limit.');
+ return limit;
+}
+async function checkWalletStillSelected(provider:Eip1193Provider,wallet:string){
+ const [chain,accounts]=await Promise.all([
+  provider.request({method:'eth_chainId'}),provider.request({method:'eth_accounts'})
+ ]);
+ if(Number(BigInt(String(chain)))!==97||!Array.isArray(accounts)||
+  !accounts.some(a=>typeof a==='string'&&a.toLowerCase()===wallet.toLowerCase()))
+  throw Error('Wallet account or BNB Testnet changed. Reconnect before continuing.');
+}
+async function waitForConfirmed(tx:{hash:string;wait:(n:number)=>Promise<{status:number}|null>},label:string){
+ try{
+  const receipt=await tx.wait(5);
+  if(!receipt||receipt.status!==1)throw Error('NOT_CONFIRMED');
+ }catch{
+  throw Error(label+' transaction '+tx.hash+' was not confirmed. Check the receipt before retrying.');
+ }
+}
+async function sendWalletTransaction<T>(send:()=>Promise<T>,label:string):Promise<T>{
+ try{return await send();}
+ catch(error){
+  const e=error as {code?:number|string}|null;
+  if(e?.code===4001||e?.code==='ACTION_REJECTED')throw error;
+  throw Error(label+' could not be verified. Check your wallet transaction history before retrying.');
+ }
+}
 const eventMatches=(receipt:{logs:readonly Log[]},address:string,name:string,id:number,beneficiary?:string)=>{
  return receipt.logs.some(raw=>{
   if(raw.address.toLowerCase()!==address.toLowerCase())return false;
@@ -124,14 +164,27 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
   }
  }finally{context.provider.destroy();}
  if(!config)throw Error('V3 is not deployed.');
- // Wallet signer is never reused across a changed chain/account.
- await v3ReadSession(walletProvider,wallet,config).then(s=>s.provider.destroy());
+ // Verify registration simulation independently of the wallet's read RPC.
+ let registrationGas:bigint|undefined;
+ const recheck=await v3ReadSession(walletProvider,wallet,config);
+ try{
+  if(action.kind==='register'){
+   await checkV3Registration(recheck.vault,wallet,action.referrer,recheck.options);
+   registrationGas=await checkedGas(recheck,recheck.vault,name,args,wallet);
+  }
+ }finally{recheck.provider.destroy();}
  const provider=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
  try{
   const signer=await provider.getSigner(wallet);
   const writable=new Contract(config.address,V3_ABI,signer);
-  await writable.getFunction(name).staticCall(...args);
-  const sent=await writable.getFunction(name)(...args);
+  if(registrationGas===undefined)await writable.getFunction(name).staticCall(...args);
+  await checkWalletStillSelected(walletProvider,wallet);
+  const sent=registrationGas===undefined?await writable.getFunction(name)(...args):
+   await sendWalletTransaction(()=>writable.getFunction(name)(...args,{gasLimit:registrationGas}),'Registration');
+  if(action.kind==='register'){
+   await waitForConfirmed(sent,'Registration');
+   return sent.hash as string;
+  }
   const receipt=await sent.wait(5);
   if(!receipt||receipt.status!==1)throw Error('V3 TESTNET action was not confirmed on-chain.');
   if(action.kind==='payWithdrawal'&&prior&&
@@ -148,40 +201,69 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
  if(!config||amount<10n**19n||!isAddress(referrer)||
   getAddress(referrer)===getAddress(wallet))
   throw Error('Invalid V3 TESTNET deposit, referrer, or unverified contract.');
- const s=await v3ReadSession(walletProvider,wallet,config);
- try{
+ async function state(s:Awaited<ReturnType<typeof v3ReadSession>>){
   const token=new Contract(V3_TEST_TOKEN,V3_TEST_TOKEN_ABI,s.provider);
   const [balance,allowance,paused]=await Promise.all([
-   token.balanceOf(wallet,s.options),token.allowance(wallet,config.address,s.options),
+   token.balanceOf(wallet,s.options),token.allowance(wallet,config!.address,s.options),
    s.vault.paused(s.options)
   ]);
-  if(paused||balance<amount)throw Error('V3 testnet paused or wallet lacks actual TEST USDT tokens.');
-  if(allowance<0n)throw Error('Invalid token allowance');
- }finally{s.provider.destroy();}
+  if(paused||BigInt(balance)<amount)throw Error('V3 testnet paused or wallet lacks actual TEST USDT tokens.');
+  if(BigInt(allowance)<0n)throw Error('Invalid token allowance');
+  return {token,allowance:BigInt(allowance)};
+ }
+ let s=await v3ReadSession(walletProvider,wallet,config);
+ let allowance:bigint;
+ try{allowance=(await state(s)).allowance;}finally{s.provider.destroy();}
  const provider=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
+ let lastApprovalHash='';
+ let depositSent=false;
  try{
   const signer=await provider.getSigner(wallet);
-  const token=new Contract(V3_TEST_TOKEN,V3_TEST_TOKEN_ABI,signer);
-  let allowance=BigInt(await token.allowance(wallet,config.address));
+  const writableToken=new Contract(V3_TEST_TOKEN,V3_TEST_TOKEN_ABI,signer);
   if(allowance<amount){
    if(allowance>0n){
-    const reset=await token.approve(config.address,0n);
-    if((await reset.wait(5))?.status!==1)throw Error('TEST token allowance reset not confirmed.');
+    s=await v3ReadSession(walletProvider,wallet,config);
+    let resetGas:bigint;
+    try{
+     const current=await state(s);
+     if(current.allowance!==allowance)throw Error('TEST token allowance changed. Refresh before continuing.');
+     resetGas=await checkedGas(s,current.token,'approve',[config.address,0n],wallet);
+    }finally{s.provider.destroy();}
+    await checkWalletStillSelected(walletProvider,wallet);
+    const reset=await sendWalletTransaction(()=>writableToken.approve(config.address,0n,{gasLimit:resetGas}),'Allowance reset');
+    lastApprovalHash=reset.hash;
+    await waitForConfirmed(reset,'Allowance reset');
+    s=await v3ReadSession(walletProvider,wallet,config);
+    try{allowance=(await state(s)).allowance;}finally{s.provider.destroy();}
+    if(allowance!==0n)throw Error('Allowance reset was not confirmed. Check the transaction before retrying.');
    }
-   const approval=await token.approve(config.address,amount);
-   if((await approval.wait(5))?.status!==1)throw Error('V3 TEST token approval not confirmed.');
+   s=await v3ReadSession(walletProvider,wallet,config);
+   let approvalGas:bigint;
+   try{
+    const current=await state(s);
+    if(current.allowance!==0n)throw Error('TEST token allowance changed. Refresh before continuing.');
+    approvalGas=await checkedGas(s,current.token,'approve',[config.address,amount],wallet);
+   }finally{s.provider.destroy();}
+   await checkWalletStillSelected(walletProvider,wallet);
+   const approval=await sendWalletTransaction(()=>writableToken.approve(config.address,amount,{gasLimit:approvalGas}),'TEST token approval');
+   lastApprovalHash=approval.hash;
+   await waitForConfirmed(approval,'TEST token approval');
   }
   const check=await v3ReadSession(walletProvider,wallet,config);
+  let depositGas:bigint;
   try{
-   const confirmedAllowance=BigInt(await new Contract(V3_TEST_TOKEN,V3_TEST_TOKEN_ABI,check.provider)
-    .allowance(wallet,config.address,check.options));
+   const confirmedAllowance=(await state(check)).allowance;
    if(confirmedAllowance<amount)throw Error('Approved token allowance is not confirmed. Retry only after verifying the transaction.');
+   depositGas=await checkedGas(check,check.vault,'deposit',[amount,getAddress(referrer)],wallet);
   }finally{check.provider.destroy();}
+  await checkWalletStillSelected(walletProvider,wallet);
   const vault=new Contract(config.address,V3_ABI,signer);
-  await vault.deposit.staticCall(amount,getAddress(referrer));
-  const sent=await vault.deposit(amount,getAddress(referrer));
-  const receipt=await sent.wait(5);
-  if(!receipt||receipt.status!==1)throw Error('V3 TESTNET deposit did not confirm.');
+  const sent=await sendWalletTransaction(()=>vault.deposit(amount,getAddress(referrer),{gasLimit:depositGas}),'TESTNET deposit');
+  depositSent=true;
+  let receipt;
+  try{receipt=await sent.wait(5);}
+  catch{throw Error('TESTNET deposit '+sent.hash+' confirmation is unknown. Check the transaction before retrying.');}
+  if(!receipt||receipt.status!==1)throw Error('TESTNET deposit '+sent.hash+' was not confirmed. Check the transaction before retrying.');
   const expectedFee=amount/10n;
   const routed=receipt.logs.some((raw:Log)=>{
    if(raw.address.toLowerCase()!==config.address.toLowerCase())return false;
@@ -192,8 +274,14 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
      BigInt(event.args.fee2)===expectedFee&&BigInt(event.args.operations)===amount-2n*expectedFee;
    }catch{return false;}
   });
-  if(!routed)throw Error('Deposit routing event was not verified. Inspect the transaction before retrying.');
+  if(!routed)throw Error('Deposit routing event for '+sent.hash+' was not verified. Inspect the transaction before retrying.');
   return receipt.hash as string;
+ }catch(error){
+  if(lastApprovalHash&&!depositSent){
+   const message=error instanceof Error?error.message:'TESTNET deposit did not complete.';
+   throw Error(message+' Last token approval/reset: '+lastApprovalHash+'. Check wallet history before retrying.');
+  }
+  throw error;
  }finally{provider.destroy();}
 }
 export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet:string,
