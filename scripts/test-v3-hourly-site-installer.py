@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='v3-hourly-install-test-') as scratch:
     bin_dir.mkdir()
     (served / 'index.html').write_text('EXISTING MAIN SITE\n')
     (repo / 'website/dist/index.html').write_text('SEPARATE HOURLY TEST SITE\n')
-    (repo / 'website/dist/assets/site.js').write_text('SEPARATE ONE-HOUR TEST CONTRACT\n')
+    (repo / 'website/dist/assets/site.js').write_text('ONE-HOUR BNB TESTNET CONTRACT\n')
     source = (HERE / 'scripts/install-v3-hourly-testnet-site.sh').read_text()
     source = source.replace('/var/lib/globaldroptrade/', str(root / 'var/lib/globaldroptrade') + '/')
     (repo / 'scripts/install-v3-hourly-testnet-site.sh').write_text(source)

@@ -103,13 +103,14 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm ci --prefix website --ignore-scripts --no-audit --no-fund
 site_vars=$(node scripts/verify-v3-hourly-testnet.mjs --emit-site-env)
 [[ $site_vars == *'export VITE_V3_HOURLY_TEST=isolated-1h'* ]] || { echo V3_HOURLY_UPDATE_VARIABLES_INVALID; exit 1; }
-env -u VITE_V3_HOURLY_TEST -u VITE_V3_PRIMARY_DASHBOARD \
+env -u VITE_V3_HOURLY_TEST -u VITE_V3_PRIMARY_DASHBOARD -u VITE_V3_LANDING_AT_ROOT \
  -u VITE_V3_CONTRACT_ADDRESS -u VITE_V3_RUNTIME_HASH -u VITE_V3_DEPLOYMENT_TX \
  npm test --prefix website -- --maxWorkers=2
 eval "$site_vars"
+unset VITE_V3_LANDING_AT_ROOT
 npm run build --prefix website
 [[ -s website/dist/index.html ]] || { echo V3_HOURLY_UPDATE_BUILD_MISSING; exit 1; }
-grep -RilF 'SEPARATE ONE-HOUR TEST CONTRACT' website/dist/assets --include='*.js' >/dev/null || { echo V3_HOURLY_UPDATE_DISCLOSURE_MISSING; exit 1; }
+grep -RilF 'ONE-HOUR BNB TESTNET CONTRACT' website/dist/assets --include='*.js' >/dev/null || { echo V3_HOURLY_UPDATE_DISCLOSURE_MISSING; exit 1; }
 [[ $(wallet_config website/dist) == "$existing_wallet_config" ]] || { echo V3_HOURLY_UPDATE_WALLET_ID_NOT_PRESERVED; exit 1; }
 entry=$(python3 - website/dist/index.html <<'PY'
 import re, sys

@@ -1,6 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import fs from 'node:fs';
 import {v3ParseReleaseConfig,V3_OLD_V2_ADDRESS} from '../src/v3-site-config';
+import {siteRoute} from '../src/site-route';
 
 const confirmed={
  address:'0x1234567890123456789012345678901234567890',
@@ -19,11 +20,22 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   const root=file('Root.tsx');
   expect(root).toContain("const DashboardV2=!v3Only?lazy(()=>import('./V2Dashboard')):null");
   expect(root).toContain("const DashboardV3=lazy(()=>import('./V3Dashboard'))");
-  expect(root).toContain("if(location.hash==='#v2-dashboard')return v3Only?'v3':'v2'");
-  expect(root).toContain("location.hash==='#v3-dashboard'");
   expect(root).toContain("VITE_V3_PRIMARY_DASHBOARD==='verified-testnet'");
-  expect(root).toContain("if(location.hash==='#dashboard')return v3Primary?'v3':'v2'");
+  const opts={v3Only:true,hourlyTest:false,landingAtRoot:true};
+  expect(siteRoute('#v2-dashboard',opts)).toBe('v3');
+  expect(siteRoute('#v3-dashboard',opts)).toBe('v3');
+  expect(siteRoute('#dashboard',opts)).toBe('v3');
   expect(file('V3Dashboard.tsx')).not.toContain('href="#v2-dashboard"');
+ });
+ it('preserves the main landing and keeps the isolated hourly page on the dashboard',()=>{
+  const main={v3Only:true,hourlyTest:true,landingAtRoot:true};
+  const hourly={...main,landingAtRoot:false};
+  expect(siteRoute('',main)).toBe('landing');
+  expect(siteRoute('#',main)).toBe('landing');
+  expect(siteRoute('#dashboard',main)).toBe('v3');
+  expect(siteRoute('',hourly)).toBe('v3');
+  expect(siteRoute('#',hourly)).toBe('v3');
+  expect(siteRoute('#marketplace',hourly)).toBe('landing');
  });
  it('V3 money reads require verified bytecode and do not import old V2 contract state',()=>{
   const code=file('v3-chain.ts');

@@ -311,7 +311,7 @@ export default function V3Dashboard(){
    </header>
    <main className="gv2-wrap">
     {V3_HOURLY_TEST&&<div className="gv3-notice" role="status"><Info size={16}/>
-     SEPARATE ONE-HOUR TEST CONTRACT. Accounts and claims here do not appear on the existing 24-hour deployment. Test tokens only.</div>}
+     ONE-HOUR BNB TESTNET CONTRACT. Accounts and claims shown here belong to this test deployment. Test tokens only.</div>}
     <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE</span>
      <h1>{tab==='overview'?'Account overview':menus.find(x=>x.id===tab)?.label}</h1>
      <p>{tab==='overview'?'Your capital, recorded profit and withdrawal availability.':'Your verified testnet account and current contract information.'}</p>

@@ -26,13 +26,14 @@ npm ci --prefix website --ignore-scripts --no-audit --no-fund
 site_vars="$(node scripts/verify-v3-hourly-testnet.mjs --emit-site-env)"
 [[ "$site_vars" == *'export VITE_V3_HOURLY_TEST=isolated-1h'* ]] ||
  { echo V3_HOURLY_SITE_VARIABLES_INVALID; exit 1; }
-env -u VITE_V3_HOURLY_TEST -u VITE_V3_PRIMARY_DASHBOARD \
+env -u VITE_V3_HOURLY_TEST -u VITE_V3_PRIMARY_DASHBOARD -u VITE_V3_LANDING_AT_ROOT \
  -u VITE_V3_CONTRACT_ADDRESS -u VITE_V3_RUNTIME_HASH -u VITE_V3_DEPLOYMENT_TX \
  npm test --prefix website -- --maxWorkers=2
 eval "$site_vars"
+unset VITE_V3_LANDING_AT_ROOT
 npm run build --prefix website
 [[ -s website/dist/index.html ]] || { echo V3_HOURLY_SITE_BUILD_MISSING; exit 1; }
-grep -RilF 'SEPARATE ONE-HOUR TEST CONTRACT' website/dist/assets --include='*.js' >/dev/null ||
+grep -RilF 'ONE-HOUR BNB TESTNET CONTRACT' website/dist/assets --include='*.js' >/dev/null ||
  { echo V3_HOURLY_SITE_DISCLOSURE_MISSING; exit 1; }
 stage="$(mktemp -d /tmp/global-v3-hourly-site.XXXXXX)"
 created=0
