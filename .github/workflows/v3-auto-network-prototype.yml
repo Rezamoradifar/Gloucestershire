@@ -1,0 +1,28 @@
+name: Blocked local V3 auto-network prototype
+on:
+  pull_request:
+    paths:
+      - 'contracts/v3/**'
+      - 'scripts/compile-global-v3-hourly-testnet.mjs'
+      - 'scripts/compile-v3-auto-network-prototype.mjs'
+      - 'scripts/v3-reward-sweep-local-prototype.mjs'
+      - 'test/v3-auto-network-prototype.test.mjs'
+      - 'test/v3-reward-sweep-*-prototype.test.mjs'
+      - '.github/workflows/v3-auto-network-prototype.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-only-never-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test --test-concurrency=1 test/v3-auto-network-prototype.test.mjs test/v3-reward-sweep-local-prototype.test.mjs test/v3-reward-sweep-evm-local.test.mjs
