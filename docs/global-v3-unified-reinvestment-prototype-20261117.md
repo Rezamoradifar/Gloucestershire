@@ -47,7 +47,17 @@ migration requires explicit user-account reconciliation, an anti-replay and
 double-claim design, funding evidence, contract and keeper integration tests,
 and a verified plan for users with pending withdrawals. Pausing the old V3
 contract does not itself prove that every payout path and liability is closed.
-The local `unified-v3-migration-boundary` test demonstrates a previously
+The local `unified-v3-migration-boundary` tests demonstrate a previously
 funded withdrawal succeeding after the old vault is paused, changing profit
-liability and the user's pending flag. No migration is performed by these
-prototype tests.
+liability and the user's pending flag. They also demonstrate that queued
+network volume can still be processed and users can still create reward
+groups while paused. Those changes can invalidate a referral-network snapshot.
+No migration is performed by these prototype tests.
+
+The book records each new lot at the current block time. It currently has no
+method to import a historical lot with its original opening time, accrual
+time, claim split and reservations. Do not use it to copy existing positions:
+doing so could change their maturity or accrual and allow the same old claim to
+be counted twice. Preserving existing accounts requires a reviewed import design
+and a proven way to prevent all relevant old-state changes and double claims;
+those capabilities are not yet implemented.
