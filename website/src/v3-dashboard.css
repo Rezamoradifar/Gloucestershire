@@ -29,6 +29,9 @@
 .gv3-position-card strong,.gv3-withdrawal-row strong{font-size:13px;color:#f0e6ce}
 .gv3-position-card b,.gv3-withdrawal-row b{font-size:13px;color:#e9cf9a;font-weight:650;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .gv3-position-card small,.gv3-withdrawal-row small{font-size:11px;color:#b0c1c7;line-height:1.6;overflow-wrap:anywhere}
+.gv3-reinvest-group{border:1px solid #a08a5a66;border-radius:14px;padding:4px 12px;margin:12px 0;background:#d4bb7c08}
+.gv3-reinvest-group>p{color:#c3d0d5;font-size:13px;line-height:1.55}
+.gv3-reinvest-details summary{cursor:pointer;color:#e9cf9a;font-size:13px;font-weight:650;padding:10px 0}
 .gv3-request-status{display:inline-flex;width:max-content;max-width:100%;padding:6px 9px;border-radius:10px;background:#243d40;color:#e7d9ab;font-size:12px}
 .gv3-queue-actions{display:flex;gap:8px;flex-wrap:wrap;max-width:100%}
 .gv3-queue-actions button{font-size:12px;padding:9px 11px;max-width:100%;border-radius:10px}

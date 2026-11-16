@@ -18,6 +18,7 @@ import {V3_HOURLY_TEST} from './v3-site-config';
 import V3ClaimsReadout from './V3ClaimsReadout';
 import V3CycleCard from './V3CycleCard';
 import V3NetworkPanel from './V3NetworkPanel';
+import V3PositionsList from './V3PositionsList';
 import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
 import V3WithdrawalHistory from './V3WithdrawalHistory';
@@ -374,17 +375,7 @@ export default function V3Dashboard(){
       <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {date(view.lastCheckIn)} · {due.length} positions due at the last verified block. Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
-      <section className="gv2-panel"><div className="gv2-panel-head"><h3>My verified V3 positions</h3><span>{view.positions.length} entries</span></div>
-       {view.positions.map(p=><article className="gv3-position-card" key={p.id}>
-        <div><strong>Position #{p.id+1}{p.fromReinvestment?' · from manual reinvestment':''}</strong>
-         <small>Opened {date(p.openedAt)} · Next eligible accrual after {date(p.lastAccruedAt+V3_PERIOD_SECONDS)}</small></div>
-        <div><b><DigitalValue value={show(p.principal)} unit="TEST"/></b><small>Original principal entry</small></div>
-        <div><b><DigitalValue value={show(p.availableDaily)} unit="TEST"/></b><small>Daily available claims</small>
-         <b><DigitalValue value={show(p.availableCompound)} unit="TEST"/></b><small>Profit-on-profit available claims</small></div>
-        <div><b><DigitalValue value={show(p.reservedProfit)} unit="TEST"/></b><small>Reserved for pending withdrawal</small></div>
-       </article>)}
-       {!view.positions.length&&<p>No independently verified V3 positions exist in this wallet.</p>}
-      </section>
+      <V3PositionsList positions={view.positions}/>
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
        <p>100% of each test deposit is routed to designated wallets, including fee wallets. It does not remain as cash in the vault or establish product spending.</p>
        <div className="gv3-input-row"><label htmlFor="v3-deposit">Amount (TEST USDT)</label><input id="v3-deposit" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" placeholder="1000"/>
@@ -394,8 +385,8 @@ export default function V3Dashboard(){
         <button className="gv2-primary" disabled={busy||view.paused||reviewRequired} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
       <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.</p>
-       <div className="gv3-input-row"><label htmlFor="v3-reinvest-id">Position</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
-        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1}</option>)}</select>
+       <div className="gv3-input-row"><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
+        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} TEST profit</option>)}</select>
         <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
         <button disabled={busy||!view.positions.length} onClick={reinvest}>Reinvest recorded TEST claim</button></div></section>
      </>}

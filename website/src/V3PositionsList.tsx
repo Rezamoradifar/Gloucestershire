@@ -1,0 +1,43 @@
+import type {V3WalletPosition} from './v3-chain';
+import {V3_PERIOD_SECONDS} from './v3-cycle';
+import {formatV3Amount as show} from './v3-format';
+import DigitalValue from './DigitalValue';
+
+const PRINCIPAL_LOCK_SECONDS=90*24*60*60;
+const date=(seconds:number)=>seconds?new Date(seconds*1000).toLocaleString('en-US'):'Not recorded';
+
+function PositionRow({position:p}:{position:V3WalletPosition}){
+ return <article className="gv3-position-card">
+  <div><strong>Position #{p.id+1}{p.fromReinvestment?' · from manual reinvestment':''}</strong>
+   <small>Opened {date(p.openedAt)} · Principal unlock after {date(p.openedAt+PRINCIPAL_LOCK_SECONDS)} · Next eligible accrual after {date(p.lastAccruedAt+V3_PERIOD_SECONDS)}</small></div>
+  <div><b><DigitalValue value={show(p.principal)} unit="TEST"/></b><small>Recorded principal</small></div>
+  <div><b><DigitalValue value={show(p.availableDaily)} unit="TEST"/></b><small>Daily available claims</small>
+   <b><DigitalValue value={show(p.availableCompound)} unit="TEST"/></b><small>Profit-on-profit available claims</small></div>
+  <div><b><DigitalValue value={show(p.reservedProfit)} unit="TEST"/></b><small>Reserved for pending withdrawal</small></div>
+ </article>;
+}
+
+export default function V3PositionsList({positions}:{positions:V3WalletPosition[]}){
+ const deposits=positions.filter(position=>!position.fromReinvestment);
+ const reinvestments=positions.filter(position=>position.fromReinvestment);
+ const total=reinvestments.reduce((sum,p)=>({principal:sum.principal+p.principal,
+  daily:sum.daily+p.availableDaily,compound:sum.compound+p.availableCompound,
+  reserved:sum.reserved+p.reservedProfit}),{principal:0n,daily:0n,compound:0n,reserved:0n});
+ return <section className="gv2-panel"><div className="gv2-panel-head"><h3>My verified V3 positions</h3><span>{positions.length} on-chain entries</span></div>
+  {deposits.map(p=><PositionRow position={p} key={p.id}/>)}
+  {reinvestments.length>0&&<div className="gv3-reinvest-group">
+   <article className="gv3-position-card gv3-reinvest-summary">
+    <div><strong>Combined reinvestments</strong><small>{reinvestments.length} separate on-chain {reinvestments.length===1?'position':'positions'} shown together</small></div>
+    <div><b><DigitalValue value={show(total.principal)} unit="TEST"/></b><small>Combined reinvested principal</small></div>
+    <div><b><DigitalValue value={show(total.daily)} unit="TEST"/></b><small>Daily available claims</small>
+     <b><DigitalValue value={show(total.compound)} unit="TEST"/></b><small>Profit-on-profit available claims</small></div>
+    <div><b><DigitalValue value={show(total.reserved)} unit="TEST"/></b><small>Reserved for pending withdrawal</small></div>
+   </article>
+   <p>These amounts are grouped for display. The existing contract still keeps a separate position, accrual time and principal lock for each reinvestment.</p>
+   <details className="gv3-reinvest-details"><summary>View individual contract positions and unlock times</summary>
+    {reinvestments.map(p=><PositionRow position={p} key={p.id}/>)}
+   </details>
+  </div>}
+  {!positions.length&&<p>No independently verified V3 positions exist in this wallet.</p>}
+ </section>;
+}

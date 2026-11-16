@@ -106,6 +106,28 @@ test('one-hour testnet daily and compound claims are real contract state, not a 
   assert.equal(cash.cash,0n);
   assert.equal(cash.accruedProfit,parseEther('1.0025'));
   assert.equal(cash.totalCashShortfall,parseEther('101.0025'));
+  // The currently deployed contract creates distinct principal positions.
+  // A grouped frontend must preserve each position's independent lock.
+  await done(vault.connect(s[1]).reinvest(0,parseEther('0.25')));
+  await eip.request({method:'evm_increaseTime',params:[65]});
+  await eip.request({method:'evm_mine',params:[]});
+  await done(vault.connect(s[1]).reinvest(0,parseEther('0.1')));
+  assert.equal(await vault.positionCount(a[1]),3n);
+  const earlier=await vault.positionOf(a[1],1),later=await vault.positionOf(a[1],2);
+  assert.equal(earlier.principal,parseEther('0.25'));
+  assert.equal(later.principal,parseEther('0.1'));
+  assert.ok(later.openedAt>earlier.openedAt);
+  assert.equal(await vault.principalLiability(),parseEther('100.35'));
+  assert.equal(await vault.profitLiability(),parseEther('0.6525'));
+  assert.equal((await vault.cashStatus()).totalCashShortfall,cash.totalCashShortfall);
+  const saved=await eip.request({method:'evm_snapshot',params:[]});
+  const block=await eip.request({method:'eth_getBlockByNumber',params:['latest',false]});
+  const untilFirstUnlock=Number(earlier.openedAt)+90*86400-Number(BigInt(block.timestamp))+1;
+  await eip.request({method:'evm_increaseTime',params:[untilFirstUnlock]});
+  await eip.request({method:'evm_mine',params:[]});
+  await vault.connect(s[1]).requestPrincipal.staticCall(1,parseEther('0.25'));
+  await assert.rejects(vault.connect(s[1]).requestPrincipal.staticCall(2,parseEther('0.1')));
+  assert.equal(await eip.request({method:'evm_revert',params:[saved]}),true);
   await eip.request({method:'evm_increaseTime',params:[86401]});
   await eip.request({method:'evm_mine',params:[]});
   assert.equal(await vault.isEligible(a[1]),false);

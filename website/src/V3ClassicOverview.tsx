@@ -23,6 +23,7 @@ export default function V3ClassicOverview(props:Props){
  const claims=view?v3PrepareUserClaims(view.ledger):null;
  const ready=Boolean(view&&!view.paused&&!view.suspended&&!busy&&!loading);
  const positions=view?.positions??[];
+ const reinvested=positions.filter(item=>item.fromReinvestment).reduce((sum,item)=>sum+item.principal,0n);
  const position=positions.find(item=>item.id===Number(selectedPosition));
  const requiresPosition=mode!=='deposit';
  const usable=ready&&value.trim()!==''&&(!requiresPosition||positions.length>0);
@@ -51,9 +52,10 @@ export default function V3ClassicOverview(props:Props){
       <button key={item.id} type="button" aria-pressed={mode===item.id} disabled={busy} onClick={()=>setMode(item.id)}>{item.label}</button>)}
     </div>
     <form onSubmit={submit}>
-     {requiresPosition&&<label className="gv1-field">Position
+     {mode==='reinvest'&&view&&<p className="gv2-small">Combined reinvested principal: {money(reinvested)} TEST. Each reinvestment remains a separate contract position with its own lock.</p>}
+     {requiresPosition&&<label className="gv1-field">Source position for recorded profit
       <select value={selectedPosition} disabled={!view||busy||positions.length===0} onChange={event=>onPosition(event.target.value)}>
-       {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1}</option>):<option value="0">No position available</option>}
+       {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} TEST profit</option>):<option value="0">No position available</option>}
       </select></label>}
      <label className="gv1-field" htmlFor="gv1-amount"><span>Amount <small>{!view?'Connect wallet to view balance':mode==='deposit'?
       `Wallet balance: ${money(view.walletTestTokenBalance)} TEST`:position?
