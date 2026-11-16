@@ -47,4 +47,7 @@ migration requires explicit user-account reconciliation, an anti-replay and
 double-claim design, funding evidence, contract and keeper integration tests,
 and a verified plan for users with pending withdrawals. Pausing the old V3
 contract does not itself prove that every payout path and liability is closed.
-No migration is authorized or performed by these prototype tests.
+The local `unified-v3-migration-boundary` test demonstrates a previously
+funded withdrawal succeeding after the old vault is paused, changing profit
+liability and the user's pending flag. No migration is performed by these
+prototype tests.
