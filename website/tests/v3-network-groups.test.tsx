@@ -57,4 +57,19 @@ describe('V3 team group validation',()=>{
   expect(available).toContain('Available to add');expect(available).not.toContain('disabled');
   expect(html).toContain('Add to group');
  });
+ it('enables one-step recording only when bounded preview confirms the stage',()=>{
+  const base={wallet,registered:true,eligible:true,qualifiedDirects:2,requiredDirects:8,qualifiedVolume:0n,requiredVolume:0n,
+   dailyRateBps:70,maximumRateBps:100,referrer:ZeroAddress,referralAvailable:0n,networkAvailable:0n,networkReserved:0n,
+   cumulativeNetwork:0n,networkBranchPage:0,networkBranchCount:0,networkGroupPage:0,networkGroupCount:1,
+   networkBranches:[],paused:false} as any;
+  const group={id:0,stage:0,prepared:0n,branches:2,target:parseEther('500'),reward:parseEther('35')};
+  const markup=(preview:any)=>renderToStaticMarkup(<V3NetworkPanel view={{...base,networkGroups:[{...group,preview}]}}
+   busy={false} onAction={()=>{}} onWithdraw={()=>{}} onBranchPage={()=>{}} onGroupPage={()=>{}}/>);
+  const button=(html:string)=>html.match(/<button[^>]*>Record stage claim<\/button>/)?.[0]??'';
+  const ready=markup({eligible:true,volume:parseEther('500')});
+  expect(button(ready)).not.toContain('disabled');
+  expect(ready).toContain('One wallet transaction can prepare this volume and record the stage claim');
+  expect(button(markup(null))).toContain('disabled');
+  expect(button(markup({eligible:false,volume:parseEther('300')}))).toContain('disabled');
+ });
 });

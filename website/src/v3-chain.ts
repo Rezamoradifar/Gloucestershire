@@ -8,6 +8,7 @@ import {V3_HOURLY_TEST,V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
  type V3SiteReleaseConfig} from './v3-site-config';
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
 import {v3PageRange} from './v3-pagination';
+import {readV3NetworkPreview,type V3NetworkPreview} from './v3-network-preview';
 
 export const V3_EXPLORER='https://testnet.bscscan.com';
 const V3_EXPECTED_MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
@@ -42,6 +43,7 @@ export const V3_ABI=[
  'function rewardGroupCount(address) view returns(uint256)',
  'function rewardProgress(address,uint256) view returns(uint8 stage,uint256 preparedUsd,uint256 cursor,uint256 branches)',
  'function rewardStage(uint256) pure returns(uint256 volumeUsd,uint256 rewardUsd)',
+ 'function rewardPreview(address,uint256) view returns(bool eligible,uint256 volumeUsd,uint256 rewardUsd,uint256[] consume)',
  'function principalLiability() view returns(uint256)',
  'function profitLiability() view returns(uint256)',
  'function reservedForPayout() view returns(uint256)',
@@ -126,7 +128,7 @@ export type V3Withdrawal={
  requestedAt:number;status:number;kind:number
 };
 export type V3NetworkBranch={address:string;volume:bigint;grouped:boolean};
-export type V3NetworkGroup={id:number;stage:number;prepared:bigint;branches:number;target:bigint;reward:bigint};
+export type V3NetworkGroup={id:number;stage:number;prepared:bigint;branches:number;target:bigint;reward:bigint;preview:V3NetworkPreview|null};
 export type V3Snapshot={
  wallet:string;block:number;asOf:number;hash:string;registered:boolean;
  suspended:boolean;vipKyc:boolean;eligible:boolean;
@@ -251,14 +253,21 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   }));
   networkBranches.push(...page);
  }
- const networkGroups=await Promise.all(Array.from({length:groupRange.length},async(_,offset)=>{
-  const id=groupRange.start+offset;
-  const progress=await vault.rewardProgress(wallet,id,options),stage=Number(progress.stage);
-  if(stage<0||stage>14)throw Error('Invalid V3 network stage.');
-  const terms=stage<14?await vault.rewardStage(stage,options):null;
-  return {id,stage,prepared:BigInt(progress.preparedUsd),branches:toSafeCount(progress.branches,'group branch'),
-   target:terms?BigInt(terms.volumeUsd):0n,reward:terms?BigInt(terms.rewardUsd):0n};
- }));
+ const networkGroups:V3NetworkGroup[]=[];
+ for(let start=0;start<groupRange.length;start+=5){
+  const count=Math.min(5,groupRange.length-start);
+  const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
+   const id=groupRange.start+start+offset;
+   const progress=await vault.rewardProgress(wallet,id,options),stage=Number(progress.stage);
+   if(stage<0||stage>14)throw Error('Invalid V3 network stage.');
+   const terms=stage<14?await vault.rewardStage(stage,options):null;
+   const branches=toSafeCount(progress.branches,'group branch');
+   const target=terms?BigInt(terms.volumeUsd):0n,reward=terms?BigInt(terms.rewardUsd):0n;
+   const preview=await readV3NetworkPreview(vault,wallet,id,branches,target,reward,options);
+   return {id,stage,prepared:BigInt(progress.preparedUsd),branches,target,reward,preview};
+  }));
+  networkGroups.push(...page);
+ }
  const count=toSafeCount(nPosition,'position');
  if(count>100)throw Error('V3 account has more than 100 positions; load a verified paginated indexer before displaying incomplete claims.');
  const positions=await Promise.all(Array.from({length:count},async(_,id)=>{

@@ -62,20 +62,23 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
      <button disabled={busy||view.paused||!selected.length} onClick={()=>onAction({kind:'addRewardBranches',group:visibleGroup,branches:selected},'Add selected direct branches to this reward group?')}>Add to group</button></>}</div>
   </section>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Milestone groups</h3><span>Page {view.networkGroupPage+1} · {view.networkGroupCount} total</span></div>
-   {view.networkGroups.map(g=><article className="gv3-network-group" key={g.id}>
+   {view.networkGroups.map(g=>{const directClaim=g.prepared>=g.target||(g.branches<=64&&Boolean(g.preview?.eligible));
+   return <article className="gv3-network-group" key={g.id}>
     <div><span className="gv3-kicker">GROUP #{g.id+1} · {g.branches} BRANCHES</span><h4>{g.stage>=14?'All 14 stages completed':'Stage '+(g.stage+1)+' of 14'}</h4></div>
     {g.stage<14&&<><div><small>Volume prepared</small><strong>{money(g.prepared)} / {money(g.target)} TEST</strong></div>
      <div><small>Stage claim if eligible</small><strong>{money(g.reward)} TEST</strong></div>
+     {g.preview&&<div><small>Eligible volume including prepared</small><strong>{money(g.preview.volume)} / {money(g.target)} TEST</strong></div>}
+     {g.preview?.eligible&&g.prepared<g.target&&<p>One wallet transaction can prepare this volume and record the stage claim.</p>}
      <div className="gv3-queue-actions"><button disabled={busy||view.paused||g.prepared>=g.target} onClick={()=>onAction({kind:'prepareNetworkReward',group:g.id,stage:g.stage,steps:64},'Prepare eligible volume for group '+(g.id+1)+', stage '+(g.stage+1)+'?')}>Prepare volume</button>
-      <button disabled={busy||view.paused||!view.eligible||g.prepared<g.target} onClick={()=>onAction({kind:'claimNetworkRewards',group:g.id,stage:g.stage,count:1},'Record the eligible stage '+(g.stage+1)+' test claim? This is not a cash payment.')}>Record stage claim</button></div></>}
-   </article>)}
+      <button disabled={busy||view.paused||!view.eligible||!directClaim} onClick={()=>onAction({kind:'claimNetworkRewards',group:g.id,stage:g.stage,count:1},'Prepare any remaining eligible volume and record the stage '+(g.stage+1)+' test claim? This is not a cash payment.')}>Record stage claim</button></div></>}
+   </article>})}
    {!view.networkGroups.length&&<p>No reward group has been created for this V3 wallet.</p>}
    <div className="gv2-buttons"><button disabled={busy||view.networkGroupPage===0} onClick={()=>onGroupPage(view.networkGroupPage-1)}>Previous groups</button>
     <button disabled={busy||(view.networkGroupPage+1)*20>=view.networkGroupCount} onClick={()=>onGroupPage(view.networkGroupPage+1)}>Next groups</button></div>
    <details><summary>Review the 14-stage test schedule</summary><div className="gv3-stage-grid">{stages.map((target,index)=>{
     const rate=index<5?7:index<8?6:index<11?5:3;
     return <div key={target}><span>Stage {index+1}</span><b>{target.toLocaleString('en-US')} TEST</b><small>{rate}% · {Math.floor(target*rate/100).toLocaleString('en-US')} TEST claim</small></div>;
-   })}</div><p>Stages use fresh unused volume and branch caps; figures are test claims, not cash payouts.</p></details>
+   })}</div><p>Each stage uses fresh unused group volume. At stage 1, no more than 300 of the 500 TEST target can come from one branch; the remaining 200 must come from other grouped branches. Stage 2 requires 1,000 new TEST of eligible volume. Figures are test claims, not cash payouts.</p></details>
   </section>
  </div>;
 }

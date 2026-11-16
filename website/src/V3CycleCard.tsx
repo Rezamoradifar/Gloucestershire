@@ -21,16 +21,26 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
  const remaining=cycle.secondsRemaining;
  const progress=remaining===null?0:Math.min(1,Math.max(0,1-remaining/V3_PERIOD_SECONDS));
  const due=remaining===0;
- const active=cycle.activityRemaining>0&&view.registered&&!view.suspended&&!view.paused;
+ // A recent check-in alone does not prove contract eligibility. A snapshot can
+ // also expire locally before the next verified block refresh.
+ const active=view.eligible&&cycle.activityRemaining>0&&!view.paused;
+ const activityReason=view.paused?'The test contract is paused.':
+  !view.registered?'Register this test wallet first.':
+  view.suspended?'This test account is suspended.':
+  view.capital<10n*10n**18n?'A minimum of 10 TEST principal is required.':
+  view.capital>50_000n*10n**18n&&!view.vipKyc?'VIP verification is required for this principal amount.':
+  cycle.activityRemaining===0?'Check in on chain to renew the 24-hour activity window.':
+  !view.eligible?'Eligibility was not confirmed at the last verified block. Refresh your account.':
+  'Check-in expires in '+v3Countdown(cycle.activityRemaining)+'.';
  const checkInWait=view.lastCheckIn>0?Math.max(0,view.lastCheckIn+3600-(view.asOf+elapsed)):0;
  return <section className="gv3-cycle" aria-label={V3_HOURLY_TEST?'One-hour test position cycle':'Twenty-four hour position cycle'}>
-  <div className="gv3-cycle-head"><div><span className="gv3-kicker">YOUR DAILY CYCLE</span>
+  <div className="gv3-cycle-head"><div><span className="gv3-kicker">{V3_HOURLY_TEST?'YOUR ONE-HOUR TEST CYCLE':'YOUR DAILY CYCLE'}</span>
    <h2>Track every eligible period</h2><p>Each position starts its own {V3_HOURLY_TEST?'one-hour test':'24-hour'} cycle.</p></div>
-   <span className={'gv3-cycle-state '+(active?'active':'')}><span/> {active?'Activity active':'Check-in required'}</span></div>
+   <span className={'gv3-cycle-state '+(active?'active':'')}><span/> {active?'Eligible at last check':'Eligibility not confirmed'}</span></div>
   <div className="gv3-cycle-body">
    <div className="gv3-cycle-clock">
     <div className="gv3-clock-console" role="timer" aria-live="off">
-     <div className="gv3-clock-console-head"><span>DAILY CYCLE</span><Clock3/></div>
+     <div className="gv3-clock-console-head"><span>{V3_HOURLY_TEST?'ONE-HOUR TEST CYCLE':'DAILY CYCLE'}</span><Clock3/></div>
      <DigitalValue size="clock" value={remaining===null?'--:--:--':v3Countdown(remaining)}
       label={remaining===null?'No active position':`Estimated time remaining ${v3Countdown(remaining)}`}/>
      <div className="gv3-clock-console-foot"><span>{remaining===null?'NO POSITION':due?'DUE · VERIFY ON CHAIN':'HOURS : MIN : SEC'}</span><span>{V3_HOURLY_TEST?'1H TEST':'24H'}</span></div>
@@ -45,15 +55,15 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
    </div>
    <div className="gv3-cycle-side">
     <div className="gv3-cycle-forecast"><span className="gv3-kicker gv3-forecast-kicker">LIVE ESTIMATED PROGRESS</span>
-     <strong className="gv3-forecast-main"><DigitalValue value={money(cycle.progressDaily+cycle.progressCompound)} unit="TEST USDT"/></strong>
-     <p>A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.</p>
-     <div className="gv3-forecast-row gv3-forecast-row--daily"><span>Daily estimate so far</span><b><DigitalValue value={money(cycle.progressDaily)}/></b></div>
-     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>Profit-on-profit estimate so far</span><b><DigitalValue value={money(cycle.progressCompound)}/></b></div>
+     <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="TEST USDT"/></strong>
+     <p>{active?'A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.':'Progress is hidden while eligibility is not confirmed. Refresh or check in as needed.'}</p>
+     <div className="gv3-forecast-row gv3-forecast-row--daily"><span>{V3_HOURLY_TEST?'Cycle base estimate so far':'Daily estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressDaily):'—'}/></b></div>
+     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>Profit-on-profit estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>
      <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="TEST USDT"/></b></div>
-     <small>At the verified {view.dailyRateBps/100}% test rate, if each position becomes eligible. Estimates are not recorded claims, cash or guaranteed profit.</small>
+     <small>At the verified {view.dailyRateBps/100}% test rate, if each position becomes eligible. {V3_HOURLY_TEST&&'The full daily test rate is applied once per eligible one-hour test cycle; this is accelerated test accounting. '}Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>
-    <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Check-in active':'Check in to qualify'}</strong>
-     <small>{active?'Expires in '+v3Countdown(cycle.activityRemaining):'A signed check-in is required for an eligible cycle.'}
+    <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Account eligible':'Eligibility needs attention'}</strong>
+     <small>{activityReason}
       {checkInWait>0&&' · Next check-in in '+v3Countdown(checkInWait)}</small></div>
      <button type="button" disabled={busy||!view.registered||view.suspended||view.paused||checkInWait>0} onClick={onCheckIn}>
       <RefreshCw size={14}/> Check in</button></div>

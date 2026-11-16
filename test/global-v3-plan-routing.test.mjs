@@ -66,6 +66,12 @@ test('V3 routes original fee shares and enforces qualification, milestone and fu
   await done(vault.connect(s[1]).checkIn());
   await done(vault.connect(s[1]).createRewardGroup([a[2],a[3],a[4],a[5]]));
   await fail(vault.connect(s[1]).createRewardGroup.staticCall([a[2]]));
+  const preview=await vault.rewardPreview(a[1],0);
+  assert.equal(preview.eligible,true);
+  assert.equal(preview.consume.reduce((sum,value)=>sum+value,0n),to(500));
+  assert.equal((await vault.rewardProgress(a[1],0)).preparedUsd,0n);
+  await vault.connect(s[1]).claimNetworkRewards.staticCall(0,0,1);
+  assert.equal((await vault.rewardProgress(a[1],0)).preparedUsd,0n);
   await done(vault.connect(s[1]).prepareNetworkReward(0,0,64));
   assert.equal((await vault.rewardProgress(a[1],0)).preparedUsd,to(500));
   await done(vault.connect(s[1]).claimNetworkRewards(0,0,1));

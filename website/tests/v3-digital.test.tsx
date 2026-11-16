@@ -16,7 +16,7 @@ describe('digital account instruments',()=>{
   expect(renderToStaticMarkup(<DigitalValue value="<0.000001"/>)).toContain('aria-label="&lt;0.000001"');
  });
  it('shows the 24-hour timer using the verified position timestamp',()=>{
-  const view={asOf:1000,lastCheckIn:1000,dailyRateBps:70,registered:true,
+  const view={asOf:1000,lastCheckIn:1000,dailyRateBps:70,registered:true,eligible:true,capital:to('1000'),vipKyc:false,
    suspended:false,paused:false,positions:[{id:0,principal:to('1000'),
     compoundedBasis:to('10'),lastAccruedAt:1000}]} as V3Snapshot;
   const html=renderToStaticMarkup(<V3CycleCard view={view} busy={false} onCheckIn={()=>{}} onPositions={()=>{}}/>);
