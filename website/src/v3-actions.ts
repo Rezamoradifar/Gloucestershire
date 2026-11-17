@@ -441,8 +441,9 @@ export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,w
   return {hash:receipt.hash,destination:plan.destination,amount};
  }finally{browser?.destroy();session.provider.destroy();}
 }
-// Experimental isolated BNB-testnet request for one verified group page. It is
-// not wired to the website: manager approval, funding and payment are separate.
+// Experimental isolated BNB-testnet request for one verified group page.
+// The dashboard route remains disabled in the read-only preview; manager
+// approval, funding and payment are separate.
 export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider,wallet:string,
  kind:'profit'|'principal',positionId:number,start:number,amount:bigint,config:V3SiteReleaseConfig|null,
  options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){

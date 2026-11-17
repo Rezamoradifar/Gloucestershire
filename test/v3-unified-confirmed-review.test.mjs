@@ -6,6 +6,7 @@ import test from 'node:test';
 import {Interface,getAddress,keccak256} from 'ethers';
 import {openUnifiedJournal} from '../scripts/v3-unified-keeper-journal.mjs';
 import {reviewUnifiedConfirmedJournal} from '../scripts/review-v3-unified-confirmed.mjs';
+import {recordUnifiedRecoveryObservation} from '../scripts/record-v3-unified-recovery-observation.mjs';
 
 const address=n=>getAddress('0x'+n.toString(16).padStart(40,'0'));
 const hash=n=>'0x'+n.toString(16).padStart(64,'0');
@@ -102,5 +103,60 @@ test('canonical receipt review proposes only the retry cursor without changing t
   f.state.tooRecent=false;f.state.memberMismatch=true;await assert.rejects(call(),/CURSOR_MISMATCH/);
   f.state.memberMismatch=false;f.state.receiptReorg=true;await assert.rejects(call(),/CANONICALITY_MISMATCH/);
   assert.equal(fs.readFileSync(file,'utf8'),before);
+ });
+});
+
+test('durable recovery observation never clears journal, advances cursor or authorizes retry',async()=>{
+ const f=confirmedFixture();
+ await withRecord(f.record,async journalDirectory=>{
+  const pending=path.join(journalDirectory,'pending.json'),file=path.join(journalDirectory,'recovery-observation.json');
+  const before=fs.readFileSync(pending,'utf8');
+  const options={provider:f.provider,proof:f.proof,operator,journalDirectory,makeContract:f.makeContract};
+  await assert.rejects(recordUnifiedRecoveryObservation(options),/DISABLED/);
+  assert.equal(fs.existsSync(file),false);
+  f.state.receiptMissing=true;
+  const missing=await recordUnifiedRecoveryObservation({...options,enabled:true});
+  assert.equal(missing.state,'RECEIPT_NOT_OBSERVED');assert.equal(fs.existsSync(file),false);
+  f.state.receiptMissing=false;
+  const saved=await recordUnifiedRecoveryObservation({...options,enabled:true});
+  assert.equal(saved.state,'CONFIRMED_OBSERVATION_RECORDED');
+  assert.equal(saved.safeToRetry,false);assert.equal(saved.cursorPersisted,false);
+  assert.equal(saved.journalCleared,false);assert.equal(saved.transactionSent,false);
+  assert.deepEqual(saved.retryCursor,{member:0,position:4,lot:0});
+  assert.deepEqual(saved.receiptAnchor,{number:110,hash:hash(110)});
+  assert.equal(fs.readFileSync(pending,'utf8'),before);
+  assert.equal(fs.statSync(file).mode&0o077,0);
+  const stored=fs.readFileSync(file,'utf8');
+  const second=await recordUnifiedRecoveryObservation({...options,enabled:true});
+  assert.equal(second.state,saved.state);assert.equal(fs.readFileSync(file,'utf8'),stored);
+  const altered=JSON.parse(stored);altered.retryCursor.lot++;
+  fs.writeFileSync(file,JSON.stringify(altered)+'\n');
+  await assert.rejects(recordUnifiedRecoveryObservation({...options,enabled:true}),/OBSERVATION_MISMATCH/);
+  assert.equal(fs.readFileSync(pending,'utf8'),before);
+  fs.writeFileSync(file,stored);
+  const send=f.provider.send;
+  try{
+   f.provider.send=async(name,args)=>name==='eth_getBlockByNumber'&&args[0]==='0x6e'?
+    {number:'0x6e',hash:hash(111),timestamp:'0x3e8'}:send(name,args);
+   await assert.rejects(recordUnifiedRecoveryObservation({...options,enabled:true}),/BLOCK_CHANGED/);
+  }finally{f.provider.send=send;}
+  assert.equal(fs.readFileSync(file,'utf8'),stored);assert.equal(fs.readFileSync(pending,'utf8'),before);
+  fs.chmodSync(file,0o644);
+  await assert.rejects(recordUnifiedRecoveryObservation({...options,enabled:true}),/NOT_PRIVATE/);
+ });
+});
+
+test('failed observation rename leaves journal and previous observation intact',async()=>{
+ const f=confirmedFixture();
+ await withRecord(f.record,async journalDirectory=>{
+  const options={provider:f.provider,proof:f.proof,operator,journalDirectory,makeContract:f.makeContract,enabled:true};
+  await recordUnifiedRecoveryObservation(options);
+  const file=path.join(journalDirectory,'recovery-observation.json'),pending=path.join(journalDirectory,'pending.json');
+  const previous=fs.readFileSync(file,'utf8'),journalBefore=fs.readFileSync(pending,'utf8');
+  const rename=fs.renameSync;
+  try{fs.renameSync=()=>{throw Error('simulated disk failure');};await assert.rejects(recordUnifiedRecoveryObservation(options),/simulated disk failure/);}
+  finally{fs.renameSync=rename;}
+  assert.equal(fs.readFileSync(file,'utf8'),previous);assert.equal(fs.readFileSync(pending,'utf8'),journalBefore);
+  assert.equal(fs.readdirSync(journalDirectory).some(name=>name.startsWith('.recovery-observation-')),false);
  });
 });

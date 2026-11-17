@@ -43,6 +43,8 @@ size for the parent and both components; it does not install or deploy them.
 `scripts/v3-unified-deploy-preflight.mjs` is an unsigned chain-97 deployment
 estimate, not an installer. It performs no deployment or site change and
 always reports that the release is not ready.
+The separate `/unified-test/` site preflight also only checks pinned source and
+deployment data; it does not install or prove that the route exists.
 
 The read-only unified keeper preflight now verifies a supplied testnet
 deployment receipt and all three pinned runtime hashes, checks that the book
@@ -76,6 +78,8 @@ until canonical reconciliation and durable cursor checkpointing are designed.
 An additional read-only confirmation review validates the deployment,
 transaction, event and cursor before suggesting the original retry cursor for
 a rescan. It does not clear the journal or authorize a transaction retry.
+An opt-in local observation file can retain that verified finding and its
+block anchors, without clearing the journal or enabling a new transaction.
 The sender has no command-line entry point, installer, scheduler, recovery
 tool or live deployment. A dedicated signer and a single shared journal path
 would be required to avoid independent processes bypassing each other's locks.
@@ -128,10 +132,13 @@ history separately from vault events. Experimental registration and deposit
 adapters and their guarded form routes have passed local tests. Wallet
 actions and the network-volume keeper are not yet enabled. The
 prototype also includes a locally tested one-page withdrawal-request adapter;
-it does not approve, fund or pay the request and is not wired to the UI. The
+it does not approve, fund or pay the request, and its form remains disabled in
+the read-only preview. The
 check-in adapter is likewise local-test-only and records activity without
 accruing or transferring profit; a separately verified keeper remains necessary.
 The guarded dashboard route for that check-in remains disabled in the preview.
+The preview links to the separate previous hourly-test account and explicitly
+states that its positions and balances have not been imported or combined.
 The existing accrual keeper only sees a position-level timestamp: it cannot
 correctly schedule the grouped position's independent lots. The prototype's
 default accrual call covers only the first eight lots; later lots require

@@ -8,7 +8,7 @@ import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdrawal} from './v3-chain';
-import {sendV3Action,sendV3FundWithdrawal,readV3ManagerQueue,
+import {sendV3Action,sendV3FundWithdrawal,sendV3UnifiedPageWithdrawal,readV3ManagerQueue,
  type V3Action,type V3TransactionProgress} from './v3-actions';
 import {V3TransactionProgressTracker,v3TransactionProgressText} from './v3-transaction-progress';
 import {runUnifiedReinvestment} from './v3-unified-reinvestment-flow';
@@ -20,11 +20,14 @@ import {V3_HOURLY_TEST} from './v3-site-config';
 import V3ClaimsReadout from './V3ClaimsReadout';
 import V3CycleCard from './V3CycleCard';
 import V3UnifiedActivity from './V3UnifiedActivity';
+import V3SeparateTestAccounts from './V3SeparateTestAccounts';
 import {sendV3UnifiedCheckIn} from './v3-unified-checkin';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3PositionsList from './V3PositionsList';
 import V3UnifiedPositionPage from './V3UnifiedPositionPage';
 import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
+import V3UnifiedWithdrawalForm from './V3UnifiedWithdrawalForm';
+import {prepareUnifiedPageAction} from './v3-unified-position';
 import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
 import V3WithdrawalHistory from './V3WithdrawalHistory';
@@ -300,6 +303,37 @@ export default function V3Dashboard(){
     ' TEST. Manager approval and actual funding required.');
   }catch(e){setError((e as Error).message);}
  };
+ async function requestUnifiedPage(kind:'profit'|'principal'){
+  if(busy||loading||inFlight.current)return;
+  if(UNIFIED_PREVIEW_READ_ONLY){setError('The unified testnet preview is read-only.');return;}
+  if(!wallet||!config?.unified||chain!==97||!view?.unifiedPage){setError('Connect and verify your unified BNB Testnet position.');return;}
+  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  const page=view.unifiedPage;
+  if(page.wallet.toLowerCase()!==wallet.toLowerCase()||page.start!==unifiedPageStart||page.limit!==8){
+   setError('The verified position page changed. Refresh before continuing.');return;
+  }
+  let n:bigint;
+  try{
+   n=amount(value);
+   prepareUnifiedPageAction(page,{registered:view.registered,suspended:view.suspended,paused:view.paused,
+    pendingWithdrawal:view.pendingWithdrawal,nextRequestAt:view.nextRequestAt,requestCap:view.ledger.requestCap},kind,n);
+  }catch(e){setError(e instanceof Error?e.message:'Invalid withdrawal request.');return;}
+  const fee=n*(kind==='principal'?3000n:300n)/10000n;
+  if(!window.confirm('BNB TESTNET ONLY\n\nRequest '+kind+' withdrawal from the selected reinvestment page?'+
+   '\nGross: '+formatUnits(n,18)+' TEST; fee: '+formatUnits(fee,18)+' TEST; net: '+formatUnits(n-fee,18)+
+   ' TEST. Manager approval and actual test-token funding are required. The wallet must sign one transaction.'))return;
+  const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
+  inFlight.current=true;setBusy(true);setError('');setNotice('Checking the test withdrawal request…');setTxHash('');setTransactionProgress(null);
+  const tracker=new V3TransactionProgressTracker();let progressHash:string|undefined;
+  const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
+  try{
+   const result=await sendV3UnifiedPageWithdrawal(p,wallet,kind,page.positionId,page.start,n,config,
+    {enabled:!UNIFIED_PREVIEW_READ_ONLY,onProgress:report});
+   setTxHash(result.hash);setNotice('Test withdrawal requested. Approval and funding are separate.');setValue('');await refresh();
+  }catch(e){const message=e instanceof Error?e.message:'V3 withdrawal request not confirmed.';setNotice('');setError(message);
+   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+  finally{inFlight.current=false;setBusy(false);}
+ }
  async function reinvestUnified(n:bigint){
   if(busy||inFlight.current)return;
   if(UNIFIED_PREVIEW_READ_ONLY){setError('The unified testnet preview is read-only.');return;}
@@ -388,6 +422,7 @@ export default function V3Dashboard(){
     </section>}
     {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
     {config.unified&&<div className="gv3-notice" role="status"><Info size={16}/> Unified testnet is a read-only preview. Wallet transactions are not enabled.</div>}
+    {config.unified&&<V3SeparateTestAccounts config={config}/>}
     {error&&<p className="gv2-error" role="alert">{error}</p>}
     {readError&&<p className="gv2-error" role="alert">{readError}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
@@ -488,6 +523,12 @@ export default function V3Dashboard(){
        <label htmlFor="v3-request-amount">TEST USDT amount</label><input id="v3-request-amount" value={value} inputMode="decimal" onChange={e=>setValue(e.target.value)} placeholder="0.00"/>
        <button className="gv2-primary" disabled={busy||!view.registered||view.pendingWithdrawal||view.paused||Boolean(config.unified)} onClick={()=>request()}>Review & sign withdrawal request</button>
       </div>
+      {config.unified&&view.unifiedPage&&<V3UnifiedWithdrawalForm page={view.unifiedPage}
+       busy={busy||loading||reviewRequired||view.unifiedPage.start!==unifiedPageStart} readOnly={UNIFIED_PREVIEW_READ_ONLY}
+       registered={view.registered} suspended={view.suspended} paused={view.paused} pendingWithdrawal={view.pendingWithdrawal}
+       nextRequestAt={view.nextRequestAt} requestCap={view.ledger.requestCap} value={value} onValue={setValue}
+       onSubmit={kind=>void requestUnifiedPage(kind)} onPrevious={()=>setUnifiedPageStart(Math.max(0,view.unifiedPage!.start-view.unifiedPage!.limit))}
+       onNext={()=>setUnifiedPageStart(view.unifiedPage!.start+view.unifiedPage!.limit)}/>}
       <h3>Your recent V3 requests</h3>{view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
      </section>}

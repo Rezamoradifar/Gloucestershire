@@ -21,10 +21,16 @@ const safeAddress=value=>{
 };
 
 export async function reviewUnifiedConfirmedJournal({provider,proof,operator:expectedOperator,journalDirectory,makeContract}){
- const expected=safeAddress(expectedOperator);
  const journal=openUnifiedJournal(journalDirectory);
  try{
-  const record=journal.read();
+  return await reviewUnifiedConfirmedRecord({provider,proof,operator:expectedOperator,record:journal.read(),makeContract});
+ }finally{journal.close();}
+}
+
+// Caller-owned lock is required if the result will be persisted. This helper
+// only observes and checks a record; it cannot send or modify any files.
+export async function reviewUnifiedConfirmedRecord({provider,proof,operator:expectedOperator,record,makeContract}){
+  const expected=safeAddress(expectedOperator);
   if(!record)return {state:'NO_JOURNAL',safeToRetry:false,transactionSent:false,cursorPersisted:false};
   if(!['accrueDaily','accrueReinvestmentPage'].includes(record.method)||
      !index(record.positionId)||typeof record.transactionData!=='string'||
@@ -74,6 +80,6 @@ export async function reviewUnifiedConfirmedJournal({provider,proof,operator:exp
    nonce:record.nonce,data:record.transactionData});
   await recheckUnifiedBlock(provider,verified.block);
   return {state:'CONFIRMED_REQUIRES_RECONCILIATION',chainId:97,hash:record.hash,
-   anchor:verified.block,retryCursor:retry,safeToRetry:false,transactionSent:false,cursorPersisted:false};
- }finally{journal.close();}
+   anchor:verified.block,receiptAnchor:{number:receipt.blockNumber,hash:receipt.blockHash},
+   retryCursor:retry,safeToRetry:false,transactionSent:false,cursorPersisted:false};
 }
