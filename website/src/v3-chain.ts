@@ -3,12 +3,13 @@
 // deployment has been verified against its actual on-chain runtime bytecode.
 // No default/fabricated V3 address, old V2 state, mainnet, or demo balances.
 import {BrowserProvider,Contract,FetchRequest,JsonRpcProvider,getAddress,
- isAddress,keccak256,ZeroAddress,type Eip1193Provider} from 'ethers';
+ isAddress,keccak256,toQuantity,ZeroAddress,type Eip1193Provider} from 'ethers';
 import {V3_HOURLY_TEST,V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
  type V3SiteReleaseConfig} from './v3-site-config';
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
 import {v3PageRange} from './v3-pagination';
 import {readV3NetworkPreview,type V3NetworkPreview} from './v3-network-preview';
+import {readUnifiedPositionPage,type UnifiedBookReader,type UnifiedPositionPage,type UnifiedVaultReader} from './v3-unified-position';
 
 export const V3_EXPLORER='https://testnet.bscscan.com';
 const V3_EXPECTED_MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
@@ -20,6 +21,10 @@ export const V3_ABI=[
  'function asset() view returns(address)',
  'function ACCRUAL_PERIOD() view returns(uint256)',
  'function feeReceiver() view returns(address)',
+ 'function reinvestmentBook() view returns(address)',
+ 'function networkPlan() view returns(address)',
+ 'function vault() view returns(address)',
+ 'function reinvestmentPositionPlusOne(address) view returns(uint256)',
  'function FEE_WALLET_1() view returns(address)',
  'function FEE_WALLET_2() view returns(address)',
  'function OPERATIONS_WALLET() view returns(address)',
@@ -98,6 +103,11 @@ export const V3_ABI=[
  'event WithdrawalExistingCashReserved(uint256 indexed id,uint256 gross)',
  'event WithdrawalPaid(uint256 indexed id,address indexed beneficiary,uint256 net,uint256 fee)'
 ];
+export const V3_UNIFIED_BOOK_ABI=[
+ 'function vault() view returns(address)',
+ 'function position(address) view returns(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint256 cumulativeDaily,uint256 cumulativeCompound,uint256 lots)',
+ 'function lot(address,uint256) view returns(tuple(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint64 openedAt,uint64 lastAccruedAt))'
+];
 export const V3_TEST_TOKEN_ABI=[
  'function balanceOf(address) view returns(uint256)',
  'function allowance(address,address) view returns(uint256)',
@@ -117,7 +127,12 @@ const withTimeout=<T,>(promise:Promise<T>,milliseconds:number)=>Promise.race([
 export const v3ReleaseConfig:V3SiteReleaseConfig|null=v3ParseReleaseConfig({
  address:import.meta.env.VITE_V3_CONTRACT_ADDRESS,
  runtimeHash:import.meta.env.VITE_V3_RUNTIME_HASH,
- deploymentTx:import.meta.env.VITE_V3_DEPLOYMENT_TX
+ deploymentTx:import.meta.env.VITE_V3_DEPLOYMENT_TX,
+ unifiedMode:import.meta.env.VITE_V3_UNIFIED_MODE,
+ book:import.meta.env.VITE_V3_UNIFIED_BOOK,
+ bookRuntimeHash:import.meta.env.VITE_V3_UNIFIED_BOOK_HASH,
+ network:import.meta.env.VITE_V3_UNIFIED_NETWORK,
+ networkRuntimeHash:import.meta.env.VITE_V3_UNIFIED_NETWORK_HASH
 });
 export type V3WalletPosition=V3ClaimPosition&{
  openedAt:number;lastAccruedAt:number;reservedPrincipal:bigint;
@@ -142,6 +157,7 @@ export type V3Snapshot={
  networkGroups:V3NetworkGroup[];networkGroupCount:number;networkLoaded:boolean;
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
+ unifiedPage?:UnifiedPositionPage|null;
  withdrawCount:number;memberCount:number;totalWithdrawalCount:number;
  walletTestTokenBalance:bigint;allowance:bigint;gasWei:bigint;
  ledger:V3ClaimLedger;
@@ -193,7 +209,27 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
   // Never show an accelerated clock against the existing 24-hour contract.
   if(V3_HOURLY_TEST&&BigInt(await vault.ACCRUAL_PERIOD(options))!==3600n)
    throw Error('The isolated hourly test contract period was not verified.');
-  return {provider,vault,options,block,config,deploymentBlock:receipt.blockNumber};
+  let network=vault,book:Contract|null=null;
+  if(config.unified){
+   if(!V3_HOURLY_TEST)throw Error('The unified release requires the one-hour test profile.');
+   const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
+    vault.reinvestmentBook(options),vault.networkPlan(options),
+    provider.getCode(config.unified.book,block.number),provider.getCode(config.unified.network,block.number)
+   ]);
+   if(getAddress(bookAddress)!==config.unified.book||getAddress(networkAddress)!==config.unified.network||
+      bookCode==='0x'||networkCode==='0x'||keccak256(bookCode).toLowerCase()!==config.unified.bookRuntimeHash||
+      keccak256(networkCode).toLowerCase()!==config.unified.networkRuntimeHash)
+    throw Error('The unified testnet components do not match the pinned deployment.');
+   book=new Contract(config.unified.book,V3_UNIFIED_BOOK_ABI,provider);
+   network=new Contract(config.unified.network,V3_ABI,provider);
+   const [bookVault,networkVault]=await Promise.all([book.vault(options),network.vault(options)]);
+   if(getAddress(bookVault)!==config.address||getAddress(networkVault)!==config.address)
+    throw Error('The unified components are not bound to this testnet vault.');
+  }
+  const canonical=await provider.getBlock(block.number);
+  if(!canonical?.hash||canonical.hash.toLowerCase()!==block.hash.toLowerCase())
+   throw Error('The verified V3 block changed.');
+  return {provider,vault,network,book,options,block,config,deploymentBlock:receipt.blockNumber};
  };
  // Try independent sources sequentially; retain the successful provider only
  // for the scoped read, so its connection is not destroyed prematurely.
@@ -213,8 +249,8 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
 }
 export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:string,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,
- networkPage:{branches:number;groups:number}|null=null):Promise<V3Snapshot>{
- const {vault,provider,options,block}=await v3ReadSession(walletProvider,wallet,config);
+ networkPage:{branches:number;groups:number}|null=null,unifiedPageStart=0):Promise<V3Snapshot>{
+ const {vault,network,book,provider,options,block}=await v3ReadSession(walletProvider,wallet,config);
  try{
  wallet=getAddress(wallet);
  const [user,eligible,nPosition,nWithdraw,tWithdraw,nMember,cap,paused,managerRole,funderRole,cashStatus]=await Promise.all([
@@ -232,10 +268,10 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   new Contract(V3_TEST_TOKEN,V3_TEST_TOKEN_ABI,provider).allowance(wallet,config!.address,options),
   provider.getBalance(wallet,block.number),vault.networkAvailable(wallet,options),
   vault.networkReserved(wallet,options),vault.cumulativeNetwork(wallet,options),
-  vault.qualifiedDirects(wallet,options)
+  network.qualifiedDirects(wallet,options)
  ]);
  const [rawBranches,rawGroups]=networkPage?
-  await Promise.all([vault.networkBranchCount(wallet,options),vault.rewardGroupCount(wallet,options)]):[0n,0n];
+  await Promise.all([network.networkBranchCount(wallet,options),network.rewardGroupCount(wallet,options)]):[0n,0n];
  const branchCount=toSafeCount(rawBranches,'network branch');
  const groupCount=toSafeCount(rawGroups,'network group');
  const branchRange=v3PageRange(branchCount,networkPage?.branches??0,20);
@@ -245,9 +281,9 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
  for(let start=0;start<branchRange.length;start+=5){
   const count=Math.min(5,branchRange.length-start);
   const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
-   const address=getAddress(await vault.networkBranch(wallet,branchRange.start+start+offset,options));
+   const address=getAddress(await network.networkBranch(wallet,branchRange.start+start+offset,options));
    const [volume,grouped]=await Promise.all([
-    vault.branchVolumeUsd(wallet,address,options),vault.groupedBranch(wallet,address,options)
+    network.branchVolumeUsd(wallet,address,options),network.groupedBranch(wallet,address,options)
    ]);
    return {address,volume:BigInt(volume),grouped:Boolean(grouped)};
   }));
@@ -258,12 +294,12 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   const count=Math.min(5,groupRange.length-start);
   const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
    const id=groupRange.start+start+offset;
-   const progress=await vault.rewardProgress(wallet,id,options),stage=Number(progress.stage);
+   const progress=await network.rewardProgress(wallet,id,options),stage=Number(progress.stage);
    if(stage<0||stage>14)throw Error('Invalid V3 network stage.');
-   const terms=stage<14?await vault.rewardStage(stage,options):null;
+   const terms=stage<14?await network.rewardStage(stage,options):null;
    const branches=toSafeCount(progress.branches,'group branch');
    const target=terms?BigInt(terms.volumeUsd):0n,reward=terms?BigInt(terms.rewardUsd):0n;
-   const preview=await readV3NetworkPreview(vault,wallet,id,branches,target,reward,options);
+   const preview=await readV3NetworkPreview(network,wallet,id,branches,target,reward,options);
    return {id,stage,prepared:BigInt(progress.preparedUsd),branches,target,reward,preview};
   }));
   networkGroups.push(...page);
@@ -287,6 +323,19 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
    fromReinvestment:Boolean(p.fromReinvestment)
   } as V3WalletPosition;
  }));
+ let unifiedPage:UnifiedPositionPage|null=null;
+ if(config!.unified){
+  if(!book)throw Error('The verified reinvestment book is unavailable.');
+  const plusOne=toSafeCount(await vault.reinvestmentPositionPlusOne(wallet,options),'unified position');
+  const flagged=positions.filter(position=>position.fromReinvestment);
+  if((plusOne===0&&flagged.length!==0)||(plusOne!==0&&
+      (plusOne>positions.length||flagged.length!==1||flagged[0].id!==plusOne-1)))
+   throw Error('The verified unified position index is inconsistent.');
+  if(plusOne!==0){
+   unifiedPage=await readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,
+    book as unknown as UnifiedBookReader,wallet,plusOne-1,block.number,block.timestamp,unifiedPageStart);
+  }
+ }
  const withdrawCount=toSafeCount(nWithdraw,'withdrawal');
  const withdrawalIds=await Promise.all(Array.from({length:Math.min(20,withdrawCount)},(_,i)=>
   vault.userWithdrawalId(wallet,withdrawCount-1-i,options) as Promise<bigint>));
@@ -314,11 +363,16 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
  const t=Number(tier);
  if(t<0||t>4)throw Error('Unknown verified V3 tier');
  const [rate,eligibleVolume,terms]=await Promise.all([
-  vault.effectiveDailyBps(wallet,options),vault.qualifiedVolume(wallet,t,options),vault.upgradeTerms(t,options)
+  vault.effectiveDailyBps(wallet,options),network.qualifiedVolume(wallet,t,options),vault.upgradeTerms(t,options)
  ]);
  const dailyRateBps=Number(rate);
  if(![50,70,90,100,110,120,130,150,180,200].includes(dailyRateBps))
   throw Error('V3 deployed daily rate differs from the reviewed test contract.');
+ if(config!.unified){
+  const canonical=await provider.send('eth_getBlockByNumber',[toQuantity(block.number),false]) as {hash?:unknown}|null;
+  if(!canonical||typeof canonical.hash!=='string'||canonical.hash.toLowerCase()!==block.hash!.toLowerCase())
+   throw Error('The confirmed unified account block changed.');
+ }
  return {
   wallet,block:block.number,asOf:block.timestamp,hash:block.hash!,
   registered:Boolean(user.registered),suspended:Boolean(user.suspended),
@@ -337,7 +391,7 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   networkBranches,networkBranchCount:branchCount,networkGroups,networkGroupCount:groupCount,networkLoaded:Boolean(networkPage),
   networkBranchPage:branchRange.page,networkGroupPage:groupRange.page,
   canManage:Boolean(canManage),canFund:Boolean(canFund),
-  positions,withdrawals,withdrawCount,memberCount:toSafeCount(nMember,'member'),
+  positions,withdrawals,...(config!.unified?{unifiedPage}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   gasWei:BigInt(gasWei),ledger

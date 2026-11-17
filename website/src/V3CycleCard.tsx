@@ -15,6 +15,12 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
   const timer=setInterval(()=>setElapsed(Math.max(0,Math.floor((performance.now()-anchor)/1000))),1000);
   return()=>clearInterval(timer);
  },[view.asOf]);
+ if(view.unifiedPage!==undefined)return <section className="gv3-cycle" aria-label="Unified test cycle">
+  <div className="gv3-cycle-head"><div><span className="gv3-kicker">ONE-HOUR TEST CYCLE</span>
+   <h2>Each addition has its own cycle</h2><p>Review individual accrual times in the reinvestment position.</p></div></div>
+  <div className="gv3-cycle-copy"><p>Estimates are unavailable while the unified account is in read-only preview.</p>
+   <button type="button" onClick={onPositions}>View positions <ArrowRight size={15}/></button></div>
+ </section>;
  let cycle:ReturnType<typeof v3CycleView>;
  try{cycle=v3CycleView(view.positions,view.asOf,elapsed,view.lastCheckIn,view.dailyRateBps);}
  catch{return <section className="gv3-cycle-error" role="alert">Cycle timing could not be verified. Refresh the account before acting.</section>;}

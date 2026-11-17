@@ -3,9 +3,12 @@ import fs from 'node:fs';
 import test from 'node:test';
 import {execFileSync} from 'node:child_process';
 import ganache from 'ganache';
-import {BrowserProvider,Contract,ContractFactory,ZeroAddress,parseEther} from 'ethers';
+import {BrowserProvider,Contract,ContractFactory,ZeroAddress,keccak256,parseEther} from 'ethers';
 import {compileUnifiedTestnet} from '../scripts/compile-global-v3-unified-testnet.mjs';
 import {planUnifiedLotPage} from '../scripts/plan-v3-unified-accrual.mjs';
+import {scanUnifiedAccrual} from '../scripts/scan-v3-unified-accrual.mjs';
+import {checkUnifiedKeeper} from '../scripts/check-v3-unified-keeper.mjs';
+import {simulateUnifiedAccrual} from '../scripts/simulate-v3-unified-keeper.mjs';
 
 const MOCK='0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89';
 const E=value=>parseEther(String(value));
@@ -251,8 +254,10 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   const vault=await new ContractFactory(artifact.abi,'0x'+artifact.evm.bytecode.object,manager)
    .deploy(await manager.getAddress(),MOCK,await manager.getAddress(),{gasLimit:25000000});
   await vault.waitForDeployment();
+  const deploymentReceipt=await vault.deploymentTransaction().wait();
   const book=new Contract(await vault.reinvestmentBook(),[
-   'function position(address) view returns(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint256 cumulativeDaily,uint256 cumulativeCompound,uint256 lots)'
+   'function position(address) view returns(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint256 cumulativeDaily,uint256 cumulativeCompound,uint256 lots)',
+   'function lot(address,uint256) view returns(tuple(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint64 openedAt,uint64 lastAccruedAt))'
   ],provider);
   await done(token.mint(who,E(10000)));
   await done(token.connect(user).approve(vault.target,E(10000)));
@@ -265,13 +270,34 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   assert.equal(await vault.positionCount(who),2n);
   assert.equal((await vault.positionOf(who,1)).principal,E(70));
   assert.equal((await book.position(who)).lots,70n);
-  await rpc.request({method:'evm_increaseTime',params:[3601]});await rpc.request({method:'evm_mine',params:[]});
+  await rpc.request({method:'evm_increaseTime',params:[3601]});
+  for(let i=0;i<3;i++)await rpc.request({method:'evm_mine',params:[]});
+  const bookAddress=await vault.reinvestmentBook(),networkAddress=await vault.networkPlan();
+  const managerAddress=await manager.getAddress();
+  const proof={status:'VERIFIED_UNIFIED_TESTNET_ONLY',chainId:97,vault:vault.target,
+   book:bookAddress,network:networkAddress,token:MOCK,manager:managerAddress,feeReceiver:managerAddress,
+   deploymentBlock:deploymentReceipt.blockNumber,deploymentTx:deploymentReceipt.hash,
+   vaultRuntimeHash:keccak256(await provider.getCode(vault.target)),
+   bookRuntimeHash:keccak256(await provider.getCode(bookAddress)),
+   networkRuntimeHash:keccak256(await provider.getCode(networkAddress))};
+  const preflight=await checkUnifiedKeeper({provider,proof,cursor:{member:0,position:1,lot:0},maxWork:20,maxResults:10});
+  assert.equal(preflight.transactionSent,false);
+  const scan=preflight.plan;
+  assert.equal(scan.selected.length,9);
+  assert.equal(scan.selected.reduce((n,item)=>n+item.dueLots,0),70);
+  assert.deepEqual(scan.selected.map(item=>item.args[1]),[0,8,16,24,32,40,48,56,64]);
+  const gasKeeper=await provider.getSigner(2),keeperAddress=await gasKeeper.getAddress();
+  const nonceBefore=await provider.getTransactionCount(keeperAddress);
+  const simulation=await simulateUnifiedAccrual({provider,proof,candidate:scan.selected[0],operator:keeperAddress});
+  assert.equal(simulation.transactionSent,false);assert.ok(simulation.gasLimit<=1500000n);
+  assert.equal(await provider.getTransactionCount(keeperAddress),nonceBefore);
+  await assert.rejects(simulateUnifiedAccrual({provider,proof,candidate:scan.selected[0],operator:managerAddress}),/UNPRIVILEGED/);
   const gasCeiling=2000000n;
   const firstPage=await done(vault.accrueDaily(who,1,{gasLimit:gasCeiling}));
   let maximumGas=firstPage.gasUsed; // compatibility path covers only page zero
   assert.equal((await vault.positionOf(who,1)).availableProfit,E('0.088'));
-  for(let start=8;start<70;start+=8){
-   const receipt=await done(vault.accrueReinvestmentPage(who,start,8,{gasLimit:gasCeiling}));
+  for(const item of scan.selected.slice(1)){
+   const receipt=await done(vault.getFunction(item.method)(...item.args,{gasLimit:gasCeiling}));
    if(receipt.gasUsed>maximumGas)maximumGas=receipt.gasUsed;
   }
   assert.ok(maximumGas<gasCeiling);
@@ -279,5 +305,9 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   assert.equal((await vault.positionOf(who,1)).availableProfit,E('0.77'));
   assert.equal((await book.position(who)).daily,E('0.77'));
   assert.equal(await vault.profitLiability(),E('20.77'));
+  const block=await rpc.request({method:'eth_getBlockByNumber',params:['latest',false]});
+  const repeated=await scanUnifiedAccrual({vault,book,blockNumber:Number(BigInt(block.number)),
+   blockTimestamp:Number(BigInt(block.timestamp)),cursor:{member:0,position:1,lot:0},maxWork:20,maxResults:10});
+  assert.equal(repeated.selected.length,0);
  }finally{provider.destroy();await rpc.disconnect();}
 });

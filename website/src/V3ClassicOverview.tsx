@@ -23,6 +23,7 @@ export default function V3ClassicOverview(props:Props){
  const claims=view?v3PrepareUserClaims(view.ledger):null;
  const ready=Boolean(view&&!view.paused&&!view.suspended&&!busy&&!loading);
  const positions=view?.positions??[];
+ const unified=Boolean(view&&view.unifiedPage!==undefined);
  const reinvested=positions.filter(item=>item.fromReinvestment).reduce((sum,item)=>sum+item.principal,0n);
  const position=positions.find(item=>item.id===Number(selectedPosition));
  const requiresPosition=mode!=='deposit';
@@ -52,7 +53,7 @@ export default function V3ClassicOverview(props:Props){
       <button key={item.id} type="button" aria-pressed={mode===item.id} disabled={busy} onClick={()=>setMode(item.id)}>{item.label}</button>)}
     </div>
     <form onSubmit={submit}>
-     {mode==='reinvest'&&view&&<p className="gv2-small">Combined reinvested principal: {money(reinvested)} TEST. Each reinvestment remains a separate contract position with its own lock.</p>}
+     {mode==='reinvest'&&view&&<p className="gv2-small">Combined reinvested principal: {money(reinvested)} TEST. {unified?'Reinvestments share one position; each addition has its own lock.':'Each reinvestment remains a separate contract position with its own lock.'}</p>}
      {requiresPosition&&<label className="gv1-field">Source position for recorded profit
       <select value={selectedPosition} disabled={!view||busy||positions.length===0} onChange={event=>onPosition(event.target.value)}>
        {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} TEST profit</option>):<option value="0">No position available</option>}
@@ -67,7 +68,7 @@ export default function V3ClassicOverview(props:Props){
       {invalidInvite&&!referrer.trim()&&<span role="status" className="gv1-inline-warning">Invitation is invalid. Enter a valid address or continue without one.</span>}</label>}
      {requiresPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
      <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Requests need manager approval and actual test-token funding.':
-      mode==='reinvest'?'Recorded profit creates a new 90-day locked position.':'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 TEST USDT.'}</p>
+      mode==='reinvest'?(unified?'Recorded profit adds to the reinvestment position with a separate 90-day lock.':'Recorded profit creates a new 90-day locked position.'):'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 TEST USDT.'}</p>
      <button type="submit" className="gv2-primary gv1-action" disabled={!usable}>
       {mode==='deposit'?'Review test deposit':mode==='withdraw'?'Review withdrawal request':'Review reinvestment'} <ArrowRight size={16}/></button>
      {!view&&<div className="gv1-connect-actions"><button type="button" disabled={connecting} onClick={onConnect}><Wallet size={15}/> Connect wallet</button>

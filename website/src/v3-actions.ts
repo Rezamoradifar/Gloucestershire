@@ -37,6 +37,9 @@ function progress(callback:V3TransactionProgressCallback|undefined,detail:V3Tran
  try{callback?.(detail);}catch{/* Ignore errors from presentation callbacks. */}
 }
 const validIndex=(n:number)=>Number.isSafeInteger(n)&&n>=0;
+function requireActionReady(config:V3SiteReleaseConfig|null){
+ if(config?.unified)throw Error('Unified testnet is a read-only preview; wallet actions are not enabled.');
+}
 const roleFor=(action:V3Action):'manager'|null=>
  ['approveWithdrawal','rejectWithdrawal','reserveExistingCash'].includes(action.kind)?'manager':null;
 // Wallet providers sometimes cannot answer eth_call despite supporting signing.
@@ -250,6 +253,7 @@ function isV3InvalidRevert(error:unknown){
 }
 export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
  action:V3Action,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
+ requireActionReady(config);
  if(action.kind==='register')progress(onProgress,{step:'preflight',action:'registration'});
  const groupAction=action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
  if(groupAction)progress(onProgress,{step:'preflight',action:'network_group'});
@@ -376,6 +380,7 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
 }
 export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
  amount:bigint,referrer:string,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
+ requireActionReady(config);
  if(!config||amount<10n**19n||!isAddress(referrer)||
   getAddress(referrer)===getAddress(wallet))
   throw Error('Invalid V3 TESTNET deposit, referrer, or unverified contract.');
@@ -466,6 +471,7 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
 }
 export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet:string,
  id:number,config:V3SiteReleaseConfig|null=v3ReleaseConfig){
+ requireActionReady(config);
  if(!config||!validIndex(id))throw Error('Valid V3 TESTNET withdrawal required.');
  const s=await v3ReadSession(walletProvider,wallet,config);
  let amount=0n,beneficiary='';

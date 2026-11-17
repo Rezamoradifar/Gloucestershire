@@ -72,4 +72,15 @@ describe('V3 team group validation',()=>{
   expect(button(markup(null))).toContain('disabled');
   expect(button(markup({eligible:false,volume:parseEther('300')}))).toContain('disabled');
  });
+ it('keeps network pagination available while preview actions are read-only',()=>{
+  const view={wallet,registered:true,eligible:true,qualifiedDirects:2,requiredDirects:8,qualifiedVolume:0n,requiredVolume:0n,
+   dailyRateBps:70,maximumRateBps:100,referrer:ZeroAddress,referralAvailable:0n,networkAvailable:0n,networkReserved:0n,
+   cumulativeNetwork:0n,networkBranchPage:0,networkBranchCount:25,networkGroupPage:0,networkGroupCount:1,
+   networkBranches:[{address:second,volume:parseEther('100'),grouped:false}],paused:false,
+   networkGroups:[{id:0,stage:0,prepared:parseEther('500'),branches:2,target:parseEther('500'),reward:parseEther('35')}] } as any;
+  const html=renderToStaticMarkup(<V3NetworkPanel view={view} busy={false} readOnly onAction={()=>{}} onWithdraw={()=>{}} onBranchPage={()=>{}} onGroupPage={()=>{}}/>);
+  expect(html.match(/<input[^>]*type="checkbox"[^>]*>/)?.[0]).toContain('disabled');
+  expect(html.match(/<button[^>]*>Record stage claim<\/button>/)?.[0]).toContain('disabled');
+  expect(html.match(/<button[^>]*>Next branches<\/button>/)?.[0]).not.toContain('disabled');
+ });
 });

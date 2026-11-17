@@ -41,6 +41,31 @@ It does not read a chain, sign transactions, or run a keeper. The compile-only
 `scripts/compile-global-v3-unified-testnet.mjs` checks compiler and bytecode
 size for the parent and both components; it does not install or deploy them.
 
+The read-only unified keeper preflight now verifies a supplied testnet
+deployment receipt and all three pinned runtime hashes, checks that the book
+and network component are bound to the vault, and reads at one confirmed
+block. A bounded three-part cursor scans normal positions and each group's lot
+pages without using the group's misleading aggregate accrual timestamp. It
+rechecks the block hash after the scan and reports candidate calls only; it
+never loads a key or submits a transaction. Local tests cover 70 group lots,
+resumption, no duplicate due pages, mismatched components and reorganization.
+The deployment proof must ultimately come from a separately authenticated,
+verified deployment; a caller-supplied hash alone is not proof of correctness.
+An additional no-key simulation verifies a candidate against the pinned
+deployment, enforces an unprivileged gas payer and bounded estimated fee, and
+checks the account again. It still does not persist a pending transaction,
+sign or broadcast; the eventual sender must recheck everything at send time.
+
+The website also has an opt-in, read-only unified preview. It requires an
+explicit hourly-testnet profile plus separately pinned book and network
+addresses and runtime hashes, verifies their vault links, and reads a bounded
+page of additions at the same confirmed block. The existing V3 configuration
+continues to use its original vault for network reads. The preview displays
+individual lock times rather than treating the group's first timestamp as the
+lock for every addition; it hides the unsupported group-wide live estimate.
+All three site wallet-writing entry points reject unified-preview actions
+before requesting a wallet operation. No preview is installed on the site.
+
 ## This is not a deployed fix
 
 The deployed hourly V3 contract creates a separate position for every manual
@@ -50,12 +75,14 @@ not deployed on any network, production-ready, or independently audited. They
 do not change or transfer any existing user position or test token.
 
 The network component exposes branch and reward-group reads/actions at a new
-address. The existing site and network-volume keeper still call the old vault
-interface and will not work against this prototype without adaptation. The
+address. The opt-in site preview can read it, but wallet actions, history of
+network events and the network-volume keeper are not yet adapted. The
 existing accrual keeper only sees a position-level timestamp: it cannot
 correctly schedule the grouped position's independent lots. The prototype's
 default accrual call covers only the first eight lots; later lots require
-explicit bounded-page processing. Group profit/principal reservations and
+explicit bounded-page processing. The current preflight does not execute
+transactions or persist keeper cursors; production-grade sending, receipt
+handling, cursor recovery and gas controls are still required. Group profit/principal reservations and
 group-profit reinvestments are currently limited to one page per request;
 amounts spread over more than 64 lots cannot yet be handled in one request.
 In a local test with 70 one-TEST lots, an eight-lot page used up to 697,626

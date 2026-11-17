@@ -19,6 +19,7 @@ import V3ClaimsReadout from './V3ClaimsReadout';
 import V3CycleCard from './V3CycleCard';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3PositionsList from './V3PositionsList';
+import V3UnifiedPositionPage from './V3UnifiedPositionPage';
 import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
 import V3WithdrawalHistory from './V3WithdrawalHistory';
@@ -76,11 +77,13 @@ export default function V3Dashboard(){
  const [requestKind,setRequestKind]=useState<V3WithdrawalKind>('profit');
  const [adminQueue,setAdminQueue]=useState<{count:number;page:number;requests:V3Withdrawal[]}|null>(null);
  const [branchPage,setBranchPage]=useState(0),[groupPage,setGroupPage]=useState(0);
+ const [unifiedPageStart,setUnifiedPageStart]=useState(0);
  const revision=useRef(0);
  const polling=useRef(false);
  const menuTrigger=useRef<HTMLButtonElement>(null);
  const [smallScreen,setSmallScreen]=useState(()=>typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 960px)').matches);
  const config=v3ReleaseConfig;
+ useEffect(()=>{setUnifiedPageStart(0);},[wallet,chain,config?.address]);
  const invalidInvite=typeof window!=='undefined'&&readReferralInvite(window.location.search).status==='invalid';
 
  useEffect(()=>{
@@ -123,12 +126,12 @@ export default function V3Dashboard(){
   if(!provider||!wallet||chain!==97||!config){setView(null);setReadError('');setLoading(false);return;}
   setLoading(true);
   try{
-   const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null);
+   const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null,unifiedPageStart);
    if(id===revision.current&&getWalletProvider()===provider){setView(result);setReadError('');}
   }catch(e){
    if(id===revision.current){setView(null);setReadError('Unable to load verified account data. Retry or use the wallet connection check.');}
   }finally{if(id===revision.current)setLoading(false);}
- },[wallet,chain,config,tab,branchPage,groupPage]);
+ },[wallet,chain,config,tab,branchPage,groupPage,unifiedPageStart]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
   if(!config||!wallet||chain!==97)return;
@@ -182,6 +185,7 @@ export default function V3Dashboard(){
   if(busy||inFlight.current)return;
   if(!wallet){setError('Connect your wallet before continuing.');return;}
   if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
+  if(config.unified){setError('The unified testnet preview is read-only.');return;}
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
   const trackedAction=action.kind==='register'||action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
@@ -204,6 +208,7 @@ export default function V3Dashboard(){
   if(busy||inFlight.current)return;
   if(!wallet){setError('Connect your wallet before continuing.');return;}
   if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
+  if(config.unified){setError('The unified testnet preview is read-only.');return;}
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
   if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
@@ -237,6 +242,7 @@ export default function V3Dashboard(){
  }
  async function fund(id:number,gross:bigint,beneficiary:string){
   if(!config||busy||!wallet||!view?.canFund)return;
+  if(config.unified){setError('The unified testnet preview is read-only.');return;}
   if(!window.confirm('ONLY BNB TESTNET\nFund already-approved request #'+(id+1)+
    '\nBeneficiary: '+beneficiary+'\nExact mock tokens to escrow: '+formatUnits(gross,18)+
    '\nThis transfers actual TEST tokens from your funder wallet into the V3 vault. Continue?'))return;
@@ -250,7 +256,7 @@ export default function V3Dashboard(){
   finally{setBusy(false);}
  }
  const claims=view?v3PrepareUserClaims(view.ledger):null;
- const due=view?.positions.filter(p=>p.principal>0n&&view.asOf>=p.lastAccruedAt+V3_PERIOD_SECONDS).slice(0,20).map(p=>p.id)??[];
+ const due=view?.positions.filter(p=>(!config?.unified||!p.fromReinvestment)&&p.principal>0n&&view.asOf>=p.lastAccruedAt+V3_PERIOD_SECONDS).slice(0,20).map(p=>p.id)??[];
  const checkIn=()=>void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
   due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?');
  const request=(kind=requestKind)=>{
@@ -281,11 +287,11 @@ export default function V3Dashboard(){
    <div><b><DigitalValue value={show(r.gross)} unit="TEST USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>
     {admin&&<div className="gv3-queue-actions">
-     {r.status===0&&<><button disabled={busy} onClick={()=>void perform({kind:'approveWithdrawal',id:r.id},'Approve request #'+(r.id+1)+' for '+r.beneficiary+'? Gross '+formatUnits(r.gross,18)+' TEST, fee '+formatUnits(r.fee,18)+' TEST. No money is paid until escrowed.')}>Approve</button>
-      <button disabled={busy} onClick={()=>void perform({kind:'rejectWithdrawal',id:r.id},'Reject unescrowed request #'+(r.id+1)+'?')}>Reject</button></>}
-     {r.status===1&&<><button disabled={busy} onClick={()=>void perform({kind:'reserveExistingCash',id:r.id},'Reserve '+formatUnits(r.gross,18)+' TEST from already-free V3 cash for request #'+(r.id+1)+'? '+(r.kind===1?'This may reduce cash available for other principal claims.':'The contract checks outstanding principal before reserving profit.'))}>Use existing cash</button>
-      {view?.canFund&&<button disabled={busy} onClick={()=>void fund(r.id,r.gross,r.beneficiary)}>Fund exact request</button>}</>}
-     {r.status===2&&<button disabled={busy} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the immutable beneficiary '+r.beneficiary+' exactly '+formatUnits(r.gross-r.fee,18)+' TEST USDT?')}>Pay approved request</button>}
+     {r.status===0&&<><button disabled={busy||Boolean(config?.unified)} onClick={()=>void perform({kind:'approveWithdrawal',id:r.id},'Approve request #'+(r.id+1)+' for '+r.beneficiary+'? Gross '+formatUnits(r.gross,18)+' TEST, fee '+formatUnits(r.fee,18)+' TEST. No money is paid until escrowed.')}>Approve</button>
+      <button disabled={busy||Boolean(config?.unified)} onClick={()=>void perform({kind:'rejectWithdrawal',id:r.id},'Reject unescrowed request #'+(r.id+1)+'?')}>Reject</button></>}
+     {r.status===1&&<><button disabled={busy||Boolean(config?.unified)} onClick={()=>void perform({kind:'reserveExistingCash',id:r.id},'Reserve '+formatUnits(r.gross,18)+' TEST from already-free V3 cash for request #'+(r.id+1)+'? '+(r.kind===1?'This may reduce cash available for other principal claims.':'The contract checks outstanding principal before reserving profit.'))}>Use existing cash</button>
+      {view?.canFund&&<button disabled={busy||Boolean(config?.unified)} onClick={()=>void fund(r.id,r.gross,r.beneficiary)}>Fund exact request</button>}</>}
+     {r.status===2&&<button disabled={busy||Boolean(config?.unified)} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the immutable beneficiary '+r.beneficiary+' exactly '+formatUnits(r.gross-r.fee,18)+' TEST USDT?')}>Pay approved request</button>}
     </div>}
    </div>
   </article>;
@@ -327,6 +333,7 @@ export default function V3Dashboard(){
      <a href="#">Return to Global landing <ArrowUpRight size={16}/></a>
     </section>}
     {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
+    {config.unified&&<div className="gv3-notice" role="status"><Info size={16}/> Unified testnet is a read-only preview. Wallet transactions are not enabled.</div>}
     {error&&<p className="gv2-error" role="alert">{error}</p>}
     {readError&&<p className="gv2-error" role="alert">{readError}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
@@ -356,7 +363,7 @@ export default function V3Dashboard(){
     </section>}
     {tab==='overview'&&view&&<div className="gv3-sync-line" aria-live="off"><span className="gv3-live-status">{loading?'CHECKING BLOCKCHAIN':'AUTO REFRESH · 20 SEC'}</span>
      <span>Verified block {view.block.toLocaleString('en-US')} · {date(view.asOf)}</span></div>}
-    {tab==='overview'&&<V3ClassicOverview view={view} busy={busy} loading={loading} connecting={connecting}
+    {tab==='overview'&&<V3ClassicOverview view={view} busy={busy||Boolean(config.unified)} loading={loading} connecting={connecting}
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
      onDeposit={()=>void deposit()} onWithdraw={()=>request('profit')} onReinvest={reinvest}
@@ -364,7 +371,7 @@ export default function V3Dashboard(){
     {tab==='overview'&&<V3CommercePanel/>}
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
-      <V3CycleCard view={view} busy={busy} onCheckIn={checkIn} onPositions={()=>navigate('positions')}/>
+      <V3CycleCard view={view} busy={busy||Boolean(config.unified)} onCheckIn={checkIn} onPositions={()=>navigate('positions')}/>
       {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger}/>}
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
@@ -375,26 +382,30 @@ export default function V3Dashboard(){
       <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {date(view.lastCheckIn)} · {due.length} positions due at the last verified block. Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
-      <V3PositionsList positions={view.positions}/>
+      <V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>
+      {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage}
+       onPrevious={()=>setUnifiedPageStart(Math.max(0,view.unifiedPage!.start-view.unifiedPage!.limit))}
+       onNext={()=>setUnifiedPageStart(view.unifiedPage!.start+view.unifiedPage!.limit)}/>}
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
        <p>100% of each test deposit is routed to designated wallets, including fee wallets. It does not remain as cash in the vault or establish product spending.</p>
        <div className="gv3-input-row"><label htmlFor="v3-deposit">Amount (TEST USDT)</label><input id="v3-deposit" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" placeholder="1000"/>
         {!view.registered&&<><label htmlFor="v3-parent">Referrer (optional)</label>
          <input id="v3-parent" value={referrer} onChange={e=>setReferrer(e.target.value)} /></>}
         <small>Wallet balance: {show(view.walletTestTokenBalance)} MOCK TEST USDT</small>
-        <button className="gv2-primary" disabled={busy||view.paused||reviewRequired} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
+        <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||Boolean(config.unified)} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
-      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.</p>
+      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. {config.unified?'Reinvestment adds recorded claims to one position; each addition keeps its own lock.':'Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.'}</p>
        <div className="gv3-input-row"><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
         {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} TEST profit</option>)}</select>
         <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
-        <button disabled={busy||!view.positions.length} onClick={reinvest}>Reinvest recorded TEST claim</button></div></section>
+        <button disabled={busy||!view.positions.length||Boolean(config.unified)} onClick={reinvest}>Reinvest recorded TEST claim</button></div></section>
      </>}
      {tab==='team'&&(view.networkLoaded?
-      <V3NetworkPanel view={view} busy={busy||loading} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
+      <V3NetworkPanel view={view} busy={busy||loading} readOnly={Boolean(config.unified)} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
        onBranchPage={setBranchPage} onGroupPage={setGroupPage}/>:
       <section className="gv2-panel" role="status">Loading verified network branches and groups…</section>)}
-     {tab==='history'&&<><V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><V3WithdrawalHistory key={'withdraw-'+view.wallet} wallet={view.wallet} config={config}/></>}
+     {tab==='history'&&<>{config.unified&&<p className="gv3-notice">The preview shows vault activity; events from the separate network component are not included yet.</p>}
+      <V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><V3WithdrawalHistory key={'withdraw-'+view.wallet} wallet={view.wallet} config={config}/></>}
      {tab==='profile'&&<section className="gv2-panel"><h3>Verified V3 profile</h3>
       <div className="gv2-detail"><span>Wallet</span><b>{wallet}</b></div>
       <div className="gv2-detail"><span>Registration</span><b>{view.registered?'Registered on V3':'Not registered'}</b></div>
@@ -408,7 +419,7 @@ export default function V3Dashboard(){
        <label htmlFor="v3-profile-referrer">Referrer wallet or invitation link (optional)</label>
        <input id="v3-profile-referrer" value={referrer} onChange={e=>setReferrer(e.target.value)} autoComplete="off"/>
        <small>Leave empty to register without a referrer. A selected referrer must already be registered in this test contract and cannot be changed after registration.</small>
-       <button className="gv2-primary" disabled={busy||view.paused||reviewRequired} onClick={register}>Register V3 wallet</button>
+       <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||Boolean(config.unified)} onClick={register}>Register V3 wallet</button>
       </div>}
       <p>This profile shows only the current contract's confirmed account records.</p>
      </section>}
@@ -421,7 +432,7 @@ export default function V3Dashboard(){
        {(requestKind==='profit'||requestKind==='principal')&&<><label htmlFor="v3-request-position">Position</label><select id="v3-request-position" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
         {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1}</option>)}</select></>}
        <label htmlFor="v3-request-amount">TEST USDT amount</label><input id="v3-request-amount" value={value} inputMode="decimal" onChange={e=>setValue(e.target.value)} placeholder="0.00"/>
-       <button className="gv2-primary" disabled={busy||!view.registered||view.pendingWithdrawal||view.paused} onClick={()=>request()}>Review & sign withdrawal request</button>
+       <button className="gv2-primary" disabled={busy||!view.registered||view.pendingWithdrawal||view.paused||Boolean(config.unified)} onClick={()=>request()}>Review & sign withdrawal request</button>
       </div>
       <h3>Your recent V3 requests</h3>{view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
