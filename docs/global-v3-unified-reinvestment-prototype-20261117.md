@@ -185,3 +185,32 @@ doing so could change their maturity or accrual and allow the same old claim to
 be counted twice. Preserving existing accounts requires a reviewed import design
 and a proven way to prevent all relevant old-state changes and double claims;
 those capabilities are not yet implemented.
+
+## Additional isolated testnet tooling
+
+`deploy-v3-unified-isolated.mjs` is an experimental chain-97-only deployer.
+It requires separately reviewed initcode and token runtime hashes, checks the
+pinned gas-only signer, and records the signed transaction hash and nonce in a
+private journal before broadcasting. An existing journal or proof blocks a
+second deployment. It does not install the website, migrate accounts, or
+install a keeper. The tool cannot determine whether a supplied hash came from
+an independent trusted source. No independently reviewed token hash or live
+server signer was verified during local tests; do not treat this as deployment
+approval or use a hash copied solely from the same RPC as independent proof.
+
+`install-v3-unified-test-site.sh` and `build-v3-unified-site.mjs` are an
+experimental installer for a new, read-only `/unified-test/` preview. They
+require the correct server, pinned source and independently trusted deployment
+proof, available resources, and a non-existent destination. They validate the
+existing pages and preserve them, and attempt to roll back the new route on a
+failed post-install check. Local fixture tests and shell syntax checks do not
+prove that a real server install will succeed. It does not deploy the contract,
+activate transactions, migrate accounts or enable keepers. The last reported
+server reading of 115,595 free inodes is below the installer's 120,000 limit;
+no cleanup is performed automatically.
+
+`v3-unified-sweep-capacity.mjs` measures bounded due work at a single pinned
+block and explicitly marks an incomplete sweep. It cannot guarantee future
+capacity or recover missed cycles and does not enable a scheduler. Transaction
+journal recovery, network volume processing and unattended keeper scheduling
+remain incomplete, so this prototype is not ready for a live user workflow.

@@ -30,6 +30,12 @@ describe('unified testnet withdrawal form',()=>{
   expect(html).toContain('This test preview is read-only');
   expect(html).toMatch(/<button type="submit" disabled=""/);
  });
+ it('explains when settlement is not ready and keeps the request disabled',()=>{
+  const html=renderToStaticMarkup(<V3UnifiedWithdrawalForm {...props} readOnly
+   disabledReason="Withdrawal requests are disabled until testnet settlement is ready."/>);
+  expect(html).toContain('Withdrawal requests are disabled until testnet settlement is ready.');
+  expect(html).toMatch(/<button type="submit" disabled=""/);
+ });
  it('enforces exact profit cap and computes fee without floating point rounding',()=>{
   const state=unifiedWithdrawalFormState(props,'profit');
   expect(state.canSubmit).toBe(true);

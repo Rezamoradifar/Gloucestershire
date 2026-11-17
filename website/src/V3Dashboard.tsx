@@ -421,7 +421,9 @@ export default function V3Dashboard(){
      <a href="#">Return to Global landing <ArrowUpRight size={16}/></a>
     </section>}
     {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
-    {config.unified&&<div className="gv3-notice" role="status"><Info size={16}/> Unified testnet is a read-only preview. Wallet transactions are not enabled.</div>}
+    {config.unified&&<div className="gv3-notice" role="status"><Info size={16}/><div>
+     Unified testnet is a read-only preview. Wallet transactions are not enabled.
+     <p>Automatic claim posting and manager withdrawal settlement are not ready. Recorded claims are not cash; withdrawal and network actions remain disabled.</p></div></div>}
     {config.unified&&<V3SeparateTestAccounts config={config}/>}
     {error&&<p className="gv2-error" role="alert">{error}</p>}
     {readError&&<p className="gv2-error" role="alert">{readError}</p>}
@@ -525,6 +527,7 @@ export default function V3Dashboard(){
       </div>
       {config.unified&&view.unifiedPage&&<V3UnifiedWithdrawalForm page={view.unifiedPage}
        busy={busy||loading||reviewRequired||view.unifiedPage.start!==unifiedPageStart} readOnly={UNIFIED_PREVIEW_READ_ONLY}
+       disabledReason="Withdrawal requests are disabled until testnet settlement is ready."
        registered={view.registered} suspended={view.suspended} paused={view.paused} pendingWithdrawal={view.pendingWithdrawal}
        nextRequestAt={view.nextRequestAt} requestCap={view.ledger.requestCap} value={value} onValue={setValue}
        onSubmit={kind=>void requestUnifiedPage(kind)} onPrevious={()=>setUnifiedPageStart(Math.max(0,view.unifiedPage!.start-view.unifiedPage!.limit))}

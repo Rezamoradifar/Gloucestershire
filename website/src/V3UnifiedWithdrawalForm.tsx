@@ -5,7 +5,7 @@ import {prepareUnifiedPageAction,type UnifiedPositionPage} from './v3-unified-po
 
 type WithdrawalKind='profit'|'principal';
 export type V3UnifiedWithdrawalFormProps={
- page:UnifiedPositionPage;busy:boolean;readOnly:boolean;registered:boolean;suspended:boolean;
+ page:UnifiedPositionPage;busy:boolean;readOnly:boolean;disabledReason?:string;registered:boolean;suspended:boolean;
  paused:boolean;pendingWithdrawal:boolean;nextRequestAt:number;requestCap:bigint;
  value:string;onValue:(value:string)=>void;onSubmit:(kind:WithdrawalKind)=>void;
  onPrevious:()=>void;onNext:()=>void;
@@ -71,7 +71,7 @@ export default function V3UnifiedWithdrawalForm(props:V3UnifiedWithdrawalFormPro
     Gross: {formatUnits(state.amount,18)} TEST · Fee: {formatUnits(state.fee,18)} TEST · Net: {formatUnits(state.net,18)} TEST.
    </p>}
    {state.error&&<p role="alert">{state.error}</p>}
-   {readOnly&&<p role="status">This test preview is read-only; a withdrawal request cannot be submitted.</p>}
+   {readOnly&&<p role="status">{props.disabledReason??'This test preview is read-only; a withdrawal request cannot be submitted.'}</p>}
    <p>Requests need manager approval and actual test-token funding. A request is not a payment.</p>
    <button type="submit" disabled={!state.canSubmit}>Review withdrawal request</button>
   </form>
