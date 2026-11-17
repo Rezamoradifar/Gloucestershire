@@ -26,8 +26,8 @@ test('journal serializes one keeper and blocks reuse after uncertain broadcast',
  assert.equal(second.read().status,'BROADCAST');
  second.markConfirmed(hash);
  assert.equal(second.read().status,'CONFIRMED');
- second.prepare({...record,nonce:8});
- assert.equal(second.read().nonce,8);
+ assert.throws(()=>second.prepare({...record,nonce:8}),/NEEDS_REVIEW/);
+ assert.equal(second.read().nonce,7);
  second.close();
 }));
 

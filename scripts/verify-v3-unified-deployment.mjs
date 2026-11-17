@@ -75,12 +75,15 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  const head=await provider.getBlockNumber();
  if(!Number.isSafeInteger(head)||head<proof.deploymentBlock+2)throw Error('UNIFIED_DEPLOYMENT_NOT_CONFIRMED');
  const number=head-2,block=await freshBlock(provider,number);
+ const deploymentBlock=await freshBlock(provider,proof.deploymentBlock);
  const [receipt,vaultCode,bookCode,networkCode,tokenCode]=await Promise.all([
   provider.getTransactionReceipt(proof.deploymentTx),provider.getCode(proof.vault,number),
   provider.getCode(proof.book,number),provider.getCode(proof.network,number),provider.getCode(TEST_TOKEN,number)
  ]);
  if(!receipt||receipt.status!==1||!receipt.contractAddress||getAddress(receipt.contractAddress)!==proof.vault||
-    receipt.blockNumber!==proof.deploymentBlock||String(receipt.hash).toLowerCase()!==proof.deploymentTx)
+    receipt.blockNumber!==proof.deploymentBlock||String(receipt.hash).toLowerCase()!==proof.deploymentTx||
+    typeof receipt.blockHash!=='string'||!pattern.test(receipt.blockHash)||
+    receipt.blockHash.toLowerCase()!==deploymentBlock.hash.toLowerCase())
   throw Error('UNIFIED_DEPLOYMENT_RECEIPT_MISMATCH');
  const checkCode=(code,expected)=>{
   if(typeof code!=='string'||!/^0x(?:[0-9a-fA-F]{2})+$/.test(code)||keccak256(code).toLowerCase()!==expected)
@@ -104,6 +107,7 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
     getAddress(fee2)!==FEE_2||getAddress(operations)!==OPERATIONS||BigInt(bps)!==1000n||
     !await vault.hasRole(role,proof.manager,at))throw Error('UNIFIED_DEPLOYMENT_CONFIGURATION_MISMATCH');
  await recheckUnifiedBlock(provider,block);
+ await recheckUnifiedBlock(provider,deploymentBlock);
  return {proof,block:{number,hash:block.hash,timestamp:block.timestamp},vault,book,network,
   transactionSent:false,siteUpdated:false};
 }

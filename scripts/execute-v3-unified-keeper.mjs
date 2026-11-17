@@ -16,6 +16,53 @@ const cursor=value=>{
   throw Error('INVALID_UNIFIED_TRANSACTION_CURSOR');
  return {member:value.member,position:value.position,lot:value.lot};
 };
+const quantity=value=>typeof value==='string'&&/^0x(?:0|[1-9a-f][0-9a-f]*)$/i.test(value)?BigInt(value):null;
+const hashPattern=/^0x[0-9a-fA-F]{64}$/;
+
+// Check the exact transaction, event and canonical block twice. This helper
+// cannot send a transaction or update the journal.
+export async function verifyUnifiedAccrualReceipt({provider,receipt,hash,simulation,operator,nonce,data}){
+ if(!receipt||receipt.status!==1||!hashPattern.test(String(hash))||
+    String(receipt.hash).toLowerCase()!==hash.toLowerCase()||
+    !Number.isSafeInteger(receipt.blockNumber)||receipt.blockNumber<1||
+    !hashPattern.test(String(receipt.blockHash)))throw Error('UNIFIED_RECEIPT_NOT_VERIFIED');
+ const expectedNumber=BigInt(receipt.blockNumber),expectedHash=receipt.blockHash.toLowerCase();
+ const canonicalMatches=block=>Boolean(block&&quantity(block.number)===expectedNumber&&
+  hashPattern.test(String(block.hash))&&String(block.hash).toLowerCase()===expectedHash);
+ const rawReceiptMatches=raw=>Boolean(raw&&String(raw.transactionHash).toLowerCase()===hash.toLowerCase()&&
+  quantity(raw.blockNumber)===expectedNumber&&String(raw.blockHash).toLowerCase()===expectedHash&&
+  quantity(raw.status)===1n);
+ const confirmed=(height,chain)=>quantity(chain)===97n&&quantity(height)!==null&&quantity(height)>=expectedNumber+1n;
+ const hasExpectedEvent=logs=>Array.isArray(logs)&&logs.some(log=>{
+  try{
+   if(getAddress(log.address)!==simulation.vault)return false;
+   const event=ABI.parseLog({topics:log.topics,data:log.data});
+   return event?.name==='DailyClaimAccrued'&&getAddress(event.args.user)===simulation.member&&
+    BigInt(event.args.positionId)===BigInt(simulation.positionId)&&BigInt(event.args.total)>0n&&
+    BigInt(event.args.total)===BigInt(event.args.personal)+BigInt(event.args.compounded);
+  }catch{return false;}
+ });
+ const [tx,canonical,again,heightHex,chainHex]=await Promise.all([
+  provider.getTransaction(hash),provider.send('eth_getBlockByNumber',[toQuantity(receipt.blockNumber),false]),
+  provider.send('eth_getTransactionReceipt',[hash]),provider.send('eth_blockNumber',[]),provider.send('eth_chainId',[])
+ ]);
+ if(!tx||String(tx.hash).toLowerCase()!==hash.toLowerCase()||!tx.from||getAddress(tx.from)!==operator||!tx.to||getAddress(tx.to)!==simulation.vault||
+    tx.chainId!==97n||tx.nonce!==nonce||tx.value!==0n||tx.data.toLowerCase()!==data.toLowerCase()||
+    tx.gasLimit!==simulation.gasLimit||tx.gasPrice!==simulation.gasPrice||
+    !canonicalMatches(canonical)||!rawReceiptMatches(again)||!confirmed(heightHex,chainHex))
+  throw Error('UNIFIED_TRANSACTION_CANONICALITY_MISMATCH');
+ if(!hasExpectedEvent(receipt.logs)||!hasExpectedEvent(again.logs))
+  throw Error('UNIFIED_ACCRUAL_EVENT_NOT_VERIFIED');
+ // Receipt, chain, height and block are all checked again after parsing events;
+ // a changed or inconsistent response must never permit a confirmed journal.
+ const [finalBlock,finalReceipt,finalHeight,finalChain]=await Promise.all([
+  provider.send('eth_getBlockByNumber',[toQuantity(receipt.blockNumber),false]),
+  provider.send('eth_getTransactionReceipt',[hash]),provider.send('eth_blockNumber',[]),provider.send('eth_chainId',[])
+ ]);
+ if(!canonicalMatches(finalBlock)||!rawReceiptMatches(finalReceipt)||!confirmed(finalHeight,finalChain)||
+    !hasExpectedEvent(finalReceipt.logs))throw Error('UNIFIED_TRANSACTION_CANONICALITY_MISMATCH');
+ return true;
+}
 
 export async function executeUnifiedAccrual({provider,signer,proof,candidate,journalDirectory,waitReceipt=waitV3KeeperReceipt}){
  if(!(signer instanceof Wallet)||signer.provider!==provider)throw Error('UNIFIED_LOCAL_GAS_WALLET_REQUIRED');
@@ -23,7 +70,9 @@ export async function executeUnifiedAccrual({provider,signer,proof,candidate,jou
  const journal=openUnifiedJournal(journalDirectory);
  try{
   const previous=journal.read();
-  if(previous&&previous.status!=='CONFIRMED')throw Error('UNIFIED_PREVIOUS_TRANSACTION_NEEDS_REVIEW');
+  // A confirmed receipt alone does not prove the cursor was checkpointed or
+  // remains canonical. Fail closed until reconciliation is implemented.
+  if(previous)throw Error('UNIFIED_PREVIOUS_TRANSACTION_NEEDS_REVIEW');
   const operator=getAddress(await signer.getAddress());
   const simulation=await simulateUnifiedAccrual({provider,proof,candidate,operator});
   const [latest,pending]=await Promise.all([
@@ -48,32 +97,7 @@ export async function executeUnifiedAccrual({provider,signer,proof,candidate,jou
    throw Error('UNIFIED_BROADCAST_HASH_MISMATCH_INSPECT_JOURNAL');
   journal.markBroadcast(hash);
   const receipt=await waitReceipt(provider,hash,{confirmations:2});
-  if(!receipt||receipt.status!==1||String(receipt.hash).toLowerCase()!==hash.toLowerCase()||
-     !Number.isSafeInteger(receipt.blockNumber)||receipt.blockNumber<1||
-     typeof receipt.blockHash!=='string')throw Error('UNIFIED_RECEIPT_NOT_VERIFIED');
-  const [tx,canonical,again,heightHex,chainHex]=await Promise.all([
-   provider.getTransaction(hash),provider.send('eth_getBlockByNumber',[toQuantity(receipt.blockNumber),false]),
-   provider.send('eth_getTransactionReceipt',[hash]),provider.send('eth_blockNumber',[]),
-   provider.send('eth_chainId',[])
-  ]);
-  if(!tx||!tx.from||getAddress(tx.from)!==operator||!tx.to||getAddress(tx.to)!==simulation.vault||
-     tx.chainId!==97n||tx.nonce!==latest||tx.value!==0n||tx.data.toLowerCase()!==data.toLowerCase()||
-     tx.gasLimit!==simulation.gasLimit||tx.gasPrice!==simulation.gasPrice||
-     !canonical||String(canonical.hash).toLowerCase()!==receipt.blockHash.toLowerCase()||
-     !again||String(again.transactionHash).toLowerCase()!==hash.toLowerCase()||
-     String(again.blockHash).toLowerCase()!==receipt.blockHash.toLowerCase()||
-     BigInt(again.status)!==1n||BigInt(chainHex)!==97n||BigInt(heightHex)<BigInt(receipt.blockNumber+1))
-   throw Error('UNIFIED_TRANSACTION_CANONICALITY_MISMATCH');
-  const recorded=receipt.logs.some(log=>{
-   if(getAddress(log.address)!==simulation.vault)return false;
-   try{
-    const event=ABI.parseLog({topics:log.topics,data:log.data});
-    return event?.name==='DailyClaimAccrued'&&getAddress(event.args.user)===simulation.member&&
-     BigInt(event.args.positionId)===BigInt(simulation.positionId)&&
-     BigInt(event.args.total)>0n&&BigInt(event.args.total)===BigInt(event.args.personal)+BigInt(event.args.compounded);
-   }catch{return false;}
-  });
-  if(!recorded)throw Error('UNIFIED_ACCRUAL_EVENT_NOT_VERIFIED');
+  await verifyUnifiedAccrualReceipt({provider,receipt,hash,simulation,operator,nonce:latest,data});
   journal.markConfirmed(hash);
   return {chainId:97,status:'CONFIRMED',hash,operator,vault:simulation.vault,member:simulation.member,
    positionId:simulation.positionId,nextCursor,transactionSent:true,assetTransfer:false};

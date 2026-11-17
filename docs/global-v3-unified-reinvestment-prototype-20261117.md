@@ -44,7 +44,8 @@ size for the parent and both components; it does not install or deploy them.
 The read-only unified keeper preflight now verifies a supplied testnet
 deployment receipt and all three pinned runtime hashes, checks that the book
 and network component are bound to the vault, and reads at one confirmed
-block. A bounded three-part cursor scans normal positions and each group's lot
+block. The deployment receipt's block hash is compared with the canonical
+block and rechecked. A bounded three-part cursor scans normal positions and each group's lot
 pages without using the group's misleading aggregate accrual timestamp. It
 rechecks the block hash after the scan and reports candidate calls only; it
 never loads a key or submits a transaction. Local tests cover 70 group lots,
@@ -67,6 +68,8 @@ The journal also records exact public calldata and fee fields; an inspection
 helper can report the RPC-observed transaction and receipt without changing
 the journal or declaring a retry safe. Old records without those fields need
 manual review.
+No existing journal record, including a confirmed one, may be overwritten
+until canonical reconciliation and durable cursor checkpointing are designed.
 The sender has no command-line entry point, installer, scheduler, recovery
 tool or live deployment. A dedicated signer and a single shared journal path
 would be required to avoid independent processes bypassing each other's locks.

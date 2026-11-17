@@ -13,13 +13,13 @@ const FEE2=getAddress('0x5bc282a45a8a1d7d9b915f04fc1d4031156d7632');
 const OPERATIONS=getAddress('0x8c4ac9b009808a0b49ba77b58e3871e7cdba463c');
 
 function fixture(){
- const state={chain:'0x61',blockHash:H(99),bookVault:A(1),roleAllowed:true,changed:false,reorgDuringScan:false,
+ const state={chain:'0x61',blockHash:H(99),deploymentHash:H(77),receiptBlockHash:H(77),deploymentChanged:false,bookVault:A(1),roleAllowed:true,changed:false,reorgDuringScan:false,
   privileged:false,eligible:true,paused:false,gas:600000n,price:1000000000n,balance:10n**18n,simulationFails:false};
  const vaultCode='0x6001',bookCode='0x6002',networkCode='0x6003';
  const proof={status:'VERIFIED_UNIFIED_TESTNET_ONLY',chainId:97,vault:A(1),book:A(2),network:A(3),
   token:TOKEN,manager:A(4),feeReceiver:A(5),deploymentBlock:100,deploymentTx:H(15),
   vaultRuntimeHash:keccak256(vaultCode),bookRuntimeHash:keccak256(bookCode),networkRuntimeHash:keccak256(networkCode)};
- const calls=[];let blocks=0;
+ const calls=[];let blocks=0,deploymentBlocks=0;
  const at=o=>{assert.deepEqual(o,{blockTag:118});};
  const parent={
   asset:async o=>{at(o);return TOKEN;},feeReceiver:async o=>{at(o);return A(5);},
@@ -39,13 +39,18 @@ function fixture(){
  const provider={
   send:async(name,args)=>{
    if(name==='eth_chainId'){assert.deepEqual(args,[]);return state.chain;}
-   assert.equal(name,'eth_getBlockByNumber');assert.deepEqual(args,['0x76',false]);blocks++;
+   assert.equal(name,'eth_getBlockByNumber');
+   if(args[0]==='0x64'){
+    assert.equal(args[1],false);deploymentBlocks++;
+    return {number:'0x64',hash:state.deploymentChanged&&deploymentBlocks>1?H(78):state.deploymentHash,timestamp:'0x300'};
+   }
+   assert.deepEqual(args,['0x76',false]);blocks++;
    return {number:'0x76',hash:state.changed&&blocks>1?H(100):state.blockHash,timestamp:'0x3e8'};
   },
   getBlockNumber:async()=>120,
   getBlock:async name=>{assert.equal(name,'latest');return {gasLimit:30000000n};},
   getFeeData:async()=>({gasPrice:state.price}),getBalance:async()=>state.balance,
-  getTransactionReceipt:async h=>{assert.equal(h,H(15));return {status:1,contractAddress:A(1),blockNumber:100,hash:H(15)};},
+  getTransactionReceipt:async h=>{assert.equal(h,H(15));return {status:1,contractAddress:A(1),blockNumber:100,blockHash:state.receiptBlockHash,hash:H(15)};},
   getCode:async(a,n)=>{assert.equal(n,118);calls.push(a);return ({[A(1)]:vaultCode,[A(2)]:bookCode,[A(3)]:networkCode,[TOKEN]:'0x60'})[a]||'0x';}
  };
  const makeContract=(a)=>a===A(1)?parent:{vault:async o=>{at(o);return a===A(2)?state.bookVault:A(1);}};
@@ -77,6 +82,13 @@ test('rejects an unauthorized manager and a changed confirmed block',async()=>{
  let f=fixture();f.state.roleAllowed=false;
  await assert.rejects(verifyUnifiedDeployment(f.provider,f.proof,{makeContract:f.makeContract}),/CONFIGURATION_MISMATCH/);
  f=fixture();f.state.changed=true;
+ await assert.rejects(verifyUnifiedDeployment(f.provider,f.proof,{makeContract:f.makeContract}),/BLOCK_CHANGED/);
+});
+
+test('rejects a noncanonical deployment receipt or deployment-block reorganization',async()=>{
+ let f=fixture();f.state.receiptBlockHash=H(78);
+ await assert.rejects(verifyUnifiedDeployment(f.provider,f.proof,{makeContract:f.makeContract}),/DEPLOYMENT_RECEIPT_MISMATCH/);
+ f=fixture();f.state.deploymentChanged=true;
  await assert.rejects(verifyUnifiedDeployment(f.provider,f.proof,{makeContract:f.makeContract}),/BLOCK_CHANGED/);
 });
 

@@ -250,6 +250,9 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   miner:{blockGasLimit:30000000},wallet:{totalAccounts:3,defaultBalance:50}});
  const provider=new BrowserProvider(rpc,undefined,{cacheTimeout:-1});provider.pollingInterval=20;
  const journalDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'unified-keeper-test-'));
+ // A separate temporary journal is used only to isolate the ambiguous-send
+ // test scenario; a real keeper must never bypass a record with a new path.
+ const ambiguousDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'unified-keeper-ambiguous-test-'));
  try{
   const manager=await provider.getSigner(0),user=await provider.getSigner(1),who=await user.getAddress();
   const deployed=await new ContractFactory(tokenArtifact.abi,'0x'+tokenArtifact.evm.bytecode.object,manager).deploy(18);
@@ -311,17 +314,18 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   assert.equal(JSON.parse(fs.readFileSync(path.join(journalDirectory,'pending.json'),'utf8')).status,'CONFIRMED');
   let maximumGas=(await provider.getTransactionReceipt(sent.hash)).gasUsed;
   assert.equal((await vault.positionOf(who,1)).availableProfit,E('0.088'));
-  await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[0],journalDirectory,waitReceipt}),/SIMULATION_FAILED/);
+  await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[0],journalDirectory,waitReceipt}),/PREVIOUS_TRANSACTION_NEEDS_REVIEW/);
+  await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory,waitReceipt}),/PREVIOUS_TRANSACTION_NEEDS_REVIEW/);
   const originalBroadcast=provider.broadcastTransaction.bind(provider);
   try{
    provider.broadcastTransaction=async raw=>{await originalBroadcast(raw);throw Error('simulated lost RPC response');};
-   await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory,waitReceipt}),/simulated lost RPC response/);
+   await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory:ambiguousDirectory,waitReceipt}),/simulated lost RPC response/);
   }finally{provider.broadcastTransaction=originalBroadcast;}
-  assert.equal(JSON.parse(fs.readFileSync(path.join(journalDirectory,'pending.json'),'utf8')).status,'PREPARED');
-  const diagnosis=await inspectUnifiedKeeperJournal({provider,journalDirectory});
+  assert.equal(JSON.parse(fs.readFileSync(path.join(ambiguousDirectory,'pending.json'),'utf8')).status,'PREPARED');
+  const diagnosis=await inspectUnifiedKeeperJournal({provider,journalDirectory:ambiguousDirectory});
   assert.equal(diagnosis.state,'RECEIPT_OBSERVED_REVIEW_REQUIRED');
   assert.equal(diagnosis.canonicalBlock,true);assert.equal(diagnosis.safeToRetry,false);
-  await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory,waitReceipt}),/PREVIOUS_TRANSACTION_NEEDS_REVIEW/);
+  await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory:ambiguousDirectory,waitReceipt}),/PREVIOUS_TRANSACTION_NEEDS_REVIEW/);
   assert.equal((await vault.positionOf(who,1)).availableProfit,E('0.176'));
   for(const item of scan.selected.slice(2)){
    const receipt=await done(vault.getFunction(item.method)(...item.args,{gasLimit:gasCeiling}));
@@ -336,5 +340,5 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   const repeated=await scanUnifiedAccrual({vault,book,blockNumber:Number(BigInt(block.number)),
    blockTimestamp:Number(BigInt(block.timestamp)),cursor:{member:0,position:1,lot:0},maxWork:20,maxResults:10});
   assert.equal(repeated.selected.length,0);
- }finally{provider.destroy();await rpc.disconnect();fs.rmSync(journalDirectory,{recursive:true,force:true});}
+ }finally{provider.destroy();await rpc.disconnect();fs.rmSync(journalDirectory,{recursive:true,force:true});fs.rmSync(ambiguousDirectory,{recursive:true,force:true});}
 });

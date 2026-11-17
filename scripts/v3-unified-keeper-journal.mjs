@@ -49,7 +49,9 @@ export function openUnifiedJournal(directory){
  }
  function prepare(record){
   const old=read();
-  if(old&&old.status!=='CONFIRMED')throw Error('UNIFIED_PREVIOUS_TRANSACTION_NEEDS_REVIEW');
+  // Confirmation is not a durable cursor checkpoint and may be reorganized.
+  // No existing record may be overwritten until reconciliation is designed.
+  if(old)throw Error('UNIFIED_PREVIOUS_TRANSACTION_NEEDS_REVIEW');
   if(!record||record.status!=='PREPARED'||record.chainId!==97||!HASH.test(String(record.hash))||
      !Number.isSafeInteger(record.nonce)||record.nonce<0)throw Error('UNIFIED_JOURNAL_RECORD_INVALID');
   write(record);
