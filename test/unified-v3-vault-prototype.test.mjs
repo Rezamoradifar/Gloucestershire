@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {execFileSync} from 'node:child_process';
 import ganache from 'ganache';
-import {BrowserProvider,Contract,ContractFactory,ZeroAddress,keccak256,parseEther} from 'ethers';
+import {BrowserProvider,Contract,ContractFactory,Wallet,ZeroAddress,keccak256,parseEther} from 'ethers';
 import {compileUnifiedTestnet} from '../scripts/compile-global-v3-unified-testnet.mjs';
 import {planUnifiedLotPage} from '../scripts/plan-v3-unified-accrual.mjs';
 import {scanUnifiedAccrual} from '../scripts/scan-v3-unified-accrual.mjs';
 import {checkUnifiedKeeper} from '../scripts/check-v3-unified-keeper.mjs';
 import {simulateUnifiedAccrual} from '../scripts/simulate-v3-unified-keeper.mjs';
+import {executeUnifiedAccrual} from '../scripts/execute-v3-unified-keeper.mjs';
 
 const MOCK='0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89';
 const E=value=>parseEther(String(value));
@@ -245,6 +248,7 @@ test('more than 64 reinvestments remain one position and accrue on separate page
  const rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},
   miner:{blockGasLimit:30000000},wallet:{totalAccounts:3,defaultBalance:50}});
  const provider=new BrowserProvider(rpc,undefined,{cacheTimeout:-1});provider.pollingInterval=20;
+ const journalDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'unified-keeper-test-'));
  try{
   const manager=await provider.getSigner(0),user=await provider.getSigner(1),who=await user.getAddress();
   const deployed=await new ContractFactory(tokenArtifact.abi,'0x'+tokenArtifact.evm.bytecode.object,manager).deploy(18);
@@ -293,10 +297,29 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   assert.equal(await provider.getTransactionCount(keeperAddress),nonceBefore);
   await assert.rejects(simulateUnifiedAccrual({provider,proof,candidate:scan.selected[0],operator:managerAddress}),/UNPRIVILEGED/);
   const gasCeiling=2000000n;
-  const firstPage=await done(vault.accrueDaily(who,1,{gasLimit:gasCeiling}));
-  let maximumGas=firstPage.gasUsed; // compatibility path covers only page zero
+  const secret=rpc.getInitialAccounts()[keeperAddress.toLowerCase()].secretKey;
+  const localKeeper=new Wallet(secret,provider);
+  const waitReceipt=async(p,hash)=>{
+   await rpc.request({method:'evm_mine',params:[]});
+   return p.getTransactionReceipt(hash);
+  };
+  const tokenBefore=await token.balanceOf(who);
+  const sent=await executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[0],journalDirectory,waitReceipt});
+  assert.equal(sent.status,'CONFIRMED');assert.equal(sent.assetTransfer,false);
+  assert.equal(await token.balanceOf(who),tokenBefore);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(journalDirectory,'pending.json'),'utf8')).status,'CONFIRMED');
+  let maximumGas=(await provider.getTransactionReceipt(sent.hash)).gasUsed;
   assert.equal((await vault.positionOf(who,1)).availableProfit,E('0.088'));
-  for(const item of scan.selected.slice(1)){
+  await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[0],journalDirectory,waitReceipt}),/SIMULATION_FAILED/);
+  const originalBroadcast=provider.broadcastTransaction.bind(provider);
+  try{
+   provider.broadcastTransaction=async raw=>{await originalBroadcast(raw);throw Error('simulated lost RPC response');};
+   await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory,waitReceipt}),/simulated lost RPC response/);
+  }finally{provider.broadcastTransaction=originalBroadcast;}
+  assert.equal(JSON.parse(fs.readFileSync(path.join(journalDirectory,'pending.json'),'utf8')).status,'PREPARED');
+  await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory,waitReceipt}),/PREVIOUS_TRANSACTION_NEEDS_REVIEW/);
+  assert.equal((await vault.positionOf(who,1)).availableProfit,E('0.176'));
+  for(const item of scan.selected.slice(2)){
    const receipt=await done(vault.getFunction(item.method)(...item.args,{gasLimit:gasCeiling}));
    if(receipt.gasUsed>maximumGas)maximumGas=receipt.gasUsed;
   }
@@ -309,5 +332,5 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   const repeated=await scanUnifiedAccrual({vault,book,blockNumber:Number(BigInt(block.number)),
    blockTimestamp:Number(BigInt(block.timestamp)),cursor:{member:0,position:1,lot:0},maxWork:20,maxResults:10});
   assert.equal(repeated.selected.length,0);
- }finally{provider.destroy();await rpc.disconnect();}
+ }finally{provider.destroy();await rpc.disconnect();fs.rmSync(journalDirectory,{recursive:true,force:true});}
 });

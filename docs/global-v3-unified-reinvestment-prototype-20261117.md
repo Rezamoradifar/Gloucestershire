@@ -54,7 +54,18 @@ verified deployment; a caller-supplied hash alone is not proof of correctness.
 An additional no-key simulation verifies a candidate against the pinned
 deployment, enforces an unprivileged gas payer and bounded estimated fee, and
 checks the account again. It still does not persist a pending transaction,
-sign or broadcast; the eventual sender must recheck everything at send time.
+sign or broadcast.
+
+A separate experimental one-candidate sender repeats the deployment and
+simulation checks and records the transaction hash and nonce in a private,
+locked journal before broadcast. It verifies the receipt, canonical block,
+transaction and accrual event before marking a transaction confirmed. An
+ambiguous broadcast leaves a pending record and stops the next attempt rather
+than automatically sending again. Local EVM tests exercised one successful
+accrual and a lost RPC response after a broadcast, with no automatic replay.
+The sender has no command-line entry point, installer, scheduler, recovery
+tool or live deployment. A dedicated signer and a single shared journal path
+would be required to avoid independent processes bypassing each other's locks.
 
 The website also has an opt-in, read-only unified preview. It requires an
 explicit hourly-testnet profile plus separately pinned book and network
@@ -81,8 +92,9 @@ existing accrual keeper only sees a position-level timestamp: it cannot
 correctly schedule the grouped position's independent lots. The prototype's
 default accrual call covers only the first eight lots; later lots require
 explicit bounded-page processing. The current preflight does not execute
-transactions or persist keeper cursors; production-grade sending, receipt
-handling, cursor recovery and gas controls are still required. Group profit/principal reservations and
+transactions or persist keeper cursors. The experimental sender handles one
+candidate but still needs durable scheduling, recovery procedures and further
+adversarial review before installation. Group profit/principal reservations and
 group-profit reinvestments are currently limited to one page per request;
 amounts spread over more than 64 lots cannot yet be handled in one request.
 In a local test with 70 one-TEST lots, an eight-lot page used up to 697,626
