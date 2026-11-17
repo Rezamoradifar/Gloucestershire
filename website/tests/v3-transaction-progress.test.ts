@@ -34,5 +34,7 @@ describe('V3 transaction progress',()=>{
   expect(tracker.needsReview('Deposit event was not verified.')).toBe(true);
   tracker.record({action:'reinvestment',step:'confirmed',hash:'0x'+'c'.repeat(64)});
   expect(tracker.needsReview('Reinvestment events did not match.')).toBe(true);
+  tracker.record({action:'withdrawal_request',step:'confirmed',hash:'0x'+'d'.repeat(64)});
+  expect(tracker.needsReview('Withdrawal record did not match.')).toBe(true);
  });
 });

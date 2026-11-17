@@ -8,6 +8,7 @@ import {
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession,v3ReleaseConfig,type V3Withdrawal} from './v3-chain';
 import {readUnifiedReinvestmentPlan} from './v3-reinvest-batch';
+import {prepareUnifiedPageAction,readUnifiedPositionPage,type UnifiedBookReader,type UnifiedVaultReader} from './v3-unified-position';
 const EVENTS=new Interface(V3_ABI);
 const TOKEN_METHODS=new Interface(V3_TEST_TOKEN_ABI);
 export type V3Action=
@@ -29,7 +30,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request';
  hash?:string;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
@@ -438,6 +439,71 @@ export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,w
     BigInt(event.args.newPositionId)!==BigInt(plan.destination)||BigInt(event.args.amount)!==expected.amount;
   }))throw Error('Reinvestment transaction '+receipt.hash+' was confirmed but its events did not match. Check wallet history before retrying.');
   return {hash:receipt.hash,destination:plan.destination,amount};
+ }finally{browser?.destroy();session.provider.destroy();}
+}
+// Experimental isolated BNB-testnet request for one verified group page. It is
+// not wired to the website: manager approval, funding and payment are separate.
+export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider,wallet:string,
+ kind:'profit'|'principal',positionId:number,start:number,amount:bigint,config:V3SiteReleaseConfig|null,
+ options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
+ if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ if((kind!=='profit'&&kind!=='principal')||!validIndex(positionId)||!validIndex(start)||
+    typeof amount!=='bigint'||amount<=0n)throw Error('Invalid unified withdrawal request.');
+ const who=getAddress(wallet),onProgress=options.onProgress;
+ progress(onProgress,{step:'preflight',action:'withdrawal_request'});
+ const session=await v3ReadSession(walletProvider,who,config,true);
+ let browser:BrowserProvider|undefined;
+ try{
+  if(!session.book)throw Error('The verified reinvestment book is unavailable.');
+  const {vault,book,block,provider}=session;
+  const [user,paused,cap,bps,profitFee,principalFee,page]=await Promise.all([
+   vault.users(who,session.options),vault.paused(session.options),vault.profitWithdrawalCap(who,session.options),
+   vault.BPS(session.options),vault.PROFIT_FEE_BPS(session.options),vault.PRINCIPAL_PENALTY_BPS(session.options),
+   readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,book as unknown as UnifiedBookReader,
+    who,positionId,block.number,block.timestamp,start,8)
+  ]);
+  const nextRequestAt=Number(user.nextRequestAt);
+  if(!Number.isSafeInteger(nextRequestAt)||nextRequestAt<0||BigInt(bps)!==10000n||
+     BigInt(profitFee)!==300n||BigInt(principalFee)!==3000n)
+   throw Error('The verified withdrawal rules do not match the reviewed testnet profile.');
+  const action=prepareUnifiedPageAction(page,{registered:Boolean(user.registered),suspended:Boolean(user.suspended),
+   paused:Boolean(paused),pendingWithdrawal:Boolean(user.pendingRequest),nextRequestAt,requestCap:BigInt(cap)},kind,amount);
+  progress(onProgress,{step:'simulation',action:'withdrawal_request'});
+  const gas=await checkedGas(session,vault,action.method,action.args,who);
+  const canonical=await provider.send('eth_getBlockByNumber',[toQuantity(block.number),false]);
+  if(!block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==block.hash.toLowerCase())
+   throw Error('The verified withdrawal block changed; refresh before continuing.');
+  const data=EVENTS.encodeFunctionData(action.method,action.args);
+  browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
+  const signer=await browser.getSigner(who);
+  const receipt=await submitVerified(walletProvider,who,signer,config,config.address,data,gas,
+   'Withdrawal request','withdrawal_request',onProgress);
+  try{
+   const expectedKind=kind==='profit'?0n:1n;
+   const expectedFee=amount*(kind==='profit'?300n:3000n)/10000n;
+   const events=receipt.logs.flatMap(log=>{
+    if(log.address.toLowerCase()!==config.address.toLowerCase())return [];
+    try{const event=EVENTS.parseLog({topics:log.topics,data:log.data});
+     return event?.name==='WithdrawalRequested'&&getAddress(event.args.user)===who?[event]:[];
+    }catch{return [];}
+   });
+   if(events.length!==1||BigInt(events[0].args.kind)!==expectedKind||
+      BigInt(events[0].args.gross)!==amount||BigInt(events[0].args.fee)!==expectedFee)
+    throw Error('WITHDRAWAL_EVENT_MISMATCH');
+   const id=BigInt(events[0].args.id);
+   const [row,canonicalReceipt]=await Promise.all([
+    vault.withdrawalOf(id,{blockTag:receipt.blockNumber}),
+    provider.send('eth_getBlockByNumber',[toQuantity(receipt.blockNumber),false])
+   ]);
+   if(!canonicalReceipt?.hash||String(canonicalReceipt.hash).toLowerCase()!==receipt.blockHash.toLowerCase()||
+      getAddress(row.beneficiary)!==who||BigInt(row.positionId)!==BigInt(positionId)||
+      BigInt(row.gross)!==amount||BigInt(row.fee)!==expectedFee||BigInt(row.kind)!==expectedKind)
+    throw Error('WITHDRAWAL_RECORD_MISMATCH');
+   return {hash:receipt.hash,id,kind,gross:amount,fee:expectedFee};
+  }catch{
+   throw Error('Withdrawal request '+receipt.hash+' was confirmed but its record could not be verified. Check wallet history before retrying.');
+  }
  }finally{browser?.destroy();session.provider.destroy();}
 }
 export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,

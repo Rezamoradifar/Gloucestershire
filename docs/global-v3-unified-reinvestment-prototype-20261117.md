@@ -70,6 +70,10 @@ manual review.
 The sender has no command-line entry point, installer, scheduler, recovery
 tool or live deployment. A dedicated signer and a single shared journal path
 would be required to avoid independent processes bypassing each other's locks.
+A read-only cycle planner selects at most one proposed accrual and never
+persists a cursor. Any existing journal record stops it for reconciliation,
+including a locally confirmed record, until chain and checkpoint recovery have
+been independently verified.
 
 The website also has an opt-in, read-only unified preview. It requires an
 explicit hourly-testnet profile plus separately pinned book and network
@@ -109,6 +113,8 @@ address. The opt-in site preview can read it and scans its verified event
 history separately from vault events. Experimental registration and deposit
 adapters have passed local tests but are not connected to the UI. Wallet
 actions and the network-volume keeper are not yet enabled. The
+prototype also includes a locally tested one-page withdrawal-request adapter;
+it does not approve, fund or pay the request and is not wired to the UI. The
 existing accrual keeper only sees a position-level timestamp: it cannot
 correctly schedule the grouped position's independent lots. The prototype's
 default accrual call covers only the first eight lots; later lots require
