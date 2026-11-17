@@ -77,6 +77,21 @@ lock for every addition; it hides the unsupported group-wide live estimate.
 All three site wallet-writing entry points reject unified-preview actions
 before requesting a wallet operation. No preview is installed on the site.
 
+The experimental vault also supports one atomic manual reinvestment sourced
+from multiple recorded position claims or bounded group pages. All selected
+claims are debited together; a failure reverts the complete batch. The batch
+creates one new internal lot with one new 90-day lock and adds it to the same
+reinvestment position. Referral and network rewards remain separate claims.
+Each batch is limited to 16 sources and 128 group-lot slots; amounts that do
+not fit those bounds need smaller transactions. The unified preview shows the
+recorded position-profit total without a source dropdown. An experimental
+website adapter reads at a pinned block, prepares and simulates the exact
+batch, verifies the wallet and receipt, and checks every source event. Its
+local end-to-end test uses a local EVM only; it is not connected to a live
+button, and the preview continues to block wallet actions. The legacy site's
+source dropdown remains because its deployed vault does not support atomic
+multi-source reinvestment or a unified destination.
+
 ## This is not a deployed fix
 
 The deployed hourly V3 contract creates a separate position for every manual
@@ -94,9 +109,10 @@ default accrual call covers only the first eight lots; later lots require
 explicit bounded-page processing. The current preflight does not execute
 transactions or persist keeper cursors. The experimental sender handles one
 candidate but still needs durable scheduling, recovery procedures and further
-adversarial review before installation. Group profit/principal reservations and
-group-profit reinvestments are currently limited to one page per request;
-amounts spread over more than 64 lots cannot yet be handled in one request.
+adversarial review before installation. Group profit/principal withdrawal
+reservations are currently limited to one 64-lot page per request. Group
+profit reinvestment can use multiple pages within the separate 128-lot batch
+limit above; claims beyond that bound need smaller transactions.
 In a local test with 70 one-TEST lots, an eight-lot page used up to 697,626
 gas; the current legacy keeper's 500,000 transaction-gas cap is insufficient
 for that scenario. This measurement is not a bound for network gas use.

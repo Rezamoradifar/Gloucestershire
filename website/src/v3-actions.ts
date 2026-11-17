@@ -2,11 +2,12 @@
 // No raw key storage, background privileged sender, automatic payouts, real USDT
 // or transfer to an address supplied by anyone other than the contract.
 import {
- BrowserProvider,Contract,Interface,ZeroAddress,getAddress,isAddress,
+ BrowserProvider,Contract,Interface,ZeroAddress,getAddress,isAddress,toQuantity,
  type Eip1193Provider,type Log,type JsonRpcSigner,type TransactionReceipt
 } from 'ethers';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession,v3ReleaseConfig,type V3Withdrawal} from './v3-chain';
+import {readUnifiedReinvestmentPlan} from './v3-reinvest-batch';
 const EVENTS=new Interface(V3_ABI);
 const TOKEN_METHODS=new Interface(V3_TEST_TOKEN_ABI);
 export type V3Action=
@@ -28,7 +29,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment';
  hash?:string;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
@@ -377,6 +378,42 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
    throw Error('Existing cash reserve event not verified; review on chain.');
   return receipt.hash as string;
  }finally{provider.destroy();}
+}
+// Experimental testnet adapter. It is deliberately not wired to a live UI:
+// other unified wallet actions, history and account migration remain unfinished.
+export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,wallet:string,amount:bigint,
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive TEST amount.');
+ const who=getAddress(wallet);
+ progress(onProgress,{step:'preflight',action:'reinvestment'});
+ const session=await v3ReadSession(walletProvider,who,config,true);
+ let browser:BrowserProvider|undefined;
+ try{
+  const plan=await readUnifiedReinvestmentPlan(session,who,amount);
+  progress(onProgress,{step:'simulation',action:'reinvestment'});
+  const gas=await checkedGas(session,session.vault,'reinvestMany',[plan.sources],who);
+  const canonical=await session.provider.send('eth_getBlockByNumber',[toQuantity(session.block.number),false]);
+  if(!session.block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==session.block.hash.toLowerCase())
+   throw Error('The verified reinvestment block changed; refresh before continuing.');
+  const data=EVENTS.encodeFunctionData('reinvestMany',[plan.sources]);
+  browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
+  const signer=await browser.getSigner(who);
+  const receipt=await submitVerified(walletProvider,who,signer,config,config.address,data,gas,
+   'Reinvestment','reinvestment',onProgress);
+  const observed=receipt.logs.flatMap(log=>{
+   if(log.address.toLowerCase()!==config.address.toLowerCase())return [];
+   try{const event=EVENTS.parseLog({topics:log.topics,data:log.data});
+    return event?.name==='ProfitReinvested'&&getAddress(event.args.user)===who?[event]:[];
+   }catch{return [];}
+  });
+  if(observed.length!==plan.sources.length||observed.some((event,index)=>{
+   const expected=plan.sources[index];
+   return BigInt(event.args.fromPosition)!==BigInt(expected.positionId)||
+    BigInt(event.args.newPositionId)!==BigInt(plan.destination)||BigInt(event.args.amount)!==expected.amount;
+  }))throw Error('Reinvestment transaction '+receipt.hash+' was confirmed but its events did not match. Check wallet history before retrying.');
+  return {hash:receipt.hash,destination:plan.destination,amount};
+ }finally{browser?.destroy();session.provider.destroy();}
 }
 export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
  amount:bigint,referrer:string,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){

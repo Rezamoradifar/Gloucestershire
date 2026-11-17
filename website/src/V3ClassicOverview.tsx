@@ -4,6 +4,7 @@ import {ArrowDownLeft,ArrowRight,ArrowUpRight,Coins,Layers,LockKeyhole,Wallet} f
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as money} from './v3-format';
 import {v3PrepareUserClaims} from './v3-claim-balance';
+import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
 import type {V3Snapshot} from './v3-chain';
 
 type Mode='deposit'|'withdraw'|'reinvest';
@@ -25,9 +26,11 @@ export default function V3ClassicOverview(props:Props){
  const positions=view?.positions??[];
  const unified=Boolean(view&&view.unifiedPage!==undefined);
  const reinvested=positions.filter(item=>item.fromReinvestment).reduce((sum,item)=>sum+item.principal,0n);
+ const recordedPositionProfit=unified?positions.reduce((sum,item)=>sum+item.availableProfit,0n):0n;
  const position=positions.find(item=>item.id===Number(selectedPosition));
- const requiresPosition=mode!=='deposit';
- const usable=ready&&value.trim()!==''&&(!requiresPosition||positions.length>0);
+ const requiresPosition=mode==='withdraw'||(mode==='reinvest'&&!unified);
+ const requiresExistingPosition=mode!=='deposit';
+ const usable=ready&&value.trim()!==''&&(!requiresExistingPosition||positions.length>0);
  function submit(event:FormEvent){
   event.preventDefault();
   if(!usable)return;
@@ -54,19 +57,21 @@ export default function V3ClassicOverview(props:Props){
     </div>
     <form onSubmit={submit}>
      {mode==='reinvest'&&view&&<p className="gv2-small">Combined reinvested principal: {money(reinvested)} TEST. {unified?'Reinvestments share one position; each addition has its own lock.':'Each reinvestment remains a separate contract position with its own lock.'}</p>}
+     {mode==='reinvest'&&unified&&<V3UnifiedReinvestSummary positions={positions}/>}
      {requiresPosition&&<label className="gv1-field">Source position for recorded profit
       <select value={selectedPosition} disabled={!view||busy||positions.length===0} onChange={event=>onPosition(event.target.value)}>
        {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} TEST profit</option>):<option value="0">No position available</option>}
       </select></label>}
      <label className="gv1-field" htmlFor="gv1-amount"><span>Amount <small>{!view?'Connect wallet to view balance':mode==='deposit'?
-      `Wallet balance: ${money(view.walletTestTokenBalance)} TEST`:position?
+      `Wallet balance: ${money(view.walletTestTokenBalance)} TEST`:mode==='reinvest'&&unified?
+      `Recorded position profit: ${money(recordedPositionProfit)} TEST`:position?
       `Recorded position profit: ${money(position.availableProfit)} TEST`:'Select a position'}</small></span>
       <div className="gv1-amount"><input id="gv1-amount" value={value} onChange={event=>onValue(event.target.value)}
        disabled={!view||busy} inputMode="decimal" autoComplete="off" placeholder="0.00"/><span>₮</span></div></label>
      {mode==='deposit'&&view&&!view.registered&&<label className="gv1-field" htmlFor="gv1-referrer">Referral address or invitation link <small>Optional and permanent after registration</small>
       <input id="gv1-referrer" value={referrer} onChange={event=>onReferrer(event.target.value)} disabled={busy} placeholder="0x… or Global invitation link"/>
       {invalidInvite&&!referrer.trim()&&<span role="status" className="gv1-inline-warning">Invitation is invalid. Enter a valid address or continue without one.</span>}</label>}
-     {requiresPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
+     {requiresExistingPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
      <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Requests need manager approval and actual test-token funding.':
       mode==='reinvest'?(unified?'Recorded profit adds to the reinvestment position with a separate 90-day lock.':'Recorded profit creates a new 90-day locked position.'):'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 TEST USDT.'}</p>
      <button type="submit" className="gv2-primary gv1-action" disabled={!usable}>

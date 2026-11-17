@@ -20,6 +20,7 @@ import V3CycleCard from './V3CycleCard';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3PositionsList from './V3PositionsList';
 import V3UnifiedPositionPage from './V3UnifiedPositionPage';
+import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
 import V3ClassicOverview from './V3ClassicOverview';
 import V3HistoryPanel from './V3HistoryPanel';
 import V3WithdrawalHistory from './V3WithdrawalHistory';
@@ -395,8 +396,8 @@ export default function V3Dashboard(){
         <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||Boolean(config.unified)} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
       <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. {config.unified?'Reinvestment adds recorded claims to one position; each addition keeps its own lock.':'Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.'}</p>
-       <div className="gv3-input-row"><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
-        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} TEST profit</option>)}</select>
+       <div className="gv3-input-row">{config.unified?<V3UnifiedReinvestSummary positions={view.positions}/>:<><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
+        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} TEST profit</option>)}</select></>}
         <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
         <button disabled={busy||!view.positions.length||Boolean(config.unified)} onClick={reinvest}>Reinvest recorded TEST claim</button></div></section>
      </>}

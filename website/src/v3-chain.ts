@@ -73,6 +73,7 @@ export const V3_ABI=[
  'function checkInAndAccrue(uint256[])',
  'function deposit(uint256,address)',
  'function reinvest(uint256,uint256)',
+ 'function reinvestMany(tuple(uint256 positionId,uint256 amount,uint256 start,uint256 limit)[])',
  'function requestProfit(uint256,uint256)',
  'function requestReferral(uint256)',
  'function requestNetworkReward(uint256)',

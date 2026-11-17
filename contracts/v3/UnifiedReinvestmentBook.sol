@@ -125,6 +125,17 @@ contract UnifiedReinvestmentBook {
     /// Only the selected bounded page is used; insufficient page profit reverts.
     function reinvestProfitPage(address user,uint256 amount,uint256 start,uint256 limit)
         external onlyVault returns(uint256 lotId,uint256 dailyUsed,uint256 compoundUsed) {
+        (dailyUsed,compoundUsed)=_consumeProfitPage(user,amount,start,limit);
+        lotId=_record(user,amount);
+    }
+    /// @dev The vault must atomically record the combined replacement lot and
+    /// update liabilities after consuming all selected source pages.
+    function consumeProfitPage(address user,uint256 amount,uint256 start,uint256 limit)
+        external onlyVault returns(uint256 dailyUsed,uint256 compoundUsed) {
+        return _consumeProfitPage(user,amount,start,limit);
+    }
+    function _consumeProfitPage(address user,uint256 amount,uint256 start,uint256 limit)
+        private returns(uint256 dailyUsed,uint256 compoundUsed) {
         if(amount==0)revert Invalid();
         Position storage p=positions[user];uint256 end=_end(p.lots.length,start,limit);uint256 left=amount;
         // Match V3's daily-before-compound split for the selected page.
@@ -138,7 +149,6 @@ contract UnifiedReinvestmentBook {
         }
         if(left!=0)revert Insufficient();
         p.daily-=dailyUsed;p.compound-=compoundUsed;p.basis-=amount;
-        lotId=_record(user,amount);
     }
 
     /// @notice View matured, unreserved principal in a bounded page.

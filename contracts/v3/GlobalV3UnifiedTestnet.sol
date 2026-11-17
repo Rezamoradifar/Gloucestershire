@@ -76,6 +76,12 @@ contract GlobalV3UnifiedTestnet is AccessControl, ReentrancyGuard {
         uint64 lastAccruedAt;
         bool fromReinvestment;
     }
+    struct ReinvestmentSource {
+        uint256 positionId;
+        uint256 amount;
+        uint256 start;
+        uint256 limit;
+    }
     // status: 0 Requested, 1 Approved, 2 CashEscrowed, 3 Paid, 4 Rejected, 5 Cancelled
     // kind: 0 position-profit, 1 principal, 2 referral-profit, 3 network reward
     struct Withdrawal {
@@ -370,32 +376,69 @@ contract GlobalV3UnifiedTestnet is AccessControl, ReentrancyGuard {
     function reinvestFromPage(uint256 positionId,uint256 amount,uint256 start,uint256 limit) external nonReentrant active {
         _reinvest(positionId,amount,start,limit);
     }
+    /// @notice Atomically move claims from bounded source positions or group
+    /// pages to the user's one reinvestment position as one new lot with its
+    /// own accrual and principal-lock timestamps.
+    /// @dev A failed input reverts the entire batch. The UI must calculate the
+    /// page amounts from confirmed claims and simulate the exact transaction.
+    function reinvestMany(ReinvestmentSource[] calldata sources) external nonReentrant active {
+        uint256 n=sources.length;
+        if(n==0||n>16)revert Invalid();
+        User storage u=users[msg.sender];
+        if(u.suspended)revert NotEligible();
+        uint256 groupSpan;
+        uint256 total;
+        uint256 group=reinvestmentPositionPlusOne[msg.sender];
+        for(uint256 i;i<n;i++){
+            ReinvestmentSource calldata source=sources[i];
+            if(source.amount==0)revert NotEligible();
+            if(group!=0&&source.positionId+1==group){
+                if(source.limit==0||source.limit>64)revert Invalid();
+                groupSpan+=source.limit;
+                if(groupSpan>128)revert Invalid();
+            }else if(source.start!=0||source.limit!=0)revert Invalid();
+            total+=source.amount;
+        }
+        if(u.capital+total>50_000 ether&&!u.vipKyc)revert NotEligible();
+        for(uint256 i;i<n;i++){
+            ReinvestmentSource calldata source=sources[i];
+            _consumeReinvestment(source.positionId,source.amount,source.start,source.limit,group);
+        }
+        uint256 id=_recordReinvestment(u,group,total);
+        for(uint256 i;i<n;i++)emit ProfitReinvested(msg.sender,sources[i].positionId,id,sources[i].amount);
+    }
     function _reinvest(uint256 positionId,uint256 amount,uint256 start,uint256 limit) private {
         User storage u=users[msg.sender];
         if(u.suspended||amount==0)revert NotEligible();
-        Position storage p=positions[msg.sender][positionId];
-        if(amount>p.availableProfit||amount>p.compoundedBasis)revert Insufficient();
         if(u.capital+amount>50_000 ether&&!u.vipKyc)revert NotEligible();
         uint256 group=reinvestmentPositionPlusOne[msg.sender];
+        _consumeReinvestment(positionId,amount,start,limit,group);
+        uint256 id=_recordReinvestment(u,group,amount);
+        emit ProfitReinvested(msg.sender,positionId,id,amount);
+    }
+    function _consumeReinvestment(uint256 positionId,uint256 amount,uint256 start,uint256 limit,uint256 group) private {
+        Position storage p=positions[msg.sender][positionId];
+        if(amount>p.availableProfit||amount>p.compoundedBasis)revert Insufficient();
         uint256 personalUsed;
         uint256 compoundUsed;
         if(group!=0&&positionId+1==group){
-            (,personalUsed,compoundUsed)=reinvestmentBook.reinvestProfitPage(msg.sender,amount,start,limit);
+            (personalUsed,compoundUsed)=reinvestmentBook.consumeProfitPage(msg.sender,amount,start,limit);
         }else{
             personalUsed=Math.min(amount,claimableDaily[msg.sender][positionId]);
             compoundUsed=amount-personalUsed;
-            reinvestmentBook.record(msg.sender,amount);
         }
         p.availableProfit-=amount;
         p.compoundedBasis-=amount;
         claimableDaily[msg.sender][positionId]-=personalUsed;
         claimableCompound[msg.sender][positionId]-=compoundUsed;
         profitLiability-=amount;
+    }
+    function _recordReinvestment(User storage u,uint256 group,uint256 amount) private returns(uint256 id) {
+        reinvestmentBook.record(msg.sender,amount);
         principalLiability+=amount;
         networkPlan.capitalChanged(msg.sender,u.capital,u.capital+amount);
         u.capital+=amount;
         u.reinvestments+=amount;
-        uint256 id;
         if(group==0){
             id=positions[msg.sender].length;
             positions[msg.sender].push(Position(0,0,0,0,0,0,0,
@@ -404,7 +447,6 @@ contract GlobalV3UnifiedTestnet is AccessControl, ReentrancyGuard {
         }else{id=group-1;}
         positions[msg.sender][id].principal+=amount;
         networkPlan.addVolume(msg.sender,amount);
-        emit ProfitReinvested(msg.sender,positionId,id,amount);
     }
 
     /// @notice Prepare or claim the original 14 staged network rewards as

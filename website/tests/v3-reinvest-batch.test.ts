@@ -1,0 +1,49 @@
+import {describe,expect,it} from 'vitest';
+import {parseEther} from 'ethers';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {createElement} from 'react';
+import {planUnifiedReinvestment} from '../src/v3-reinvest-batch';
+import V3UnifiedReinvestSummary from '../src/V3UnifiedReinvestSummary';
+import type {V3WalletPosition} from '../src/v3-chain';
+import type {UnifiedPositionPage} from '../src/v3-unified-position';
+
+const E=(s:string)=>parseEther(s);
+const position=(id:number,claim:string,group=false)=>({id,fromReinvestment:group,principal:E('100'),
+ availableProfit:E(claim),availableDaily:E(claim),availableCompound:0n,compoundedBasis:E(claim)} as V3WalletPosition);
+const page=(start:number,claim:string,block=50)=>({wallet:'0x0000000000000000000000000000000000000001',
+ positionId:1,block,asOf:1000,start,limit:1,totalLots:2,principal:E('100'),daily:E('6'),compound:0n,
+ availableProfitOnPage:E(claim),lots:[{id:start,daily:E(claim),compound:0n}]} as UnifiedPositionPage);
+
+describe('atomic unified reinvestment planning',()=>{
+ it('automatically draws one requested amount from several recorded position profits',()=>{
+  const positions=[position(0,'273.683399'),position(1,'684.208498'),position(2,'2.736833')];
+  const result=planUnifiedReinvestment(positions,[],E('500'));
+  expect(result.total).toBe(E('960.628730'));
+  expect(result.sources).toEqual([
+   {positionId:0,amount:E('273.683399'),start:0,limit:0},
+   {positionId:1,amount:E('226.316601'),start:0,limit:0}
+  ]);
+  const html=renderToStaticMarkup(createElement(V3UnifiedReinvestSummary,{positions}));
+  expect(html).toContain('960.62873 TEST');
+  expect(html).not.toContain('<select');
+  expect(html).toContain('Referral and network rewards are separate');
+ });
+ it('uses verified group pages after other sources, without counting any profit twice',()=>{
+  const positions=[position(0,'4'),position(1,'6',true)];
+  const result=planUnifiedReinvestment(positions,[page(0,'3'),page(1,'3')],E('9'));
+  expect(result.sources).toEqual([{positionId:0,amount:E('4'),start:0,limit:0},
+   {positionId:1,amount:E('3'),start:0,limit:1},{positionId:1,amount:E('2'),start:1,limit:1}]);
+  expect(()=>planUnifiedReinvestment(positions,[page(0,'3')],E('9'))).toThrow(/More verified/);
+  expect(()=>planUnifiedReinvestment(positions,[page(0,'3'),page(0,'3')],E('9'))).toThrow(/inconsistent/);
+  expect(()=>planUnifiedReinvestment(positions,[page(0,'3'),page(1,'3',51)],E('9'))).toThrow(/same verified block/);
+ });
+ it('fails closed for incomplete accounts, invalid claims or a transaction requiring too many sources',()=>{
+  expect(()=>planUnifiedReinvestment([position(1,'2')],[],E('1'))).toThrow(/reconcile/);
+  expect(()=>planUnifiedReinvestment([position(0,'2')],[],E('3'))).toThrow(/exceeds/);
+  const invalid=position(0,'2');invalid.availableDaily=E('1');
+  expect(()=>planUnifiedReinvestment([invalid],[],E('1'))).toThrow(/reconcile/);
+  const many=Array.from({length:17},(_,i)=>position(i,'1'));
+  expect(planUnifiedReinvestment(many,[],E('16')).sources).toHaveLength(16);
+  expect(()=>planUnifiedReinvestment(many,[],E('17'))).toThrow(/more than one transaction/);
+ });
+});

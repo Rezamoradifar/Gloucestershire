@@ -32,5 +32,7 @@ describe('V3 transaction progress',()=>{
   expect(tracker.needsReview('Simulation failed.')).toBe(false);
   tracker.record({action:'test_deposit',step:'confirmed',hash:'0x'+'b'.repeat(64)});
   expect(tracker.needsReview('Deposit event was not verified.')).toBe(true);
+  tracker.record({action:'reinvestment',step:'confirmed',hash:'0x'+'c'.repeat(64)});
+  expect(tracker.needsReview('Reinvestment events did not match.')).toBe(true);
  });
 });
