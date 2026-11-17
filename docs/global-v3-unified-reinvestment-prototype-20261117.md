@@ -40,6 +40,9 @@ pages after a caller has independently verified deployment, account and block.
 It does not read a chain, sign transactions, or run a keeper. The compile-only
 `scripts/compile-global-v3-unified-testnet.mjs` checks compiler and bytecode
 size for the parent and both components; it does not install or deploy them.
+`scripts/v3-unified-deploy-preflight.mjs` is an unsigned chain-97 deployment
+estimate, not an installer. It performs no deployment or site change and
+always reports that the release is not ready.
 
 The read-only unified keeper preflight now verifies a supplied testnet
 deployment receipt and all three pinned runtime hashes, checks that the book
@@ -70,6 +73,9 @@ the journal or declaring a retry safe. Old records without those fields need
 manual review.
 No existing journal record, including a confirmed one, may be overwritten
 until canonical reconciliation and durable cursor checkpointing are designed.
+An additional read-only confirmation review validates the deployment,
+transaction, event and cursor before suggesting the original retry cursor for
+a rescan. It does not clear the journal or authorize a transaction retry.
 The sender has no command-line entry point, installer, scheduler, recovery
 tool or live deployment. A dedicated signer and a single shared journal path
 would be required to avoid independent processes bypassing each other's locks.
@@ -125,6 +131,7 @@ prototype also includes a locally tested one-page withdrawal-request adapter;
 it does not approve, fund or pay the request and is not wired to the UI. The
 check-in adapter is likewise local-test-only and records activity without
 accruing or transferring profit; a separately verified keeper remains necessary.
+The guarded dashboard route for that check-in remains disabled in the preview.
 The existing accrual keeper only sees a position-level timestamp: it cannot
 correctly schedule the grouped position's independent lots. The prototype's
 default accrual call covers only the first eight lots; later lots require

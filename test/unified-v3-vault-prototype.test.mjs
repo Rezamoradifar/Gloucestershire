@@ -13,6 +13,7 @@ import {checkUnifiedKeeper} from '../scripts/check-v3-unified-keeper.mjs';
 import {simulateUnifiedAccrual} from '../scripts/simulate-v3-unified-keeper.mjs';
 import {executeUnifiedAccrual} from '../scripts/execute-v3-unified-keeper.mjs';
 import {inspectUnifiedKeeperJournal} from '../scripts/inspect-v3-unified-keeper.mjs';
+import {reviewUnifiedConfirmedJournal} from '../scripts/review-v3-unified-confirmed.mjs';
 
 const MOCK='0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89';
 const E=value=>parseEther(String(value));
@@ -340,5 +341,17 @@ test('more than 64 reinvestments remain one position and accrue on separate page
   const repeated=await scanUnifiedAccrual({vault,book,blockNumber:Number(BigInt(block.number)),
    blockTimestamp:Number(BigInt(block.timestamp)),cursor:{member:0,position:1,lot:0},maxWork:20,maxResults:10});
   assert.equal(repeated.selected.length,0);
+  const firstRecord=fs.readFileSync(path.join(journalDirectory,'pending.json'),'utf8');
+  const review=await reviewUnifiedConfirmedJournal({provider,proof,operator:keeperAddress,journalDirectory});
+  assert.equal(review.state,'CONFIRMED_REQUIRES_RECONCILIATION');
+  assert.deepEqual(review.retryCursor,{member:0,position:1,lot:0});
+  assert.equal(review.safeToRetry,false);assert.equal(review.cursorPersisted,false);
+  assert.equal(fs.readFileSync(path.join(journalDirectory,'pending.json'),'utf8'),firstRecord);
+  const secondRecord=fs.readFileSync(path.join(ambiguousDirectory,'pending.json'),'utf8');
+  const ambiguousReview=await reviewUnifiedConfirmedJournal({provider,proof,operator:keeperAddress,journalDirectory:ambiguousDirectory});
+  assert.equal(ambiguousReview.state,'CONFIRMED_REQUIRES_RECONCILIATION');
+  assert.deepEqual(ambiguousReview.retryCursor,{member:0,position:1,lot:8});
+  assert.equal(fs.readFileSync(path.join(ambiguousDirectory,'pending.json'),'utf8'),secondRecord);
+  await assert.rejects(reviewUnifiedConfirmedJournal({provider,proof,operator:managerAddress,journalDirectory}),/OPERATOR_MISMATCH/);
  }finally{provider.destroy();await rpc.disconnect();fs.rmSync(journalDirectory,{recursive:true,force:true});fs.rmSync(ambiguousDirectory,{recursive:true,force:true});}
 });

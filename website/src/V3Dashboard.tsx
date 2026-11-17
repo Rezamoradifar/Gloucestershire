@@ -19,6 +19,8 @@ import {V3_PERIOD_SECONDS} from './v3-cycle';
 import {V3_HOURLY_TEST} from './v3-site-config';
 import V3ClaimsReadout from './V3ClaimsReadout';
 import V3CycleCard from './V3CycleCard';
+import V3UnifiedActivity from './V3UnifiedActivity';
+import {sendV3UnifiedCheckIn} from './v3-unified-checkin';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3PositionsList from './V3PositionsList';
 import V3UnifiedPositionPage from './V3UnifiedPositionPage';
@@ -266,8 +268,29 @@ export default function V3Dashboard(){
  }
  const claims=view?v3PrepareUserClaims(view.ledger):null;
  const due=view?.positions.filter(p=>(!config?.unified||!p.fromReinvestment)&&p.principal>0n&&view.asOf>=p.lastAccruedAt+V3_PERIOD_SECONDS).slice(0,20).map(p=>p.id)??[];
- const checkIn=()=>void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
-  due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?');
+ async function checkInUnified(){
+  if(busy||inFlight.current)return;
+  if(UNIFIED_PREVIEW_READ_ONLY){setError('The unified testnet preview is read-only.');return;}
+  if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your BNB Testnet account.');return;}
+  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  if(!view.registered||view.suspended||view.paused){setError('This test account cannot check in.');return;}
+  if(!window.confirm('BNB TESTNET ONLY\n\nRecord your account activity? This requires a wallet transaction and testnet gas. It does not credit or transfer profit.'))return;
+  const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
+  inFlight.current=true;setBusy(true);setError('');setNotice('Checking test account activity…');setTxHash('');setTransactionProgress(null);
+  const tracker=new V3TransactionProgressTracker();let progressHash:string|undefined;
+  const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
+  try{
+   const result=await sendV3UnifiedCheckIn(p,wallet,config,{enabled:!UNIFIED_PREVIEW_READ_ONLY,onProgress:report});
+   setTxHash(result.hash);setNotice('Test check-in confirmed. Eligible claims require separate accrual.');await refresh();
+  }catch(e){const message=e instanceof Error?e.message:'V3 check-in not confirmed.';setNotice('');setError(message);
+   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+  finally{inFlight.current=false;setBusy(false);}
+ }
+ const checkIn=()=>{
+  if(config?.unified){void checkInUnified();return;}
+  void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
+   due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?');
+ };
  const request=(kind=requestKind)=>{
   try{
    const a=prepareV3WithdrawalRequest(view,value,selectedPosition,kind);
@@ -403,6 +426,7 @@ export default function V3Dashboard(){
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy||Boolean(config.unified)} onCheckIn={checkIn} onPositions={()=>navigate('positions')}/>
+      {config.unified&&<V3UnifiedActivity view={view} busy={busy||loading||reviewRequired} readOnly={UNIFIED_PREVIEW_READ_ONLY} onCheckIn={checkIn}/>}
       {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger}/>}
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
