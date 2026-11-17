@@ -8,6 +8,8 @@ const firstAccount=['DepositRouted','DailyClaimAccrued','ReferralClaimAccrued',
  'NetworkClaimAccrued','ProfitReinvested','CheckIn','StatusChanged',
  'RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned'];
 const secondAccount=['WithdrawalRequested','WithdrawalPaid','NetworkVolumeQueued'];
+const networkFirst=['RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned'];
+const networkSecond=['NetworkVolumeQueued'];
 const tokenEvents=new Interface(['event Approval(address indexed owner,address indexed spender,uint256 value)']);
 const windowSize=2000;
 const maxEvents=200;
@@ -59,8 +61,10 @@ function isLogRangeLimit(error:unknown){
 // block range. The anchor is checked again so pagination cannot silently jump
 // across a changed chain. Returned entries are events, never synthetic sales.
 export async function queryV3HistoryWindow(provider:Provider,contract:string,wallet:string,
- anchor:V3HistoryAnchor,page:number):Promise<V3HistoryPage>{
+ anchor:V3HistoryAnchor,page:number,networkContract?:string):Promise<V3HistoryPage>{
  const address=getAddress(contract),who=getAddress(wallet);
+ const network=networkContract?getAddress(networkContract):null;
+ if(network&&(network===address||network===V3_TEST_TOKEN))throw Error('Invalid unified network history contract.');
  if(!hash(anchor.hash))throw Error('Invalid V3 history block hash.');
  const {from,to}=v3HistoryRange(anchor.block,page,anchor.firstBlock);
  const blockAtAnchor=async()=>{try{return await provider.getBlock(anchor.block);}catch{throw Error(historyUnavailable);}};
@@ -87,19 +91,24 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
  };
  // Sequential requests avoid multiplying rate pressure while preserving the
  // same complete, non-overlapping block range for both indexed filters.
- const first=await scan(address,[firstAccount.map(topic),account],from,to);
- const second=await scan(address,[secondAccount.map(topic),null,account],from,to);
+ const vaultFirst=network?firstAccount.filter(name=>!networkFirst.includes(name)):firstAccount;
+ const vaultSecond=network?secondAccount.filter(name=>!networkSecond.includes(name)):secondAccount;
+ const first=await scan(address,[vaultFirst.map(topic),account],from,to);
+ const second=await scan(address,[vaultSecond.map(topic),null,account],from,to);
  const approvals=await scan(V3_TEST_TOKEN,[tokenEvents.getEvent('Approval')!.topicHash,account,zeroPadValue(address,32)],from,to);
- if(first.length+second.length+approvals.length>maxEvents)
+ const networkFirstLogs=network?await scan(network,[networkFirst.map(topic),account],from,to):[];
+ const networkSecondLogs=network?await scan(network,[networkSecond.map(topic),null,account],from,to):[];
+ if(first.length+second.length+approvals.length+networkFirstLogs.length+networkSecondLogs.length>maxEvents)
   throw Error('Too many events in this range. Open the contract explorer for this block range.');
  const seen=new Set<string>();
- const items=[...first,...second,...approvals].map((log:Log):V3HistoryItem=>{
+ const items=[...first,...second,...approvals,...networkFirstLogs,...networkSecondLogs].map((log:Log):V3HistoryItem=>{
   const logAddress=getAddress(log.address);
-  if(log.removed||(logAddress!==address&&logAddress!==V3_TEST_TOKEN)||!hash(log.transactionHash)||
+  if(log.removed||(logAddress!==address&&logAddress!==V3_TEST_TOKEN&&logAddress!==network)||!hash(log.transactionHash)||
    !Number.isSafeInteger(log.blockNumber)||log.blockNumber<from||log.blockNumber>to||
    !Number.isSafeInteger(log.index)||log.index<0)throw Error('Invalid V3 history event.');
   const parsed=(logAddress===V3_TEST_TOKEN?tokenEvents:events).parseLog({topics:log.topics,data:log.data});
-  if(!parsed||!(logAddress===V3_TEST_TOKEN?parsed.name==='Approval':[...firstAccount,...secondAccount].includes(parsed.name)))
+  const allowed=logAddress===V3_TEST_TOKEN?['Approval']:logAddress===network?[...networkFirst,...networkSecond]:[...vaultFirst,...vaultSecond];
+  if(!parsed||!allowed.includes(parsed.name))
    throw Error('Unexpected V3 history event.');
   const a=parsed.args;
   const eventWallet=parsed.name==='Approval'?a.owner:parsed.name==='NetworkVolumeQueued'?a.source:
@@ -159,7 +168,7 @@ export async function readV3HistoryPage(walletProvider:Eip1193Provider,wallet:st
    selected=selected??{block:session.block.number,hash:session.block.hash!,firstBlock:session.deploymentBlock};
    if(selected.block>session.block.number||selected.firstBlock!==session.deploymentBlock)
     throw Error('History anchor or deployment block is no longer verified.');
-   return await queryV3HistoryWindow(session.provider,config.address,wallet,selected,page);
+   return await queryV3HistoryWindow(session.provider,config.address,wallet,selected,page,config.unified?.network);
   }catch(error){
    if(!(error instanceof Error)||error.message!==historyUnavailable||session.readerIndex>=2)throw error;
    nextReader=session.readerIndex+1;

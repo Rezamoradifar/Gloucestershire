@@ -255,6 +255,10 @@ function isV3InvalidRevert(error:unknown){
 export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
  action:V3Action,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
  requireActionReady(config);
+ return sendV3ActionCore(walletProvider,wallet,action,config,onProgress);
+}
+async function sendV3ActionCore(walletProvider:Eip1193Provider,wallet:string,
+ action:V3Action,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback){
  if(action.kind==='register')progress(onProgress,{step:'preflight',action:'registration'});
  const groupAction=action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
  if(groupAction)progress(onProgress,{step:'preflight',action:'network_group'});
@@ -379,6 +383,27 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
   return receipt.hash as string;
  }finally{provider.destroy();}
 }
+// Local/testnet-only adapter, deliberately not connected to the live UI. Its
+// explicit opt-in cannot make the existing unified preview writable.
+export async function sendV3UnifiedRegistration(walletProvider:Eip1193Provider,wallet:string,referrer:string,
+ config:V3SiteReleaseConfig|null,options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
+ if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ const who=getAddress(wallet),parent=getAddress(referrer);
+ const hash=await sendV3ActionCore(walletProvider,who,{kind:'register',referrer:parent},config,options.onProgress);
+ let session:Awaited<ReturnType<typeof v3ReadSession>>|undefined;
+ try{
+  session=await v3ReadSession(walletProvider,who,config,true);
+  const user=await session.vault.users(who,session.options);
+  if(!user.registered||getAddress(user.referrer)!==parent)throw Error('REGISTRATION_STATE_MISMATCH');
+  const canonical=await session.provider.send('eth_getBlockByNumber',[toQuantity(session.block.number),false]);
+  if(!session.block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==session.block.hash.toLowerCase())
+   throw Error('REGISTRATION_BLOCK_CHANGED');
+ }catch{
+  throw Error('Registration transaction '+hash+' was confirmed but its account state could not be verified. Check wallet history before retrying.');
+ }finally{session?.provider.destroy();}
+ return hash;
+}
 // Experimental testnet adapter. It is deliberately not wired to a live UI:
 // other unified wallet actions, history and account migration remain unfinished.
 export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,wallet:string,amount:bigint,
@@ -418,6 +443,10 @@ export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,w
 export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
  amount:bigint,referrer:string,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
  requireActionReady(config);
+ return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,onProgress);
+}
+async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:string,
+ amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback){
  if(!config||amount<10n**19n||!isAddress(referrer)||
   getAddress(referrer)===getAddress(wallet))
   throw Error('Invalid V3 TESTNET deposit, referrer, or unverified contract.');
@@ -505,6 +534,15 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
   }
   throw error;
  }finally{provider.destroy();}
+}
+// Explicitly enabled only for isolated local/testnet tests; the standard
+// deposit entry point and unified website remain read-only.
+export async function sendV3UnifiedTestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
+ amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,
+ options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
+ if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,options.onProgress);
 }
 export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet:string,
  id:number,config:V3SiteReleaseConfig|null=v3ReleaseConfig){

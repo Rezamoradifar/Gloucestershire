@@ -12,6 +12,7 @@ import {scanUnifiedAccrual} from '../scripts/scan-v3-unified-accrual.mjs';
 import {checkUnifiedKeeper} from '../scripts/check-v3-unified-keeper.mjs';
 import {simulateUnifiedAccrual} from '../scripts/simulate-v3-unified-keeper.mjs';
 import {executeUnifiedAccrual} from '../scripts/execute-v3-unified-keeper.mjs';
+import {inspectUnifiedKeeperJournal} from '../scripts/inspect-v3-unified-keeper.mjs';
 
 const MOCK='0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89';
 const E=value=>parseEther(String(value));
@@ -317,6 +318,9 @@ test('more than 64 reinvestments remain one position and accrue on separate page
    await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory,waitReceipt}),/simulated lost RPC response/);
   }finally{provider.broadcastTransaction=originalBroadcast;}
   assert.equal(JSON.parse(fs.readFileSync(path.join(journalDirectory,'pending.json'),'utf8')).status,'PREPARED');
+  const diagnosis=await inspectUnifiedKeeperJournal({provider,journalDirectory});
+  assert.equal(diagnosis.state,'RECEIPT_OBSERVED_REVIEW_REQUIRED');
+  assert.equal(diagnosis.canonicalBlock,true);assert.equal(diagnosis.safeToRetry,false);
   await assert.rejects(executeUnifiedAccrual({provider,signer:localKeeper,proof,candidate:scan.selected[1],journalDirectory,waitReceipt}),/PREVIOUS_TRANSACTION_NEEDS_REVIEW/);
   assert.equal((await vault.positionOf(who,1)).availableProfit,E('0.176'));
   for(const item of scan.selected.slice(2)){

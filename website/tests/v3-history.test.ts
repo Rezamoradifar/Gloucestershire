@@ -8,6 +8,7 @@ const iface=new Interface(V3_ABI);
 const contract='0x1111111111111111111111111111111111111111';
 const wallet='0x2222222222222222222222222222222222222222';
 const other='0x3333333333333333333333333333333333333333';
+const networkContract='0x4444444444444444444444444444444444444444';
 const blockHash='0x'+'aa'.repeat(32);
 const to=(value:string)=>parseEther(value);
 const log=(name:string,values:unknown[],blockNumber:number,index:number):Log=>{
@@ -58,6 +59,41 @@ describe('wallet-specific confirmed V3 activity',()=>{
   const wrong=approvalInterface.encodeEventLog(approvalInterface.getEvent('Approval')!,[wallet,other,to('100')]);
   getLogs.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([{...approval,...wrong}]);
   await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0)).rejects.toThrow('wallet mismatch');
+ });
+ it('reads unified network events only from the verified separate component',async()=>{
+  const claim=log('NetworkClaimAccrued',[wallet,0n,to('35'),1n],4001,0);
+  const group={...log('RewardGroupCreated',[wallet,0n,[other]],4002,1),address:networkContract} as Log;
+  const earned={...log('NetworkRewardEarned',[wallet,0n,0n,to('500'),to('35')],4003,2),address:networkContract} as Log;
+  const queued={...log('NetworkVolumeQueued',[1n,wallet,to('100')],4004,3),address:networkContract} as Log;
+  const getLogs=vi.fn().mockResolvedValueOnce([claim]).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+   .mockResolvedValueOnce([group,earned]).mockResolvedValueOnce([queued]);
+  const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+  const page=await queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0,networkContract);
+  expect(page.items.map(item=>item.title)).toEqual(['Network volume queued','Network milestone completed','Network reward group created','Network claim recorded']);
+  expect(getLogs.mock.calls.map(([filter])=>filter.address)).toEqual([contract,contract,V3_TEST_TOKEN,networkContract,networkContract]);
+  expect(getLogs.mock.calls[3][0].topics[1]).toBe(zeroPadValue(wallet,32));
+  expect(getLogs.mock.calls[4][0].topics[2]).toBe(zeroPadValue(wallet,32));
+  const firstTopics=getLogs.mock.calls[0][0].topics[0] as string[];
+  expect(firstTopics).toContain(iface.getEvent('NetworkClaimAccrued')!.topicHash);
+  expect(firstTopics).not.toContain(iface.getEvent('NetworkRewardEarned')!.topicHash);
+ });
+ it('rejects wrong-source events and fails closed when the unified component cannot be scanned',async()=>{
+  const wrongVault=log('NetworkRewardEarned',[wallet,0n,0n,to('500'),to('35')],4003,0);
+  const badFirst=source([wrongVault]);
+  await expect(queryV3HistoryWindow(badFirst.provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0,networkContract))
+   .rejects.toThrow('Unexpected V3 history event.');
+  const wrongNetwork={...log('CheckIn',[wallet,4000n],4000,0),address:networkContract} as Log;
+  const getLogs=vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+   .mockResolvedValueOnce([wrongNetwork]).mockResolvedValueOnce([]);
+  const provider={getLogs,getBlock:vi.fn().mockResolvedValue({hash:blockHash})} as unknown as Provider;
+  await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0,networkContract))
+   .rejects.toThrow('Unexpected V3 history event.');
+  getLogs.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+   .mockRejectedValueOnce({code:429,message:'rate limit exceeded'});
+  await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0,networkContract))
+   .rejects.toThrow('Unable to load the complete activity');
+  await expect(queryV3HistoryWindow(provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0,contract))
+   .rejects.toThrow('Invalid unified network history contract.');
  });
  it('rejects mismatched wallet, altered routing and changed block anchor',async()=>{
   const wrongUser=source([log('CheckIn',[other,4000n],4000,0)]);

@@ -41,6 +41,7 @@ export async function executeUnifiedAccrual({provider,signer,proof,candidate,jou
    throw Error('UNIFIED_SIGNED_TRANSACTION_MISMATCH');
   journal.prepare({status:'PREPARED',chainId:97,hash,nonce:latest,operator,vault:simulation.vault,
    member:simulation.member,positionId:simulation.positionId,method:simulation.method,
+   transactionData:data,gasLimit:simulation.gasLimit.toString(),gasPrice:simulation.gasPrice.toString(),
    retryCursor,nextCursor,createdAt:new Date().toISOString()});
   const broadcast=await provider.broadcastTransaction(raw);
   if(!broadcast||String(broadcast.hash).toLowerCase()!==hash.toLowerCase())

@@ -63,6 +63,10 @@ transaction and accrual event before marking a transaction confirmed. An
 ambiguous broadcast leaves a pending record and stops the next attempt rather
 than automatically sending again. Local EVM tests exercised one successful
 accrual and a lost RPC response after a broadcast, with no automatic replay.
+The journal also records exact public calldata and fee fields; an inspection
+helper can report the RPC-observed transaction and receipt without changing
+the journal or declaring a retry safe. Old records without those fields need
+manual review.
 The sender has no command-line entry point, installer, scheduler, recovery
 tool or live deployment. A dedicated signer and a single shared journal path
 would be required to avoid independent processes bypassing each other's locks.
@@ -101,8 +105,10 @@ not deployed on any network, production-ready, or independently audited. They
 do not change or transfer any existing user position or test token.
 
 The network component exposes branch and reward-group reads/actions at a new
-address. The opt-in site preview can read it, but wallet actions, history of
-network events and the network-volume keeper are not yet adapted. The
+address. The opt-in site preview can read it and scans its verified event
+history separately from vault events. Experimental registration and deposit
+adapters have passed local tests but are not connected to the UI. Wallet
+actions and the network-volume keeper are not yet enabled. The
 existing accrual keeper only sees a position-level timestamp: it cannot
 correctly schedule the grouped position's independent lots. The prototype's
 default accrual call covers only the first eight lots; later lots require

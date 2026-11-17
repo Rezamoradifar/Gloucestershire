@@ -12,10 +12,14 @@ contract EventFixture {
  event DailyClaimAccrued(address indexed user,uint256 indexed positionId,uint256 personal,uint256 compounded,uint256 total,uint256 at);
  event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee);
  event WithdrawalPaid(uint256 indexed id,address indexed beneficiary,uint256 net,uint256 fee);
+ event NetworkVolumeQueued(uint256 indexed job,address indexed source,uint256 usd);
+ event RewardGroupCreated(address indexed user,uint256 indexed group,address[] branches);
  function deposit(uint256 amount) external {emit DepositRouted(msg.sender,0,amount,amount/10,amount/10,amount-2*(amount/10));}
  function accrue(uint256 daily,uint256 compound) external {emit DailyClaimAccrued(msg.sender,0,daily,compound,daily+compound,block.timestamp);}
  function request(uint256 value) external {emit WithdrawalRequested(0,msg.sender,0,value,value*3/100);}
  function pay(address beneficiary,uint256 net,uint256 fee) external {emit WithdrawalPaid(0,beneficiary,net,fee);}
+ function queue(uint256 usd) external {emit NetworkVolumeQueued(0,msg.sender,usd);}
+ function group(address[] calldata branches) external {emit RewardGroupCreated(msg.sender,0,branches);}
 }`;
 const output=JSON.parse(solc.compile(JSON.stringify({language:'Solidity',sources:{'fixture.sol':{content:source}},
  settings:{evmVersion:'shanghai',outputSelection:{'*':{'*':['abi','evm.bytecode.object']}}}})));
@@ -47,6 +51,25 @@ describe('V3 history log queries against an in-process EVM',()=>{
    expect(page.items[0].value).toBe('0.97 TEST USDT');
    expect(page.items[2].value).toBe('1.02 TEST USDT');
    expect(page.items[3].value).toBe('100.00 TEST USDT');
+  }finally{provider.destroy();await rpc.disconnect();}
+ },30000);
+ it('queries separate vault and network contracts within one anchored range',async()=>{
+  const rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},wallet:{totalAccounts:3}});
+  const provider=new BrowserProvider(rpc,undefined,{cacheTimeout:-1});provider.pollingInterval=25;
+  try{
+   const owner=await provider.getSigner(0),user=await provider.getSigner(1),other=await provider.getSigner(2);
+   const factory=new ContractFactory(artifact.abi,'0x'+artifact.evm.bytecode.object,owner);
+   const vault=await factory.deploy(),network=await factory.deploy();
+   await vault.waitForDeployment();await network.waitForDeployment();
+   await (await vault.connect(user).getFunction('deposit')(to('100'))).wait();
+   await (await network.connect(other).getFunction('queue')(to('10'))).wait();
+   await (await network.connect(user).getFunction('group')([await other.getAddress()])).wait();
+   await (await network.connect(user).getFunction('queue')(to('100'))).wait();
+   const height=await provider.getBlockNumber(),block=await provider.getBlock(height);
+   const page=await queryV3HistoryWindow(provider,await vault.getAddress(),await user.getAddress(),
+    {block:height,hash:block!.hash!,firstBlock:0},0,await network.getAddress());
+   expect(page.items.map(item=>item.title)).toEqual(['Network volume queued','Network reward group created','Test-token deposit']);
+   expect(page.items[0].value).toBe('100.00 test USD');
   }finally{provider.destroy();await rpc.disconnect();}
  },30000);
 });

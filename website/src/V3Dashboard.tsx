@@ -431,8 +431,7 @@ export default function V3Dashboard(){
       <V3NetworkPanel view={view} busy={busy||loading} readOnly={Boolean(config.unified)} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
        onBranchPage={setBranchPage} onGroupPage={setGroupPage}/>:
       <section className="gv2-panel" role="status">Loading verified network branches and groups…</section>)}
-     {tab==='history'&&<>{config.unified&&<p className="gv3-notice">The preview shows vault activity; events from the separate network component are not included yet.</p>}
-      <V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><V3WithdrawalHistory key={'withdraw-'+view.wallet} wallet={view.wallet} config={config}/></>}
+     {tab==='history'&&<><V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><V3WithdrawalHistory key={'withdraw-'+view.wallet} wallet={view.wallet} config={config}/></>}
      {tab==='profile'&&<section className="gv2-panel"><h3>Verified V3 profile</h3>
       <div className="gv2-detail"><span>Wallet</span><b>{wallet}</b></div>
       <div className="gv2-detail"><span>Registration</span><b>{view.registered?'Registered on V3':'Not registered'}</b></div>
