@@ -11,6 +11,7 @@ import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdr
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQueue,
  type V3Action,type V3TransactionProgress} from './v3-actions';
 import {V3TransactionProgressTracker,v3TransactionProgressText} from './v3-transaction-progress';
+import {runUnifiedReinvestment} from './v3-unified-reinvestment-flow';
 import {diagnoseV3Wallet,type V3WalletDiagnostic} from './v3-wallet-diagnostic';
 import {v3PrepareUserClaims} from './v3-claim-balance';
 import {V3_PERIOD_SECONDS} from './v3-cycle';
@@ -58,6 +59,9 @@ const short=(s:string)=>s.slice(0,9)+'…'+s.slice(-5);
 const date=(seconds:number)=>seconds?new Date(seconds*1000).toLocaleString('en-US'):'Not recorded';
 const kinds=['Profit','Principal','Referral','Network milestone'] as const;
 const statuses=['Requested','Manager approved','Cash escrowed','Paid','Rejected','Cancelled'] as const;
+// This is intentionally not a runtime or environment setting. The prototype
+// remains read-only until the entire release and migration are reviewed.
+const UNIFIED_PREVIEW_READ_ONLY=true;
 export default function V3Dashboard(){
  const [tab,setTab]=useState<Tab>('overview'),[menuOpen,setMenuOpen]=useState(false),[walletOpen,setWalletOpen]=useState(false);
  const [wallet,setWallet]=useState(''),[chain,setChain]=useState<number|null>(null);
@@ -269,8 +273,30 @@ export default function V3Dashboard(){
     ' TEST. Manager approval and actual funding required.');
   }catch(e){setError((e as Error).message);}
  };
+ async function reinvestUnified(n:bigint){
+  if(busy||inFlight.current)return;
+  if(UNIFIED_PREVIEW_READ_ONLY){setError('The unified testnet preview is read-only.');return;}
+  if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your BNB Testnet account.');return;}
+  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  if(!view.registered||view.suspended||view.paused){setError('This test account cannot reinvest.');return;}
+  const total=view.positions.reduce((sum,position)=>sum+position.availableProfit,0n);
+  if(n>total){setError('The amount exceeds recorded position profit.');return;}
+  if(!window.confirm('BNB TESTNET ONLY\n\nReinvest '+formatUnits(n,18)+' TEST of recorded position profit into the unified position?'+
+   '\nThe addition has a separate 90-day principal lock. The wallet must sign one blockchain transaction.'))return;
+  const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
+  inFlight.current=true;setBusy(true);setError('');setNotice('Checking the test reinvestment…');setTxHash('');setTransactionProgress(null);
+  const tracker=new V3TransactionProgressTracker();let progressHash:string|undefined;
+  const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
+  try{
+   const result=await runUnifiedReinvestment({enabled:!UNIFIED_PREVIEW_READ_ONLY,provider:p,wallet,amount:n,config,onProgress:report});
+   setTxHash(result.hash);setNotice('Test reinvestment confirmed on-chain.');setValue('');await refresh();
+  }catch(e){const message=e instanceof Error?e.message:'V3 reinvestment not confirmed.';setNotice('');setError(message);
+   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+  finally{inFlight.current=false;setBusy(false);}
+ }
  const reinvest=()=>{
   try{
+   if(config?.unified){void reinvestUnified(amount(value));return;}
    const position=view?.positions.find(item=>item.id===Number(selectedPosition));
    if(!position)throw Error('Select a verified V3 position.');
    void perform({kind:'reinvest',positionId:position.id,amount:amount(value)},'Manually convert accrued test profit to 90-day locked principal?');
