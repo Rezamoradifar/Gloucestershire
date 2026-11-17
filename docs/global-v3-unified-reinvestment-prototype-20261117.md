@@ -22,21 +22,54 @@ ability to make an actual payout.
 claims. It demonstrates atomic source-claim debiting and consolidation, but
 does not implement deposits, the original V3 account ledger or migration.
 
+`GlobalV3UnifiedTestnet` is a separate experimental testnet-only vault derived
+from the V3 ledger. It creates one additional position for all of a member's
+manual reinvestments and uses the book to retain each addition's separate
+opening, accrual and maturity times. Deposits remain separate positions. It
+mirrors group balances into the V3 account ledger, updates principal/profit
+liabilities and referral volume, and uses the book during group withdrawal
+reservation, release and settlement. `UnifiedNetworkPlan` holds the network
+state and is created by, and bound to, the new vault.
+
+The integrated local-EVM tests use the pinned mock-token address and normal
+EVM code-size rules. They exercise deposits, repeated reinvestment from two
+sources, reinvestment of group profit, accrual, independent 90-day locks,
+reservation release, funded payouts and network/referral behavior. The
+separate read-only `plan-v3-unified-accrual.mjs` can propose bounded lot
+pages after a caller has independently verified deployment, account and block.
+It does not read a chain, sign transactions, or run a keeper. The compile-only
+`scripts/compile-global-v3-unified-testnet.mjs` checks compiler and bytecode
+size for the parent and both components; it does not install or deploy them.
+
 ## This is not a deployed fix
 
 The deployed hourly V3 contract creates a separate position for every manual
-reinvestment and has no upgrade or migration method. This prototype is NOT
-wired into that contract, the public website, or the existing keeper. It is not
-deployed on any network; it is not production-ready or a security audit. It
-does not change or transfer any existing user position or test token.
+reinvestment and has no upgrade or migration method. These components are NOT
+wired into that contract, the public website, or the existing keeper. They are
+not deployed on any network, production-ready, or independently audited. They
+do not change or transfer any existing user position or test token.
 
-A future vault would need to atomically debit a verified source claim before
-recording a lot; derive the approved rate and eligibility; update principal,
-profit and network liabilities; handle paginated keeper processing and
-per-lot referral rounding; enforce withdrawal caps, cooldown, manager approval
-and actual funding; and connect verified read/actions to the website. Only the
-trusted vault can mutate this book; it cannot protect against a faulty vault.
-Those integration properties have not yet been proven by this prototype.
+The network component exposes branch and reward-group reads/actions at a new
+address. The existing site and network-volume keeper still call the old vault
+interface and will not work against this prototype without adaptation. The
+existing accrual keeper only sees a position-level timestamp: it cannot
+correctly schedule the grouped position's independent lots. The prototype's
+default accrual call covers only the first eight lots; later lots require
+explicit bounded-page processing. Group profit/principal reservations and
+group-profit reinvestments are currently limited to one page per request;
+amounts spread over more than 64 lots cannot yet be handled in one request.
+In a local test with 70 one-TEST lots, an eight-lot page used up to 697,626
+gas; the current legacy keeper's 500,000 transaction-gas cap is insufficient
+for that scenario. This measurement is not a bound for network gas use.
+Do not install or point the current site or keepers at this prototype.
+
+The integrated prototype debits source claims, derives rate/eligibility,
+records per-lot referral rounding, and applies the existing approval/funding
+mechanism in the tested local scenarios. It still requires full regression
+and adversarial testing, gas bounds and keeper integration, a verified website
+adapter, safe handling of requests spanning pages, and an independent review.
+Only the trusted vault can mutate the book; the book cannot protect against a
+faulty vault. Passing the focused tests is not a security audit.
 
 ## Existing accounts
 
