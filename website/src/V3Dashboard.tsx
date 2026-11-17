@@ -8,10 +8,11 @@ import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdrawal} from './v3-chain';
-import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQueue,
+import {sendV3Action,sendV3FundWithdrawal,readV3ManagerQueue,
  type V3Action,type V3TransactionProgress} from './v3-actions';
 import {V3TransactionProgressTracker,v3TransactionProgressText} from './v3-transaction-progress';
 import {runUnifiedReinvestment} from './v3-unified-reinvestment-flow';
+import {runV3Deposit,runV3Registration} from './v3-account-flow';
 import {diagnoseV3Wallet,type V3WalletDiagnostic} from './v3-wallet-diagnostic';
 import {v3PrepareUserClaims} from './v3-claim-balance';
 import {V3_PERIOD_SECONDS} from './v3-cycle';
@@ -190,7 +191,7 @@ export default function V3Dashboard(){
   if(busy||inFlight.current)return;
   if(!wallet){setError('Connect your wallet before continuing.');return;}
   if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
-  if(config.unified){setError('The unified testnet preview is read-only.');return;}
+  if(config.unified&&(UNIFIED_PREVIEW_READ_ONLY||action.kind!=='register')){setError('The unified testnet preview is read-only.');return;}
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
   const trackedAction=action.kind==='register'||action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
@@ -202,7 +203,9 @@ export default function V3Dashboard(){
   let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
-   const hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
+   const hash=action.kind==='register'?await runV3Registration({provider:p,wallet,referrer:action.referrer,config,
+    unifiedEnabled:!UNIFIED_PREVIEW_READ_ONLY,onProgress:report}):
+    await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(view.canManage)await readQueue(adminQueue?.page??0);
   }catch(e){const message=e instanceof Error?e.message:'V3 action not confirmed.';setNotice('');setError(message);
@@ -213,7 +216,7 @@ export default function V3Dashboard(){
   if(busy||inFlight.current)return;
   if(!wallet){setError('Connect your wallet before continuing.');return;}
   if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
-  if(config.unified){setError('The unified testnet preview is read-only.');return;}
+  if(config.unified&&UNIFIED_PREVIEW_READ_ONLY){setError('The unified testnet preview is read-only.');return;}
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
   if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
@@ -233,7 +236,8 @@ export default function V3Dashboard(){
   let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
-   const tx=await sendV3TestTokenDeposit(p,wallet,n,parent,config,report);
+   const tx=await runV3Deposit({provider:p,wallet,amount:n,referrer:parent,config,
+    unifiedEnabled:!UNIFIED_PREVIEW_READ_ONLY,onProgress:report});
    setTxHash(tx);setNotice('Mock TEST token deposit confirmed in V3.');setValue('');
    await refresh();
   }catch(e){const message=e instanceof Error?e.message:'V3 deposit not confirmed.';setNotice('');setError(message);

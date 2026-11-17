@@ -30,7 +30,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'check_in';
  hash?:string;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
@@ -52,7 +52,7 @@ const MAX_TESTNET_ACTION_GAS=8_000_000n;
 const MAX_TESTNET_GAS_PRICE=100_000_000_000n;
 const MAX_TESTNET_ACTION_FEE=10_000_000_000_000_000n;
 type CheckedTestGas={gasLimit:bigint;gasPrice:bigint};
-async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
+export async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
  name:string,args:unknown[],wallet:string):Promise<CheckedTestGas>{
  const method=contract.getFunction(name);
  const result=await method.staticCall(...args,{from:wallet,...session.options});
@@ -116,7 +116,7 @@ async function sendWalletTransaction<T>(send:()=>Promise<T>,label:string,onHash?
 // Only the explicitly requested TESTNET call is submitted. The wallet supplies
 // the hash; the independently verified reader must confirm the exact call and
 // a canonical five-confirmation receipt before another action can be sent.
-async function submitVerified(walletProvider:Eip1193Provider,wallet:string,signer:JsonRpcSigner,
+export async function submitVerified(walletProvider:Eip1193Provider,wallet:string,signer:JsonRpcSigner,
  config:V3SiteReleaseConfig,to:string,data:string,gas:CheckedTestGas,label:string,
  action:V3TransactionProgress['action'],onProgress?:V3TransactionProgressCallback):Promise<TransactionReceipt>{
  await checkWalletStillSelected(walletProvider,wallet);

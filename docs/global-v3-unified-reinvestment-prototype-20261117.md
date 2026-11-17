@@ -77,6 +77,11 @@ A read-only cycle planner selects at most one proposed accrual and never
 persists a cursor. Any existing journal record stops it for reconciliation,
 including a locally confirmed record, until chain and checkpoint recovery have
 been independently verified.
+An experimental idle-scan checkpoint can persist a scan cursor only when no
+candidate is due and no transaction journal exists. It uses the shared journal
+lock, a private atomic file and a canonical-block anchor. It is not a running
+scheduler or transaction-recovery mechanism. In particular the contract does
+not backfill missed cycles; sweep capacity and downtime need further review.
 
 The website also has an opt-in, read-only unified preview. It requires an
 explicit hourly-testnet profile plus separately pinned book and network
@@ -114,11 +119,13 @@ do not change or transfer any existing user position or test token.
 The network component exposes branch and reward-group reads/actions at a new
 address. The opt-in site preview can read it and scans its verified event
 history separately from vault events. Experimental registration and deposit
-adapters have passed local tests but are not connected to the UI. Wallet
+adapters and their guarded form routes have passed local tests. Wallet
 actions and the network-volume keeper are not yet enabled. The
 prototype also includes a locally tested one-page withdrawal-request adapter;
 it does not approve, fund or pay the request and is not wired to the UI. The
-existing accrual keeper only sees a position-level timestamp: it cannot
+check-in adapter is likewise local-test-only and records activity without
+accruing or transferring profit; a separately verified keeper remains necessary.
+The existing accrual keeper only sees a position-level timestamp: it cannot
 correctly schedule the grouped position's independent lots. The prototype's
 default accrual call covers only the first eight lots; later lots require
 explicit bounded-page processing. The current preflight does not execute
