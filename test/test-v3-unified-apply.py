@@ -17,8 +17,12 @@ READ_RPC = "https://bsc-testnet-rpc.publicnode.com"
 # actual orchestration, SHA-256 check, existing-proof test and exit handling.
 HARNESS = r"""
 source "$SOURCE"
+if [[ ${SINGLE_CAPITAL:-0} == 1 ]]; then
+  profile=(--single-capital)
+  route_name=single-capital-test
+fi
 node() {
-  printf '%s %s\n' "$2" "$3" >> "$TRACE"
+  printf '%s\n' "${*:2}" >> "$TRACE"
   case "$2" in
     --check) return "$CHECK_RESULT" ;;
     --deploy-testnet) printf '{"vault":"isolated"}\n' > "$TEST_PROOF"; return "$DEPLOY_RESULT" ;;
@@ -31,7 +35,7 @@ node() {
 }
 bash() {
   case "$1" in
-    scripts/install-v3-unified-worker.sh) echo "worker $2" >> "$TRACE"; return "$WORKER_RESULT" ;;
+    scripts/install-v3-unified-worker.sh) echo "worker ${*:2}" >> "$TRACE"; return "$WORKER_RESULT" ;;
     scripts/install-v3-unified-test-site.sh) printf '%s\n' "$*" >> "$TRACE"; return "$SITE_RESULT" ;;
     *) return 99 ;;
   esac
@@ -113,6 +117,20 @@ class ApplyTestnet(unittest.TestCase):
         self.assertEqual(failed.returncode, 17)
         self.assertIn("--enable-testnet-wallets", calls[-1])
         self.assertNotIn("UNIFIED_TESTNET_WALLET_DASHBOARD_AVAILABLE", failed.stdout)
+
+    def test_single_capital_only_releases_an_existing_separate_deployment(self):
+        missing, calls = self.apply(SINGLE_CAPITAL="1")
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED", missing.stderr)
+        self.assertEqual(calls, [])
+        self.proof.write_bytes(PROOF)
+        installed, calls = self.apply(SINGLE_CAPITAL="1")
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        self.assertEqual(calls[:2], [f"--verify-existing {READ_RPC} --single-capital",
+                                     f"worker {REVISION} --single-capital"])
+        self.assertIn("scripts/install-v3-unified-test-site.sh --single-capital --install-prepared", calls[2])
+        self.assertIn("UNIFIED_TESTNET_WALLET_DASHBOARD_AVAILABLE=https://globaldroptrade.com/single-capital-test/",
+                      installed.stdout)
 
 
 if __name__ == "__main__":

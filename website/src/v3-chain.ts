@@ -21,6 +21,7 @@ export const V3_OPERATIONS=getAddress('0x8c4ac9b009808a0b49ba77b58e3871e7cdba463
 export const V3_ABI=[
  'function asset() view returns(address)',
  'function ACCRUAL_PERIOD() view returns(uint256)',
+ 'function SINGLE_CAPITAL_VERSION() view returns(uint256)',
  'function BPS() view returns(uint256)',
  'function PROFIT_FEE_BPS() view returns(uint256)',
  'function PRINCIPAL_PENALTY_BPS() view returns(uint256)',
@@ -168,6 +169,7 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
+ singleCapital?:true;
  unifiedWithdrawalPages?:UnifiedPositionPage[];
  withdrawalCoverageError?:string;
  withdrawCount:number;memberCount:number;totalWithdrawalCount:number;
@@ -224,6 +226,8 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
   let network=vault,book:Contract|null=null;
   if(config.unified){
    if(!V3_HOURLY_TEST)throw Error('The unified release requires the one-hour test profile.');
+   if(config.unified.singleCapital&&BigInt(await vault.SINGLE_CAPITAL_VERSION(options))!==1n)
+    throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
     vault.reinvestmentBook(options),vault.networkPlan(options),
     provider.getCode(config.unified.book,block.number),provider.getCode(config.unified.network,block.number)
@@ -344,6 +348,9 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   if((plusOne===0&&flagged.length!==0)||(plusOne!==0&&
       (plusOne>positions.length||flagged.length!==1||flagged[0].id!==plusOne-1)))
    throw Error('The verified unified position index is inconsistent.');
+  if(config!.unified.singleCapital&&(count>1||plusOne!==count||
+     (positions[0]?.principal??0n)!==BigInt(user.capital)))
+   throw Error('The verified single investment account does not reconcile.');
   if(plusOne!==0){
    unifiedPage=await readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,
     book as unknown as UnifiedBookReader,wallet,plusOne-1,block.number,block.timestamp,unifiedPageStart);
@@ -410,7 +417,8 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   networkBranches,networkBranchCount:branchCount,networkGroups,networkGroupCount:groupCount,networkLoaded:Boolean(networkPage),
   networkBranchPage:branchRange.page,networkGroupPage:groupRange.page,
   canManage:Boolean(canManage),canFund:Boolean(canFund),
-  positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,withdrawalCoverageError}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+  positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,withdrawalCoverageError,
+   singleCapital:config!.unified.singleCapital}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   gasWei:BigInt(gasWei),ledger

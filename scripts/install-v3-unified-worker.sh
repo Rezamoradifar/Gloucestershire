@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 sha=${1:-}
-[[ $# == 1 && $sha =~ ^[0-9a-f]{40}$ && $(id -u) == 0 && $(hostname -s) == vps-luna-2585 ]]
+[[ $sha =~ ^[0-9a-f]{40}$ && $(id -u) == 0 && $(hostname -s) == vps-luna-2585 ]]
 [[ $(git rev-parse HEAD) == "$sha" ]]
 git diff --quiet "$sha" --
 root=/opt/global-v3-unified-worker
@@ -11,6 +11,20 @@ config=/etc/globaldroptrade
 proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
 unit=global-v3-unified-keeper-testnet
 user=global-v3-unified
+key=$config/v3-unified-keeper-testnet-gas-only.key
+profile=()
+case $#:${2:-} in
+  1:) ;;
+  2:--single-capital)
+    root=/opt/global-v3-single-capital-worker
+    proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
+    unit=global-v3-single-capital-keeper-testnet
+    user=global-v3-single-capital
+    key=$config/v3-single-capital-keeper-testnet-gas-only.key
+    profile=(--single-capital)
+    ;;
+  *) echo UNIFIED_WORKER_INVALID_RELEASE_PROFILE >&2; exit 1 ;;
+esac
 release=$root/$sha
 case $(uname -m) in
   x86_64) arch=x64 ;;
@@ -39,8 +53,8 @@ if [[ ! -e $release && ! -L $release ]]; then
 fi
 [[ -d $release && ! -L $release && $(stat -c %u "$release") == 0 &&
    $(cat "$release/.release") == "$sha" && $((8#$(stat -c %a "$release") & 0022)) == 0 ]]
-node "$release/scripts/run-v3-unified-worker.mjs" --init-key
-node "$release/scripts/run-v3-unified-worker.mjs" --check "$sha"
+node "$release/scripts/run-v3-unified-worker.mjs" --init-key "${profile[@]}"
+node "$release/scripts/run-v3-unified-worker.mjs" --check "$sha" "${profile[@]}"
 if ! getent passwd "$user" >/dev/null; then
   useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$user"
 fi
@@ -58,9 +72,9 @@ Group=$user
 StateDirectory=$unit
 StateDirectoryMode=0700
 WorkingDirectory=$release
-LoadCredential=keeper-key:$config/v3-unified-keeper-testnet-gas-only.key
+LoadCredential=keeper-key:$key
 LoadCredential=deployment-proof:$proof
-ExecStart=$runtime/node $release/scripts/run-v3-unified-worker.mjs --tick
+ExecStart=$runtime/node $release/scripts/run-v3-unified-worker.mjs --tick ${profile[*]}
 TimeoutStartSec=6min
 UMask=0077
 NoNewPrivileges=true

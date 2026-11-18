@@ -5,7 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {FetchRequest, JsonRpcProvider, Wallet, getAddress, parseEther} from 'ethers';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
-import {UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
+import {UNIFIED_DEPLOYER,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 import {isV3SystemdCredential} from './global-v3-auto-compound-keeper.mjs';
 import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {runUnifiedKeeperCycle} from './run-v3-unified-keeper-cycle.mjs';
@@ -13,9 +13,6 @@ import {runUnifiedNetworkVolume, reconcileUnifiedNetworkVolume} from './process-
 
 const endpoints = ['https://bsc-testnet-dataseed.bnbchain.org', 'https://bsc-testnet-rpc.publicnode.com'];
 const minimum = parseEther('0.001');
-const keyPath = '/etc/globaldroptrade/v3-unified-keeper-testnet-gas-only.key';
-const proofPath = '/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json';
-const readyPath = '/var/lib/globaldroptrade/v3-unified-testnet/worker-ready.json';
 const {O_RDONLY, O_NOFOLLOW} = fs.constants;
 
 function readPrivate(filename, limit, credentialName) {
@@ -58,8 +55,8 @@ export function initializeWorkerKey(filename) {
   return new Wallet(readPrivate(filename, 128).trim()).address;
 }
 
-async function checkOperator(provider, proof, operator) {
-  const {vault, block} = await verifyUnifiedRelease(provider, proof);
+async function checkOperator(provider, proof, operator, profile) {
+  const {vault, block} = await verifyUnifiedRelease(provider, proof, UNIFIED_DEPLOYER, profile);
   if ([proof.manager, proof.feeReceiver, UNIFIED_DEPLOYER, proof.vault, proof.network, proof.book, proof.token]
         .some(addr => getAddress(addr) === operator)) throw Error('UNIFIED_WORKER_IDENTITY_INVALID');
   const at = {blockTag:block.number};
@@ -76,14 +73,14 @@ async function checkOperator(provider, proof, operator) {
 }
 
 // Once an RPC is selected, a failed write is recovered from its journal on the next timer tick.
-async function selectProvider(proof, operator) {
+async function selectProvider(proof, operator, profile) {
   let cause;
   for (const url of endpoints) {
     const request = new FetchRequest(url);
     request.timeout = 12000;
     const provider = new JsonRpcProvider(request, undefined, {batchMaxCount:1, cacheTimeout:-1});
     try {
-      const check = await checkOperator(provider, proof, operator);
+      const check = await checkOperator(provider, proof, operator, profile);
       return {provider, ...check};
     } catch (error) { cause = error; provider.destroy(); }
   }
@@ -126,11 +123,15 @@ async function tick(provider, signer, proof, directory) {
 }
 
 async function main() {
-  const [command, sha, ...extra] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const profile = unifiedProfileForFlag(args.at(-1)==='--single-capital'?args.pop():undefined);
+  const [command, sha, ...extra] = args;
   if (extra.length || !['--init-key','--check','--tick'].includes(command) ||
       (command === '--check' ? !/^[a-f0-9]{40}$/.test(sha ?? '') : sha !== undefined))
     throw Error('UNIFIED_WORKER_INVALID_ARGUMENTS');
   if (command !== '--tick' && process.getuid() !== 0) throw Error('UNIFIED_WORKER_INSTALL_REQUIRES_ROOT');
+  const keyPath = profile.gasKey;
+  const proofPath = path.join(profile.stateDirectory, 'deployment-proof.json');
   if (command === '--init-key') {
     console.log('UNIFIED_KEEPER_ADDRESS=' + initializeWorkerKey(keyPath));
     return;
@@ -140,7 +141,7 @@ async function main() {
   const signer = new Wallet(readPrivate(command === '--tick' ? path.join(creds,'keeper-key') : keyPath,128,command === '--tick' ? 'keeper-key' : undefined).trim());
   const raw = readPrivate(command === '--tick' ? path.join(creds,'deployment-proof') : proofPath,65536,command === '--tick' ? 'deployment-proof' : undefined);
   const proof = JSON.parse(raw);
-  const {provider, balance, block} = await selectProvider(proof, signer.address);
+  const {provider, balance, block} = await selectProvider(proof, signer.address, profile);
   try {
     if (balance < minimum) {
       console.error('UNIFIED_KEEPER_NEEDS_TEST_GAS=' + signer.address + ' MINIMUM_TBNB=0.001 CHAIN_ID=97');
@@ -150,7 +151,7 @@ async function main() {
     if (command === '--check') {
       const ready = {sourceSha:sha, proofSha256:createHash('sha256').update(raw).digest('hex'),
         chainId:97, vault:getAddress(proof.vault), operator:signer.address, block};
-      atomicFile(readyPath, JSON.stringify(ready) + '\n');
+      atomicFile(path.join(profile.stateDirectory, 'worker-ready.json'), JSON.stringify(ready) + '\n');
     } else {
       console.log('UNIFIED_WORKER_RESULT', JSON.stringify(await tick(provider, signer.connect(provider), proof, process.env.STATE_DIRECTORY)));
     }

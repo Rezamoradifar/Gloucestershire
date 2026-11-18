@@ -8,7 +8,8 @@ export const V3_TESTNET_CHAIN_ID=97;
 export const V3_HOURLY_TEST=import.meta.env.VITE_V3_HOURLY_TEST==='isolated-1h';
 export const V3_TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 export const V3_OLD_V2_ADDRESS=getAddress('0xA98D8d3709f5D3730BAD5d76C334731784e7CF07');
-export type V3UnifiedConfig={book:string;bookRuntimeHash:string;network:string;networkRuntimeHash:string};
+export const V3_SINGLE_CAPITAL_PATH='/single-capital-test/';
+export type V3UnifiedConfig={book:string;bookRuntimeHash:string;network:string;networkRuntimeHash:string;singleCapital?:true};
 export type V3SiteReleaseConfig={address:string;runtimeHash:string;deploymentTx:string;unified?:V3UnifiedConfig};
 const hash=(v:unknown):v is string=>typeof v==='string'&&/^0x[a-fA-F0-9]{64}$/.test(v);
 export function v3ParseReleaseConfig(raw:{
@@ -21,12 +22,14 @@ export function v3ParseReleaseConfig(raw:{
  if(address===ZeroAddress||address===V3_OLD_V2_ADDRESS)return null;
  let unified:V3UnifiedConfig|undefined;
  if(raw.unifiedMode!==undefined&&raw.unifiedMode!==''){
-  if(raw.unifiedMode!=='unified-testnet'||typeof raw.book!=='string'||!isAddress(raw.book)||
+  if((raw.unifiedMode!=='unified-testnet'&&raw.unifiedMode!=='single-capital-testnet')||
+    typeof raw.book!=='string'||!isAddress(raw.book)||
     typeof raw.network!=='string'||!isAddress(raw.network)||!hash(raw.bookRuntimeHash)||!hash(raw.networkRuntimeHash))return null;
   const book=getAddress(raw.book),network=getAddress(raw.network);
   if(book===ZeroAddress||network===ZeroAddress||new Set([address,book,network]).size!==3)return null;
   unified=Object.freeze({book,network,bookRuntimeHash:raw.bookRuntimeHash.toLowerCase(),
-   networkRuntimeHash:raw.networkRuntimeHash.toLowerCase()});
+   networkRuntimeHash:raw.networkRuntimeHash.toLowerCase(),
+   ...(raw.unifiedMode==='single-capital-testnet'?{singleCapital:true as const}:{})});
  }
  return Object.freeze({
   address,runtimeHash:raw.runtimeHash.toLowerCase(),deploymentTx:raw.deploymentTx.toLowerCase(),
@@ -37,5 +40,7 @@ export function v3ParseReleaseConfig(raw:{
 // Wallet writes are restricted to the separately built, verified hourly release.
 export function unifiedWalletEnabled(config:V3SiteReleaseConfig|null,path:string,
  hourly=V3_HOURLY_TEST,primary=import.meta.env.VITE_V3_PRIMARY_DASHBOARD,mode=import.meta.env.VITE_V3_UNIFIED_WALLET_ACTIONS){
- return Boolean(config?.unified)&&hourly&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&/^\/unified-test\/?$/.test(path);
+ const route=config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
+ return Boolean(config?.unified)&&hourly&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&
+  (path===route||path===route.slice(0,-1));
 }

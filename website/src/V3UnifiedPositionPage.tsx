@@ -3,15 +3,15 @@ import {formatV3Amount as show} from './v3-format';
 import type {UnifiedPositionPage} from './v3-unified-position';
 
 const date=(seconds:number)=>new Date(seconds*1000).toLocaleString('en-US');
-export default function V3UnifiedPositionPage({page,onPrevious,onNext}:{
- page:UnifiedPositionPage;onPrevious:()=>void;onNext:()=>void
+export default function V3UnifiedPositionPage({page,onPrevious,onNext,singleCapital=false}:{
+ page:UnifiedPositionPage;onPrevious:()=>void;onNext:()=>void;singleCapital?:boolean
 }){
  const first=page.start+1,last=page.start+page.lots.length;
- return <section className="gv2-panel" aria-label="Unified reinvestment position">
-  <div className="gv2-panel-head"><h3>Reinvestment position #{page.positionId+1}</h3>
+ return <section className="gv2-panel" aria-label={singleCapital?'Investment account':'Unified reinvestment position'}>
+  <div className="gv2-panel-head"><h3>{singleCapital?'Investment account':`Reinvestment position #${page.positionId+1}`}</h3>
    <span>Verified block {page.block.toLocaleString('en-US')}</span></div>
   <article className="gv3-position-card gv3-reinvest-summary">
-   <div><strong>One reinvestment position</strong><small>{page.totalLots} additions</small></div>
+   <div><strong>{singleCapital?'All capital additions':'One reinvestment position'}</strong><small>{page.totalLots} additions</small></div>
    <div><b><DigitalValue value={show(page.principal)} unit="TEST"/></b><small>Recorded principal</small></div>
    <div><b><DigitalValue value={show(page.daily)} unit="TEST"/></b><small>Daily available claims</small>
     <b><DigitalValue value={show(page.compound)} unit="TEST"/></b><small>Profit-on-profit available claims</small></div>

@@ -4,7 +4,7 @@ import {formatUnits,getAddress} from 'ethers';
 import type {V3Snapshot,V3WalletPosition} from './v3-chain';
 import {prepareV3WithdrawalRequest,parseV3Amount,type V3WithdrawalKind} from './v3-withdrawal-form';
 import type {UnifiedPositionPage,UnifiedLot} from './v3-unified-position';
-import {MAX_UNIFIED_WITHDRAWAL_LOTS} from './v3-unified-position';
+import {MAX_UNIFIED_WITHDRAWAL_LOTS,unifiedWithdrawalWindow} from './v3-unified-position';
 
 export {MAX_UNIFIED_WITHDRAWAL_LOTS};
 const LOCK=90*86400,WINDOW=8;
@@ -90,13 +90,13 @@ function withdrawalSources(view:V3Snapshot,unified:boolean){
   }
   const {lots,first}=unifiedLots(view,p);
   maturedPrincipal+=lots.reduce((sum,lot)=>sum+(view.asOf>=lot.unlockAt?lot.principal-lot.reservedPrincipal:0n),0n);
-  // The verified dashboard sender uses windows of eight additions. Inspect
-  // every start, including windows crossing the read-page boundaries.
+  // Inspect every start, including windows crossing the read-page boundaries.
+  const windowSize=unifiedWithdrawalWindow(view.singleCapital);
   for(let start=0;start<lots.length;start++){
-   const window=lots.slice(start,start+WINDOW);
+   const window=lots.slice(start,start+windowSize);
    const profit=window.reduce((sum,lot)=>sum+lot.daily+lot.compound,0n);
    const principal=window.reduce((sum,lot)=>sum+(view.asOf>=lot.unlockAt?lot.principal-lot.reservedPrincipal:0n),0n);
-   sources.push({position:p,profit,principal,page:{...first,start,limit:WINDOW,lots:window,
+   sources.push({position:p,profit,principal,page:{...first,start,limit:windowSize,lots:window,
     availableProfitOnPage:profit,maturedPrincipalOnPage:principal}});
   }
  }

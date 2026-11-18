@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 ROUTE = "https://globaldroptrade.com/unified-test/"
+SINGLE_CAPITAL_ROUTE = "https://globaldroptrade.com/single-capital-test/"
 RELATIVE_ASSET = re.compile(r"(?:\./)?(assets/[\w.-]+\.(?:js|css))", re.ASCII)
 
 
@@ -56,6 +57,9 @@ def check(dist, tmpdir, base_url=ROUTE, resolver=("globaldroptrade.com:443:127.0
 
 if __name__ == "__main__":
     try:
-        check(Path(sys.argv[1]), Path(sys.argv[2]))
+        args = sys.argv[3:]
+        if args not in ([], ["--single-capital"]):
+            raise ValueError("UNIFIED_SITE_ROUTE_INVALID")
+        check(Path(sys.argv[1]), Path(sys.argv[2]), SINGLE_CAPITAL_ROUTE if args else ROUTE)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         sys.exit(str(error))

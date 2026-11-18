@@ -38,6 +38,7 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
  return <section aria-label="Account withdrawal">
   <h3>Withdraw from your account</h3>
   <div className="gv2-detail"><span>Total principal</span><b>{formatUnits(totals.principal,18)} TEST</b></div>
+  <div className="gv2-detail"><span>Total recorded profit</span><b>{formatUnits(totals.profit,18)} TEST</b></div>
   <div className="gv2-detail"><span>Recorded daily profit</span><b>{formatUnits(totals.daily,18)} TEST</b></div>
   <div className="gv2-detail"><span>Recorded profit-on-profit</span><b>{formatUnits(totals.compound,18)} TEST</b></div>
   <div className="gv2-detail"><span>Profit reserved for pending withdrawal</span><b>{formatUnits(totals.pendingProfit,18)} TEST</b></div>

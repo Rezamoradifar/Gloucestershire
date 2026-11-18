@@ -32,6 +32,11 @@ describe('unified testnet release identity',()=>{
   expect(unifiedWalletEnabled(config,'/unified-test/',false,primary,mode)).toBe(false);
   expect(unifiedWalletEnabled(config,'/unified-test/',true,'',mode)).toBe(false);
   expect(unifiedWalletEnabled(config,'/unified-test/',true,primary,'')).toBe(false);
+  const single=v3ParseReleaseConfig({...unified,unifiedMode:'single-capital-testnet'});
+  expect(single?.unified?.singleCapital).toBe(true);
+  expect(unifiedWalletEnabled(single,'/single-capital-test/',true,primary,mode)).toBe(true);
+  expect(unifiedWalletEnabled(single,'/unified-test/',true,primary,mode)).toBe(false);
+  expect(unifiedWalletEnabled(config,'/single-capital-test/',true,primary,mode)).toBe(false);
  });
  it('blocks every wallet-writing entry point in the unfinished unified preview',async()=>{
   const request=vi.fn(),provider={request} as any,config=v3ParseReleaseConfig(unified)!;

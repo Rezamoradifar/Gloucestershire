@@ -29,7 +29,7 @@ test('site install defaults to read-only and verifies an explicit wallet opt-in 
  assert.match(shell,/UNIFIED_SITE_LEGACY_CHANGED/);
  assert.match(shell,/UNIFIED_SITE_NEEDS_FREE_INODES_OR_SPACE/);
  assert.match(build,/planUnifiedPreviewSite/);
- assert.match(build,/if\(writes\)verifyActiveWorker\(worker\)/);
+ assert.match(build,/if\(writes\)verifyActiveWorker\(worker,profile\)/);
  assert.match(build,/if\(writes\)releaseEnv.VITE_V3_UNIFIED_WALLET_ACTIONS='verified-isolated-testnet'/);
  assert.doesNotMatch(shell,/systemctl\s+(?:stop|disable|restart)/);
 });
@@ -44,4 +44,13 @@ test('wallet activation requires a worker for the same verified release and vaul
                          {vault: '0x'+'44'.repeat(20)}, {operator: '0x'+'00'.repeat(20)}]) {
   assert.throws(() => checkWorkerIdentity({...ready, ...override}, expected));
  }
+});
+
+test('single-capital site writes refuse the previous deployment proof path', () => {
+ const result=spawnSync(process.execPath,['scripts/build-v3-unified-site.mjs',
+  '/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json','a'.repeat(64),'b'.repeat(40),
+  'https://bsc-testnet-dataseed.bnbchain.org','disabled','--enable-testnet-wallets','--single-capital'],
+  {encoding:'utf8'});
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/UNIFIED_SITE_PROOF_PATH_MISMATCH/);
 });

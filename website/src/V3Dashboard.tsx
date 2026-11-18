@@ -30,7 +30,7 @@ import V3UnifiedPositionPage from './V3UnifiedPositionPage';
 import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
 import V3AccountWithdrawalForm from './V3AccountWithdrawalForm';
 import {planV3AccountWithdrawal} from './v3-account-withdrawal';
-import {prepareUnifiedPageAction,type UnifiedPositionPage} from './v3-unified-position';
+import {prepareUnifiedPageAction,unifiedWithdrawalWindow,type UnifiedPositionPage} from './v3-unified-position';
 import V3ClassicOverview from './V3ClassicOverview';
 import {V3TransactionReview,useV3TransactionReview} from './V3TransactionReview';
 import V3HistoryPanel from './V3HistoryPanel';
@@ -100,6 +100,9 @@ export default function V3Dashboard(){
  const menuTrigger=useRef<HTMLButtonElement>(null);
  const [smallScreen,setSmallScreen]=useState(()=>typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 960px)').matches);
  const config=v3ReleaseConfig;
+ const singleCapital=config?.unified?.singleCapital===true;
+ const tabLabel=(id:Tab,label:string)=>singleCapital&&id==='positions'?'Investment account':label;
+ const activeTabLabel=tabLabel(tab,menus.find(item=>item.id===tab)?.label??'');
  const unifiedEnabled=unifiedWalletEnabled(config,typeof window==='undefined'?'':window.location.pathname);
  const unifiedReadOnly=Boolean(config?.unified)&&!unifiedEnabled;
  const operatorAccess=Boolean(view?.canManage||(config?.unified&&view?.canFund));
@@ -356,7 +359,8 @@ export default function V3Dashboard(){
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your unified BNB Testnet account.');return;}
   if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
-  if(page.wallet.toLowerCase()!==wallet.toLowerCase()||page.block!==view.block||page.asOf!==view.asOf||page.limit!==8){
+  if(page.wallet.toLowerCase()!==wallet.toLowerCase()||page.block!==view.block||page.asOf!==view.asOf||
+     page.limit!==unifiedWithdrawalWindow(singleCapital)){
    setError('The verified withdrawal records changed. Refresh before continuing.');return;
   }
   try{
@@ -442,7 +446,7 @@ export default function V3Dashboard(){
     <div><strong>GLOBAL</strong><small>ARBITRAGE &amp; DROPSHIPPING</small></div></a>
    <div className="sidebar-caption">YOUR WORKSPACE</div>
    <nav>{menus.filter(x=>x.id!=='admin'||operatorAccess).map(({id,label,Icon})=>
-    <button key={id} onClick={()=>navigate(id)} className={tab===id?'active':''} aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{label}</span>{tab===id&&<ChevronRight size={15}/>}</button>)}
+    <button key={id} onClick={()=>navigate(id)} className={tab===id?'active':''} aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{tabLabel(id,label)}</span>{tab===id&&<ChevronRight size={15}/>}</button>)}
     <button type="button" onClick={()=>{window.location.hash='#marketplace';}}><Coins size={19}/><span>Products &amp; sales</span></button></nav>
    <div className="gv2-sidebar-bottom"><div className="gv1-sidebar-network"><span>◆</span><div><strong>BNB Testnet</strong><small>Test environment</small></div></div>
     <div className="gv1-sidebar-note"><ShieldCheck size={17}/><span>Account activity<br/><small>Available in your history</small></span></div>
@@ -451,7 +455,7 @@ export default function V3Dashboard(){
   {menuOpen&&<button className="gv2-scrim" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"/>}
   <div className="workspace gv2-workspace">
    <header className="topbar gv2-classic-topbar">
-    <div className="breadcrumb"><button ref={menuTrigger} className="icon-button mobile-menu" aria-label="Open menu" aria-controls="v3-dashboard-menu" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19}/></button><span>Dashboard</span><ChevronRight size={14}/><strong>{menus.find(x=>x.id===tab)?.label}</strong></div>
+     <div className="breadcrumb"><button ref={menuTrigger} className="icon-button mobile-menu" aria-label="Open menu" aria-controls="v3-dashboard-menu" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19}/></button><span>Dashboard</span><ChevronRight size={14}/><strong>{activeTabLabel}</strong></div>
     <div className="top-actions"><span className="network-label">V3 · TESTNET</span>
      <V3WalletControl address={wallet} busy={connecting||busy} onConnect={openWalletPicker} onDisconnect={()=>void disconnect()}/></div>
    </header>
@@ -459,7 +463,7 @@ export default function V3Dashboard(){
     {V3_HOURLY_TEST&&<div className="gv3-notice" role="status"><Info size={16}/>
      ONE-HOUR BNB TESTNET CONTRACT. Accounts and claims shown here belong to this test deployment. Test tokens only.</div>}
     <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE</span>
-     <h1>{tab==='overview'?'Account overview':menus.find(x=>x.id===tab)?.label}</h1>
+     <h1>{tab==='overview'?'Account overview':activeTabLabel}</h1>
      <p>{tab==='overview'?'Your capital, recorded profit and withdrawal availability.':'Your verified testnet account and current contract information.'}</p>
     </div>{wallet&&config&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17}/> Refresh</button>}</div>
     <section className="gv2-release"><ShieldCheck size={19}/><div className="gv2-release-copy">
@@ -474,7 +478,7 @@ export default function V3Dashboard(){
     {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
     {config.unified&&<div className="gv3-notice" role="status"><Info size={16}/><div>
      {unifiedReadOnly?'Unified testnet is a read-only preview. Wallet transactions are not enabled.':'Unified BNB Testnet · Wallet signatures enabled'}
-     <p>Reinvested claims accumulate in one position. Each addition has its own 90-day lock. Check-in records activity. Posting eligible claims requires a separate gas-paying transaction. The manager must approve withdrawals, and each payout requires available test tokens.</p></div></div>}
+     <p>{singleCapital?'Deposits and reinvested claims add to one investment account.':'Reinvested claims accumulate in one position.'} Each addition has its own 90-day lock and first accrual time. Check-in records activity. Posting eligible claims requires a separate gas-paying transaction. The manager must approve withdrawals, and each payout requires available test tokens.</p></div></div>}
     {config.unified&&<V3SeparateTestAccounts config={config}/>}
     {error&&<p className="gv2-error" role="alert">{error}</p>}
     {readError&&<p className="gv2-error" role="alert">{readError}</p>}
@@ -522,11 +526,13 @@ export default function V3Dashboard(){
        <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="TEST"/></strong><span>Includes cash reserved for requests</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="TEST"/></strong><span>Not guaranteed to be paid</span></div>
       </div>
-      <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {date(view.lastCheckIn)} · {due.length} positions due at the last verified block. Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
+      <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {date(view.lastCheckIn)}.
+       {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
-      <V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>
-      {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage}
+      {!singleCapital&&<V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>}
+      {singleCapital&&!view.unifiedPage&&<p>This account has no verified test deposits.</p>}
+      {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage} singleCapital={singleCapital}
        onPrevious={()=>setUnifiedPageStart(Math.max(0,view.unifiedPage!.start-view.unifiedPage!.limit))}
        onNext={()=>setUnifiedPageStart(view.unifiedPage!.start+view.unifiedPage!.limit)}/>}
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
@@ -594,7 +600,7 @@ export default function V3Dashboard(){
   </div>
   <nav className="gv2-mobile-bottom" aria-label="V3 five-tab mobile navigation">
    {dock.map(({id,label,Icon})=><button key={id} type="button" onClick={()=>navigate(id)}
-    aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{label==='Overview'?'Home':label==='Team & referrals'?'Team':label}</span></button>)}
+    aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{singleCapital&&id==='positions'?'Account':label}</span></button>)}
   </nav>
   {review&&<V3TransactionReview review={review} onFinish={finishReview}/>}
   <WalletPicker open={walletOpen} address={wallet} busy={connecting||busy}

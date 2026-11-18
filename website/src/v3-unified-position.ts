@@ -5,6 +5,7 @@ import {getAddress,ZeroAddress} from 'ethers';
 
 const LOCK=90*86400,PERIOD=3600,MAX_PAGE=16;
 export const MAX_UNIFIED_WITHDRAWAL_LOTS=256;
+export const unifiedWithdrawalWindow=(singleCapital?:boolean)=>singleCapital?MAX_PAGE:8;
 type At={blockTag:number};
 type Position={principal:bigint;compoundedBasis:bigint;availableProfit:bigint;reservedProfit:bigint;
  reservedPrincipal:bigint;cumulativeDaily:bigint;cumulativeCompound:bigint;fromReinvestment:boolean};

@@ -17,9 +17,9 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
  },[view.asOf]);
  if(view.unifiedPage!==undefined)return <section className="gv3-cycle" aria-label="Unified test cycle">
   <div className="gv3-cycle-head"><div><span className="gv3-kicker">ONE-HOUR TEST CYCLE</span>
-   <h2>Each addition has its own cycle</h2><p>Review individual accrual times in the reinvestment position.</p></div></div>
+   <h2>Each addition has its own cycle</h2><p>Review accrual times in the {view.singleCapital?'investment account':'reinvestment position'}.</p></div></div>
   <div className="gv3-cycle-copy"><p>{unifiedEnabled?'See the recorded daily and compound claims for each addition.':'Estimates are unavailable while the unified account is in read-only preview.'}</p>
-   <button type="button" onClick={onPositions}>View positions <ArrowRight size={15}/></button></div>
+   <button type="button" onClick={onPositions}>{view.singleCapital?'View investment account':'View positions'} <ArrowRight size={15}/></button></div>
  </section>;
  let cycle:ReturnType<typeof v3CycleView>;
  try{cycle=v3CycleView(view.positions,view.asOf,elapsed,view.lastCheckIn,view.dailyRateBps);}
