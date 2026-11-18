@@ -23,7 +23,12 @@ nginx -t
 
 # Frontend regression tests also import the repository's root test dependencies.
 # Install dependencies only inside the isolated checkout, never in the running API.
-if [ "${GLOBAL_V3_MAIN_REUSE_TESTED_DEPS:-}" = 1 ]; then
+single_capital_primary=0
+if [ "${GLOBAL_V3_MAIN_PREPARED_BUILD:-}" = single-capital-testnet ]; then
+ single_capital_primary=1
+ node scripts/publish-v3-single-capital-primary.mjs --check-build "$actual_sha" \
+  "${GLOBAL_V3_PRIMARY_PROOF_SHA256:-}" "${GLOBAL_V3_PRIMARY_RPC:-}"
+elif [ "${GLOBAL_V3_MAIN_REUSE_TESTED_DEPS:-}" = 1 ]; then
  python3 scripts/prepare-v3-primary-dependencies.py validate --target "$PWD"
 else
  npm ci --ignore-scripts --no-audit --no-fund
@@ -31,10 +36,12 @@ else
 fi
 # Bound Vitest worker processes on the VPS; CI can continue using its own
 # parallelism. Avoid dozens of Ganache workers exhausting a small host.
+if [ "$single_capital_primary" = 0 ]; then
 env -u VITE_V3_HOURLY_TEST -u VITE_V3_PRIMARY_DASHBOARD -u VITE_V3_LANDING_AT_ROOT \
  -u VITE_V3_CONTRACT_ADDRESS -u VITE_V3_RUNTIME_HASH -u VITE_V3_DEPLOYMENT_TX \
  npm test --prefix website -- --maxWorkers=2
 npm run build --prefix website
+fi
 [ -s website/dist/index.html ] || { echo "V2_SITE_BUILD_MISSING"; exit 1; }
 grep -RilF '0xA98D8d3709f5D3730BAD5d76C334731784e7CF07' website/dist/assets --include='*.js' >/dev/null || {
  echo "V2_SITE_ADDRESS_NOT_IN_BUNDLE"; exit 1;
@@ -51,12 +58,21 @@ if [ "${VITE_V3_PRIMARY_DASHBOARD:-}" = verified-testnet ]; then
 fi
 if [ "${VITE_V3_HOURLY_TEST:-}" = isolated-1h ]; then
  [ "${VITE_V3_LANDING_AT_ROOT:-}" = true ] || { echo V3_HOURLY_MAIN_LANDING_REQUIRED; exit 1; }
- [ "${VITE_V3_CONTRACT_ADDRESS,,}" = 0x4f2777861cc5bdd0d6aed86014ce1370bf823884 ] || { echo V3_HOURLY_MAIN_CONTRACT_MISMATCH; exit 1; }
- wallet_built=$(node scripts/read-v3-wallet-config.mjs website/dist)
+ bundle_profile=()
+ if [ "$single_capital_primary" = 1 ]; then
+  [[ ${VITE_V3_UNIFIED_MODE:-} == single-capital-testnet && ${VITE_V3_UNIFIED_PRIMARY:-} == single-capital-testnet ]] ||
+   { echo GLOBAL_PRIMARY_PROFILE_MISMATCH; exit 1; }
+  bundle_profile=(--single-capital)
+ else
+  [ "${VITE_V3_CONTRACT_ADDRESS,,}" = 0x4f2777861cc5bdd0d6aed86014ce1370bf823884 ] || { echo V3_HOURLY_MAIN_CONTRACT_MISMATCH; exit 1; }
+ fi
+ wallet_flags=()
+ if [ "$single_capital_primary" = 1 ]; then wallet_flags=(--allow-disabled); fi
+ wallet_built=$(node scripts/read-v3-wallet-config.mjs website/dist "${wallet_flags[@]}")
  [ "$wallet_built" = "${V3_EXPECTED_WALLET_CONFIG:-not-provided}" ] || { echo V3_HOURLY_MAIN_WALLET_CONFIG_MISMATCH; exit 1; }
  mapfile -t hourly_assets < <(python3 scripts/check-v3-hourly-primary-bundle.py \
   --dist website/dist --address "$VITE_V3_CONTRACT_ADDRESS" \
-  --runtime-hash "$VITE_V3_RUNTIME_HASH" --deployment-tx "$VITE_V3_DEPLOYMENT_TX")
+  --runtime-hash "$VITE_V3_RUNTIME_HASH" --deployment-tx "$VITE_V3_DEPLOYMENT_TX" "${bundle_profile[@]}")
  [ "${#hourly_assets[@]}" -eq 2 ] || { echo V3_HOURLY_MAIN_ASSET_CHECK_FAILED; exit 1; }
 fi
 echo "V2_SITE_BUILD_AND_TEST_PASS"
@@ -97,10 +113,15 @@ if [ "${VITE_V3_HOURLY_TEST:-}" = isolated-1h ]; then
   [ "$(stat -c %u "$hourly_state")" = 0 ] && [ ! -L "$hourly_state/site-install.lock" ] || { echo V3_HOURLY_STATE_UNSAFE; exit 1; }
  exec 8>"$hourly_state/site-install.lock"
  flock -n 8 || { echo V3_HOURLY_SITE_INSTALL_LOCKED; exit 1; }
+ if [ "$single_capital_primary" = 1 ]; then
+  node scripts/publish-v3-single-capital-primary.mjs --check-build "$actual_sha" \
+   "$GLOBAL_V3_PRIMARY_PROOF_SHA256" "$GLOBAL_V3_PRIMARY_RPC"
+ else
  site_vars_again=$(node scripts/verify-v3-hourly-testnet.mjs --emit-site-env)
  grep -Fx "export VITE_V3_CONTRACT_ADDRESS=$VITE_V3_CONTRACT_ADDRESS" <<< "$site_vars_again" >/dev/null && \
  grep -Fx "export VITE_V3_RUNTIME_HASH=$VITE_V3_RUNTIME_HASH" <<< "$site_vars_again" >/dev/null && \
  grep -Fx "export VITE_V3_DEPLOYMENT_TX=$VITE_V3_DEPLOYMENT_TX" <<< "$site_vars_again" >/dev/null || { echo V3_HOURLY_PROOF_CHANGED; exit 1; }
+ fi
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 \
   https://globaldroptrade.com/ -o "$stage/served-current.html"
  cmp -s "$stage/served-before.html" "$stage/served-current.html" || { echo V3_HOURLY_MAIN_SITE_CHANGED_RETRY; exit 1; }
@@ -194,6 +215,9 @@ if [ "${VITE_V3_HOURLY_TEST:-}" = isolated-1h ]; then
    "https://globaldroptrade.com/$asset" -o "$stage/asset-after"
   cmp -s "website/dist/$asset" "$stage/asset-after" || { echo V3_HOURLY_MAIN_ASSET_NOT_SERVED; exit 1; }
  done
+ if [ "$single_capital_primary" = 1 ]; then
+  python3 scripts/check-v3-unified-route.py website/dist "$stage" --primary
+ fi
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 \
   https://globaldroptrade.com/hourly-test/ -o "$stage/hourly-after.html"
  cmp -s "$stage/hourly-before.html" "$stage/hourly-after.html" || { echo V3_HOURLY_EXISTING_SITE_CHANGED; exit 1; }

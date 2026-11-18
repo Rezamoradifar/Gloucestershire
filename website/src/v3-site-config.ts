@@ -46,8 +46,11 @@ export function v3ParseReleaseConfig(raw:{
 
 // Wallet writes are restricted to the separately built, verified hourly release.
 export function unifiedWalletEnabled(config:V3SiteReleaseConfig|null,path:string,
- hourly=V3_HOURLY_TEST,primary=import.meta.env.VITE_V3_PRIMARY_DASHBOARD,mode=import.meta.env.VITE_V3_UNIFIED_WALLET_ACTIONS){
+ hourly=V3_HOURLY_TEST,primary=import.meta.env.VITE_V3_PRIMARY_DASHBOARD,mode=import.meta.env.VITE_V3_UNIFIED_WALLET_ACTIONS,
+ unifiedPrimary=import.meta.env.VITE_V3_UNIFIED_PRIMARY){
  const route=config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
+ const root=config?.unified?.singleCapital&&unifiedPrimary==='single-capital-testnet'&&
+  (path==='/'||path==='/index.html');
  return Boolean(config?.unified)&&hourly&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&
-  (path===route||path===route.slice(0,-1));
+  (root||path===route||path===route.slice(0,-1));
 }

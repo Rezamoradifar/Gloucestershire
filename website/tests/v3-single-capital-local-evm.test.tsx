@@ -14,6 +14,7 @@ import {planUnifiedPreviewSite} from '../../scripts/v3-unified-site-preview-pref
 import {SINGLE_CAPITAL_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../../scripts/v3-unified-release-pins.mjs';
 import V3AccountWithdrawalForm from '../src/V3AccountWithdrawalForm';
 import V3UnifiedPositionPage from '../src/V3UnifiedPositionPage';
+import {primaryReleaseEnv} from '../../scripts/publish-v3-single-capital-primary.mjs';
 
 const local=vi.hoisted(()=>({rpc:null as any}));
 vi.mock('ethers',async importOriginal=>{
@@ -27,6 +28,8 @@ vi.mock('ethers',async importOriginal=>{
 describe('one verified capital account on chain 97',()=>{
  it('adds 1,000 and 2,000 to the same account, accrues both, adds reinvestment, and withdraws the pooled profit',async()=>{
   vi.stubEnv('VITE_V3_HOURLY_TEST','isolated-1h');
+  const {default:V3CycleCard}=await import('../src/V3CycleCard');
+  const {v3ParseReleaseConfig,unifiedWalletEnabled}=await import('../src/v3-site-config');
   const {runV3Deposit}=await import('../src/v3-account-flow');
   const {readV3Snapshot}=await import('../src/v3-chain');
   const {sendV3UnifiedCheckIn}=await import('../src/v3-unified-checkin');
@@ -65,9 +68,15 @@ describe('one verified capital account on chain 97',()=>{
    const {vault:address,book:bookAddress,network}=proof;
    const vault=new Contract(address,contract.abi,deployer);
    const book=new Contract(bookAddress,artifacts.SingleCapitalBook.abi,rpc);
-   const config={address,runtimeHash:proof.vaultRuntimeHash,deploymentTx:proof.deploymentTx,
-    unified:{singleCapital:true as const,book:bookAddress,bookRuntimeHash:proof.bookRuntimeHash,
-     network,networkRuntimeHash:proof.networkRuntimeHash,keeper:keeper.address}};
+   const release=primaryReleaseEnv(proof,keeper.address,'disabled');
+   const config=v3ParseReleaseConfig({address:release.VITE_V3_CONTRACT_ADDRESS,
+    runtimeHash:release.VITE_V3_RUNTIME_HASH,deploymentTx:release.VITE_V3_DEPLOYMENT_TX,
+    unifiedMode:release.VITE_V3_UNIFIED_MODE,book:release.VITE_V3_UNIFIED_BOOK,
+    bookRuntimeHash:release.VITE_V3_UNIFIED_BOOK_HASH,network:release.VITE_V3_UNIFIED_NETWORK,
+    networkRuntimeHash:release.VITE_V3_UNIFIED_NETWORK_HASH,keeper:release.VITE_V3_UNIFIED_KEEPER});
+   if(!config)throw Error('Expected a verified primary investment account.');
+   expect(unifiedWalletEnabled(config,'/',true,release.VITE_V3_PRIMARY_DASHBOARD,
+    release.VITE_V3_UNIFIED_WALLET_ACTIONS,release.VITE_V3_UNIFIED_PRIMARY)).toBe(true);
    expect(keccak256(await rpc.getCode(address))).toBe(config.runtimeHash);
    const sender=await deployer.getAddress();
    await expect(verifyUnifiedRelease(rpc,proof,sender)).rejects.toThrow(/PROFILE_MISMATCH/);
@@ -127,6 +136,9 @@ describe('one verified capital account on chain 97',()=>{
    expect(reinvested.destination).toBe(0);
    const view=await snapshot();
    expect(view.singleCapital).toBe(true);
+   const clock=renderToStaticMarkup(<V3CycleCard view={view} busy={false} unifiedEnabled onCheckIn={()=>{}} onPositions={()=>{}}/>);
+   expect(clock).toContain('YOUR ONE-HOUR TEST CYCLE');
+   expect(clock).toContain('Estimated time remaining 01:00:00');
    expect(view.capital).toBe(parseEther('3004'));
    expect(view.originalDeposits).toBe(parseEther('3000'));
    expect(view.reinvestments).toBe(parseEther('4'));

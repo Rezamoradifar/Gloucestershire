@@ -5,6 +5,8 @@ on:
       - 'contracts/v3/**'
       - 'scripts/*v3*hourly*'
       - 'scripts/*v3*unified*'
+      - 'scripts/*v3*single-capital*'
+      - 'ubuntu-global-v2-site.sh'
       - 'test/*unified*'
       - 'scripts/global-v3-auto-compound-keeper.mjs'
       - 'scripts/install-global-v3-keeper-timer.sh'
@@ -70,4 +72,5 @@ jobs:
           python3 test/test-v3-unified-diagnose.py
           python3 test/test-v3-unified-apply.py
           python3 test/test-v3-unified-route-http.py
+          python3 scripts/test-v3-primary-install-transaction.py
           bash -n scripts/install-v3-unified-worker.sh

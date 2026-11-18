@@ -52,3 +52,21 @@ recording waits for at least 0.001 tBNB in that wallet and resumes on a later
 timer tick after funding. The successful wallet-enabled publication marker includes the new
 route URL. Confirm the first eligible keeper transaction and test withdrawal
 receipt separately.
+
+To promote the verified one-hour account to the main domain, run
+`bash scripts/start-v3-unified-release.sh <reviewed-sha> --single-capital --primary`.
+This operation requires the existing single-capital deployment proof. It
+builds and tests one release, publishes the landing page and dashboard on
+the main domain, and publishes that same build at `/single-capital-test/`.
+The main dashboard is available at `https://globaldroptrade.com/#dashboard`.
+The publisher checks the contract, book, network and keeper identities before
+updating the served files and checks the actual HTML, JavaScript and CSS over
+local HTTPS afterward. The root installer records a backup and restores it
+when verification fails. The hourly contract's earlier account records are
+accessible at `/hourly-test/`. Moving its balances into the single-capital
+contract requires a separate on-chain migration.
+
+The main account includes the hourly digital countdown and personal and
+compound estimates derived from the loaded additions. With a partially
+loaded addition list, the dashboard labels that timer and estimate coverage.
+Recorded profit changes after a confirmed eligible accrual transaction.
