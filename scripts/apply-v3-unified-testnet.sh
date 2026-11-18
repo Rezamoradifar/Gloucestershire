@@ -87,6 +87,12 @@ apply_release() {
     42) echo UNIFIED_WORKER_NEEDS_TEST_GAS >&2 ;;
     *) echo UNIFIED_WORKER_INSTALLATION_FAILED >&2; return "$worker_status" ;;
   esac
+  if [[ ${3:-} == --primary ]]; then
+    (( worker_status == 0 )) || return "$worker_status"
+    node scripts/publish-v3-single-capital-primary.mjs --install "$sha" "$digest" "$deployment_rpc" || return $?
+    echo 'GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE=https://globaldroptrade.com/#dashboard'
+    return 0
+  fi
   "${publish[@]}" || return $?
   if (( worker_status == 42 )); then
     echo "UNIFIED_TESTNET_READ_ONLY_AVAILABLE=https://globaldroptrade.com/$route_name/"
@@ -101,11 +107,11 @@ main() {
   [[ $sha =~ ^[a-f0-9]{40}$ ]] || fail UNIFIED_APPLY_EXPECTED_PINNED_SHA
   case "$#:${2:-}:${3:-}" in
     1::) ;;
-    2:--single-capital:|3:--single-capital:--deploy-testnet)
+    2:--single-capital:|3:--single-capital:--deploy-testnet|3:--single-capital:--primary)
       profile=(--single-capital)
       route_name=single-capital-test
       deployment_proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
-      if [[ $# == 2 ]]; then
+      if [[ ${3:-} != --deploy-testnet ]]; then
         [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
       fi
       ;;

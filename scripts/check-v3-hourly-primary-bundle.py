@@ -11,7 +11,7 @@ ADDRESS = re.compile(r'^0x[0-9a-fA-F]{40}$')
 HASH = re.compile(r'^0x[0-9a-fA-F]{64}$')
 
 
-def inspect(dist, address, runtime_hash, deployment_tx):
+def inspect(dist, address, runtime_hash, deployment_tx, single_capital=False):
     if not ADDRESS.fullmatch(address) or not HASH.fullmatch(runtime_hash) or not HASH.fullmatch(deployment_tx):
         raise ValueError('INVALID_EXPECTED_CONTRACT_IDENTITY')
     index = (dist / 'index.html').read_text(encoding='utf-8')
@@ -29,6 +29,8 @@ def inspect(dist, address, runtime_hash, deployment_tx):
         raise ValueError('CONTRACT_IDENTITY_MISMATCH')
     if 'ONE-HOUR BNB TESTNET CONTRACT' not in js or 'Test tokens only' not in js:
         raise ValueError('HOURLY_TESTNET_DISCLOSURE_MISSING')
+    if single_capital and 'single-capital-testnet' not in js:
+        raise ValueError('SINGLE_CAPITAL_PROFILE_MISSING')
     if any((dist / 'assets').glob('V2Dashboard-*.js')):
         raise ValueError('RETIRED_DASHBOARD_PRESENT')
     if 'Follow your one-hour test cycle' not in entry_text:
@@ -42,9 +44,10 @@ def main():
     parser.add_argument('--address', required=True)
     parser.add_argument('--runtime-hash', required=True)
     parser.add_argument('--deployment-tx', required=True)
+    parser.add_argument('--single-capital', action='store_true')
     args = parser.parse_args()
     try:
-        print('\n'.join(inspect(args.dist, args.address, args.runtime_hash, args.deployment_tx)))
+        print('\n'.join(inspect(args.dist, args.address, args.runtime_hash, args.deployment_tx, args.single_capital)))
     except (OSError, ValueError) as exc:
         print('V3_HOURLY_PRIMARY_BUNDLE_INVALID=' + str(exc), file=sys.stderr)
         return 1

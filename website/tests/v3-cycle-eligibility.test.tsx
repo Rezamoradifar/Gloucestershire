@@ -39,4 +39,21 @@ describe('V3 cycle eligibility presentation',()=>{
    expect(html).not.toContain('The full daily test rate is applied once per eligible one-hour test cycle');
   }
  });
+ it('derives the single-account hourly timer from its additions and labels partial coverage',()=>{
+  const page={start:0,totalLots:2,lots:[
+   {principal:parseEther('1000'),basis:parseEther('7'),lastAccruedAt:9000},
+   {principal:parseEther('2000'),basis:0n,lastAccruedAt:9500}
+  ]};
+  const view={...base,capital:parseEther('3000'),dailyRateBps:90,singleCapital:true,unifiedPage:page,
+   positions:[{...base.positions[0],principal:parseEther('3000'),lastAccruedAt:9999}]} as unknown as V3Snapshot;
+  const html=renderToStaticMarkup(<V3CycleCard view={view} busy={false} unifiedEnabled onCheckIn={()=>{}} onPositions={()=>{}}/>);
+  expect(html).toContain('YOUR ONE-HOUR TEST CYCLE');
+  expect(html).toContain('Estimated time remaining 00:43:20');
+  expect(html).toContain('1970-01-01 03:30:00 UTC');
+  expect(html).toContain('Each addition starts its own one-hour test cycle');
+  expect(html).not.toContain('loaded additions');
+  const partial=renderToStaticMarkup(<V3CycleCard view={{...view,unifiedPage:{...page,totalLots:3}} as V3Snapshot}
+   busy={false} unifiedEnabled onCheckIn={()=>{}} onPositions={()=>{}}/>);
+  expect(partial).toContain('Timer and estimates cover the 2 loaded additions');
+ });
 });

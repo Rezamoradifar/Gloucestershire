@@ -21,8 +21,10 @@ case "$mode" in
  --install-status)
   [[ $# == 2 && $route_name == unified-test ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
   ;;
- --install|--install-prepared)
-  if [[ $# == 6 && ($mode != --install-prepared || $6 != --enable-testnet-wallets) ]]; then echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; fi
+ --install|--install-prepared|--install-built)
+  if [[ $# == 6 && (($mode != --install-prepared && $mode != --install-built) || $6 != --enable-testnet-wallets) ]]; then echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; fi
+  [[ $mode != --install-built || ($route_name == single-capital-test && ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == single-capital-testnet) ]] ||
+   { echo UNIFIED_SITE_PREBUILT_PROFILE_INVALID; exit 1; }
   [[ ($# == 5 || $# == 6) && $3 == "$expected_proof" && $4 =~ ^[a-f0-9]{64}$ ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
   proof=$3 digest=$4 rpc=$5
   [[ $rpc == https://bsc-testnet-dataseed.bnbchain.org || $rpc == https://bsc-testnet-rpc.publicnode.com ]] || { echo UNIFIED_SITE_RPC_INVALID; exit 1; }
@@ -120,6 +122,9 @@ if(ids.size>1)throw Error('UNIFIED_SITE_WALLET_CONFIG_AMBIGUOUS');
 process.stdout.write([...ids][0] || 'disabled');
 JS
 )
+if [[ $mode == --install-built ]]; then
+ node scripts/publish-v3-single-capital-primary.mjs --check-build "$sha" "$digest" "$rpc"
+else
 if [[ $mode == --install-prepared ]]; then
  python3 scripts/verify-v3-prepared-checkout.py
 else
@@ -133,6 +138,7 @@ fi
 build_args=("$proof" "$digest" "$sha" "$rpc" "$wallet")
 if [[ ${6:-} == --enable-testnet-wallets ]]; then build_args+=("--enable-testnet-wallets"); fi
 node scripts/build-v3-unified-site.mjs "${build_args[@]}" "${profile[@]}"
+fi
 [[ -s website/dist/index.html && -d website/dist/assets && ! -L website/dist/assets ]] || { echo UNIFIED_SITE_BUILD_INCOMPLETE; exit 1; }
 dist="$PWD/website/dist"
 fi

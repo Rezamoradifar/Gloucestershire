@@ -9,12 +9,14 @@ export const PREVIOUS_HOURLY_TEST_PATH='/hourly-test/';
 export default function V3SeparateTestAccounts({config}:{config:V3SiteReleaseConfig|null}){
  if(!config?.unified)return null;
  const singleCapital=config.unified.singleCapital===true;
+ const primary=singleCapital&&import.meta.env.VITE_V3_UNIFIED_PRIMARY==='single-capital-testnet';
  return <section className="gv3-notice" aria-label="Separate test accounts">
   <Info size={16}/><div>
    <strong>Previous test account is separate</strong>
    <p>Positions, balances and requests on the previous {singleCapital?'unified':'hourly'} test contract remain separate.
     They are not automatically transferred or combined with this account.</p>
    <a href={singleCapital?'/unified-test/':PREVIOUS_HOURLY_TEST_PATH}>Open previous {singleCapital?'unified':'hourly'} test account <ArrowUpRight size={14}/></a>
+   {primary&&<p><a href="/previous-hourly-test/">Open earlier hourly contract records <ArrowUpRight size={14}/></a></p>}
    <p>Open the previous page to review its contract and account separately.</p>
   </div>
  </section>;

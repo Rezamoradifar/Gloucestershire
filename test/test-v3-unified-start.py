@@ -76,6 +76,14 @@ esac''')
             self.assertNotEqual(self.invoke(PIN, *flags).returncode, 0)
             self.assertFalse(self.log.exists())
 
+    def test_primary_publication_is_forwarded_for_the_single_capital_profile(self):
+        result = self.invoke(PIN, "--single-capital", "--primary")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log.read_text().split()[2:], ["--single-capital", "--primary"])
+        self.log.unlink()
+        self.assertNotEqual(self.invoke(PIN, "--primary").returncode, 0)
+        self.assertFalse(self.log.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

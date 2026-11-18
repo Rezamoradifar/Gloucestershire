@@ -46,6 +46,20 @@ describe('unified testnet release identity',()=>{
   for(const keeper of [ZeroAddress,unified.address,unified.book,unified.network,'invalid'])
    expect(v3ParseReleaseConfig({...unified,keeper})).toBeNull();
  });
+ it('enables the main-domain account only for the explicitly promoted single-capital build',()=>{
+  const config=v3ParseReleaseConfig({...unified,unifiedMode:'single-capital-testnet'});
+  const enabled=(path:string,rootMode='single-capital-testnet')=>
+   unifiedWalletEnabled(config,path,true,'verified-testnet','verified-isolated-testnet',rootMode);
+  expect(enabled('/')).toBe(true);
+  expect(enabled('/index.html')).toBe(true);
+  expect(enabled('/hourly-test/')).toBe(true);
+  expect(enabled('/hourly-test')).toBe(true);
+  expect(enabled('/single-capital-test/')).toBe(true);
+  expect(enabled('/','')).toBe(false);
+  for(const path of ['/unified-test/','/other/','/previous-hourly-test/'])expect(enabled(path)).toBe(false);
+  expect(unifiedWalletEnabled(v3ParseReleaseConfig(unified),'/',true,'verified-testnet',
+   'verified-isolated-testnet','single-capital-testnet')).toBe(false);
+ });
  it('blocks every wallet-writing entry point in the unfinished unified preview',async()=>{
   const request=vi.fn(),provider={request} as any,config=v3ParseReleaseConfig(unified)!;
   await expect(sendV3Action(provider,base.address,{kind:'register',referrer:ZeroAddress},config)).rejects.toThrow(/read-only preview/);

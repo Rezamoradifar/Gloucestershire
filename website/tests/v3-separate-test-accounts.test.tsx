@@ -1,4 +1,4 @@
-import {describe,expect,it} from 'vitest';
+import {afterEach,describe,expect,it,vi} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import V3SeparateTestAccounts,{PREVIOUS_HOURLY_TEST_PATH} from '../src/V3SeparateTestAccounts';
 import type {V3SiteReleaseConfig} from '../src/v3-site-config';
@@ -10,6 +10,16 @@ const unified={...base,unified:{book:'0x0000000000000000000000000000000000000002
  networkRuntimeHash:'0x'+'d'.repeat(64)}} satisfies V3SiteReleaseConfig;
 
 describe('separate BNB test account navigation',()=>{
+ afterEach(()=>vi.unstubAllEnvs());
+ it('exposes the archived hourly account only after primary promotion',()=>{
+  const single={...unified,unified:{...unified.unified,singleCapital:true as const}};
+  expect(renderToStaticMarkup(<V3SeparateTestAccounts config={single}/>)).not.toContain('/previous-hourly-test/');
+  vi.stubEnv('VITE_V3_UNIFIED_PRIMARY','single-capital-testnet');
+  const html=renderToStaticMarkup(<V3SeparateTestAccounts config={single}/>);
+  expect(html).toContain('href="/previous-hourly-test/"');
+  expect(html).toContain('href="/unified-test/"');
+  expect(html).toContain('They are not automatically transferred or combined with this account.');
+ });
  it('uses only the previous hourly test path and clearly separates account data',()=>{
   const html=renderToStaticMarkup(<V3SeparateTestAccounts config={unified}/>);
   expect(PREVIOUS_HOURLY_TEST_PATH).toBe('/hourly-test/');

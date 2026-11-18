@@ -24,6 +24,7 @@ fi
 node() {
   printf '%s\n' "${*:2}" >> "$TRACE"
   case "$2" in
+    --install) return "$PRIMARY_RESULT" ;;
     --check) return "$CHECK_RESULT" ;;
     --deploy-testnet) printf '{"vault":"isolated"}\n' > "$TEST_PROOF"; return "$DEPLOY_RESULT" ;;
     --recover-existing)
@@ -55,7 +56,7 @@ class ApplyTestnet(unittest.TestCase):
     def apply(self, **settings):
         env = dict(os.environ, SOURCE=str(SOURCE), REVISION=REVISION, TEST_PROOF=str(self.proof),
                    TRACE=str(self.trace), DIGEST=DIGEST, WORKER_RESULT="0", VERIFY_RESULT="0",
-                   CHECK_RESULT="0", SITE_RESULT="0", DEPLOY_RESULT="0", RECOVER_RESULT="0")
+                   CHECK_RESULT="0", SITE_RESULT="0", DEPLOY_RESULT="0", RECOVER_RESULT="0", PRIMARY_RESULT="0")
         env.update(settings)
         self.trace.write_text("")
         proc = subprocess.run(["bash", "-c", HARNESS], env=env, capture_output=True, text=True)
@@ -155,6 +156,19 @@ class ApplyTestnet(unittest.TestCase):
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         self.assertEqual(calls[:2], [f"--recover-existing {READ_RPC} --single-capital",
                                      f"--verify-existing {READ_RPC} --single-capital"])
+
+    def test_primary_reuses_the_existing_proof_and_reports_only_verified_publication(self):
+        self.proof.write_bytes(PROOF)
+        options = dict(SINGLE_CAPITAL="1", DEPLOY_OPTION="--primary")
+        result, calls = self.apply(**options)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [f"--verify-existing {READ_RPC} --single-capital",
+                                f"worker {REVISION} --single-capital",
+                                f"--install {REVISION} {DIGEST} {SIGN_RPC}"])
+        self.assertIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", result.stdout)
+        failure, calls = self.apply(**options, PRIMARY_RESULT="7")
+        self.assertEqual(failure.returncode, 7)
+        self.assertNotIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", failure.stdout)
 
 
 class WorkerGasInstallation(unittest.TestCase):

@@ -5,7 +5,7 @@ import {V3_HOURLY_TEST} from './v3-site-config';
 
 export const V3_ACTIVITY_SECONDS=86_400;
 export const V3_PERIOD_SECONDS=V3_HOURLY_TEST?3_600:86_400;
-export function v3CycleView(positions:V3WalletPosition[],blockTime:number,
+export function v3CycleView(positions:Pick<V3WalletPosition,'principal'|'compoundedBasis'|'lastAccruedAt'>[],blockTime:number,
  elapsedSeconds:number,lastCheckIn:number,rateBps:number,periodSeconds=V3_PERIOD_SECONDS){
  if(!Number.isSafeInteger(blockTime)||blockTime<0||!Number.isSafeInteger(elapsedSeconds)||
   elapsedSeconds<0||!Number.isSafeInteger(lastCheckIn)||lastCheckIn<0||
@@ -27,7 +27,7 @@ export function v3CycleView(positions:V3WalletPosition[],blockTime:number,
  const estimatedCompound=live.reduce((sum,p)=>sum+p.compoundedBasis*rate/10_000n,0n);
  // A continuously moving display estimate only. The contract does not credit
  // partial periods; actual amounts remain unchanged until a confirmed accrual.
- const elapsed=(p:V3WalletPosition)=>BigInt(Math.min(periodSeconds,Math.max(0,now-p.lastAccruedAt)));
+ const elapsed=(p:Pick<V3WalletPosition,'lastAccruedAt'>)=>BigInt(Math.min(periodSeconds,Math.max(0,now-p.lastAccruedAt)));
  const progressDaily=live.reduce((sum,p)=>sum+(p.principal*rate/10_000n)*elapsed(p)/BigInt(periodSeconds),0n);
  const progressCompound=live.reduce((sum,p)=>sum+(p.compoundedBasis*rate/10_000n)*elapsed(p)/BigInt(periodSeconds),0n);
  return {now,nextAt,secondsRemaining,activityRemaining,estimatedDaily,estimatedCompound,progressDaily,progressCompound};

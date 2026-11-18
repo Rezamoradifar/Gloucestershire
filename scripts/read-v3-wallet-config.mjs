@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export function readWalletConfig(root,owner=process.getuid?.()){
+export function readWalletConfig(root,owner=process.getuid?.(),allowDisabled=false){
  const assets=path.join(root,'assets'), ids=new Set();
  for(const name of fs.readdirSync(assets)){
   if(!name.endsWith('.js'))continue;
@@ -18,12 +18,14 @@ export function readWalletConfig(root,owner=process.getuid?.()){
    ids.add(values[0][1].toLowerCase()||'disabled');
   }
  }
+ if(ids.size===0&&allowDisabled)return 'disabled';
  if(ids.size!==1)throw Error('V3_PRIMARY_WALLET_ID_UNVERIFIED');
  return [...ids][0];
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
  try{
-  if(process.argv.length!==3)throw Error('V3_PRIMARY_WALLET_CONFIG_USAGE');
-  process.stdout.write(readWalletConfig(process.argv[2]));
+  if(process.argv.length!==3&&!(process.argv.length===4&&process.argv[3]==='--allow-disabled'))
+   throw Error('V3_PRIMARY_WALLET_CONFIG_USAGE');
+  process.stdout.write(readWalletConfig(process.argv[2],undefined,process.argv[3]==='--allow-disabled'));
  }catch(error){console.error(String(error?.message||error));process.exitCode=1;}
 }
