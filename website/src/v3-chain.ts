@@ -41,6 +41,7 @@ export const V3_ABI=[
  'function register(address)',
  'function checkIn()',
  'function checkInAndAccrue(uint256[])',
+ 'function accrueDaily(address,uint256)',
  'function deposit(uint256,address)',
  'function reinvest(uint256,uint256)',
  'function requestProfit(uint256,uint256)',
