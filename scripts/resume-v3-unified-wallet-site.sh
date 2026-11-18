@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 
-release_sha=605cac9898c1e661d7ba9ce481f258ba0e289136
+release_sha=24d1d9340eb4a793120f2d73722272eb9b327e5e
 repository=https://github.com/Rezamoradifar/Gloucestershire.git
 proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
 keeper_key=/etc/globaldroptrade/v3-unified-keeper-testnet-gas-only.key
