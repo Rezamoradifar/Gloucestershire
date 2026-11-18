@@ -1,6 +1,6 @@
 // Plan a bounded, atomic testnet reinvestment from independently verified
 // position balances and group pages. This module never requests a signature.
-import {getAddress,toQuantity} from 'ethers';
+import {formatUnits,getAddress,toQuantity} from 'ethers';
 import type {V3WalletPosition,v3ReadSession} from './v3-chain';
 import {readUnifiedPositionPage,type UnifiedBookReader,type UnifiedPositionPage,type UnifiedVaultReader} from './v3-unified-position';
 
@@ -48,7 +48,7 @@ export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:Unifi
  const add=(positionId:number,available:bigint,start:number,limit:number)=>{
   if(remaining===0n||available===0n)return;
   if(sources.length===MAX_SOURCES||span+limit>MAX_GROUP_SPAN)
-   throw Error('This amount requires more than one transaction. Enter a smaller amount.');
+   throw Error('This amount requires more than one transaction. Reinvest up to '+formatUnits(amount-remaining,18)+' TEST in this transaction, then refresh the remaining recorded profit.');
   const take=available<remaining?available:remaining;
   sources.push({positionId,amount:take,start,limit});remaining-=take;span+=limit;
  };
@@ -95,10 +95,12 @@ export async function readUnifiedReinvestmentPlan(session:Awaited<ReturnType<typ
  if(amount>covered&&groupPlusOne!==0){
   const summary=await book.position(who,options),lotCount=Number(summary.lots);
   if(!validIndex(lotCount)||lotCount<1)throw Error('The verified reinvestment lot count is invalid.');
-  for(let start=0;start<lotCount&&start<128&&covered<amount;start+=8){
+  for(let start=0;start<lotCount&&covered<amount;start+=8){
    const page=await readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,
     book as unknown as UnifiedBookReader,who,groupPlusOne-1,block.number,block.timestamp,start,8);
-   pages.push(page);covered+=page.availableProfitOnPage;
+   if(page.availableProfitOnPage>0n){pages.push(page);covered+=page.availableProfitOnPage;}
+   // The contract caps the contributing sources, not the index of a contributing lot.
+   if(pages.length>MAX_SOURCES)break;
   }
  }
  const plan=planUnifiedReinvestment(positions,pages,amount);

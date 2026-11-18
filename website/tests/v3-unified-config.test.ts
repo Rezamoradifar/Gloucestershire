@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from 'vitest';
 import {ZeroAddress} from 'ethers';
-import {v3ParseReleaseConfig} from '../src/v3-site-config';
+import {v3ParseReleaseConfig,unifiedWalletEnabled} from '../src/v3-site-config';
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit} from '../src/v3-actions';
 
 const base={address:'0x1111111111111111111111111111111111111111',
@@ -22,6 +22,16 @@ describe('unified testnet release identity',()=>{
   expect(v3ParseReleaseConfig({...unified,network:ZeroAddress})).toBeNull();
   expect(v3ParseReleaseConfig({...unified,unifiedMode:'mainnet'})).toBeNull();
   expect(v3ParseReleaseConfig({...base,address:ZeroAddress})).toBeNull();
+ });
+ it('opens wallet actions only in the explicitly enabled separate hourly build',()=>{
+  const config=v3ParseReleaseConfig(unified),mode='verified-isolated-testnet',primary='verified-testnet';
+  expect(unifiedWalletEnabled(config,'/unified-test/',true,primary,mode)).toBe(true);
+  for(const path of ['/','/hourly-test/','/unified-test/other','/unified-test2/'])
+   expect(unifiedWalletEnabled(config,path,true,primary,mode)).toBe(false);
+  expect(unifiedWalletEnabled(base,'/unified-test/',true,primary,mode)).toBe(false);
+  expect(unifiedWalletEnabled(config,'/unified-test/',false,primary,mode)).toBe(false);
+  expect(unifiedWalletEnabled(config,'/unified-test/',true,'',mode)).toBe(false);
+  expect(unifiedWalletEnabled(config,'/unified-test/',true,primary,'')).toBe(false);
  });
  it('blocks every wallet-writing entry point in the unfinished unified preview',async()=>{
   const request=vi.fn(),provider={request} as any,config=v3ParseReleaseConfig(unified)!;

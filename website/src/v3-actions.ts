@@ -30,7 +30,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'check_in';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in';
  hash?:string;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
@@ -384,8 +384,7 @@ async function sendV3ActionCore(walletProvider:Eip1193Provider,wallet:string,
   return receipt.hash as string;
  }finally{provider.destroy();}
 }
-// Local/testnet-only adapter, deliberately not connected to the live UI. Its
-// explicit opt-in cannot make the existing unified preview writable.
+// Registration on the explicitly enabled, verified unified test profile.
 export async function sendV3UnifiedRegistration(walletProvider:Eip1193Provider,wallet:string,referrer:string,
  config:V3SiteReleaseConfig|null,options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
  if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
@@ -405,8 +404,7 @@ export async function sendV3UnifiedRegistration(walletProvider:Eip1193Provider,w
  }finally{session?.provider.destroy();}
  return hash;
 }
-// Experimental testnet adapter. It is deliberately not wired to a live UI:
-// other unified wallet actions, history and account migration remain unfinished.
+// The unified flow plans exact sources and verifies their common destination.
 export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,wallet:string,amount:bigint,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
  if(!config?.unified)throw Error('The verified unified testnet contract is required.');
@@ -441,9 +439,7 @@ export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,w
   return {hash:receipt.hash,destination:plan.destination,amount};
  }finally{browser?.destroy();session.provider.destroy();}
 }
-// Experimental isolated BNB-testnet request for one verified group page.
-// The dashboard route remains disabled in the read-only preview; manager
-// approval, funding and payment are separate.
+// Isolated BNB Testnet request scoped to one verified group page.
 export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider,wallet:string,
  kind:'profit'|'principal',positionId:number,start:number,amount:bigint,config:V3SiteReleaseConfig|null,
  options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
@@ -602,8 +598,7 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
   throw error;
  }finally{provider.destroy();}
 }
-// Explicitly enabled only for isolated local/testnet tests; the standard
-// deposit entry point and unified website remain read-only.
+// The separate unified profile opts in explicitly to test-token deposits.
 export async function sendV3UnifiedTestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
  amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,
  options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
@@ -663,11 +658,12 @@ export async function readV3ManagerQueue(walletProvider:Eip1193Provider,wallet:s
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,page=0){
  if(!Number.isSafeInteger(page)||page<0||page>100000)
   throw Error('Invalid V3 manager request page.');
- const s=await v3ReadSession(walletProvider,wallet,config);
+ const s=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified));
  try{
   const role=await s.vault.MANAGER_ROLE(s.options);
-  if(!await s.vault.hasRole(role,wallet,s.options))
-   throw Error('Connect an authorized V3 manager to view the approval queue.');
+  const funder=config?.unified&&await s.vault.hasRole(await s.vault.FUNDER_ROLE(s.options),wallet,s.options);
+  if(!funder&&!await s.vault.hasRole(role,wallet,s.options))
+   throw Error('Connect an authorized settlement wallet to view the approval queue.');
   const raw=await s.vault.withdrawalCount(s.options);
   const count=Number(raw);
   if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid V3 queue size.');

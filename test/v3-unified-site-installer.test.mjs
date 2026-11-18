@@ -19,15 +19,29 @@ test('build helper rejects untrusted deployment arguments before running npm',()
  assert.doesNotMatch(result.stdout,/UNIFIED_SITE_BUILD_VERIFIED/);
 });
 
-test('site install is isolated and wallet actions are not opted in',()=>{
+test('site install defaults to read-only and verifies an explicit wallet opt-in before building',()=>{
  const shell=fs.readFileSync(script,'utf8');
  const build=fs.readFileSync('scripts/build-v3-unified-site.mjs','utf8');
  assert.match(shell,/vps-luna-2585/);
- assert.match(shell,/UNIFIED_SITE_ROUTE_ALREADY_EXISTS/);
- assert.match(shell,/renameat2/);
+ const publisher=fs.readFileSync('scripts/publish-v3-unified-route.py','utf8');
+ assert.match(publisher,/UNIFIED_SITE_ROUTE_ALREADY_EXISTS/);
+ assert.match(shell,/publish-v3-unified-route\.py/);
  assert.match(shell,/UNIFIED_SITE_LEGACY_CHANGED/);
  assert.match(shell,/UNIFIED_SITE_NEEDS_FREE_INODES_OR_SPACE/);
  assert.match(build,/planUnifiedPreviewSite/);
- assert.doesNotMatch(build,/VITE_V3_UNIFIED_WALLET_ACTIONS/);
+ assert.match(build,/if\(writes\)verifyActiveWorker\(worker\)/);
+ assert.match(build,/if\(writes\)releaseEnv.VITE_V3_UNIFIED_WALLET_ACTIONS='verified-isolated-testnet'/);
  assert.doesNotMatch(shell,/systemctl\s+(?:stop|disable|restart)/);
+});
+
+test('wallet activation requires a worker for the same verified release and vault', async () => {
+ const {checkWorkerIdentity} = await import('../scripts/v3-unified-worker-readiness.mjs');
+ const expected = {sha: 'a'.repeat(40), digest: 'b'.repeat(64), vault: '0x'+'22'.repeat(20)};
+ const ready = {sourceSha: expected.sha, proofSha256: expected.digest, chainId: 97,
+  vault: expected.vault, operator: '0x'+'33'.repeat(20)};
+ checkWorkerIdentity(ready, expected);
+ for (const override of [{chainId:56}, {sourceSha: 'c'.repeat(40)}, {proofSha256: 'd'.repeat(64)},
+                         {vault: '0x'+'44'.repeat(20)}, {operator: '0x'+'00'.repeat(20)}]) {
+  assert.throws(() => checkWorkerIdentity({...ready, ...override}, expected));
+ }
 });

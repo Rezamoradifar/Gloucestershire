@@ -87,6 +87,7 @@ export const V3_ABI=[
  'function claimNetworkRewards(uint256,uint8,uint8)',
  'function requestPrincipal(uint256,uint256)',
  'function requestPrincipalFromPage(uint256,uint256,uint256,uint256)',
+ 'function cancelWithdrawal(uint256)',
  'function approveWithdrawal(uint256)',
  'function rejectWithdrawal(uint256)',
  'function reserveExistingCash(uint256)',
@@ -105,6 +106,8 @@ export const V3_ABI=[
  'event NetworkRewardPrepared(address indexed user,uint256 indexed group,uint8 stage,uint256 preparedUsd,uint256 cursor)',
  'event NetworkRewardEarned(address indexed user,uint256 indexed group,uint8 stage,uint256 volumeUsd,uint256 rewardUsd)',
  'event WithdrawalRequested(uint256 indexed id,address indexed user,uint8 kind,uint256 gross,uint256 fee)',
+ 'event WithdrawalApproved(uint256 indexed id,address indexed manager)',
+ 'event WithdrawalReleased(uint256 indexed id,uint8 status)',
  'event WithdrawalEscrowFunded(uint256 indexed id,address indexed funder,uint256 gross)',
  'event WithdrawalExistingCashReserved(uint256 indexed id,uint256 gross)',
  'event WithdrawalPaid(uint256 indexed id,address indexed beneficiary,uint256 net,uint256 fee)'
@@ -256,7 +259,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
 export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:string,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,
  networkPage:{branches:number;groups:number}|null=null,unifiedPageStart=0):Promise<V3Snapshot>{
- const {vault,network,book,provider,options,block}=await v3ReadSession(walletProvider,wallet,config);
+ const {vault,network,book,provider,options,block}=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified));
  try{
  wallet=getAddress(wallet);
  const [user,eligible,nPosition,nWithdraw,tWithdraw,nMember,cap,paused,managerRole,funderRole,cashStatus]=await Promise.all([

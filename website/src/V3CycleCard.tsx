@@ -6,8 +6,8 @@ import {V3_HOURLY_TEST} from './v3-site-config';
 import {formatV3Amount as money} from './v3-format';
 import DigitalValue from './DigitalValue';
 
-export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
- view:V3Snapshot;busy:boolean;onCheckIn:()=>void;onPositions:()=>void;
+export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnabled=false}:{
+ view:V3Snapshot;busy:boolean;unifiedEnabled?:boolean;onCheckIn:()=>void;onPositions:()=>void;
 }){
  const [elapsed,setElapsed]=useState(0);
  useEffect(()=>{
@@ -18,7 +18,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions}:{
  if(view.unifiedPage!==undefined)return <section className="gv3-cycle" aria-label="Unified test cycle">
   <div className="gv3-cycle-head"><div><span className="gv3-kicker">ONE-HOUR TEST CYCLE</span>
    <h2>Each addition has its own cycle</h2><p>Review individual accrual times in the reinvestment position.</p></div></div>
-  <div className="gv3-cycle-copy"><p>Estimates are unavailable while the unified account is in read-only preview.</p>
+  <div className="gv3-cycle-copy"><p>{unifiedEnabled?'See the recorded daily and compound claims for each addition.':'Estimates are unavailable while the unified account is in read-only preview.'}</p>
    <button type="button" onClick={onPositions}>View positions <ArrowRight size={15}/></button></div>
  </section>;
  let cycle:ReturnType<typeof v3CycleView>;

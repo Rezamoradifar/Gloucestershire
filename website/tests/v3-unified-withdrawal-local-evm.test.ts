@@ -24,7 +24,7 @@ describe('unified testnet withdrawal adapter on a local EVM',()=>{
   const fee='0x74015dedf36677485793f1714ec7bd4893907b26';
   const tokenArtifact=JSON.parse(fs.readFileSync('../artifacts/MockToken.json','utf8'));
   const eip=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},
-   miner:{blockGasLimit:30000000},wallet:{totalAccounts:3,defaultBalance:50}});
+   miner:{blockGasLimit:30000000},wallet:{totalAccounts:3,defaultBalance:50,unlockedAccounts:[manager]}});
   shared.rpc=eip;
   const rpc=new BrowserProvider(eip as any,undefined,{cacheTimeout:-1});rpc.pollingInterval=20;
   try{
@@ -70,14 +70,35 @@ describe('unified testnet withdrawal adapter on a local EVM',()=>{
    expect(await token.balanceOf(wallet)).toBe(before);
    await expect(send('profit',0,'0.001')).rejects.toThrow(/pending/);
    expect(sends).toBe(1);
-   await eip.request({method:'evm_increaseTime',params:[90*86400+1]});await eip.request({method:'evm_mine',params:[]});
-   await (await vault.connect(user).getFunction('cancelWithdrawal')(0)).wait();
+   await eip.request({method:'evm_increaseTime',params:[90*86400+1]});
+   for(let i=0;i<5;i++)await eip.request({method:'evm_mine',params:[]});
+   const {sendUnifiedWithdrawal}=await import('../src/v3-unified-settlement');
+   const withdraw=(account:string,action:Parameters<typeof sendUnifiedWithdrawal>[2],enabled=true)=>
+    sendUnifiedWithdrawal(walletProvider as any,account,action,config,{enabled});
+   await expect(withdraw(wallet,{kind:'cancelWithdrawal',id:0},false)).rejects.toThrow(/read-only/);
+   await withdraw(wallet,{kind:'cancelWithdrawal',id:0});
    for(let i=0;i<5;i++)await eip.request({method:'evm_mine',params:[]});
    const principal=await send('principal',0,'0.5');
    expect(principal.id).toBe(1n);expect(principal.fee).toBe(parseEther('0.15'));
    expect((await vault.withdrawalOf(1)).kind).toBe(1n);
    expect((await vault.positionOf(wallet,1)).reservedPrincipal).toBe(parseEther('0.5'));
    expect(await token.balanceOf(wallet)).toBe(before);
+   await eip.request({method:'evm_setAccountBalance',params:[manager,'0x56bc75e2d63100000']});
+   await (await token.mint(manager,parseEther('10'))).wait();
+   for(let i=0;i<5;i++)await eip.request({method:'evm_mine',params:[]});
+   await expect(withdraw(wallet,{kind:'approveWithdrawal',id:1})).rejects.toThrow();
+   await withdraw(manager,{kind:'approveWithdrawal',id:1});
+   await expect(withdraw(manager,{kind:'fundWithdrawal',id:1,gross:parseEther('1'),beneficiary:wallet})).rejects.toThrow(/does not match/);
+   await withdraw(manager,{kind:'fundWithdrawal',id:1,gross:parseEther('0.5'),beneficiary:wallet});
+   await withdraw(wallet,{kind:'payWithdrawal',id:1});
+   expect(await token.balanceOf(wallet)).toBe(before+parseEther('0.35'));
+   expect(await token.allowance(manager,address)).toBe(0n);
+   await eip.request({method:'evm_increaseTime',params:[72*3600+1]});
+   for(let i=0;i<6;i++)await eip.request({method:'evm_mine',params:[]});
+   await expect(withdraw(wallet,{kind:'requestPrincipal',positionId:1,amount:parseEther('1')})).rejects.toThrow(/additions page/);
+   await withdraw(wallet,{kind:'requestPrincipal',positionId:0,amount:parseEther('1')});
+   await withdraw(manager,{kind:'rejectWithdrawal',id:2});
+   expect((await vault.withdrawalOf(2)).status).toBe(4n);
   }finally{rpc.destroy();await (eip as any).disconnect();vi.unstubAllEnvs();}
- },120000);
+ },240000);
 });

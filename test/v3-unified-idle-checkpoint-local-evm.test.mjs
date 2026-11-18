@@ -5,15 +5,16 @@ import path from 'node:path';
 import test from 'node:test';
 import {execFileSync} from 'node:child_process';
 import ganache from 'ganache';
-import {BrowserProvider,Contract,ContractFactory,ZeroAddress,keccak256,parseEther} from 'ethers';
+import {BrowserProvider,Contract,ContractFactory,Wallet,ZeroAddress,keccak256,parseEther} from 'ethers';
 import {compileUnifiedTestnet} from '../scripts/compile-global-v3-unified-testnet.mjs';
 import {checkpointUnifiedIdleScan} from '../scripts/checkpoint-v3-unified-idle-scan.mjs';
+import {runUnifiedKeeperCycle} from '../scripts/run-v3-unified-keeper-cycle.mjs';
 import {openUnifiedJournal} from '../scripts/v3-unified-keeper-journal.mjs';
 
 const TOKEN='0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89';
 const done=async promise=>{const receipt=await(await promise).wait();assert.equal(receipt.status,1);return receipt;};
 
-test('local EVM idle checkpoint stops on a later due accrual and never broadcasts',async()=>{
+test('local EVM checkpoints idle scans, accrues once, and recovers an interrupted confirmation without replay',async()=>{
  const artifact=compileUnifiedTestnet().GlobalV3UnifiedTestnet;
  if(!fs.existsSync('artifacts/MockToken.json'))execFileSync(process.execPath,['scripts/compile.mjs'],{stdio:'pipe'});
  const mock=JSON.parse(fs.readFileSync('artifacts/MockToken.json','utf8'));
@@ -54,9 +55,48 @@ test('local EVM idle checkpoint stops on a later due accrual and never broadcast
   assert.equal(fs.readFileSync(filename,'utf8'),before);
   assert.equal((await vault.positionOf(who,0)).availableProfit,0n);
   assert.equal(await provider.getTransactionCount(operator),nonce);
+  const signer=new Wallet(Object.values(rpc.getInitialAccounts())[2].secretKey,provider);
+  const waitReceipt=async(p,hash,{confirmations})=>{
+   assert.equal(confirmations,3);
+   for(let i=1;i<confirmations;i++)await rpc.request({method:'evm_mine',params:[]});
+   return await p.getTransactionReceipt(hash);
+  };
+  const cycle=()=>runUnifiedKeeperCycle({provider,signer,proof,journalDirectory:directory,waitReceipt});
+  const pending=path.join(directory,'pending.json');
+  const archived=path.join(directory,'last-confirmed-accrual.json');
+  const rename=fs.renameSync;
+  fs.renameSync=(from,to)=>{
+   if(from===pending&&to===archived)throw Error('simulated crash before archive');
+   return rename(from,to);
+  };
+  try{await assert.rejects(cycle(),/simulated crash before archive/);}finally{fs.renameSync=rename;}
+  const record=JSON.parse(fs.readFileSync(pending,'utf8'));
+  const checkpoint=JSON.parse(fs.readFileSync(filename,'utf8'));
+  assert.equal(checkpoint.lastAccrual.hash,record.hash);
+  assert.deepEqual(checkpoint.cursor,record.retryCursor);
+  assert.equal(await provider.getTransactionCount(operator),nonce+1);
+  const credit=(await vault.positionOf(who,0)).availableProfit;
+  assert.ok(credit>0n);
+  fs.writeFileSync(pending,JSON.stringify({...record,operator:who}));
+  await assert.rejects(cycle(),/OPERATOR_MISMATCH/);
+  assert.equal(fs.existsSync(archived),false);
+  fs.writeFileSync(pending,JSON.stringify(record));
+  const getReceipt=provider.getTransactionReceipt;
+  provider.getTransactionReceipt=async hash=>hash===record.hash?null:getReceipt.call(provider,hash);
+  try{assert.equal((await cycle()).state,'RECEIPT_NOT_OBSERVED');}finally{provider.getTransactionReceipt=getReceipt;}
+  assert.equal(JSON.parse(fs.readFileSync(pending,'utf8')).hash,record.hash);
+  const recovered=await cycle();
+  assert.equal(recovered.state,'CONFIRMED_CHECKPOINT_RECORDED');
+  assert.equal(recovered.transactionSent,false);
+  assert.equal(fs.existsSync(pending),false);
+  assert.equal(JSON.parse(fs.readFileSync(archived,'utf8')).hash,record.hash);
+  assert.equal((await cycle()).state,'IDLE_CHECKPOINT_RECORDED');
+  assert.equal((await vault.positionOf(who,0)).availableProfit,credit);
+  assert.equal(await provider.getTransactionCount(operator),nonce+1);
+  const recoveredCheckpoint=fs.readFileSync(filename,'utf8');
   const journal=openUnifiedJournal(directory);
   journal.prepare({status:'PREPARED',chainId:97,hash:'0x'+'aa'.repeat(32),nonce});journal.close();
   const stopped=await run();assert.equal(stopped.state,'JOURNAL_REQUIRES_RECONCILIATION');
-  assert.equal(fs.readFileSync(filename,'utf8'),before);
+  assert.equal(fs.readFileSync(filename,'utf8'),recoveredCheckpoint);
  }finally{provider.destroy();await rpc.disconnect();fs.rmSync(directory,{recursive:true,force:true});}
 });

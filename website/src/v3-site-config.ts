@@ -33,3 +33,9 @@ export function v3ParseReleaseConfig(raw:{
   ...(unified?{unified}:{})
  });
 }
+
+// Wallet writes are restricted to the separately built, verified hourly release.
+export function unifiedWalletEnabled(config:V3SiteReleaseConfig|null,path:string,
+ hourly=V3_HOURLY_TEST,primary=import.meta.env.VITE_V3_PRIMARY_DASHBOARD,mode=import.meta.env.VITE_V3_UNIFIED_WALLET_ACTIONS){
+ return Boolean(config?.unified)&&hourly&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&/^\/unified-test\/?$/.test(path);
+}

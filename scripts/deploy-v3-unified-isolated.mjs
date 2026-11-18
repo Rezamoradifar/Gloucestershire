@@ -2,17 +2,21 @@
 // A signed transaction hash is durably journaled before it can be broadcast.
 import fs from 'node:fs';
 import path from 'node:path';
-import {randomBytes} from 'node:crypto';
+import {hostname} from 'node:os';
+import {createHash,randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {Contract,ContractFactory,JsonRpcProvider,Transaction,Wallet,getAddress,getCreateAddress,keccak256} from 'ethers';
 import {compileUnifiedTestnet} from './compile-global-v3-unified-testnet.mjs';
 import {planUnifiedDeployment} from './v3-unified-deploy-preflight.mjs';
 import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {waitV3DeploymentReceipt} from './v3-deploy-receipt-poll.mjs';
-import {verifyUnifiedDeployment,recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
+import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
+import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
+export {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 
-const HASH=/^0x[0-9a-fA-F]{64}$/;
-const DEPLOYER=getAddress('0xCf6Eb63ba4D2174CA2759eff57a720a54416b71d');
+import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_INITCODE_HASH,UNIFIED_DEPLOYER,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER} from './v3-unified-release-pins.mjs';
+
+const DEPLOYER=getAddress(UNIFIED_DEPLOYER);
 const DIRECTORY='/var/lib/globaldroptrade/v3-unified-testnet';
 const RPCS=new Set(['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com']);
 
@@ -32,11 +36,24 @@ function writeProof(directory,proof){
  }
 }
 
-export async function deployUnifiedIsolated({provider,signer,directory,expectedDeployer,
- expectedInitcodeHash,expectedTokenRuntimeHash,compile=compileUnifiedTestnet,
- waitReceipt=waitV3DeploymentReceipt}){
- if(!HASH.test(String(expectedInitcodeHash))||!HASH.test(String(expectedTokenRuntimeHash)))
-  throw Error('UNIFIED_REVIEWED_INITCODE_AND_TOKEN_HASH_REQUIRED');
+async function verifyPrivateProofFile(provider) {
+ const filename=path.join(DIRECTORY,'deployment-proof.json');
+ if (fs.realpathSync(filename) !== filename) throw Error('UNIFIED_PROOF_SYMLINK');
+ const file=fs.openSync(filename,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+ let bytes;
+ try {
+  const stat=fs.fstatSync(file);
+  if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o077) || stat.size < 2 || stat.size > 65536) {
+   throw Error('UNIFIED_PROOF_FILE_NOT_PRIVATE');
+  }
+  bytes=fs.readFileSync(file);
+ } finally { fs.closeSync(file); }
+ await verifyUnifiedRelease(provider,JSON.parse(bytes.toString('utf8')));
+ return createHash('sha256').update(bytes).digest('hex');
+}
+
+export async function deployUnifiedIsolated({provider,signer,directory,expectedDeployer=DEPLOYER,
+ compile=compileUnifiedTestnet,waitReceipt=waitV3DeploymentReceipt}){
  if(!(signer instanceof Wallet)||signer.provider!==provider||
     getAddress(await signer.getAddress())!==getAddress(expectedDeployer))
   throw Error('UNIFIED_DEDICATED_DEPLOYER_REQUIRED');
@@ -46,10 +63,10 @@ export async function deployUnifiedIsolated({provider,signer,directory,expectedD
    throw Error('UNIFIED_PREVIOUS_DEPLOYMENT_NEEDS_REVIEW');
   const artifacts=compile(),artifact=artifacts.GlobalV3UnifiedTestnet;
   const plan=await planUnifiedDeployment({provider,from:expectedDeployer,compile:()=>artifacts});
-  if(plan.initcodeHash.toLowerCase()!==expectedInitcodeHash.toLowerCase())
+  if(plan.initcodeHash.toLowerCase()!==UNIFIED_INITCODE_HASH)
    throw Error('UNIFIED_REVIEWED_INITCODE_HASH_MISMATCH');
   const tokenCode=await provider.getCode(plan.token,plan.block);
-  if(keccak256(tokenCode).toLowerCase()!==expectedTokenRuntimeHash.toLowerCase())
+  if(keccak256(tokenCode).toLowerCase()!==UNIFIED_TOKEN_RUNTIME_HASH)
    throw Error('UNIFIED_REVIEWED_TOKEN_HASH_MISMATCH');
   if(plan.hasPendingTransactions||!plan.candidateAddress||!plan.enoughTestBNB)
    throw Error('UNIFIED_DEPLOY_ACCOUNT_NOT_READY');
@@ -74,36 +91,66 @@ export async function deployUnifiedIsolated({provider,signer,directory,expectedD
   // Failure or process death after this line is ambiguous and never retried automatically.
   journal.prepare({status:'PREPARED',chainId:97,hash,nonce,sender:plan.sender,
    candidateAddress:plan.candidateAddress,initcodeHash:plan.initcodeHash,
-   tokenRuntimeHash:expectedTokenRuntimeHash.toLowerCase(),gasLimit:plan.gasLimit,gasPriceWei:plan.gasPriceWei});
+   tokenRuntimeHash:UNIFIED_TOKEN_RUNTIME_HASH,gasLimit:plan.gasLimit,gasPriceWei:plan.gasPriceWei});
   const sent=await provider.broadcastTransaction(raw);
   if(sent.hash.toLowerCase()!==hash.toLowerCase())throw Error('UNIFIED_BROADCAST_HASH_MISMATCH_INSPECT_JOURNAL');
   journal.markBroadcast(hash);
   const receipt=await waitReceipt(provider,hash,{confirmations:3});
-  if(!receipt||receipt.status!==1||!receipt.contractAddress||getAddress(receipt.contractAddress)!==plan.candidateAddress||
-     String(receipt.hash).toLowerCase()!==hash.toLowerCase())throw Error('UNIFIED_RECEIPT_MISMATCH_INSPECT_JOURNAL');
-  const tx=await provider.getTransaction(hash);
-  if(!tx||tx.from!==plan.sender||tx.to!==null||tx.chainId!==97n||tx.nonce!==nonce||
-     tx.value!==0n||keccak256(tx.data)!==plan.initcodeHash||tx.gasLimit!==BigInt(plan.gasLimit)||
-     tx.gasPrice!==BigInt(plan.gasPriceWei))throw Error('UNIFIED_CHAIN_TRANSACTION_MISMATCH');
-  const vault=new Contract(plan.candidateAddress,artifact.abi,provider),at={blockTag:receipt.blockNumber};
-  const [book,network]=await Promise.all([vault.reinvestmentBook(at),vault.networkPlan(at)]);
-  const [vaultCode,bookCode,networkCode,tokenAgain]=await Promise.all([
-   provider.getCode(plan.candidateAddress,receipt.blockNumber),provider.getCode(book,receipt.blockNumber),
-   provider.getCode(network,receipt.blockNumber),provider.getCode(plan.token,receipt.blockNumber)
-  ]);
-  if([vaultCode,bookCode,networkCode].some(code=>code==='0x')||
-     keccak256(tokenAgain).toLowerCase()!==expectedTokenRuntimeHash.toLowerCase())
-   throw Error('UNIFIED_RUNTIME_CODE_MISMATCH');
-  const proof={status:'VERIFIED_UNIFIED_TESTNET_ONLY',chainId:97,vault:plan.candidateAddress,
-   book:getAddress(book),network:getAddress(network),token:plan.token,manager:plan.manager,
-   feeReceiver:plan.feeReceiver,deploymentBlock:receipt.blockNumber,deploymentTx:hash,
-   initcodeHash:plan.initcodeHash,tokenRuntimeHash:expectedTokenRuntimeHash.toLowerCase(),
-   vaultRuntimeHash:keccak256(vaultCode),bookRuntimeHash:keccak256(bookCode),networkRuntimeHash:keccak256(networkCode)};
-  await verifyUnifiedDeployment(provider,proof);
-  writeProof(directory,proof);
-  journal.markConfirmed(hash);
-  return {...proof,siteUpdated:false,migrationPerformed:false};
+  return await recordConfirmedDeployment(provider,journal,directory,expectedDeployer,receipt);
  }finally{journal.close();}
+}
+
+// Both paths reconcile the original signed intent against its canonical receipt.
+async function recordConfirmedDeployment(provider, journal, directory, expectedDeployer, receipt) {
+ const record = journal.read();
+ const sender = getAddress(expectedDeployer);
+ if (!record || record.sender !== sender || record.candidateAddress !== getCreateAddress({from:sender, nonce:record.nonce}) ||
+     record.initcodeHash !== UNIFIED_INITCODE_HASH || record.tokenRuntimeHash !== UNIFIED_TOKEN_RUNTIME_HASH) {
+  throw Error('UNIFIED_DEPLOYMENT_JOURNAL_IDENTITY_MISMATCH');
+ }
+ const {hash, candidateAddress} = record;
+ if (!receipt || receipt.status !== 1 || !receipt.contractAddress || getAddress(receipt.contractAddress) !== candidateAddress ||
+     String(receipt.hash).toLowerCase() !== hash.toLowerCase()) {
+  throw Error('UNIFIED_RECEIPT_MISMATCH_INSPECT_JOURNAL');
+ }
+ const tx = await provider.getTransaction(hash);
+ if (!tx || tx.from !== sender || tx.to !== null || tx.chainId !== 97n || tx.nonce !== record.nonce ||
+     tx.value !== 0n || keccak256(tx.data) !== UNIFIED_INITCODE_HASH || tx.gasLimit !== BigInt(record.gasLimit) ||
+     tx.gasPrice !== BigInt(record.gasPriceWei) || tx.blockHash !== receipt.blockHash) {
+  throw Error('UNIFIED_CHAIN_TRANSACTION_MISMATCH');
+ }
+ const vault = new Contract(candidateAddress, [
+  'function reinvestmentBook() view returns (address)', 'function networkPlan() view returns (address)'
+ ], provider);
+ const at = {blockTag:receipt.blockNumber};
+ const [book, network] = await Promise.all([vault.reinvestmentBook(at), vault.networkPlan(at)]);
+ const [vaultCode, bookCode, networkCode, tokenCode] = await Promise.all(
+  [candidateAddress, book, network, UNIFIED_TOKEN].map(address => provider.getCode(address,receipt.blockNumber))
+ );
+ if ([vaultCode, bookCode, networkCode].some(code => code === '0x') || keccak256(tokenCode) !== UNIFIED_TOKEN_RUNTIME_HASH) {
+  throw Error('UNIFIED_RUNTIME_CODE_MISMATCH');
+ }
+ const proof = {status:'VERIFIED_UNIFIED_TESTNET_ONLY', chainId:97, vault:candidateAddress,
+  book:getAddress(book), network:getAddress(network), token:UNIFIED_TOKEN, manager:UNIFIED_MANAGER,
+  feeReceiver:UNIFIED_FEE_RECEIVER, deploymentBlock:receipt.blockNumber, deploymentTx:hash,
+  initcodeHash:UNIFIED_INITCODE_HASH, tokenRuntimeHash:UNIFIED_TOKEN_RUNTIME_HASH,
+  vaultRuntimeHash:keccak256(vaultCode), bookRuntimeHash:keccak256(bookCode), networkRuntimeHash:keccak256(networkCode)};
+ await verifyUnifiedRelease(provider,proof,sender);
+ writeProof(directory,proof);
+ if (record.status !== 'CONFIRMED') journal.markConfirmed(hash);
+ return {...proof, siteUpdated:false, migrationPerformed:false};
+}
+
+export async function recoverUnifiedDeployment({provider, directory, expectedDeployer=DEPLOYER}) {
+ const journal = openUnifiedJournal(directory);
+ try {
+  const record = journal.read();
+  if (!record) throw Error('UNIFIED_DEPLOYMENT_JOURNAL_NOT_FOUND');
+  if (fs.existsSync(path.join(directory,'deployment-proof.json'))) throw Error('UNIFIED_PROOF_ALREADY_EXISTS');
+  const receipt = await provider.getTransactionReceipt(record.hash);
+  if (!receipt) throw Error('UNIFIED_ORIGINAL_RECEIPT_UNAVAILABLE');
+  return await recordConfirmedDeployment(provider,journal,directory,expectedDeployer,receipt);
+ } finally { journal.close(); }
 }
 
 function readServerSigner(provider){
@@ -132,14 +179,30 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1
  let provider;
  try{
   const args=process.argv.slice(2);
-  if(args.length!==4||args[0]!=='--deploy-testnet'||!RPCS.has(args[1])||
-     !HASH.test(args[2])||!HASH.test(args[3]))
-   throw Error('USAGE: --deploy-testnet ALLOWED_RPC REVIEWED_INITCODE_HASH REVIEWED_TOKEN_RUNTIME_HASH');
-  if(process.getuid()!==0)throw Error('UNIFIED_ROOT_REQUIRED_FOR_SERVER_SIGNER');
-  provider=new JsonRpcProvider(args[1],undefined,{batchMaxCount:1,cacheTimeout:-1});
-  const result=await deployUnifiedIsolated({provider,signer:readServerSigner(provider),directory:DIRECTORY,
-   expectedDeployer:DEPLOYER,expectedInitcodeHash:args[2],expectedTokenRuntimeHash:args[3]});
-  console.log('UNIFIED_TESTNET_DEPLOYED '+JSON.stringify(result));
+  const [mode,rpc]=args;
+  if(args.length!==2||!['--check','--verify-existing','--recover-existing','--deploy-testnet'].includes(mode)||!RPCS.has(rpc)) {
+   throw Error('UNIFIED_ARGUMENTS_EXPECT_MODE_AND_ALLOWED_RPC');
+  }
+  provider=new JsonRpcProvider(rpc,undefined,{batchMaxCount:1,cacheTimeout:-1});
+  if(mode==='--check') {
+   const plan=await planUnifiedDeployment({provider,from:DEPLOYER});
+   if(plan.initcodeHash!==UNIFIED_INITCODE_HASH||!plan.tokenRuntimeIndependentlyVerified) {
+    throw Error('UNIFIED_RELEASE_PIN_MISMATCH');
+   }
+   console.log('UNIFIED_TESTNET_ESTIMATE '+JSON.stringify(plan));
+  } else if(mode==='--verify-existing' || mode==='--recover-existing') {
+   if(mode==='--recover-existing') {
+    await recoverUnifiedDeployment({provider,directory:DIRECTORY});
+   }
+   const digest=await verifyPrivateProofFile(provider);
+   console.log('UNIFIED_DEPLOYMENT_PROOF_SHA256='+digest);
+  } else {
+   if(process.getuid()!==0||hostname().split('.')[0]!=='vps-luna-2585') {
+    throw Error('UNIFIED_SERVER_SIGNER_REQUIRES_GLOBAL_VPS');
+   }
+   const result=await deployUnifiedIsolated({provider,signer:readServerSigner(provider),directory:DIRECTORY});
+   console.log('UNIFIED_TESTNET_DEPLOYED '+JSON.stringify(result));
+  }
  }catch(error){
   // Do not print RPC payloads, signed transactions, local file contents or keys.
   const code=String(error?.message||'UNIFIED_DEPLOY_FAILED').split('\n')[0];

@@ -1,4 +1,4 @@
-// Experimental BNB-testnet-only check-in adapter, not connected to the UI.
+// BNB Testnet check-in for the explicitly enabled unified release.
 // Check-in records activity only. It neither accrues nor transfers rewards;
 // a separately verified keeper or user action is still required for accrual.
 import {BrowserProvider,Interface,getAddress,toQuantity,type Eip1193Provider} from 'ethers';

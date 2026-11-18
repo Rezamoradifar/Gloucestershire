@@ -4,6 +4,8 @@ on:
     paths:
       - 'contracts/v3/**'
       - 'scripts/*v3*hourly*'
+      - 'scripts/*v3*unified*'
+      - 'test/*unified*'
       - 'scripts/global-v3-auto-compound-keeper.mjs'
       - 'scripts/install-global-v3-keeper-timer.sh'
       - 'scripts/test-v3-keeper-systemd-credentials.py'
@@ -46,3 +48,24 @@ jobs:
           npm test --prefix website -- --maxWorkers=2
           VITE_V3_HOURLY_TEST=isolated-1h VITE_V3_PRIMARY_DASHBOARD=verified-testnet VITE_V3_CONTRACT_ADDRESS=0x1111111111111111111111111111111111111111 VITE_V3_RUNTIME_HASH=0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa VITE_V3_DEPLOYMENT_TX=0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb npm run build --prefix website
           grep -RilF 'ONE-HOUR BNB TESTNET CONTRACT' website/dist/assets --include='*.js' >/dev/null
+
+  unified-testnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Exercise isolated deployment, crash recovery and grouped accounting
+        run: node --test --test-concurrency=2 test/*unified*.test.mjs
+      - name: Check publication and installation
+        run: |
+          python3 test/test-v3-unified-start.py
+          python3 test/test-v3-unified-apply.py
+          python3 test/test-v3-unified-route-http.py
+          bash -n scripts/install-v3-unified-worker.sh

@@ -1,4 +1,4 @@
-// Experimental single-candidate testnet sender. No CLI or installation path.
+// Single-candidate testnet accrual sender used by the keeper cycle.
 // A private, gas-only local Wallet and a locked durable journal are mandatory.
 // Any uncertain broadcast or receipt leaves a pending record and stops reuse.
 import {Interface,Transaction,Wallet,getAddress,keccak256,toQuantity} from 'ethers';
@@ -64,42 +64,47 @@ export async function verifyUnifiedAccrualReceipt({provider,receipt,hash,simulat
  return true;
 }
 
-export async function executeUnifiedAccrual({provider,signer,proof,candidate,journalDirectory,waitReceipt=waitV3KeeperReceipt}){
+export async function executeUnifiedAccrual(options){
+ const journal=openUnifiedJournal(options.journalDirectory);
+ try{return await executeWithKeeperLock({...options,journal});}finally{journal.close();}
+}
+
+// The complete cycle holds the same journal lock through scanning, sending
+// and checkpointing. The single-candidate API still acquires its own lock.
+export async function executeWithKeeperLock({provider,signer,proof,candidate,journal,waitReceipt=waitV3KeeperReceipt}){
  if(!(signer instanceof Wallet)||signer.provider!==provider)throw Error('UNIFIED_LOCAL_GAS_WALLET_REQUIRED');
  const retryCursor=cursor(candidate?.retryCursor),nextCursor=cursor(candidate?.nextCursor);
- const journal=openUnifiedJournal(journalDirectory);
- try{
-  const previous=journal.read();
-  // A confirmed receipt alone does not prove the cursor was checkpointed or
-  // remains canonical. Fail closed until reconciliation is implemented.
-  if(previous)throw Error('UNIFIED_PREVIOUS_TRANSACTION_NEEDS_REVIEW');
-  const operator=getAddress(await signer.getAddress());
-  const simulation=await simulateUnifiedAccrual({provider,proof,candidate,operator});
-  const [latest,pending]=await Promise.all([
-   provider.getTransactionCount(operator,'latest'),provider.getTransactionCount(operator,'pending')
-  ]);
-  if(!Number.isSafeInteger(latest)||latest<0||pending!==latest)throw Error('UNIFIED_KEEPER_PENDING_NONCE_NEEDS_REVIEW');
-  const data=ABI.encodeFunctionData(simulation.method,simulation.args);
-  const raw=await signer.signTransaction({chainId:97,type:0,nonce:latest,to:simulation.vault,
-   value:0n,data,gasLimit:simulation.gasLimit,gasPrice:simulation.gasPrice});
-  const signed=Transaction.from(raw),hash=keccak256(raw);
-  if(signed.chainId!==97n||signed.nonce!==latest||!signed.from||getAddress(signed.from)!==operator||
-     !signed.to||getAddress(signed.to)!==simulation.vault||signed.value!==0n||
-     signed.data.toLowerCase()!==data.toLowerCase()||signed.gasLimit!==simulation.gasLimit||
-     signed.gasPrice!==simulation.gasPrice||signed.hash?.toLowerCase()!==hash.toLowerCase())
-   throw Error('UNIFIED_SIGNED_TRANSACTION_MISMATCH');
-  journal.prepare({status:'PREPARED',chainId:97,hash,nonce:latest,operator,vault:simulation.vault,
-   member:simulation.member,positionId:simulation.positionId,method:simulation.method,
-   transactionData:data,gasLimit:simulation.gasLimit.toString(),gasPrice:simulation.gasPrice.toString(),
-   retryCursor,nextCursor,createdAt:new Date().toISOString()});
-  const broadcast=await provider.broadcastTransaction(raw);
-  if(!broadcast||String(broadcast.hash).toLowerCase()!==hash.toLowerCase())
-   throw Error('UNIFIED_BROADCAST_HASH_MISMATCH_INSPECT_JOURNAL');
-  journal.markBroadcast(hash);
-  const receipt=await waitReceipt(provider,hash,{confirmations:2});
-  await verifyUnifiedAccrualReceipt({provider,receipt,hash,simulation,operator,nonce:latest,data});
-  journal.markConfirmed(hash);
-  return {chainId:97,status:'CONFIRMED',hash,operator,vault:simulation.vault,member:simulation.member,
-   positionId:simulation.positionId,nextCursor,transactionSent:true,assetTransfer:false};
- }finally{journal.close();}
+ const previous=journal.read();
+ // A confirmed receipt alone does not prove the cursor was checkpointed or
+ // remains canonical. The cycle must reconcile the prior record first.
+ if(previous)throw Error('UNIFIED_PREVIOUS_TRANSACTION_NEEDS_REVIEW');
+ const operator=getAddress(await signer.getAddress());
+ const simulation=await simulateUnifiedAccrual({provider,proof,candidate,operator});
+ const [latest,pending]=await Promise.all([
+  provider.getTransactionCount(operator,'latest'),provider.getTransactionCount(operator,'pending')
+ ]);
+ if(!Number.isSafeInteger(latest)||latest<0||pending!==latest)throw Error('UNIFIED_KEEPER_PENDING_NONCE_NEEDS_REVIEW');
+ const data=ABI.encodeFunctionData(simulation.method,simulation.args);
+ const raw=await signer.signTransaction({chainId:97,type:0,nonce:latest,to:simulation.vault,
+  value:0n,data,gasLimit:simulation.gasLimit,gasPrice:simulation.gasPrice});
+ const signed=Transaction.from(raw),hash=keccak256(raw);
+ if(signed.chainId!==97n||signed.nonce!==latest||!signed.from||getAddress(signed.from)!==operator||
+    !signed.to||getAddress(signed.to)!==simulation.vault||signed.value!==0n||
+    signed.data.toLowerCase()!==data.toLowerCase()||signed.gasLimit!==simulation.gasLimit||
+    signed.gasPrice!==simulation.gasPrice||signed.hash?.toLowerCase()!==hash.toLowerCase())
+  throw Error('UNIFIED_SIGNED_TRANSACTION_MISMATCH');
+ journal.prepare({status:'PREPARED',chainId:97,hash,nonce:latest,operator,vault:simulation.vault,
+  member:simulation.member,positionId:simulation.positionId,method:simulation.method,
+  transactionData:data,gasLimit:simulation.gasLimit.toString(),gasPrice:simulation.gasPrice.toString(),
+  retryCursor,nextCursor,createdAt:new Date().toISOString()});
+ const broadcast=await provider.broadcastTransaction(raw);
+ if(!broadcast||String(broadcast.hash).toLowerCase()!==hash.toLowerCase())
+  throw Error('UNIFIED_BROADCAST_HASH_MISMATCH_INSPECT_JOURNAL');
+ journal.markBroadcast(hash);
+ // Confirmation review reads head minus two. Wait until it includes this receipt.
+ const receipt=await waitReceipt(provider,hash,{confirmations:3});
+ await verifyUnifiedAccrualReceipt({provider,receipt,hash,simulation,operator,nonce:latest,data});
+ journal.markConfirmed(hash);
+ return {chainId:97,status:'CONFIRMED',hash,operator,vault:simulation.vault,member:simulation.member,
+  positionId:simulation.positionId,nextCursor,transactionSent:true,assetTransfer:false};
 }

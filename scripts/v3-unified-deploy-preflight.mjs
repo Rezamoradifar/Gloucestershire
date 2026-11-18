@@ -4,9 +4,11 @@
 import {ContractFactory,Interface,getAddress,getCreateAddress,isAddress,keccak256,parseEther,toQuantity,ZeroAddress} from 'ethers';
 import {compileUnifiedTestnet} from './compile-global-v3-unified-testnet.mjs';
 
-const TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
-const MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
-const FEE_RECEIVER=getAddress('0x74015dedf36677485793f1714ec7bd4893907b26');
+import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER} from './v3-unified-release-pins.mjs';
+
+const TOKEN=getAddress(UNIFIED_TOKEN);
+const MANAGER=getAddress(UNIFIED_MANAGER);
+const FEE_RECEIVER=getAddress(UNIFIED_FEE_RECEIVER);
 const MAX_GAS=12_000_000n,MAX_GAS_PRICE=100_000_000_000n,MAX_FEE=parseEther('0.08');
 const TOKEN_ABI=new Interface(['function decimals() view returns(uint8)']);
 const HASH=/^0x[0-9a-fA-F]{64}$/;
@@ -55,6 +57,6 @@ export async function planUnifiedDeployment({provider,from,compile=compileUnifie
   gasEstimate:gas.toString(),gasLimit:gasLimit.toString(),gasPriceWei:gasPrice.toString(),
   maximumFeeWei:(gasLimit*gasPrice).toString(),balanceWei:balance.toString(),
   enoughTestBNB:balance>=gasLimit*gasPrice,hasPendingTransactions:latestNonce!==pendingNonce,
-  tokenRuntimeIndependentlyVerified:false,
+  tokenRuntimeIndependentlyVerified:keccak256(code)===UNIFIED_TOKEN_RUNTIME_HASH,
   releaseReady:false,transactionSent:false,siteUpdated:false,migrationPerformed:false};
 }

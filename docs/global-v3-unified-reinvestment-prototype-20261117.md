@@ -31,136 +31,41 @@ liabilities and referral volume, and uses the book during group withdrawal
 reservation, release and settlement. `UnifiedNetworkPlan` holds the network
 state and is created by, and bound to, the new vault.
 
-The integrated local-EVM tests use the pinned mock-token address and normal
-EVM code-size rules. They exercise deposits, repeated reinvestment from two
-sources, reinvestment of group profit, accrual, independent 90-day locks,
-reservation release, funded payouts and network/referral behavior. The
-separate read-only `plan-v3-unified-accrual.mjs` can propose bounded lot
-pages after a caller has independently verified deployment, account and block.
-It does not read a chain, sign transactions, or run a keeper. The compile-only
-`scripts/compile-global-v3-unified-testnet.mjs` checks compiler and bytecode
-size for the parent and both components; it does not install or deploy them.
-`scripts/v3-unified-deploy-preflight.mjs` is an unsigned chain-97 deployment
-estimate, not an installer. It performs no deployment or site change and
-always reports that the release is not ready.
-The separate `/unified-test/` site preflight also only checks pinned source and
-deployment data; it does not install or prove that the route exists.
+## Reinvesting from the dashboard
 
-The read-only unified keeper preflight now verifies a supplied testnet
-deployment receipt and all three pinned runtime hashes, checks that the book
-and network component are bound to the vault, and reads at one confirmed
-block. The deployment receipt's block hash is compared with the canonical
-block and rechecked. A bounded three-part cursor scans normal positions and each group's lot
-pages without using the group's misleading aggregate accrual timestamp. It
-rechecks the block hash after the scan and reports candidate calls only; it
-never loads a key or submits a transaction. Local tests cover 70 group lots,
-resumption, no duplicate due pages, mismatched components and reorganization.
-The deployment proof must ultimately come from a separately authenticated,
-verified deployment; a caller-supplied hash alone is not proof of correctness.
-An additional no-key simulation verifies a candidate against the pinned
-deployment, enforces an unprivileged gas payer and bounded estimated fee, and
-checks the account again. It still does not persist a pending transaction,
-sign or broadcast.
+On the transaction-enabled `/unified-test/` dashboard, a registered member
+enters an amount from recorded position profit. The site selects the eligible
+source claims and simulates `reinvestMany` before requesting a signature. A
+confirmed transaction debits the source claims atomically and adds one lot to
+the member's reinvestment position. The next reinvestment uses the same position.
+Deposits remain individual positions. Each lot retains its own hourly accrual
+clock and 90-day lock. The contract limits a single transaction to 16 sources
+and 128 grouped lot slots. A larger operation needs separate transactions.
 
-A separate experimental one-candidate sender repeats the deployment and
-simulation checks and records the transaction hash and nonce in a private,
-locked journal before broadcast. It verifies the receipt, canonical block,
-transaction and accrual event before marking a transaction confirmed. An
-ambiguous broadcast leaves a pending record and stops the next attempt rather
-than automatically sending again. Local EVM tests exercised one successful
-accrual and a lost RPC response after a broadcast, with no automatic replay.
-The journal also records exact public calldata and fee fields; an inspection
-helper can report the RPC-observed transaction and receipt without changing
-the journal or declaring a retry safe. Old records without those fields need
-manual review.
-No existing journal record, including a confirmed one, may be overwritten
-until canonical reconciliation and durable cursor checkpointing are designed.
-An additional read-only confirmation review validates the deployment,
-transaction, event and cursor before suggesting the original retry cursor for
-a rescan. It does not clear the journal or authorize a transaction retry.
-An opt-in local observation file can retain that verified finding and its
-block anchors, without clearing the journal or enabling a new transaction.
-The sender has no command-line entry point, installer, scheduler, recovery
-tool or live deployment. A dedicated signer and a single shared journal path
-would be required to avoid independent processes bypassing each other's locks.
-A read-only cycle planner selects at most one proposed accrual and never
-persists a cursor. Any existing journal record stops it for reconciliation,
-including a locally confirmed record, until chain and checkpoint recovery have
-been independently verified.
-An experimental idle-scan checkpoint can persist a scan cursor only when no
-candidate is due and no transaction journal exists. It uses the shared journal
-lock, a private atomic file and a canonical-block anchor. It is not a running
-scheduler or transaction-recovery mechanism. In particular the contract does
-not backfill missed cycles; sweep capacity and downtime need further review.
+The dashboard reads the vault, book and network plan at a confirmed block.
+The read-only build is used when the gas-only worker needs test BNB. The
+transaction-enabled build also checks the release SHA, deployment proof and
+active worker timer on the host. Registration, check-in, deposits, grouped
+reinvestment and withdrawal actions require a connected chain-97 test wallet.
+Withdrawal settlement requires the applicable approval and test-token funding.
+A grouped profit or principal withdrawal can cover one page of up to 64 lots.
+The previously deployed hourly contract retains its own position selector.
 
-The website also has an opt-in, read-only unified preview. It requires an
-explicit hourly-testnet profile plus separately pinned book and network
-addresses and runtime hashes, verifies their vault links, and reads a bounded
-page of additions at the same confirmed block. The existing V3 configuration
-continues to use its original vault for network reads. The preview displays
-individual lock times rather than treating the group's first timestamp as the
-lock for every addition; it hides the unsupported group-wide live estimate.
-All three site wallet-writing entry points reject unified-preview actions
-before requesting a wallet operation. No preview is installed on the site.
+## Hourly accrual and network volume
 
-The experimental vault also supports one atomic manual reinvestment sourced
-from multiple recorded position claims or bounded group pages. All selected
-claims are debited together; a failure reverts the complete batch. The batch
-creates one new internal lot with one new 90-day lock and adds it to the same
-reinvestment position. Referral and network rewards remain separate claims.
-Each batch is limited to 16 sources and 128 group-lot slots; amounts that do
-not fit those bounds need smaller transactions. The unified preview shows the
-recorded position-profit total without a source dropdown. An experimental
-website adapter reads at a pinned block, prepares and simulates the exact
-batch, verifies the wallet and receipt, and checks every source event. Its
-local end-to-end test uses a local EVM only; it is not connected to a live
-button, and the preview continues to block wallet actions. The legacy site's
-source dropdown remains because its deployed vault does not support atomic
-multi-source reinvestment or a unified destination.
-
-## This is not a deployed fix
-
-The deployed hourly V3 contract creates a separate position for every manual
-reinvestment and has no upgrade or migration method. These components are NOT
-wired into that contract, the public website, or the existing keeper. They are
-not deployed on any network, production-ready, or independently audited. They
-do not change or transfer any existing user position or test token.
-
-The network component exposes branch and reward-group reads/actions at a new
-address. The opt-in site preview can read it and scans its verified event
-history separately from vault events. Experimental registration and deposit
-adapters and their guarded form routes have passed local tests. Wallet
-actions and the network-volume keeper are not yet enabled. The
-prototype also includes a locally tested one-page withdrawal-request adapter;
-it does not approve, fund or pay the request, and its form remains disabled in
-the read-only preview. The
-check-in adapter is likewise local-test-only and records activity without
-accruing or transferring profit; a separately verified keeper remains necessary.
-The guarded dashboard route for that check-in remains disabled in the preview.
-The preview links to the separate previous hourly-test account and explicitly
-states that its positions and balances have not been imported or combined.
-The existing accrual keeper only sees a position-level timestamp: it cannot
-correctly schedule the grouped position's independent lots. The prototype's
-default accrual call covers only the first eight lots; later lots require
-explicit bounded-page processing. The current preflight does not execute
-transactions or persist keeper cursors. The experimental sender handles one
-candidate but still needs durable scheduling, recovery procedures and further
-adversarial review before installation. Group profit/principal withdrawal
-reservations are currently limited to one 64-lot page per request. Group
-profit reinvestment can use multiple pages within the separate 128-lot batch
-limit above; claims beyond that bound need smaller transactions.
-In a local test with 70 one-TEST lots, an eight-lot page used up to 697,626
-gas; the current legacy keeper's 500,000 transaction-gas cap is insufficient
-for that scenario. This measurement is not a bound for network gas use.
-Do not install or point the current site or keepers at this prototype.
-
-The integrated prototype debits source claims, derives rate/eligibility,
-records per-lot referral rounding, and applies the existing approval/funding
-mechanism in the tested local scenarios. It still requires full regression
-and adversarial testing, gas bounds and keeper integration, a verified website
-adapter, safe handling of requests spanning pages, and an independent review.
-Only the trusted vault can mutate the book; the book cannot protect against a
-faulty vault. Passing the focused tests is not a security audit.
+The dedicated systemd service runs bounded scans using separate persistent
+cursors and pending transaction records for accrual and referral-network
+volume. Its common lock covers both routines. Each accrual page contains up
+to eight reinvestment lots. The service records the hash before broadcast,
+checks a canonical receipt and the expected event, and persists its cursor
+before archiving the confirmed accrual. An ambiguous result holds subsequent
+writes. An interrupted volume broadcast can resume with exactly the signed
+bytes; an unresolved accrual hash can require operator review. The service
+runs 15 seconds after its preceding invocation finishes. Operators can inspect
+the timer and the service journal using the name `global-v3-unified-keeper-testnet`.
+The one-hour cycle does not backfill missed periods after an outage. Public
+RPC availability, gas funding and account count govern actual sweep time.
+An eight-lot page used up to 697,626 gas in the 70-lot local test.
 
 ## Existing accounts
 
@@ -188,29 +93,32 @@ those capabilities are not yet implemented.
 
 ## Additional isolated testnet tooling
 
-`deploy-v3-unified-isolated.mjs` is an experimental chain-97-only deployer.
-It requires separately reviewed initcode and token runtime hashes, checks the
-pinned gas-only signer, and records the signed transaction hash and nonce in a
-private journal before broadcasting. An existing journal or proof blocks a
-second deployment. It does not install the website, migrate accounts, or
-install a keeper. The tool cannot determine whether a supplied hash came from
-an independent trusted source. No independently reviewed token hash or live
-server signer was verified during local tests; do not treat this as deployment
-approval or use a hash copied solely from the same RPC as independent proof.
+The chain-97 deployer, `deploy-v3-unified-isolated.mjs`, verifies the compiled
+creation bytecode and constructor arguments against the release hash in
+`v3-unified-release-pins.mjs`. It checks the TEST token runtime against the
+Sourcify exact match reproduced from the project's original mock-token artifact.
+On the Global VPS, `--deploy-testnet` uses the designated gas-only signer and
+records the signed hash and nonce in a private journal before broadcasting.
+An existing journal or deployment proof blocks a second broadcast.
+`--verify-existing` checks the receipt, creation transaction, deployed contracts
+and management roles before returning the SHA-256 digest of the proof file.
+If the process exits after broadcast and before the proof is written,
+`--recover-existing` reconstructs it from the original transaction once its
+receipt is confirmed. An unknown or unconfirmed receipt leaves the journal
+available for later checks. All four modes take one additional argument, the supported BNB Testnet RPC URL. A public deployment
+is confirmed only after verification succeeds against the chain.
 
-`install-v3-unified-test-site.sh` and `build-v3-unified-site.mjs` are an
-experimental installer for a new, read-only `/unified-test/` preview. They
-require the correct server, pinned source and independently trusted deployment
-proof, available resources, and a non-existent destination. They validate the
-existing pages and preserve them, and attempt to roll back the new route on a
-failed post-install check. Local fixture tests and shell syntax checks do not
-prove that a real server install will succeed. It does not deploy the contract,
-activate transactions, migrate accounts or enable keepers. The last reported
-server reading of 115,595 free inodes is below the installer's 120,000 limit;
-no cleanup is performed automatically.
+Run `scripts/apply-v3-unified-testnet.sh` from the pinned, private release
+checkout on `vps-luna-2585`. It checks the existing site, installs the two
+locked dependency trees once, verifies the signed deployment independently,
+and installs the worker before publishing the isolated route. On its first
+run it prints the dedicated public keeper address. If this wallet has less
+than 0.001 tBNB, the installer publishes the read-only dashboard and exits 42.
+Fund that address on BNB Testnet and repeat the same release command to enable
+wallet actions. An existing verified deployment is reused.
 
-`v3-unified-sweep-capacity.mjs` measures bounded due work at a single pinned
-block and explicitly marks an incomplete sweep. It cannot guarantee future
-capacity or recover missed cycles and does not enable a scheduler. Transaction
-journal recovery, network volume processing and unattended keeper scheduling
-remain incomplete, so this prototype is not ready for a live user workflow.
+The publisher accepts only its own prior release or an empty destination.
+It checks the entry HTML, JavaScript, stylesheet and dashboard chunk over
+HTTPS and restores the preceding route if post-publication verification fails.
+A completed host run reports `UNIFIED_TESTNET_WALLET_DASHBOARD_AVAILABLE`.
+The source commit and CI results alone do not establish deployment on the VPS.
