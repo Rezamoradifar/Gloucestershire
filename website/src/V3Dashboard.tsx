@@ -28,8 +28,9 @@ import {isUnifiedNetworkAction,sendUnifiedNetworkAction,networkActionTarget} fro
 import V3PositionsList from './V3PositionsList';
 import V3UnifiedPositionPage from './V3UnifiedPositionPage';
 import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
-import V3UnifiedWithdrawalForm from './V3UnifiedWithdrawalForm';
-import {prepareUnifiedPageAction} from './v3-unified-position';
+import V3AccountWithdrawalForm from './V3AccountWithdrawalForm';
+import {planV3AccountWithdrawal} from './v3-account-withdrawal';
+import {prepareUnifiedPageAction,type UnifiedPositionPage} from './v3-unified-position';
 import V3ClassicOverview from './V3ClassicOverview';
 import {V3TransactionReview,useV3TransactionReview} from './V3TransactionReview';
 import V3HistoryPanel from './V3HistoryPanel';
@@ -40,7 +41,7 @@ import WalletPicker from './WalletPicker';
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
-import {parseV3Amount as amount,prepareV3WithdrawalRequest,type V3WithdrawalKind} from './v3-withdrawal-form';
+import {parseV3Amount as amount,type V3WithdrawalKind} from './v3-withdrawal-form';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
 import './v2-classic-refinement.css';
@@ -103,8 +104,6 @@ export default function V3Dashboard(){
  const unifiedReadOnly=Boolean(config?.unified)&&!unifiedEnabled;
  const operatorAccess=Boolean(view?.canManage||(config?.unified&&view?.canFund));
  useEffect(()=>{setUnifiedPageStart(0);},[wallet,chain,config?.address]);
- const depositPositions=view?.positions.filter(p=>!config?.unified||!p.fromReinvestment)??[];
- const selectedDeposit=depositPositions.some(p=>String(p.id)===selectedPosition)?selectedPosition:String(depositPositions[0]?.id??-1);
  const invalidInvite=typeof window!=='undefined'&&readReferralInvite(window.location.search).status==='invalid';
 
  useEffect(()=>{
@@ -153,7 +152,7 @@ export default function V3Dashboard(){
   if(!provider||!wallet||chain!==97||!config){setView(null);setReadError(walletSession.error??'');setLoading(false);return;}
   setLoading(true);
   try{
-   const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null,unifiedPageStart);
+   const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null,unifiedPageStart,tab==='withdrawals');
    if(id===revision.current&&getWalletProvider()===provider){setView(result);setReadError('');}
   }catch(e){
    if(id===revision.current){setView(null);setReadError('Unable to load verified account data. Retry or use the wallet connection check.');}
@@ -335,36 +334,37 @@ export default function V3Dashboard(){
   void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
    due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?');
  };
- const request=(kind=requestKind,depositOnly=false)=>{
+ const request=(kind=requestKind)=>{
+  if(tab!=='withdrawals'){
+   setRequestKind(kind);setTab('withdrawals');setMenuOpen(false);setError('');return;
+  }
   try{
-   const source=config?.unified&&depositOnly?selectedDeposit:selectedPosition;
-   if(view?.unifiedPage&&view.unifiedPage.positionId===Number(source)&&(kind==='profit'||kind==='principal')){
-    void requestUnifiedPage(kind);return;
+   if(!view||view.wallet.toLowerCase()!==wallet.toLowerCase())throw Error('The connected wallet changed. Refresh the account before requesting a withdrawal.');
+   const plan=planV3AccountWithdrawal(view,value,kind,Boolean(config?.unified));
+   if(plan.source==='book'){
+    void requestUnifiedPage(plan.kind,plan.page,plan.amount);return;
    }
-   const a=prepareV3WithdrawalRequest(view,value,source,kind);
+   const a=plan.action;
    const fee=a.amount*(kind==='principal'?3000n:300n)/10000n;
-   void perform(a,'Request '+kind+' withdrawal. Gross: '+formatUnits(a.amount,18)+
+   void perform(a,'Request '+kind+' withdrawal from your account. Gross: '+formatUnits(a.amount,18)+
     ' TEST; fee: '+formatUnits(fee,18)+' TEST; net: '+formatUnits(a.amount-fee,18)+
     ' TEST. Manager approval and actual funding required.');
   }catch(e){setError((e as Error).message);}
  };
- async function requestUnifiedPage(kind:'profit'|'principal'){
+ async function requestUnifiedPage(kind:'profit'|'principal',page:UnifiedPositionPage,n:bigint){
   if(busy||loading||inFlight.current)return;
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
-  if(!wallet||!config?.unified||chain!==97||!view?.unifiedPage){setError('Connect and verify your unified BNB Testnet position.');return;}
+  if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your unified BNB Testnet account.');return;}
   if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
-  const page=view.unifiedPage;
-  if(page.wallet.toLowerCase()!==wallet.toLowerCase()||page.start!==unifiedPageStart||page.limit!==8){
-   setError('The verified position page changed. Refresh before continuing.');return;
+  if(page.wallet.toLowerCase()!==wallet.toLowerCase()||page.block!==view.block||page.asOf!==view.asOf||page.limit!==8){
+   setError('The verified withdrawal records changed. Refresh before continuing.');return;
   }
-  let n:bigint;
   try{
-   n=amount(value);
    prepareUnifiedPageAction(page,{registered:view.registered,suspended:view.suspended,paused:view.paused,
     pendingWithdrawal:view.pendingWithdrawal,nextRequestAt:view.nextRequestAt,requestCap:view.ledger.requestCap},kind,n);
   }catch(e){setError(e instanceof Error?e.message:'Invalid withdrawal request.');return;}
   const fee=n*(kind==='principal'?3000n:300n)/10000n;
-  if(!await confirmAction('Review withdrawal request','Request '+kind+' withdrawal from the selected reinvestment page?'+
+  if(!await confirmAction('Review withdrawal request','Request '+kind+' withdrawal from your account?'+
    '\nGross: '+formatUnits(n,18)+' TEST; fee: '+formatUnits(fee,18)+' TEST; net: '+formatUnits(n-fee,18)+
    ' TEST. Manager approval and actual test-token funding are required. The wallet must sign one transaction.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
@@ -566,23 +566,10 @@ export default function V3Dashboard(){
       <p>This profile shows only the current contract's confirmed account records.</p>
      </section>}
      {tab==='withdrawals'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Request a V3 testnet withdrawal</h3><Clock3 size={18}/></div>
-      <p>Claimed profit is a recorded obligation, not escrowed cash. Manager approval and actual TEST token funding are required before payment.</p>
-      <div className="gv2-detail"><span>Maximum single profit/referral request now</span><b><DigitalValue value={claims?show(claims.maxSingleRequest):'0'} unit="TEST"/></b></div>
-      <div className="gv3-input-row">
-       <label htmlFor="v3-request-kind">Withdrawal type</label>
-       <select id="v3-request-kind" value={requestKind} onChange={e=>setRequestKind(e.target.value as 'profit'|'principal'|'referral'|'network')}><option value="profit">Accrued profit</option><option value="referral">Referral claim</option><option value="network">Network milestone claim</option><option value="principal">Matured principal</option></select>
-       {(requestKind==='profit'||requestKind==='principal')&&<><label htmlFor="v3-request-position">Position</label><select id="v3-request-position" value={config.unified?selectedDeposit:selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
-        {depositPositions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1}</option>)}</select></>}
-       <label htmlFor="v3-request-amount">TEST USDT amount</label><input id="v3-request-amount" value={value} inputMode="decimal" onChange={e=>setValue(e.target.value)} placeholder="0.00"/>
-       <button className="gv2-primary" disabled={busy||reviewRequired||!view.registered||view.pendingWithdrawal||view.paused||unifiedReadOnly||((requestKind==='profit'||requestKind==='principal')&&!depositPositions.length)} onClick={()=>request(requestKind,true)}>Review & sign withdrawal request</button>
-      </div>
-      {config.unified&&view.unifiedPage&&<V3UnifiedWithdrawalForm page={view.unifiedPage}
-       busy={busy||loading||reviewRequired||view.unifiedPage.start!==unifiedPageStart} readOnly={unifiedReadOnly}
-       disabledReason="This isolated release is open for viewing only."
-       registered={view.registered} suspended={view.suspended} paused={view.paused} pendingWithdrawal={view.pendingWithdrawal}
-       nextRequestAt={view.nextRequestAt} requestCap={view.ledger.requestCap} value={value} onValue={setValue}
-       onSubmit={kind=>void requestUnifiedPage(kind)} onPrevious={()=>setUnifiedPageStart(Math.max(0,view.unifiedPage!.start-view.unifiedPage!.limit))}
-       onNext={()=>setUnifiedPageStart(view.unifiedPage!.start+view.unifiedPage!.limit)}/>}
+      <V3AccountWithdrawalForm view={view} unified={Boolean(config.unified)}
+       busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly}
+       kind={requestKind} onKind={setRequestKind} value={value} onValue={setValue}
+       onSubmit={()=>request()}/>
       <h3>Your recent V3 requests</h3>{view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
      </section>}

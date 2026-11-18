@@ -8,7 +8,7 @@ import unittest
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "scripts/resume-v3-unified-wallet-site.sh"
-PIN = "605cac9898c1e661d7ba9ce481f258ba0e289136"
+PIN = "24d1d9340eb4a793120f2d73722272eb9b327e5e"
 PREPARE = r"""
 source "$SOURCE"
 proof=$SANDBOX/proof

@@ -17,6 +17,8 @@ describe('unified testnet withdrawal adapter on a local EVM',()=>{
  it('checks one group page and verifies profit and matured-principal requests',async()=>{
   vi.stubEnv('VITE_V3_HOURLY_TEST','isolated-1h');
   const {sendV3UnifiedPageWithdrawal}=await import('../src/v3-actions');
+  const {readV3Snapshot}=await import('../src/v3-chain');
+  const {planV3AccountWithdrawal}=await import('../src/v3-account-withdrawal');
   const previous=process.cwd();let artifact;
   try{process.chdir('..');artifact=compileUnifiedTestnet().GlobalV3UnifiedTestnet;}finally{process.chdir(previous);}
   const mock='0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89';
@@ -43,6 +45,8 @@ describe('unified testnet withdrawal adapter on a local EVM',()=>{
    await eip.request({method:'evm_increaseTime',params:[3601]});await eip.request({method:'evm_mine',params:[]});
    await (await vault.accrueDaily(wallet,0)).wait();
    await (await vault.connect(user).getFunction('reinvest')(0,parseEther('3'))).wait();
+   const remainingProfit=(await vault.positionOf(wallet,0)).availableProfit;
+   await (await vault.connect(user).getFunction('reinvest')(0,remainingProfit)).wait();
    await eip.request({method:'evm_increaseTime',params:[3601]});await eip.request({method:'evm_mine',params:[]});
    await (await vault.accrueReinvestmentPage(wallet,0,8)).wait();
    for(let i=0;i<5;i++)await eip.request({method:'evm_mine',params:[]});
@@ -59,11 +63,21 @@ describe('unified testnet withdrawal adapter on a local EVM',()=>{
    const send=(kind:'profit'|'principal',start:number,amount:string,enabled=true)=>
     sendV3UnifiedPageWithdrawal(walletProvider as any,wallet,kind,1,start,parseEther(amount),config,{enabled});
    await expect(send('profit',0,'0.01',false)).rejects.toThrow(/read-only/);
-   await expect(send('profit',1,'0.01')).rejects.toThrow(/page/);
+   await expect(send('profit',2,'0.01')).rejects.toThrow(/page/);
    await expect(send('principal',0,'0.5')).rejects.toThrow(/unlocked principal/);
    expect(sends).toBe(0);
    const before=await token.balanceOf(wallet);
-   const request=await send('profit',0,'0.01');
+   const snapshot=await readV3Snapshot(walletProvider as any,wallet,config,null,0,true);
+   expect(snapshot.unifiedWithdrawalPages).toHaveLength(1);
+   expect(snapshot.unifiedWithdrawalPages?.[0].totalLots).toBe(2);
+   const plan=planV3AccountWithdrawal(snapshot,'0.01','profit',true);
+   if(plan.source!=='book')throw Error('Expected the verified reinvestment account to be selected.');
+   const switched={request:async(request:any)=>request.method==='eth_accounts'?[await deployer.getAddress()]:walletProvider.request(request)};
+   await expect(sendV3UnifiedPageWithdrawal(switched,wallet,plan.kind,plan.page.positionId,plan.page.start,plan.amount,config,{enabled:true}))
+    .rejects.toThrow(/wallet|account/i);
+   expect(sends).toBe(0);
+   const request=await sendV3UnifiedPageWithdrawal(walletProvider as any,wallet,plan.kind,
+    plan.page.positionId,plan.page.start,plan.amount,config,{enabled:true});
    expect(request.id).toBe(0n);expect(request.fee).toBe(parseEther('0.0003'));
    expect((await vault.withdrawalOf(0)).positionId).toBe(1n);
    expect((await vault.positionOf(wallet,1)).reservedProfit).toBe(parseEther('0.01'));

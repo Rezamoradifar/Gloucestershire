@@ -9,7 +9,8 @@ import {V3_HOURLY_TEST,V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
 import {v3PageRange} from './v3-pagination';
 import {readV3NetworkPreview,type V3NetworkPreview} from './v3-network-preview';
-import {readUnifiedPositionPage,type UnifiedBookReader,type UnifiedPositionPage,type UnifiedVaultReader} from './v3-unified-position';
+import {readUnifiedPositionPage,readUnifiedWithdrawalPages,MAX_UNIFIED_WITHDRAWAL_LOTS,
+ type UnifiedBookReader,type UnifiedPositionPage,type UnifiedVaultReader} from './v3-unified-position';
 
 export const V3_EXPLORER='https://testnet.bscscan.com';
 const V3_EXPECTED_MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
@@ -167,6 +168,8 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
+ unifiedWithdrawalPages?:UnifiedPositionPage[];
+ withdrawalCoverageError?:string;
  withdrawCount:number;memberCount:number;totalWithdrawalCount:number;
  walletTestTokenBalance:bigint;allowance:bigint;gasWei:bigint;
  ledger:V3ClaimLedger;
@@ -258,7 +261,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
 }
 export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:string,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,
- networkPage:{branches:number;groups:number}|null=null,unifiedPageStart=0):Promise<V3Snapshot>{
+ networkPage:{branches:number;groups:number}|null=null,unifiedPageStart=0,withdrawalCoverage=false):Promise<V3Snapshot>{
  const {vault,network,book,provider,options,block}=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified));
  try{
  wallet=getAddress(wallet);
@@ -333,6 +336,7 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   } as V3WalletPosition;
  }));
  let unifiedPage:UnifiedPositionPage|null=null;
+ let unifiedWithdrawalPages:UnifiedPositionPage[]|undefined,withdrawalCoverageError:string|undefined;
  if(config!.unified){
   if(!book)throw Error('The verified reinvestment book is unavailable.');
   const plusOne=toSafeCount(await vault.reinvestmentPositionPlusOne(wallet,options),'unified position');
@@ -343,6 +347,12 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   if(plusOne!==0){
    unifiedPage=await readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,
     book as unknown as UnifiedBookReader,wallet,plusOne-1,block.number,block.timestamp,unifiedPageStart);
+   if(withdrawalCoverage){
+    if(unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS)
+     withdrawalCoverageError='This account exceeds the supported withdrawal scan of '+MAX_UNIFIED_WITHDRAWAL_LOTS+' additions. No partial withdrawal limit is shown.';
+    else unifiedWithdrawalPages=await readUnifiedWithdrawalPages(vault as unknown as UnifiedVaultReader,
+     book as unknown as UnifiedBookReader,unifiedPage);
+   }
   }
  }
  const withdrawCount=toSafeCount(nWithdraw,'withdrawal');
@@ -400,7 +410,7 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   networkBranches,networkBranchCount:branchCount,networkGroups,networkGroupCount:groupCount,networkLoaded:Boolean(networkPage),
   networkBranchPage:branchRange.page,networkGroupPage:groupRange.page,
   canManage:Boolean(canManage),canFund:Boolean(canFund),
-  positions,withdrawals,...(config!.unified?{unifiedPage}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+  positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,withdrawalCoverageError}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   gasWei:BigInt(gasWei),ledger
