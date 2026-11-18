@@ -52,9 +52,11 @@ describe('unified testnet release identity',()=>{
    unifiedWalletEnabled(config,path,true,'verified-testnet','verified-isolated-testnet',rootMode);
   expect(enabled('/')).toBe(true);
   expect(enabled('/index.html')).toBe(true);
+  expect(enabled('/hourly-test/')).toBe(true);
+  expect(enabled('/hourly-test')).toBe(true);
   expect(enabled('/single-capital-test/')).toBe(true);
   expect(enabled('/','')).toBe(false);
-  for(const path of ['/hourly-test/','/unified-test/','/other/'])expect(enabled(path)).toBe(false);
+  for(const path of ['/unified-test/','/other/','/previous-hourly-test/'])expect(enabled(path)).toBe(false);
   expect(unifiedWalletEnabled(v3ParseReleaseConfig(unified),'/',true,'verified-testnet',
    'verified-isolated-testnet','single-capital-testnet')).toBe(false);
  });

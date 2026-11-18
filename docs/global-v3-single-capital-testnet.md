@@ -57,13 +57,16 @@ To promote the verified one-hour account to the main domain, run
 `bash scripts/start-v3-unified-release.sh <reviewed-sha> --single-capital --primary`.
 This operation requires the existing single-capital deployment proof. It
 builds and tests one release, publishes the landing page and dashboard on
-the main domain, and publishes that same build at `/single-capital-test/`.
+the main domain, and publishes that same build at `/single-capital-test/`
+and `/hourly-test/`.
 The main dashboard is available at `https://globaldroptrade.com/#dashboard`.
 The publisher checks the contract, book, network and keeper identities before
 updating the served files and checks the actual HTML, JavaScript and CSS over
 local HTTPS afterward. The root installer records a backup and restores it
 when verification fails. The hourly contract's earlier account records are
-accessible at `/hourly-test/`. Moving its balances into the single-capital
+archived and verified at `/previous-hourly-test/` before the hourly route is
+atomically switched. A failed hourly HTTP check restores its previous files.
+Moving its balances into the single-capital
 contract requires a separate on-chain migration.
 
 The main account includes the hourly digital countdown and personal and

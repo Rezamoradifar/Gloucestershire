@@ -50,7 +50,7 @@ export function unifiedWalletEnabled(config:V3SiteReleaseConfig|null,path:string
  unifiedPrimary=import.meta.env.VITE_V3_UNIFIED_PRIMARY){
  const route=config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
  const root=config?.unified?.singleCapital&&unifiedPrimary==='single-capital-testnet'&&
-  (path==='/'||path==='/index.html');
+  (path==='/'||path==='/index.html'||path==='/hourly-test/'||path==='/hourly-test');
  return Boolean(config?.unified)&&hourly&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&
   (root||path===route||path===route.slice(0,-1));
 }

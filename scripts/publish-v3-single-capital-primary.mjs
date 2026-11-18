@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {hostname} from 'node:os';
+import {createHash} from 'node:crypto';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {SINGLE_CAPITAL_PROFILE,UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
@@ -77,6 +78,7 @@ async function main(){
   execFileSync('curl',[...https,'https://globaldroptrade.com/hourly-test/','-o',path.join(work,'hourly.html')]);
   if(!fs.readFileSync(path.join(hourly,'index.html')).equals(fs.readFileSync(path.join(work,'hourly.html'))))
    throw Error('GLOBAL_PRIMARY_HOURLY_ROUTE_MISMATCH');
+  const hourlyIndex=createHash('sha256').update(fs.readFileSync(path.join(work,'hourly.html'))).digest('hex');
   console.log('GLOBAL_PRIMARY_STAGE=BUILDING');
   run(['node','scripts/build-v3-unified-site.mjs',proofPath,digest,sha,rpc,wallet,
    '--enable-testnet-wallets','--primary','--single-capital']);
@@ -93,6 +95,9 @@ async function main(){
   console.log('GLOBAL_PRIMARY_STAGE=PUBLISHING_ACCOUNT_ROUTE');
   run(['bash','scripts/install-v3-unified-test-site.sh','--single-capital','--install-built',sha,
    proofPath,digest,rpc,'--enable-testnet-wallets'],env);
+  console.log('GLOBAL_PRIMARY_STAGE=PUBLISHING_HOURLY_ROUTE');
+  run(['python3','scripts/publish-v3-hourly-account-route.py','--site-root',root,'--dist','website/dist',
+   '--expected-hourly-index',hourlyIndex],env);
   console.log('GLOBAL_PRIMARY_STAGE=COMPLETE');
  }finally{fs.rmSync(work,{recursive:true,force:true});}
 }
