@@ -35,4 +35,15 @@ describe('classic Global layout with current V3 data',()=>{
   expect(html).toContain('100% of a test deposit is routed to designated wallets, including fee wallets');
   expect(html).toContain('This does not establish product spending.');
  });
+ it('keeps the operation tabs available in preview and explains the disabled submit button',()=>{
+  const view={registered:true,capital:to('10'),walletTestTokenBalance:to('50'),
+   tier:0,dailyRateBps:70,qualifiedDirects:0,requiredDirects:6,
+   qualifiedVolume:0n,requiredVolume:to('10000'),positions:[],ledger} as unknown as V3Snapshot;
+  const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={view} value="10" unifiedRelease readOnly/>);
+  const controls=html.match(/<button [^>]*aria-pressed[^>]*>/g)??[];
+  expect(controls).toHaveLength(3);
+  expect(controls.every(control=>!control.includes('disabled'))).toBe(true);
+  expect(html).toMatch(/<button type="submit"[^>]*disabled[^>]*aria-describedby="gv1-read-only"/);
+  expect(html).toContain('Wallet transactions are disabled in this preview.');
+ });
 });

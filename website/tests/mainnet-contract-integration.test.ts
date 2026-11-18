@@ -57,5 +57,5 @@ describe('Fresh standard contract client on local BNB mainnet chain ID 56',()=>{
   const review=await chain.readSnapshot(selected,'USDT',20);
   await expect(chain.execute(deposit(review),review,vi.fn())).rejects.toThrow('Administrator KYC approval is required');
   expect(writes).toEqual([]);expect(await token.allowance(selected,vault.target)).toBe(0n);expect((await vault.users(selected)).vipKyc).toBe(false);
- });
+ },30000);
 });

@@ -27,6 +27,10 @@ describe('classic form uses current V3 withdrawal rules',()=>{
   expect(()=>prepareV3WithdrawalRequest(view,'6','0','referral')).toThrow(/cap/i);
  });
  it('rejects invalid and zero input',()=>{
-  for(const value of ['', '-1','0','1e3','2..3'])expect(()=>parseV3Amount(value)).toThrow();
+  for(const value of ['', '-1','0','1e3','2..3','۱٬۰۰۰','٢٫٫١'])expect(()=>parseV3Amount(value)).toThrow();
+ });
+ it('uses the exact amount entered with Persian or Arabic wallet keyboards',()=>{
+  expect(parseV3Amount('۱۲٫۵')).toBe(to('12.5'));
+  expect(parseV3Amount('١٢٫٠٥')).toBe(to('12.05'));
  });
 });

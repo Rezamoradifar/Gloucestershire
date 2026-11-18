@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Download one pinned release into a fresh checkout on the testnet host.
+set -Eeuo pipefail
+umask 077
+
+install_from_github() (
+  local parent=$1 sha=$2 stage checkout fetched
+  stage=$(mktemp -d -- "$parent/global-v3-unified-run.XXXXXXXX")
+  trap 'rm -rf --one-file-system -- "$stage"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  checkout="$stage/release"
+  export GIT_TERMINAL_PROMPT=0
+  git -c core.hooksPath=/dev/null init --quiet -- "$checkout"
+  git -C "$checkout" -c core.hooksPath=/dev/null fetch --quiet --no-tags --depth=1 \
+    https://github.com/Rezamoradifar/Gloucestershire.git "$sha"
+  fetched=$(git -C "$checkout" rev-parse --verify 'FETCH_HEAD^{commit}')
+  if [[ $fetched != "$sha" ]]; then
+    echo UNIFIED_START_FETCHED_SHA_MISMATCH >&2
+    exit 1
+  fi
+  git -C "$checkout" -c core.hooksPath=/dev/null checkout --quiet --detach "$sha"
+  cd -- "$checkout"
+  bash scripts/apply-v3-unified-testnet.sh "$sha"
+)
+
+main() {
+  if [[ $# != 1 || ! ${1:-} =~ ^[0-9a-f]{40}$ ]]; then
+    echo UNIFIED_START_EXPECTED_PINNED_SHA >&2
+    return 1
+  fi
+  if [[ $(id -u) != 0 || $(hostname -s) != vps-luna-2585 ]]; then
+    echo UNIFIED_START_WRONG_SERVER >&2
+    return 1
+  fi
+  install_from_github /opt "$1"
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

@@ -9,8 +9,8 @@ import V3ReferralInvite from './V3ReferralInvite';
 const short=(address:string)=>address.slice(0,9)+'…'+address.slice(-6);
 const stages=[500,1000,3000,5000,10000,30000,50000,100000,300000,500000,1000000,3000000,5000000,10000000];
 
-export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPage,onGroupPage}:{
- view:V3Snapshot;busy:boolean;onAction:(action:V3Action,description:string)=>void;onWithdraw:()=>void;
+export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWithdraw,onBranchPage,onGroupPage}:{
+ view:V3Snapshot;busy:boolean;readOnly?:boolean;onAction:(action:V3Action,description:string)=>void;onWithdraw:()=>void;
  onBranchPage:(page:number)=>void;onGroupPage:(page:number)=>void;
 }){
  const [selected,setSelected]=useState<string[]>([]);
@@ -49,7 +49,7 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Direct branches</h3><span>Page {view.networkBranchPage+1} · {view.networkBranchCount} total</span></div>
    <p>Select available direct branches to create a group or add them to an existing group. Each branch can belong to only one group. Volume is in test-token units.</p>
    <div className="gv3-branch-list">{view.networkBranches.map(branch=><label className={branch.grouped?'gv3-branch-assigned':undefined} key={branch.address}>
-    <input type="checkbox" checked={!branch.grouped&&selected.includes(branch.address)} disabled={busy||branch.grouped||(!selected.includes(branch.address)&&selected.length>=64)} onChange={()=>toggle(branch.address)}/>
+    <input type="checkbox" checked={!branch.grouped&&selected.includes(branch.address)} disabled={busy||readOnly||branch.grouped||(!selected.includes(branch.address)&&selected.length>=64)} onChange={()=>toggle(branch.address)}/>
     <span><strong>{short(branch.address)}</strong><small>{branch.address}</small>
      <small className="gv3-branch-status">{branch.grouped?'Already in a reward group':'Available to add'}</small></span><b>{money(branch.volume)} TEST</b>
    </label>)}</div>
@@ -57,9 +57,9 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
    <div className="gv2-buttons"><button disabled={busy||view.networkBranchPage===0} onClick={()=>onBranchPage(view.networkBranchPage-1)}>Previous branches</button>
     <button disabled={busy||(view.networkBranchPage+1)*20>=view.networkBranchCount} onClick={()=>onBranchPage(view.networkBranchPage+1)}>Next branches</button></div>
    <p className="gv2-small">{selected.length} of 64 branches selected for this transaction.</p>
-   <div className="gv2-buttons"><button disabled={busy||view.paused||!selected.length} onClick={()=>onAction({kind:'createRewardGroup',branches:selected},'Create a new network reward group with the selected direct branches?')}>Create reward group</button>
+   <div className="gv2-buttons"><button disabled={busy||readOnly||view.paused||!selected.length} onClick={()=>onAction({kind:'createRewardGroup',branches:selected},'Create a new network reward group with the selected direct branches?')}>Create reward group</button>
     {visibleGroup!==undefined&&<><select aria-label="Reward group to extend" value={String(visibleGroup)} onChange={e=>setGroup(e.target.value)}>{view.networkGroups.map(g=><option key={g.id} value={g.id}>Group #{g.id+1}</option>)}</select>
-     <button disabled={busy||view.paused||!selected.length} onClick={()=>onAction({kind:'addRewardBranches',group:visibleGroup,branches:selected},'Add selected direct branches to this reward group?')}>Add to group</button></>}</div>
+     <button disabled={busy||readOnly||view.paused||!selected.length} onClick={()=>onAction({kind:'addRewardBranches',group:visibleGroup,branches:selected},'Add selected direct branches to this reward group?')}>Add to group</button></>}</div>
   </section>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Milestone groups</h3><span>Page {view.networkGroupPage+1} · {view.networkGroupCount} total</span></div>
    {view.networkGroups.map(g=>{const directClaim=g.prepared>=g.target||(g.branches<=64&&Boolean(g.preview?.eligible));
@@ -69,8 +69,8 @@ export default function V3NetworkPanel({view,busy,onAction,onWithdraw,onBranchPa
      <div><small>Stage claim if eligible</small><strong>{money(g.reward)} TEST</strong></div>
      {g.preview&&<div><small>Eligible volume including prepared</small><strong>{money(g.preview.volume)} / {money(g.target)} TEST</strong></div>}
      {g.preview?.eligible&&g.prepared<g.target&&<p>One wallet transaction can prepare this volume and record the stage claim.</p>}
-     <div className="gv3-queue-actions"><button disabled={busy||view.paused||g.prepared>=g.target} onClick={()=>onAction({kind:'prepareNetworkReward',group:g.id,stage:g.stage,steps:64},'Prepare eligible volume for group '+(g.id+1)+', stage '+(g.stage+1)+'?')}>Prepare volume</button>
-      <button disabled={busy||view.paused||!view.eligible||!directClaim} onClick={()=>onAction({kind:'claimNetworkRewards',group:g.id,stage:g.stage,count:1},'Prepare any remaining eligible volume and record the stage '+(g.stage+1)+' test claim? This is not a cash payment.')}>Record stage claim</button></div></>}
+     <div className="gv3-queue-actions"><button disabled={busy||readOnly||view.paused||g.prepared>=g.target} onClick={()=>onAction({kind:'prepareNetworkReward',group:g.id,stage:g.stage,steps:64},'Prepare eligible volume for group '+(g.id+1)+', stage '+(g.stage+1)+'?')}>Prepare volume</button>
+      <button disabled={busy||readOnly||view.paused||!view.eligible||!directClaim} onClick={()=>onAction({kind:'claimNetworkRewards',group:g.id,stage:g.stage,count:1},'Prepare any remaining eligible volume and record the stage '+(g.stage+1)+' test claim? This is not a cash payment.')}>Record stage claim</button></div></>}
    </article>})}
    {!view.networkGroups.length&&<p>No reward group has been created for this V3 wallet.</p>}
    <div className="gv2-buttons"><button disabled={busy||view.networkGroupPage===0} onClick={()=>onGroupPage(view.networkGroupPage-1)}>Previous groups</button>

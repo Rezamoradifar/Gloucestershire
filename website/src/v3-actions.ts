@@ -2,11 +2,13 @@
 // No raw key storage, background privileged sender, automatic payouts, real USDT
 // or transfer to an address supplied by anyone other than the contract.
 import {
- BrowserProvider,Contract,Interface,ZeroAddress,getAddress,isAddress,
+ BrowserProvider,Contract,Interface,ZeroAddress,getAddress,isAddress,toQuantity,
  type Eip1193Provider,type Log,type JsonRpcSigner,type TransactionReceipt
 } from 'ethers';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession,v3ReleaseConfig,type V3Withdrawal} from './v3-chain';
+import {readUnifiedReinvestmentPlan} from './v3-reinvest-batch';
+import {prepareUnifiedPageAction,readUnifiedPositionPage,type UnifiedBookReader,type UnifiedVaultReader} from './v3-unified-position';
 const EVENTS=new Interface(V3_ABI);
 const TOKEN_METHODS=new Interface(V3_TEST_TOKEN_ABI);
 export type V3Action=
@@ -28,7 +30,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in';
  hash?:string;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
@@ -37,6 +39,9 @@ function progress(callback:V3TransactionProgressCallback|undefined,detail:V3Tran
  try{callback?.(detail);}catch{/* Ignore errors from presentation callbacks. */}
 }
 const validIndex=(n:number)=>Number.isSafeInteger(n)&&n>=0;
+function requireActionReady(config:V3SiteReleaseConfig|null){
+ if(config?.unified)throw Error('Unified testnet is a read-only preview; wallet actions are not enabled.');
+}
 const roleFor=(action:V3Action):'manager'|null=>
  ['approveWithdrawal','rejectWithdrawal','reserveExistingCash'].includes(action.kind)?'manager':null;
 // Wallet providers sometimes cannot answer eth_call despite supporting signing.
@@ -47,7 +52,7 @@ const MAX_TESTNET_ACTION_GAS=8_000_000n;
 const MAX_TESTNET_GAS_PRICE=100_000_000_000n;
 const MAX_TESTNET_ACTION_FEE=10_000_000_000_000_000n;
 type CheckedTestGas={gasLimit:bigint;gasPrice:bigint};
-async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
+export async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
  name:string,args:unknown[],wallet:string):Promise<CheckedTestGas>{
  const method=contract.getFunction(name);
  const result=await method.staticCall(...args,{from:wallet,...session.options});
@@ -111,7 +116,7 @@ async function sendWalletTransaction<T>(send:()=>Promise<T>,label:string,onHash?
 // Only the explicitly requested TESTNET call is submitted. The wallet supplies
 // the hash; the independently verified reader must confirm the exact call and
 // a canonical five-confirmation receipt before another action can be sent.
-async function submitVerified(walletProvider:Eip1193Provider,wallet:string,signer:JsonRpcSigner,
+export async function submitVerified(walletProvider:Eip1193Provider,wallet:string,signer:JsonRpcSigner,
  config:V3SiteReleaseConfig,to:string,data:string,gas:CheckedTestGas,label:string,
  action:V3TransactionProgress['action'],onProgress?:V3TransactionProgressCallback):Promise<TransactionReceipt>{
  await checkWalletStillSelected(walletProvider,wallet);
@@ -172,7 +177,7 @@ const eventMatches=(receipt:{logs:readonly Log[]},address:string,name:string,id:
   }catch{return false;}
  });
 };
-const groupEventMatches=(receipt:{logs:readonly Log[]},contract:string,wallet:string,
+export const groupEventMatches=(receipt:{logs:readonly Log[]},contract:string,wallet:string,
  action:Extract<V3Action,{kind:'createRewardGroup'|'addRewardBranches'}>)=>receipt.logs.some(raw=>{
  if(raw.address.toLowerCase()!==contract.toLowerCase())return false;
  try{
@@ -188,13 +193,13 @@ const groupEventMatches=(receipt:{logs:readonly Log[]},contract:string,wallet:st
 
 // Read the permanent parent and group assignment at the same verified block.
 // The contract remains authoritative if a branch is assigned concurrently.
-export async function checkV3GroupBranches(vault:Contract,wallet:string,branches:string[],options:{blockTag:number}){
+export async function checkV3GroupBranches(vault:Contract,wallet:string,branches:string[],options:{blockTag:number},network:Contract=vault){
  const who=getAddress(wallet),addresses=branches.map(address=>getAddress(address));
  if(!addresses.length||addresses.length>64||new Set(addresses).size!==addresses.length)
   throw Error('Select between 1 and 64 distinct direct branches.');
  for(let start=0;start<addresses.length;start+=5){
   const checks=await Promise.all(addresses.slice(start,start+5).map(async address=>{
-   const [user,grouped]=await Promise.all([vault.users(address,options),vault.groupedBranch(who,address,options)]);
+   const [user,grouped]=await Promise.all([vault.users(address,options),network.groupedBranch(who,address,options)]);
    return {user,grouped};
   }));
   for(const {user,grouped} of checks){
@@ -250,6 +255,11 @@ function isV3InvalidRevert(error:unknown){
 }
 export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
  action:V3Action,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
+ requireActionReady(config);
+ return sendV3ActionCore(walletProvider,wallet,action,config,onProgress);
+}
+async function sendV3ActionCore(walletProvider:Eip1193Provider,wallet:string,
+ action:V3Action,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback){
  if(action.kind==='register')progress(onProgress,{step:'preflight',action:'registration'});
  const groupAction=action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
  if(groupAction)progress(onProgress,{step:'preflight',action:'network_group'});
@@ -374,8 +384,132 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
   return receipt.hash as string;
  }finally{provider.destroy();}
 }
+// Registration on the explicitly enabled, verified unified test profile.
+export async function sendV3UnifiedRegistration(walletProvider:Eip1193Provider,wallet:string,referrer:string,
+ config:V3SiteReleaseConfig|null,options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
+ if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ const who=getAddress(wallet),parent=getAddress(referrer);
+ const hash=await sendV3ActionCore(walletProvider,who,{kind:'register',referrer:parent},config,options.onProgress);
+ let session:Awaited<ReturnType<typeof v3ReadSession>>|undefined;
+ try{
+  session=await v3ReadSession(walletProvider,who,config,true);
+  const user=await session.vault.users(who,session.options);
+  if(!user.registered||getAddress(user.referrer)!==parent)throw Error('REGISTRATION_STATE_MISMATCH');
+  const canonical=await session.provider.send('eth_getBlockByNumber',[toQuantity(session.block.number),false]);
+  if(!session.block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==session.block.hash.toLowerCase())
+   throw Error('REGISTRATION_BLOCK_CHANGED');
+ }catch{
+  throw Error('Registration transaction '+hash+' was confirmed but its account state could not be verified. Check wallet history before retrying.');
+ }finally{session?.provider.destroy();}
+ return hash;
+}
+// The unified flow plans exact sources and verifies their common destination.
+export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,wallet:string,amount:bigint,
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive TEST amount.');
+ const who=getAddress(wallet);
+ progress(onProgress,{step:'preflight',action:'reinvestment'});
+ const session=await v3ReadSession(walletProvider,who,config,true);
+ let browser:BrowserProvider|undefined;
+ try{
+  const plan=await readUnifiedReinvestmentPlan(session,who,amount);
+  progress(onProgress,{step:'simulation',action:'reinvestment'});
+  const gas=await checkedGas(session,session.vault,'reinvestMany',[plan.sources],who);
+  const canonical=await session.provider.send('eth_getBlockByNumber',[toQuantity(session.block.number),false]);
+  if(!session.block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==session.block.hash.toLowerCase())
+   throw Error('The verified reinvestment block changed; refresh before continuing.');
+  const data=EVENTS.encodeFunctionData('reinvestMany',[plan.sources]);
+  browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
+  const signer=await browser.getSigner(who);
+  const receipt=await submitVerified(walletProvider,who,signer,config,config.address,data,gas,
+   'Reinvestment','reinvestment',onProgress);
+  const observed=receipt.logs.flatMap(log=>{
+   if(log.address.toLowerCase()!==config.address.toLowerCase())return [];
+   try{const event=EVENTS.parseLog({topics:log.topics,data:log.data});
+    return event?.name==='ProfitReinvested'&&getAddress(event.args.user)===who?[event]:[];
+   }catch{return [];}
+  });
+  if(observed.length!==plan.sources.length||observed.some((event,index)=>{
+   const expected=plan.sources[index];
+   return BigInt(event.args.fromPosition)!==BigInt(expected.positionId)||
+    BigInt(event.args.newPositionId)!==BigInt(plan.destination)||BigInt(event.args.amount)!==expected.amount;
+  }))throw Error('Reinvestment transaction '+receipt.hash+' was confirmed but its events did not match. Check wallet history before retrying.');
+  return {hash:receipt.hash,destination:plan.destination,amount};
+ }finally{browser?.destroy();session.provider.destroy();}
+}
+// Isolated BNB Testnet request scoped to one verified group page.
+export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider,wallet:string,
+ kind:'profit'|'principal',positionId:number,start:number,amount:bigint,config:V3SiteReleaseConfig|null,
+ options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
+ if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ if((kind!=='profit'&&kind!=='principal')||!validIndex(positionId)||!validIndex(start)||
+    typeof amount!=='bigint'||amount<=0n)throw Error('Invalid unified withdrawal request.');
+ const who=getAddress(wallet),onProgress=options.onProgress;
+ progress(onProgress,{step:'preflight',action:'withdrawal_request'});
+ const session=await v3ReadSession(walletProvider,who,config,true);
+ let browser:BrowserProvider|undefined;
+ try{
+  if(!session.book)throw Error('The verified reinvestment book is unavailable.');
+  const {vault,book,block,provider}=session;
+  const [user,paused,cap,bps,profitFee,principalFee,page]=await Promise.all([
+   vault.users(who,session.options),vault.paused(session.options),vault.profitWithdrawalCap(who,session.options),
+   vault.BPS(session.options),vault.PROFIT_FEE_BPS(session.options),vault.PRINCIPAL_PENALTY_BPS(session.options),
+   readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,book as unknown as UnifiedBookReader,
+    who,positionId,block.number,block.timestamp,start,8)
+  ]);
+  const nextRequestAt=Number(user.nextRequestAt);
+  if(!Number.isSafeInteger(nextRequestAt)||nextRequestAt<0||BigInt(bps)!==10000n||
+     BigInt(profitFee)!==300n||BigInt(principalFee)!==3000n)
+   throw Error('The verified withdrawal rules do not match the reviewed testnet profile.');
+  const action=prepareUnifiedPageAction(page,{registered:Boolean(user.registered),suspended:Boolean(user.suspended),
+   paused:Boolean(paused),pendingWithdrawal:Boolean(user.pendingRequest),nextRequestAt,requestCap:BigInt(cap)},kind,amount);
+  progress(onProgress,{step:'simulation',action:'withdrawal_request'});
+  const gas=await checkedGas(session,vault,action.method,action.args,who);
+  const canonical=await provider.send('eth_getBlockByNumber',[toQuantity(block.number),false]);
+  if(!block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==block.hash.toLowerCase())
+   throw Error('The verified withdrawal block changed; refresh before continuing.');
+  const data=EVENTS.encodeFunctionData(action.method,action.args);
+  browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
+  const signer=await browser.getSigner(who);
+  const receipt=await submitVerified(walletProvider,who,signer,config,config.address,data,gas,
+   'Withdrawal request','withdrawal_request',onProgress);
+  try{
+   const expectedKind=kind==='profit'?0n:1n;
+   const expectedFee=amount*(kind==='profit'?300n:3000n)/10000n;
+   const events=receipt.logs.flatMap(log=>{
+    if(log.address.toLowerCase()!==config.address.toLowerCase())return [];
+    try{const event=EVENTS.parseLog({topics:log.topics,data:log.data});
+     return event?.name==='WithdrawalRequested'&&getAddress(event.args.user)===who?[event]:[];
+    }catch{return [];}
+   });
+   if(events.length!==1||BigInt(events[0].args.kind)!==expectedKind||
+      BigInt(events[0].args.gross)!==amount||BigInt(events[0].args.fee)!==expectedFee)
+    throw Error('WITHDRAWAL_EVENT_MISMATCH');
+   const id=BigInt(events[0].args.id);
+   const [row,canonicalReceipt]=await Promise.all([
+    vault.withdrawalOf(id,{blockTag:receipt.blockNumber}),
+    provider.send('eth_getBlockByNumber',[toQuantity(receipt.blockNumber),false])
+   ]);
+   if(!canonicalReceipt?.hash||String(canonicalReceipt.hash).toLowerCase()!==receipt.blockHash.toLowerCase()||
+      getAddress(row.beneficiary)!==who||BigInt(row.positionId)!==BigInt(positionId)||
+      BigInt(row.gross)!==amount||BigInt(row.fee)!==expectedFee||BigInt(row.kind)!==expectedKind)
+    throw Error('WITHDRAWAL_RECORD_MISMATCH');
+   return {hash:receipt.hash,id,kind,gross:amount,fee:expectedFee};
+  }catch{
+   throw Error('Withdrawal request '+receipt.hash+' was confirmed but its record could not be verified. Check wallet history before retrying.');
+  }
+ }finally{browser?.destroy();session.provider.destroy();}
+}
 export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
  amount:bigint,referrer:string,config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
+ requireActionReady(config);
+ return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,onProgress);
+}
+async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:string,
+ amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback){
  if(!config||amount<10n**19n||!isAddress(referrer)||
   getAddress(referrer)===getAddress(wallet))
   throw Error('Invalid V3 TESTNET deposit, referrer, or unverified contract.');
@@ -464,8 +598,17 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
   throw error;
  }finally{provider.destroy();}
 }
+// The separate unified profile opts in explicitly to test-token deposits.
+export async function sendV3UnifiedTestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
+ amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,
+ options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
+ if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
+ if(!config?.unified)throw Error('The verified unified testnet contract is required.');
+ return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,options.onProgress);
+}
 export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet:string,
  id:number,config:V3SiteReleaseConfig|null=v3ReleaseConfig){
+ requireActionReady(config);
  if(!config||!validIndex(id))throw Error('Valid V3 TESTNET withdrawal required.');
  const s=await v3ReadSession(walletProvider,wallet,config);
  let amount=0n,beneficiary='';
@@ -515,11 +658,12 @@ export async function readV3ManagerQueue(walletProvider:Eip1193Provider,wallet:s
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,page=0){
  if(!Number.isSafeInteger(page)||page<0||page>100000)
   throw Error('Invalid V3 manager request page.');
- const s=await v3ReadSession(walletProvider,wallet,config);
+ const s=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified));
  try{
   const role=await s.vault.MANAGER_ROLE(s.options);
-  if(!await s.vault.hasRole(role,wallet,s.options))
-   throw Error('Connect an authorized V3 manager to view the approval queue.');
+  const funder=config?.unified&&await s.vault.hasRole(await s.vault.FUNDER_ROLE(s.options),wallet,s.options);
+  if(!funder&&!await s.vault.hasRole(role,wallet,s.options))
+   throw Error('Connect an authorized settlement wallet to view the approval queue.');
   const raw=await s.vault.withdrawalCount(s.options);
   const count=Number(raw);
   if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid V3 queue size.');

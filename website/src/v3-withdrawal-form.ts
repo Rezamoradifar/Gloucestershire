@@ -1,4 +1,5 @@
 import {parseUnits} from 'ethers';
+import {normalizeAmount} from './money';
 import type {V3Action} from './v3-actions';
 import type {V3Snapshot} from './v3-chain';
 
@@ -6,7 +7,7 @@ export type V3WithdrawalKind='profit'|'principal'|'referral'|'network';
 type V3WithdrawalAction=Extract<V3Action,{kind:'requestProfit'|'requestPrincipal'|'requestReferral'|'requestNetworkReward'}>;
 
 export function parseV3Amount(input:string){
- const value=input.trim();
+ const value=normalizeAmount(input);
  if(!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value))throw Error('Enter a positive decimal TEST USDT amount.');
  const parsed=parseUnits(value,18);
  if(parsed<=0n)throw Error('Amount must be positive.');
