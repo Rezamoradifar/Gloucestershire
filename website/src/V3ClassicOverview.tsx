@@ -9,7 +9,7 @@ import type {V3Snapshot} from './v3-chain';
 
 type Mode='deposit'|'withdraw'|'reinvest';
 type Props={
- view:V3Snapshot|null;busy:boolean;loading:boolean;connecting:boolean;
+ view:V3Snapshot|null;busy:boolean;loading:boolean;connecting:boolean;readOnly?:boolean;unifiedRelease?:boolean;
  value:string;onValue:(value:string)=>void;
  referrer:string;onReferrer:(value:string)=>void;invalidInvite:boolean;
  selectedPosition:string;onPosition:(value:string)=>void;
@@ -18,13 +18,13 @@ type Props={
 };
 
 export default function V3ClassicOverview(props:Props){
- const {view,busy,loading,connecting,value,onValue,referrer,onReferrer,invalidInvite,
+ const {view,busy,loading,connecting,readOnly=false,unifiedRelease,value,onValue,referrer,onReferrer,invalidInvite,
   selectedPosition,onPosition,onDeposit,onWithdraw,onReinvest,onNetwork,onConnect,onWalletConnect}=props;
  const [mode,setMode]=useState<Mode>('deposit');
  const claims=view?v3PrepareUserClaims(view.ledger):null;
- const ready=Boolean(view&&!view.paused&&!view.suspended&&!busy&&!loading);
+ const ready=Boolean(view&&!view.paused&&!view.suspended&&!busy&&!loading&&!readOnly);
  const positions=view?.positions??[];
- const unified=Boolean(view&&view.unifiedPage!==undefined);
+ const unified=unifiedRelease??Boolean(view&&view.unifiedPage!==undefined);
  const reinvested=positions.filter(item=>item.fromReinvestment).reduce((sum,item)=>sum+item.principal,0n);
  const recordedPositionProfit=unified?positions.reduce((sum,item)=>sum+item.availableProfit,0n):0n;
  const position=positions.find(item=>item.id===Number(selectedPosition));
@@ -74,7 +74,8 @@ export default function V3ClassicOverview(props:Props){
      {requiresExistingPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
      <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Requests need manager approval and actual test-token funding.':
       mode==='reinvest'?(unified?'Recorded profit adds to the reinvestment position with a separate 90-day lock.':'Recorded profit creates a new 90-day locked position.'):'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 TEST USDT.'}</p>
-     <button type="submit" className="gv2-primary gv1-action" disabled={!usable}>
+     {readOnly&&<p id="gv1-read-only" className="gv1-inline-warning">Wallet transactions are disabled in this preview.</p>}
+     <button type="submit" className="gv2-primary gv1-action" disabled={!usable} aria-describedby={readOnly?'gv1-read-only':undefined}>
       {mode==='deposit'?'Review test deposit':mode==='withdraw'?'Review withdrawal request':'Review reinvestment'} <ArrowRight size={16}/></button>
      {!view&&<div className="gv1-connect-actions"><button type="button" disabled={connecting} onClick={onConnect}><Wallet size={15}/> Connect wallet</button>
       <button type="button" disabled={connecting} onClick={onWalletConnect}>WalletConnect</button></div>}

@@ -195,3 +195,9 @@
 .gv2-classic.gv3-workspace .gv3-network-group small{font-size:13px;color:#c1d0d5}
 .gv2-classic.gv3-workspace .gv3-network-group strong{font-size:15px}
 .gv2-classic.gv3-workspace .gv2-small{font-size:13px;line-height:1.65;color:#bbcbd0!important}
+
+.gv3-transaction-review {max-height:calc(100dvh - 2rem);overflow:auto}
+.gv3-transaction-review p,.gv3-transaction-review dd {overflow-wrap:anywhere}
+.gv3-transaction-review dl {font-size:.9rem}
+.gv3-transaction-review dt {font-weight:700}
+.gv3-transaction-review dd {margin:0 0 .65rem}

@@ -177,7 +177,7 @@ const eventMatches=(receipt:{logs:readonly Log[]},address:string,name:string,id:
   }catch{return false;}
  });
 };
-const groupEventMatches=(receipt:{logs:readonly Log[]},contract:string,wallet:string,
+export const groupEventMatches=(receipt:{logs:readonly Log[]},contract:string,wallet:string,
  action:Extract<V3Action,{kind:'createRewardGroup'|'addRewardBranches'}>)=>receipt.logs.some(raw=>{
  if(raw.address.toLowerCase()!==contract.toLowerCase())return false;
  try{
@@ -193,13 +193,13 @@ const groupEventMatches=(receipt:{logs:readonly Log[]},contract:string,wallet:st
 
 // Read the permanent parent and group assignment at the same verified block.
 // The contract remains authoritative if a branch is assigned concurrently.
-export async function checkV3GroupBranches(vault:Contract,wallet:string,branches:string[],options:{blockTag:number}){
+export async function checkV3GroupBranches(vault:Contract,wallet:string,branches:string[],options:{blockTag:number},network:Contract=vault){
  const who=getAddress(wallet),addresses=branches.map(address=>getAddress(address));
  if(!addresses.length||addresses.length>64||new Set(addresses).size!==addresses.length)
   throw Error('Select between 1 and 64 distinct direct branches.');
  for(let start=0;start<addresses.length;start+=5){
   const checks=await Promise.all(addresses.slice(start,start+5).map(async address=>{
-   const [user,grouped]=await Promise.all([vault.users(address,options),vault.groupedBranch(who,address,options)]);
+   const [user,grouped]=await Promise.all([vault.users(address,options),network.groupedBranch(who,address,options)]);
    return {user,grouped};
   }));
   for(const {user,grouped} of checks){
