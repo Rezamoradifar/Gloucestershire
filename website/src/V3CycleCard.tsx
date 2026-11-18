@@ -41,7 +41,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
  const activityReason=view.paused?'The test contract is paused.':
   !view.registered?'Register this test wallet first.':
   view.suspended?'This test account is suspended.':
-  view.capital<10n*10n**18n?'A minimum of 10 TEST principal is required.':
+  view.capital<10n*10n**18n?'A minimum of 10 USDT principal is required.':
   view.capital>50_000n*10n**18n&&!view.vipKyc?'VIP verification is required for this principal amount.':
   cycle.activityRemaining===0?'Check in on chain to renew the 24-hour activity window.':
   !view.eligible?'Eligibility was not confirmed at the last verified block. Refresh your account.':
@@ -70,11 +70,11 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
    </div>
    <div className="gv3-cycle-side">
     <div className="gv3-cycle-forecast"><span className="gv3-kicker gv3-forecast-kicker">LIVE ESTIMATED PROGRESS</span>
-     <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="TEST USDT"/></strong>
+     <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="USDT"/></strong>
      <p>{active?'A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.':'Progress is hidden while eligibility is not confirmed. Refresh or check in as needed.'}</p>
      <div className="gv3-forecast-row gv3-forecast-row--daily"><span>{hourly?'Cycle base estimate so far':'Daily estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressDaily):'—'}/></b></div>
      <div className="gv3-forecast-row gv3-forecast-row--compound"><span>Profit-on-profit estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>
-     <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="TEST USDT"/></b></div>
+     <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="USDT"/></b></div>
      <small>At the verified {view.dailyRateBps/100}% test rate, if each {unified?'addition':'position'} becomes eligible. {hourly&&'The full daily test rate is applied once per eligible one-hour test cycle; this is accelerated test accounting. '}Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>
     <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Account eligible':'Eligibility needs attention'}</strong>

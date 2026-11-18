@@ -38,11 +38,11 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
   <p role="alert">{state.balanceError}</p><p>Refresh the verified account before requesting a withdrawal.</p></section>;
  return <section aria-label="Account withdrawal">
   <h3>Withdraw from your account</h3>
-  <div className="gv2-detail"><span>Total principal</span><b>{formatUnits(totals.principal,18)} TEST</b></div>
-  <div className="gv2-detail"><span>Total recorded profit</span><b>{formatUnits(totals.profit,18)} TEST</b></div>
-  <div className="gv2-detail"><span>Recorded daily profit</span><b>{formatUnits(totals.daily,18)} TEST</b></div>
-  <div className="gv2-detail"><span>Recorded profit-on-profit</span><b>{formatUnits(totals.compound,18)} TEST</b></div>
-  <div className="gv2-detail"><span>Profit reserved for pending withdrawal</span><b>{formatUnits(totals.pendingProfit,18)} TEST</b></div>
+  <div className="gv2-detail"><span>Total principal</span><b>{formatUnits(totals.principal,18)} USDT</b></div>
+  <div className="gv2-detail"><span>Total recorded profit</span><b>{formatUnits(totals.profit,18)} USDT</b></div>
+  <div className="gv2-detail"><span>Recorded daily profit</span><b>{formatUnits(totals.daily,18)} USDT</b></div>
+  <div className="gv2-detail"><span>Recorded profit-on-profit</span><b>{formatUnits(totals.compound,18)} USDT</b></div>
+  <div className="gv2-detail"><span>Profit reserved for pending withdrawal</span><b>{formatUnits(totals.pendingProfit,18)} USDT</b></div>
   <p>Enter the amount once. Eligible records are selected automatically. Existing contract limits apply to each request.</p>
   <form onSubmit={submit} className="gv3-input-row">
    <label htmlFor={id+'-kind'}>Withdrawal type</label>
@@ -50,15 +50,15 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
     <option value="profit">Accrued profit</option><option value="referral">Referral claim</option>
     <option value="network">Network milestone claim</option><option value="principal">Unlocked principal</option>
    </select>
-   <label htmlFor={id+'-amount'}>Gross amount in TEST</label>
+   <label htmlFor={id+'-amount'}>Gross amount in USDT</label>
    <input id={id+'-amount'} value={props.value} onChange={e=>props.onValue(e.target.value)} disabled={props.busy}
     inputMode="decimal" autoComplete="off" placeholder="0.00"/>
-   <p>Maximum this dashboard can submit in one request: <strong>{state.maximum===null?'Awaiting complete records':formatUnits(state.maximum,18)+' TEST'}</strong>.</p>
+   <p>Maximum this dashboard can submit in one request: <strong>{state.maximum===null?'Awaiting complete records':formatUnits(state.maximum,18)+' USDT'}</strong>.</p>
    {props.view.nextRequestAt>props.view.asOf&&<p>Withdrawal cooldown ends at {formatUtcTime(props.view.nextRequestAt)}.</p>}
    {props.kind==='principal'?<p>Each addition keeps its 90-day lock. Principal withdrawal penalty: 30%.</p>:
     <p>Profit, referral and network withdrawal fee: 3%.</p>}
    {state.amount!==null&&state.fee!==null&&state.net!==null&&<p aria-live="polite">
-    Gross: {formatUnits(state.amount,18)} TEST · Fee: {formatUnits(state.fee,18)} TEST · Net: {formatUnits(state.net,18)} TEST.
+    Gross: {formatUnits(state.amount,18)} USDT · Fee: {formatUnits(state.fee,18)} USDT · Net: {formatUnits(state.net,18)} USDT.
    </p>}
    {state.coverageError&&<p role="status">{state.coverageError}</p>}
    {state.error&&state.error!==state.coverageError&&<p role="alert">{state.error}</p>}

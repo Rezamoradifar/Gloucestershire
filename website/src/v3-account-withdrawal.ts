@@ -129,7 +129,7 @@ export function planV3AccountWithdrawal(view:V3Snapshot|null,input:string,kind:V
  const chosen=sources.find(source=>capacity(source)>=amount);
  if(!chosen){
   const maximum=sources.reduce((max,source)=>capacity(source)>max?capacity(source):max,0n);
-  throw Error('This dashboard supports up to '+formatUnits(maximum,18)+' TEST in one '+kind+' request. The requested amount cannot be submitted as one supported transaction; no transaction was sent.');
+  throw Error('This dashboard supports up to '+formatUnits(maximum,18)+' USDT in one '+kind+' request. The requested amount cannot be submitted as one supported transaction; no transaction was sent.');
  }
  if(chosen.page)return {source:'book',kind,amount,page:chosen.page};
  return {source:'position',action:prepareV3WithdrawalRequest(view,input,String(chosen.position.id),kind)};

@@ -18,7 +18,7 @@ describe('V3 reinvestment group display',()=>{
   const html=renderToStaticMarkup(<V3PositionsList positions={positions}/>);
   expect(html).toContain('Combined reinvestments');
   expect(html).toContain('2 separate on-chain positions shown together');
-  for(const label of ['30.00 TEST','3.00 TEST','0.3 TEST','1.5 TEST','1,000.00 TEST'])
+  for(const label of ['30.00 USDT','3.00 USDT','0.3 USDT','1.5 USDT','1,000.00 USDT'])
    expect(html).toContain(`aria-label="${label}"`);
   expect(html).toContain('The existing contract still keeps a separate position, accrual time and principal lock for each reinvestment');
   expect(html).toContain('Position #1');expect(html).toContain('Position #2');expect(html).toContain('Position #3');
@@ -33,7 +33,7 @@ describe('V3 reinvestment group display',()=>{
  it('retains a zero-principal reinvestment when it still has recorded claims',()=>{
   const html=renderToStaticMarkup(<V3PositionsList positions={[position(1,true,'0','1','0','0')]}/>);
   expect(html).toContain('1 separate on-chain position shown together');
-  expect(html).toContain('aria-label="1.00 TEST"');
+  expect(html).toContain('aria-label="1.00 USDT"');
   expect(html).toContain('Position #2');
  });
 });

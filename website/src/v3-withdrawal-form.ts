@@ -8,7 +8,7 @@ type V3WithdrawalAction=Extract<V3Action,{kind:'requestProfit'|'requestPrincipal
 
 export function parseV3Amount(input:string){
  const value=normalizeAmount(input);
- if(!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value))throw Error('Enter a positive decimal TEST USDT amount.');
+ if(!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value))throw Error('Enter a positive decimal USDT amount.');
  const parsed=parseUnits(value,18);
  if(parsed<=0n)throw Error('Amount must be positive.');
  return parsed;

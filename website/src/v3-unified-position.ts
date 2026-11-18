@@ -110,7 +110,7 @@ type Account={registered:boolean;suspended:boolean;paused:boolean;pendingWithdra
 export type UnifiedPageAction={method:'reinvestFromPage'|'requestProfitFromPage'|'requestPrincipalFromPage';args:[number,bigint,number,number]};
 export function prepareUnifiedPageAction(page:UnifiedPositionPage,account:Account,
  kind:'reinvest'|'profit'|'principal',amount:bigint):UnifiedPageAction{
- if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive TEST amount.');
+ if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive USDT amount.');
  if(account.registered!==true||account.suspended!==false||account.paused!==false)
   throw Error('This test account cannot perform that action.');
  if(kind!=='reinvest'){

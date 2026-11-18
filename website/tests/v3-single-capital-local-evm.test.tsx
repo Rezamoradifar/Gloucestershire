@@ -158,7 +158,7 @@ describe('one verified capital account on chain 97',()=>{
    const value=formatUnits(totals.maxProfit,18);
    const html=renderToStaticMarkup(<V3AccountWithdrawalForm view={view} unified busy={false} readOnly={false}
     value={value} kind="profit" onKind={()=>{}} onValue={()=>{}} onSubmit={()=>{}}/>);
-   expect(html).toContain('3004.0 TEST');expect(html).toContain('30.063 TEST');
+   expect(html).toContain('3004.0 USDT');expect(html).toContain('30.063 USDT');
    expect(html).not.toMatch(/Position #|Source position/);
    const plan=planV3AccountWithdrawal(view,value,'profit',true);
    if(plan.source!=='book')throw Error('Expected the sole account ledger.');

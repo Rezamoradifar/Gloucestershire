@@ -48,9 +48,9 @@ export default function V3UnifiedWithdrawalForm(props:V3UnifiedWithdrawalFormPro
  return <section className="gv2-panel" aria-label="Unified reinvestment withdrawal">
   <h3>Request from reinvestment position #{page.positionId+1}</h3>
   <p>Verified block {page.block.toLocaleString('en-US')} · Additions {page.start+1}–{last} of {page.totalLots}.</p>
-  <p>Recorded profit on this page: <strong>{formatUnits(page.availableProfitOnPage,18)} TEST</strong> ·
-   {' '}Unlocked principal on this page: <strong>{formatUnits(page.maturedPrincipalOnPage,18)} TEST</strong>.</p>
-  <p>Maximum profit request on this page: <strong>{formatUnits(maximumProfit,18)} TEST</strong>.</p>
+  <p>Recorded profit on this page: <strong>{formatUnits(page.availableProfitOnPage,18)} USDT</strong> ·
+   {' '}Unlocked principal on this page: <strong>{formatUnits(page.maturedPrincipalOnPage,18)} USDT</strong>.</p>
+  <p>Maximum profit request on this page: <strong>{formatUnits(maximumProfit,18)} USDT</strong>.</p>
   <p>Each request uses only the additions shown on this page, up to eight. Other additions require a separate request and its cooldown.</p>
   <div className="gv2-buttons">
    <button type="button" disabled={busy||page.start===0} onClick={onPrevious}>Previous additions</button>
@@ -61,14 +61,14 @@ export default function V3UnifiedWithdrawalForm(props:V3UnifiedWithdrawalFormPro
    <select id={id+'-kind'} disabled={busy} value={kind} onChange={event=>setKind(event.target.value as WithdrawalKind)}>
     <option value="profit">Recorded position profit</option><option value="principal">Unlocked principal</option>
    </select>
-   <label htmlFor={id+'-amount'}>Gross amount in TEST</label>
+   <label htmlFor={id+'-amount'}>Gross amount in USDT</label>
    <input id={id+'-amount'} disabled={busy} value={value} onChange={event=>onValue(event.target.value)}
     inputMode="decimal" autoComplete="off" placeholder="0.00"/>
    <p>Profit request fee: 3%. Principal request penalty: 30%.</p>
    <p>{kind==='profit'?'The verified profit request cap also applies.':
     'Each addition must be past its own 90-day lock.'}</p>
    {state.amount!==null&&state.fee!==null&&state.net!==null&&<p aria-live="polite">
-    Gross: {formatUnits(state.amount,18)} TEST · Fee: {formatUnits(state.fee,18)} TEST · Net: {formatUnits(state.net,18)} TEST.
+    Gross: {formatUnits(state.amount,18)} USDT · Fee: {formatUnits(state.fee,18)} USDT · Net: {formatUnits(state.net,18)} USDT.
    </p>}
    {state.error&&<p role="alert">{state.error}</p>}
    {readOnly&&<p role="status">{props.disabledReason??'This test preview is read-only; a withdrawal request cannot be submitted.'}</p>}

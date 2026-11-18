@@ -48,7 +48,7 @@ describe('one account withdrawal',()=>{
   const summary=summarizeV3AccountWithdrawal(account());
   expect(summary.profit).toBe(E('10'));expect(summary.principal).toBe(E('200'));
   expect(summary.maxProfit).toBe(E('7'));expect(summary.maxPrincipal).toBe(E('100'));
-  expect(()=>planV3AccountWithdrawal(account(),'9','profit')).toThrow(/up to 7.0 TEST.*one supported transaction/);
+  expect(()=>planV3AccountWithdrawal(account(),'9','profit')).toThrow(/up to 7.0 USDT.*one supported transaction/);
   expect(()=>planV3AccountWithdrawal(account(),'11','profit')).toThrow(/exceeds the recorded account profit/);
   expect(()=>planV3AccountWithdrawal(account(),'999','principal')).toThrow(/exceeds the unlocked account principal/);
  });
@@ -136,9 +136,9 @@ describe('one account withdrawal',()=>{
   const html=renderToStaticMarkup(<V3AccountWithdrawalForm {...input}/>);
   expect(html.match(/<select /g)).toHaveLength(1);expect(html.match(/<input /g)).toHaveLength(1);
   expect(html).not.toMatch(/Position #|Next additions|Previous additions|Source position/);
-  expect(html).toContain('Maximum this dashboard can submit in one request: <strong>7.0 TEST</strong>');
-  expect(html).toContain('Gross: 6.000000000000000001 TEST');expect(html).toContain('Fee: 0.18 TEST');
-  expect(html).toContain('Net: 5.820000000000000001 TEST');
+  expect(html).toContain('Maximum this dashboard can submit in one request: <strong>7.0 USDT</strong>');
+  expect(html).toContain('Gross: 6.000000000000000001 USDT');expect(html).toContain('Fee: 0.18 USDT');
+  expect(html).toContain('Net: 5.820000000000000001 USDT');
   expect(html).toContain('cannot combine separate positions into one request');
   expect(accountWithdrawalFormState({...input,readOnly:true}).canSubmit).toBe(false);
   expect(accountWithdrawalFormState({...input,busy:true}).canSubmit).toBe(false);

@@ -11,6 +11,6 @@ export async function runUnifiedReinvestment(input:Input,sender:Sender=sendV3Uni
  if(input.enabled!==true)throw Error('The unified testnet preview is read-only.');
  if(!input.config?.unified)throw Error('The verified unified testnet contract is required.');
  if(!isAddress(input.wallet)||typeof input.amount!=='bigint'||input.amount<=0n)
-  throw Error('Connect a valid wallet and enter a positive TEST amount.');
+  throw Error('Connect a valid wallet and enter a positive USDT amount.');
  return sender(input.provider,getAddress(input.wallet),input.amount,input.config,input.onProgress);
 }

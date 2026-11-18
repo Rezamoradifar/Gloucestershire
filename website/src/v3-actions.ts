@@ -409,7 +409,7 @@ export async function sendV3UnifiedRegistration(walletProvider:Eip1193Provider,w
 export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,wallet:string,amount:bigint,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
  if(!config?.unified)throw Error('The verified unified testnet contract is required.');
- if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive TEST amount.');
+ if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive USDT amount.');
  const who=getAddress(wallet);
  progress(onProgress,{step:'preflight',action:'reinvestment'});
  const session=await v3ReadSession(walletProvider,who,config,true);
@@ -522,7 +522,7 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
    s.vault.paused(s.options)
   ]);
   if(paused)throw Error('Deposits are paused on this V3 test contract.');
-  if(BigInt(balance)<amount)throw Error('This wallet does not have enough TEST USDT on this V3 test network.');
+  if(BigInt(balance)<amount)throw Error('This wallet does not have enough USDT on this V3 test network.');
   if(BigInt(allowance)<0n)throw Error('Invalid token allowance');
   await checkV3DepositAccount(s.vault,wallet,referrer,amount,s.options);
   return {token,allowance:BigInt(allowance)};
@@ -541,7 +541,7 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
     let resetGas:CheckedTestGas;
     try{
      const current=await state(s);
-     if(current.allowance!==allowance)throw Error('TEST token allowance changed. Refresh before continuing.');
+     if(current.allowance!==allowance)throw Error('USDT token allowance changed. Refresh before continuing.');
      progress(onProgress,{step:'simulation',action:'allowance_reset'});
      resetGas=await checkedGas(s,current.token,'approve',[config.address,0n],wallet);
     }finally{s.provider.destroy();}
@@ -556,12 +556,12 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
    let approvalGas:CheckedTestGas;
    try{
     const current=await state(s);
-    if(current.allowance!==0n)throw Error('TEST token allowance changed. Refresh before continuing.');
+    if(current.allowance!==0n)throw Error('USDT token allowance changed. Refresh before continuing.');
     progress(onProgress,{step:'simulation',action:'token_approval'});
     approvalGas=await checkedGas(s,current.token,'approve',[config.address,amount],wallet);
    }finally{s.provider.destroy();}
    const approval=await submitVerified(walletProvider,wallet,signer,config,V3_TEST_TOKEN,
-    TOKEN_METHODS.encodeFunctionData('approve',[config.address,amount]),approvalGas,'TEST token approval','token_approval',onProgress);
+    TOKEN_METHODS.encodeFunctionData('approve',[config.address,amount]),approvalGas,'USDT token approval','token_approval',onProgress);
    lastApprovalHash=approval.hash;
   }
   const check=await v3ReadSession(walletProvider,wallet,config,true);
@@ -623,7 +623,7 @@ export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet
   amount=BigInt(row.gross);beneficiary=getAddress(row.beneficiary);
   const balance=await new Contract(V3_TEST_TOKEN,V3_TEST_TOKEN_ABI,s.provider)
    .balanceOf(wallet,s.options);
-  if(amount<=0n||BigInt(balance)<amount)throw Error('Funding wallet has insufficient actual TEST USDT.');
+  if(amount<=0n||BigInt(balance)<amount)throw Error('Funding wallet has insufficient actual USDT.');
  }finally{s.provider.destroy();}
  const provider=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
  try{

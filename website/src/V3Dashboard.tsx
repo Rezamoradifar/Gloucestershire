@@ -1,5 +1,5 @@
 // Global V3 TESTNET workspace integrated into the original Global navy/gold
-// shell and five-tab mobile navigation. Uses verified on-chain TEST claims only;
+// shell and five-tab mobile navigation. Uses verified testnet USDT claims only;
 // it can never display fabricated deposits, profits or cash.
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {flushSync} from 'react-dom';
@@ -234,7 +234,7 @@ export default function V3Dashboard(){
   const trackedAction=Boolean(config.unified)||action.kind==='register'||action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
   if(trackedAction&&reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
   const target=config.unified&&isUnifiedNetworkAction(action)?networkActionTarget(config,action):config.address;
-  if(!await confirmAction('Review testnet transaction',description+'\nMock TUSDT has no monetary value. Confirm the separate blockchain transaction in your wallet.',target))return;
+  if(!await confirmAction('Review testnet transaction',description+'\nUSDT on BNB Testnet is a test token with no monetary value. Confirm the separate blockchain transaction in your wallet.',target))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice(action.kind==='register'?'Checking registration…':'Confirm the V3 TESTNET transaction in your connected wallet…');setTxHash('');
   const tracker=new V3TransactionProgressTracker();
@@ -283,7 +283,7 @@ export default function V3Dashboard(){
   try{
    const tx=await runV3Deposit({provider:p,wallet,amount:n,referrer:parent,config,
     unifiedEnabled,onProgress:report});
-   setTxHash(tx);setNotice('Mock TEST token deposit confirmed in V3.');setValue('');
+   setTxHash(tx);setNotice('USDT test-token deposit confirmed in V3.');setValue('');
    await refresh();
   }catch(e){const message=e instanceof Error?e.message:'V3 deposit not confirmed.';setNotice('');setError(message);
    if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
@@ -297,12 +297,12 @@ export default function V3Dashboard(){
  async function fund(id:number,gross:bigint,beneficiary:string){
   if(!config||busy||!wallet||!view?.canFund)return;
   if(config.unified){
-   await perform({kind:'fundWithdrawal',id,gross,beneficiary},'Fund approved request #'+(id+1)+' for '+beneficiary+' with exactly '+formatUnits(gross,18)+' TEST USDT from this wallet? The tokens are escrowed until payout.');
+   await perform({kind:'fundWithdrawal',id,gross,beneficiary},'Fund approved request #'+(id+1)+' for '+beneficiary+' with exactly '+formatUnits(gross,18)+' USDT from this wallet? The tokens are escrowed until payout.');
    return;
   }
   if(!window.confirm('ONLY BNB TESTNET\nFund already-approved request #'+(id+1)+
    '\nBeneficiary: '+beneficiary+'\nExact mock tokens to escrow: '+formatUnits(gross,18)+
-   '\nThis transfers actual TEST tokens from your funder wallet into the V3 vault. Continue?'))return;
+   '\nThis transfers actual USDT tokens from your funder wallet into the V3 vault. Continue?'))return;
   const p=getWalletProvider();if(!p)return;
   setBusy(true);setError('');setTxHash('');setNotice('Confirm exact mock token allowance and cash funding…');
   try{
@@ -350,8 +350,8 @@ export default function V3Dashboard(){
    const a=plan.action;
    const fee=a.amount*(kind==='principal'?3000n:300n)/10000n;
    void perform(a,'Request '+kind+' withdrawal from your account. Gross: '+formatUnits(a.amount,18)+
-    ' TEST; fee: '+formatUnits(fee,18)+' TEST; net: '+formatUnits(a.amount-fee,18)+
-    ' TEST. Manager approval and actual funding required.');
+    ' USDT; fee: '+formatUnits(fee,18)+' USDT; net: '+formatUnits(a.amount-fee,18)+
+    ' USDT. Manager approval and actual funding required.');
   }catch(e){setError((e as Error).message);}
  };
  async function requestUnifiedPage(kind:'profit'|'principal',page:UnifiedPositionPage,n:bigint){
@@ -369,8 +369,8 @@ export default function V3Dashboard(){
   }catch(e){setError(e instanceof Error?e.message:'Invalid withdrawal request.');return;}
   const fee=n*(kind==='principal'?3000n:300n)/10000n;
   if(!await confirmAction('Review withdrawal request','Request '+kind+' withdrawal from your account?'+
-   '\nGross: '+formatUnits(n,18)+' TEST; fee: '+formatUnits(fee,18)+' TEST; net: '+formatUnits(n-fee,18)+
-   ' TEST. Manager approval and actual test-token funding are required. The wallet must sign one transaction.'))return;
+   '\nGross: '+formatUnits(n,18)+' USDT; fee: '+formatUnits(fee,18)+' USDT; net: '+formatUnits(n-fee,18)+
+   ' USDT. Manager approval and actual test-token funding are required. The wallet must sign one transaction.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setNotice('Checking the test withdrawal request…');setTxHash('');setTransactionProgress(null);
   const tracker=new V3TransactionProgressTracker();let progressHash:string|undefined;
@@ -391,7 +391,7 @@ export default function V3Dashboard(){
   if(!view.registered||view.suspended||view.paused){setError('This test account cannot reinvest.');return;}
   const total=view.positions.reduce((sum,position)=>sum+position.availableProfit,0n);
   if(n>total){setError('The amount exceeds recorded position profit.');return;}
-  if(!await confirmAction('Review reinvestment','Reinvest '+formatUnits(n,18)+' TEST of recorded position profit into the unified position?'+
+  if(!await confirmAction('Review reinvestment','Reinvest '+formatUnits(n,18)+' USDT of recorded position profit into the unified position?'+
    '\nThe addition has a separate 90-day principal lock. The wallet must sign one blockchain transaction.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setNotice('Checking the test reinvestment…');setTxHash('');setTransactionProgress(null);
@@ -421,20 +421,20 @@ export default function V3Dashboard(){
   <article className="gv3-withdrawal-row" key={r.id}>
    <div><strong>Request #{r.id+1} · {kinds[r.kind]??'Unknown'}</strong>
     <small>{formatUtcTime(r.requestedAt)} · {short(r.beneficiary)}</small></div>
-   <div><b><DigitalValue value={show(r.gross)} unit="TEST USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
+   <div><b><DigitalValue value={show(r.gross)} unit="USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>
     {config?.unified&&!admin&&r.beneficiary.toLowerCase()===wallet.toLowerCase()&&<>
      {(r.status===0||r.status===1)&&<button disabled={busy||reviewRequired||unifiedReadOnly||!view||view.asOf<r.requestedAt+72*3600}
       onClick={()=>void perform({kind:'cancelWithdrawal',id:r.id},'Cancel this unescrowed request and release the reserved test claim?')}>Cancel after 72 hours</button>}
-     {r.status===2&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the funded test withdrawal to your wallet?')}>Collect funded TEST</button>}
+     {r.status===2&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the funded test withdrawal to your wallet?')}>Collect funded USDT</button>}
     </>}
     {admin&&<div className="gv3-queue-actions">
-     {view?.canManage&&r.status===0&&<><button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'approveWithdrawal',id:r.id},'Approve request #'+(r.id+1)+' for '+r.beneficiary+'? Gross '+formatUnits(r.gross,18)+' TEST, fee '+formatUnits(r.fee,18)+' TEST. No money is paid until escrowed.')}>Approve</button>
+     {view?.canManage&&r.status===0&&<><button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'approveWithdrawal',id:r.id},'Approve request #'+(r.id+1)+' for '+r.beneficiary+'? Gross '+formatUnits(r.gross,18)+' USDT, fee '+formatUnits(r.fee,18)+' USDT. No money is paid until escrowed.')}>Approve</button>
       <button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'rejectWithdrawal',id:r.id},'Reject unescrowed request #'+(r.id+1)+'?')}>Reject</button></>}
-     {r.status===1&&<>{view?.canManage&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'reserveExistingCash',id:r.id},'Reserve '+formatUnits(r.gross,18)+' TEST from already-free V3 cash for request #'+(r.id+1)+'? '+(r.kind===1?'This may reduce cash available for other principal claims.':'The contract checks outstanding principal before reserving profit.'))}>Use existing cash</button>}
+     {r.status===1&&<>{view?.canManage&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'reserveExistingCash',id:r.id},'Reserve '+formatUnits(r.gross,18)+' USDT from already-free V3 cash for request #'+(r.id+1)+'? '+(r.kind===1?'This may reduce cash available for other principal claims.':'The contract checks outstanding principal before reserving profit.'))}>Use existing cash</button>}
       {config?.unified&&view?.canManage&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'rejectWithdrawal',id:r.id},'Reject this approved request and release its reserved test claim?')}>Reject before funding</button>}
       {view?.canFund&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void fund(r.id,r.gross,r.beneficiary)}>Fund exact request</button>}</>}
-     {r.status===2&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the immutable beneficiary '+r.beneficiary+' exactly '+formatUnits(r.gross-r.fee,18)+' TEST USDT?')}>Pay approved request</button>}
+     {r.status===2&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the immutable beneficiary '+r.beneficiary+' exactly '+formatUnits(r.gross-r.fee,18)+' USDT?')}>Pay approved request</button>}
     </div>}
    </div>
   </article>;
@@ -522,9 +522,9 @@ export default function V3Dashboard(){
       {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger}/>}
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
-       <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="TEST"/></strong><span>Including profit-on-profit</span></div>
-       <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="TEST"/></strong><span>Includes cash reserved for requests</span></div>
-       <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="TEST"/></strong><span>Not guaranteed to be paid</span></div>
+       <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="USDT"/></strong><span>Including profit-on-profit</span></div>
+       <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="USDT"/></strong><span>Includes cash reserved for requests</span></div>
+       <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="USDT"/></strong><span>Not guaranteed to be paid</span></div>
       </div>
       <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {formatUtcTime(view.lastCheckIn)}.
        {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
@@ -537,17 +537,17 @@ export default function V3Dashboard(){
        onNext={()=>setUnifiedPageStart(view.unifiedPage!.start+view.unifiedPage!.limit)}/>}
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
        <p>100% of each test deposit is routed to designated wallets, including fee wallets. It does not remain as cash in the vault or establish product spending.</p>
-       <div className="gv3-input-row"><label htmlFor="v3-deposit">Amount (TEST USDT)</label><input id="v3-deposit" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" placeholder="1000"/>
+       <div className="gv3-input-row"><label htmlFor="v3-deposit">Amount (USDT)</label><input id="v3-deposit" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" placeholder="1000"/>
         {!view.registered&&<><label htmlFor="v3-parent">Referrer (optional)</label>
          <input id="v3-parent" value={referrer} onChange={e=>setReferrer(e.target.value)} /></>}
-        <small>Wallet balance: {show(view.walletTestTokenBalance)} MOCK TEST USDT</small>
+        <small>Wallet balance: {show(view.walletTestTokenBalance)} MOCK USDT</small>
         <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||unifiedReadOnly} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
       <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. {config.unified?'Reinvestment adds recorded claims to one position; each addition keeps its own lock.':'Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.'}</p>
        <div className="gv3-input-row">{config.unified?<V3UnifiedReinvestSummary positions={view.positions}/>:<><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
-        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} TEST profit</option>)}</select></>}
+        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} USDT profit</option>)}</select></>}
         <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
-        <button disabled={busy||reviewRequired||!view.positions.length||unifiedReadOnly} onClick={reinvest}>Reinvest recorded TEST claim</button></div></section>
+        <button disabled={busy||reviewRequired||!view.positions.length||unifiedReadOnly} onClick={reinvest}>Reinvest recorded USDT claim</button></div></section>
      </>}
      {tab==='team'&&(view.networkLoaded?
       <V3NetworkPanel view={view} busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
@@ -581,12 +581,12 @@ export default function V3Dashboard(){
      </section>}
      {tab==='admin'&&operatorAccess&&<section className="gv2-panel">
       <div className="gv2-panel-head"><h3>V3 manager approval and payout</h3><button disabled={busy} onClick={()=>void readQueue()}>Load latest 20 requests</button></div>
-      <p>Daily accrual and automatic profit-on-profit require NO manager approval. Only here can management approve withdrawals, reserve available cash, or authorize exact TEST-token funding. Funding does NOT automatically pay.</p>
-      <div className="gv2-detail"><span>Total recorded V3 principal claims</span><b>{show(view.ledger.principalLiability)} TEST</b></div>
-      <div className="gv2-detail"><span>Accrued test-profit liabilities</span><b>{show(view.ledger.profitLiability)} TEST</b></div>
-      <div className="gv2-detail"><span>V3 test-token cash</span><b>{show(view.ledger.cash)} TEST</b></div>
-      <div className="gv2-detail"><span>Cash reserved for approved requests</span><b>{show(view.ledger.escrow)} TEST</b></div>
-      <div className="gv2-detail"><span>Unfunded total liability</span><b>{claims?show(claims.overallUnfundedLiability):'—'} TEST</b></div>
+      <p>Daily accrual and automatic profit-on-profit require NO manager approval. Only here can management approve withdrawals, reserve available cash, or authorize exact USDT-token funding. Funding does NOT automatically pay.</p>
+      <div className="gv2-detail"><span>Total recorded V3 principal claims</span><b>{show(view.ledger.principalLiability)} USDT</b></div>
+      <div className="gv2-detail"><span>Accrued test-profit liabilities</span><b>{show(view.ledger.profitLiability)} USDT</b></div>
+      <div className="gv2-detail"><span>V3 test-token cash</span><b>{show(view.ledger.cash)} USDT</b></div>
+      <div className="gv2-detail"><span>Cash reserved for approved requests</span><b>{show(view.ledger.escrow)} USDT</b></div>
+      <div className="gv2-detail"><span>Unfunded total liability</span><b>{claims?show(claims.overallUnfundedLiability):'—'} USDT</b></div>
       {adminQueue&&<><h3>Page {adminQueue.page+1} · {adminQueue.requests.length} of {adminQueue.count} requests</h3>
        {adminQueue.requests.map(r=>withdrawItem(r,true))}
        {!adminQueue.requests.length&&<p>No manager requests are currently indexed on this page.</p>}

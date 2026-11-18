@@ -18,7 +18,7 @@ const maxLogRequests=64;
 const historyUnavailable='Unable to load the complete activity for these blocks. Please retry or use the block explorer.';
 const topic=(name:string)=>events.getEvent(name)!.topicHash;
 const hash=(value:string)=>/^0x[0-9a-f]{64}$/i.test(value);
-const amount=(value:bigint)=>formatV3Amount(value)+' TEST USDT';
+const amount=(value:bigint)=>formatV3Amount(value)+' USDT';
 const number=(value:bigint)=>(value+1n).toString();
 
 export type V3HistoryAnchor={block:number;hash:string;firstBlock:number};

@@ -29,7 +29,7 @@ const actions={busy:true,loading:false,connecting:false,value:'',onValue:()=>{},
 describe('unified reinvestment form',()=>{
  it('shows one total and no source selector in the read-only unified profile',()=>{
   const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={{...view,unifiedPage:null}}/>);
-  expect(html).toContain('957.891897 TEST');
+  expect(html).toContain('957.891897 USDT');
   expect(html).toContain('Referral and network rewards are separate');
   expect(html).not.toContain('Source position for recorded profit');
   expect(html).not.toContain('<select');

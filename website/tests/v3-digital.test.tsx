@@ -10,8 +10,8 @@ import type {V3ClaimLedger} from '../src/v3-claim-balance';
 const to=(value:string)=>parseEther(value);
 describe('digital account instruments',()=>{
  it('preserves the exact accessible value, punctuation and unit',()=>{
-  const html=renderToStaticMarkup(<DigitalValue value="1,234.50" unit="TEST USDT"/>);
-  expect(html).toContain('aria-label="1,234.50 TEST USDT"');
+  const html=renderToStaticMarkup(<DigitalValue value="1,234.50" unit="USDT"/>);
+  expect(html).toContain('aria-label="1,234.50 USDT"');
   expect((html.match(/class="gv3-digital-digit"/g)||[]).length).toBe(6);
   expect(renderToStaticMarkup(<DigitalValue value="<0.000001"/>)).toContain('aria-label="&lt;0.000001"');
  });
@@ -23,8 +23,8 @@ describe('digital account instruments',()=>{
   expect(html).toContain('Estimated time remaining 24:00:00');
   expect(html).toContain('LIVE ESTIMATED PROGRESS');
   expect(html).toContain('CONDITIONAL CYCLE ESTIMATE');
-  expect(html).toContain('aria-label="0.00 TEST USDT"');
-  expect(html).toContain('aria-label="7.07 TEST USDT"');
+  expect(html).toContain('aria-label="0.00 USDT"');
+  expect(html).toContain('aria-label="7.07 USDT"');
   expect(html).toContain('Next check-in in 01:00:00');
   expect(html).toContain('disabled=""');
  });
@@ -38,7 +38,7 @@ describe('digital account instruments',()=>{
     cumulativeCompound:to('0.049'),reservedProfit:0n}]};
   const html=renderToStaticMarkup(<V3ClaimsReadout verifiedLedger={ledger}/>);
   for(const value of ['15.249','14.00','0.049','1.2'])
-   expect(html).toContain(`aria-label="${value} TEST USDT"`);
-  expect(html).toContain('funding shortfall: 15.249 TEST USDT');
+   expect(html).toContain(`aria-label="${value} USDT"`);
+  expect(html).toContain('funding shortfall: 15.249 USDT');
  });
 });
