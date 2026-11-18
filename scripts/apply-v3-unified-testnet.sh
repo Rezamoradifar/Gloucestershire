@@ -73,7 +73,9 @@ apply_release() {
   digest=$(verify_proof) || return $?
   on_disk=$(sha256sum -- "$proof") || return $?
   [[ ${on_disk%% *} == "$digest" ]] || fail UNIFIED_PROOF_CHANGED
-  publish+=("$digest" "$verification_rpc")
+  # The proof above used an independent reader. Prefer the worker's BNB Chain
+  # endpoint for the fresh pre- and post-build reads of that verified proof.
+  publish+=("$digest" "$deployment_rpc")
   bash scripts/install-v3-unified-worker.sh "$sha" || worker_status=$?
   case $worker_status in
     0) publish+=(--enable-testnet-wallets) ;;

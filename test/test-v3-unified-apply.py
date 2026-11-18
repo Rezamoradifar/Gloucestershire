@@ -62,11 +62,11 @@ class ApplyTestnet(unittest.TestCase):
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(calls[:3], [f"--check {READ_RPC}", f"--deploy-testnet {SIGN_RPC}", f"--verify-existing {READ_RPC}"])
         self.assertEqual(calls[3], f"worker {REVISION}")
-        self.assertEqual(calls[4], f"scripts/install-v3-unified-test-site.sh --install-prepared {REVISION} {self.proof} {DIGEST} {READ_RPC} --enable-testnet-wallets")
+        publish = f"scripts/install-v3-unified-test-site.sh --install-prepared {REVISION} {self.proof} {DIGEST} {SIGN_RPC} --enable-testnet-wallets"
+        self.assertEqual(calls[4], publish)
         repeat, calls = self.apply()
         self.assertEqual(repeat.returncode, 0, repeat.stderr)
-        self.assertEqual(len(calls), 3)
-        self.assertEqual(calls[0], f"--verify-existing {READ_RPC}")
+        self.assertEqual(calls, [f"--verify-existing {READ_RPC}", f"worker {REVISION}", publish])
 
     def test_preview_then_retry_after_funding(self):
         first, calls = self.apply(WORKER_RESULT="42")

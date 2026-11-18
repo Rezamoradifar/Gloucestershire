@@ -4,7 +4,9 @@ import {FetchRequest, toUtf8Bytes} from 'ethers';
 import {withUnifiedReadRpc} from '../scripts/v3-unified-verification-rpc.mjs';
 
 const primary = 'https://bsc-testnet-rpc.publicnode.com';
-const alternate = 'https://bnb-testnet.api.onfinality.io/public';
+const alternate = 'https://bsc-testnet.drpc.org';
+const last = 'https://bnb-testnet.api.onfinality.io/public';
+const official = 'https://bsc-testnet-dataseed.bnbchain.org';
 
 function trackProviders() {
   const opened = [], closed = [];
@@ -22,16 +24,20 @@ function connectionTimeout() {
 }
 
 test('ethers retries the failed JSON-RPC read against the other endpoint', async (t) => {
-  const originalTransport = new FetchRequest(primary).getUrlFunc;
-  t.after(() => FetchRequest.registerGetUrl(originalTransport));
   const requests = [];
-  FetchRequest.registerGetUrl(async request => {
+  const transport = async request => {
+    assert.equal(request.timeout, 15000);
     const {id, method} = JSON.parse(Buffer.from(request.body).toString());
     requests.push([request.url, method]);
     if (request.url === primary) throw connectionTimeout();
     assert.equal(request.url, alternate);
     return {statusCode:200, statusMessage:'OK', headers:{},
       body:toUtf8Bytes(JSON.stringify({jsonrpc:'2.0', id, result:'0x61'}))};
+  };
+  t.mock.method(FetchRequest, 'createGetUrlFunc', ({agent}) => {
+    assert.equal(agent.maxSockets, 4);
+    assert.equal(agent.options.proxyEnv, process.env);
+    return transport;
   });
   const chain = await withUnifiedReadRpc(primary, 'post-build', provider => provider.send('eth_chainId', []));
   assert.equal(chain, '0x61');
@@ -106,11 +112,48 @@ test('a fallback must pass all proof checks and an unapproved RPC is never queri
   assert.deepEqual(closed, [primary, alternate]);
 });
 
-test('exhausted read endpoints leave verification failed and release all providers', async () => {
+test('exhausted independent proof readers leave verification failed and never use the deployment RPC', async () => {
   const {opened, closed, createProvider} = trackProviders();
-  await assert.rejects(withUnifiedReadRpc(primary, 'post-build', async () => {
+  await assert.rejects(withUnifiedReadRpc(primary, 'existing-proof', async () => {
     throw connectionTimeout();
   }, createProvider), /UNIFIED_VERIFICATION_RPC_UNAVAILABLE/);
-  assert.deepEqual(opened, [primary, alternate]);
-  assert.deepEqual(closed, [primary, alternate]);
+  assert.deepEqual(opened, [primary, alternate, last]);
+  assert.deepEqual(closed, opened);
+});
+
+test('the build can start on the worker RPC and redo its reads on independent providers', async t => {
+  const {opened, closed, createProvider} = trackProviders();
+  const log = t.mock.method(console, 'error', () => {});
+  const result = await withUnifiedReadRpc(official, 'pre-build', async ({url}) => {
+    if (url === official) throw new Error('sensitive request contents', {cause:connectionTimeout()});
+    if (url === primary) throw Object.assign(new Error('sensitive rate limit response'), {
+      code:'SERVER_ERROR', response:{statusCode:429},
+    });
+    return url;
+  }, createProvider);
+  assert.equal(result, alternate);
+  assert.deepEqual(opened, [official, primary, alternate]);
+  assert.deepEqual(closed, opened);
+  assert.deepEqual(log.mock.calls.map(call => call.arguments), [
+    ['UNIFIED_VERIFICATION_RPC_UNREACHABLE phase=pre-build endpoint=' + official + ' reason=ETIMEDOUT+ENETUNREACH'],
+    ['UNIFIED_VERIFICATION_RPC_UNREACHABLE phase=pre-build endpoint=' + primary + ' reason=HTTP_429'],
+  ]);
+});
+
+test('a brief outage across all build readers restarts the full callback after backoff', async t => {
+  const {opened, closed, createProvider} = trackProviders();
+  let calls = 0;
+  const log = t.mock.method(console, 'error', () => {});
+  const result = await withUnifiedReadRpc(official, 'post-build', async ({url}) => {
+    calls++;
+    if (calls <= 4) throw Object.assign(new Error('upstream throttle'), {
+      code:'UNKNOWN_ERROR', error:{code:-32029, message:'Too Many Requests'},
+    });
+    return url;
+  }, createProvider);
+  assert.equal(result, official);
+  assert.deepEqual(opened, [official, primary, alternate, last, official]);
+  assert.deepEqual(closed, opened);
+  assert.ok(log.mock.calls.some(call => call.arguments[0].includes('reason=RPC_RATE_LIMIT')));
+  assert.ok(log.mock.calls.some(call => call.arguments[0] === 'UNIFIED_VERIFICATION_RPC_RETRY phase=post-build'));
 });
