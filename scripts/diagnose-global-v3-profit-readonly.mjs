@@ -7,6 +7,7 @@ import {Contract,FetchRequest,JsonRpcProvider,getAddress,keccak256,formatUnits} 
 
 const CHAIN_ID=97;
 const VAULT=getAddress('0x81B55ab9A1B36CccE355aFC4FfC579BA861f74e7');
+const EXPECTED_RUNTIME_HASH='0xf17b01bd58e8391036e1c6be3239fccea3ea4a3de245d208c2d66fefbf990a29';
 const TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
 const FEE=getAddress('0x74015dedf36677485793f1714ec7bd4893907b26');
@@ -64,6 +65,8 @@ async function main(){
   pinned=config.runtimeHash.toLowerCase();
  }
  const {provider,url,runtimeHash}=await open();
+ if(runtimeHash.toLowerCase()!==EXPECTED_RUNTIME_HASH)
+  {provider.destroy();throw Error('V3_LIVE_RUNTIME_HASH_CHANGED_PUBLIC_DIAGNOSIS_BLOCKED');}
  try{
   if(pinned&&runtimeHash.toLowerCase()!==pinned)
    throw Error('V3_PUBLIC_BYTECODE_NOT_EQUAL_TO_DEPLOYED_OPERATOR_PIN');
