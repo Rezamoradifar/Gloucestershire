@@ -12,6 +12,7 @@ import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {waitV3DeploymentReceipt} from './v3-deploy-receipt-poll.mjs';
 import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
+import {withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
 export {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 
 import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_INITCODE_HASH,UNIFIED_DEPLOYER,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER} from './v3-unified-release-pins.mjs';
@@ -183,17 +184,18 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1
   if(args.length!==2||!['--check','--verify-existing','--recover-existing','--deploy-testnet'].includes(mode)||!RPCS.has(rpc)) {
    throw Error('UNIFIED_ARGUMENTS_EXPECT_MODE_AND_ALLOWED_RPC');
   }
-  provider=new JsonRpcProvider(rpc,undefined,{batchMaxCount:1,cacheTimeout:-1});
-  if(mode==='--check') {
+  if(mode!=='--verify-existing')provider=new JsonRpcProvider(rpc,undefined,{batchMaxCount:1,cacheTimeout:-1});
+  if(mode==='--verify-existing') {
+   const digest=await withUnifiedReadRpc(rpc,'existing-proof',verifyPrivateProofFile);
+   console.log('UNIFIED_DEPLOYMENT_PROOF_SHA256='+digest);
+  } else if(mode==='--check') {
    const plan=await planUnifiedDeployment({provider,from:DEPLOYER});
    if(plan.initcodeHash!==UNIFIED_INITCODE_HASH||!plan.tokenRuntimeIndependentlyVerified) {
     throw Error('UNIFIED_RELEASE_PIN_MISMATCH');
    }
    console.log('UNIFIED_TESTNET_ESTIMATE '+JSON.stringify(plan));
-  } else if(mode==='--verify-existing' || mode==='--recover-existing') {
-   if(mode==='--recover-existing') {
-    await recoverUnifiedDeployment({provider,directory:DIRECTORY});
-   }
+  } else if(mode==='--recover-existing') {
+   await recoverUnifiedDeployment({provider,directory:DIRECTORY});
    const digest=await verifyPrivateProofFile(provider);
    console.log('UNIFIED_DEPLOYMENT_PROOF_SHA256='+digest);
   } else {

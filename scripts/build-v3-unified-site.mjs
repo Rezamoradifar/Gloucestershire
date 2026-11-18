@@ -1,6 +1,7 @@
 // Build-only helper for the isolated BNB Testnet site. Never signs or broadcasts.
 import {execFileSync,spawnSync} from 'node:child_process';
-import {FetchRequest,JsonRpcProvider} from 'ethers';
+import {withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
+import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 import {verifyActiveWorker} from './v3-unified-worker-readiness.mjs';
 import {readPinnedProof,planUnifiedPreviewSite} from './v3-unified-site-preview-preflight.mjs';
 
@@ -14,24 +15,23 @@ const actual=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
 if(actual!==sha)throw Error('UNIFIED_SITE_BUILD_SOURCE_MISMATCH');
 execFileSync('git',['diff','--quiet','HEAD','--']);
 const proof=readPinnedProof(proofPath,digest);
-const request=new FetchRequest(rpc);request.timeout=8000;
-const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
-try{
- const plan=await planUnifiedPreviewSite({provider,proof,sourceSha:actual,expectedSourceSha:sha});
- const worker={sha,digest,vault:proof.vault};
- if(writes)verifyActiveWorker(worker);
- const clean={...process.env};
- for(const key of Object.keys(clean))if(key.startsWith('VITE_'))delete clean[key];
- const run=(args,env)=>{
-  const result=spawnSync('npm',args,{stdio:'inherit',env});
-  if(result.error||result.status!==0)throw Error('UNIFIED_SITE_BUILD_COMMAND_FAILED');
- };
- run(['test','--prefix','website','--','--maxWorkers=2'],clean);
- const releaseEnv={...clean,...plan.env,VITE_WALLETCONNECT_PROJECT_ID:wallet==='disabled'?'':wallet};
- if(writes)releaseEnv.VITE_V3_UNIFIED_WALLET_ACTIONS='verified-isolated-testnet';
- run(['run','build','--prefix','website'],releaseEnv);
- // A second independent read ensures the canonical deployment did not change during tests/build.
- await planUnifiedPreviewSite({provider,proof,sourceSha:actual,expectedSourceSha:sha});
- if(writes)verifyActiveWorker(worker);
- console.log('UNIFIED_SITE_BUILD_VERIFIED '+JSON.stringify({chainId:97,sourceSha:sha,vault:plan.env.VITE_V3_CONTRACT_ADDRESS,route:'/unified-test/',readOnlyPreview:!writes}));
-}finally{provider.destroy();}
+const verifyPlan=provider=>planUnifiedPreviewSite({provider,proof,sourceSha:actual,expectedSourceSha:sha});
+const plan=await withUnifiedReadRpc(rpc,'pre-build',verifyPlan);
+const worker={sha,digest,vault:proof.vault};
+if(writes)verifyActiveWorker(worker);
+const clean={...process.env};
+for(const key of Object.keys(clean))if(key.startsWith('VITE_'))delete clean[key];
+const run=(args,env)=>{
+ const result=spawnSync('npm',args,{stdio:'inherit',env});
+ if(result.error||result.status!==0)throw Error('UNIFIED_SITE_BUILD_COMMAND_FAILED');
+};
+run(['test','--prefix','website','--','--maxWorkers=2'],clean);
+const releaseEnv={...clean,...plan.env,VITE_WALLETCONNECT_PROJECT_ID:wallet==='disabled'?'':wallet};
+if(writes)releaseEnv.VITE_V3_UNIFIED_WALLET_ACTIONS='verified-isolated-testnet';
+run(['run','build','--prefix','website'],releaseEnv);
+await withUnifiedReadRpc(rpc,'post-build',async provider=>{
+ await verifyPlan(provider);
+ await recheckUnifiedBlock(provider,plan.anchor);
+});
+if(writes)verifyActiveWorker(worker);
+console.log('UNIFIED_SITE_BUILD_VERIFIED '+JSON.stringify({chainId:97,sourceSha:sha,vault:plan.env.VITE_V3_CONTRACT_ADDRESS,route:'/unified-test/',readOnlyPreview:!writes}));
