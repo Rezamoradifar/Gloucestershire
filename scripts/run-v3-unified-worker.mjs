@@ -143,16 +143,17 @@ async function main() {
   const proof = JSON.parse(raw);
   const {provider, balance, block} = await selectProvider(proof, signer.address, profile);
   try {
+    if (command === '--check') {
+      const ready = {sourceSha:sha, proofSha256:createHash('sha256').update(raw).digest('hex'),
+        chainId:97, vault:getAddress(proof.vault), operator:signer.address, block, gasReady:balance >= minimum};
+      atomicFile(path.join(profile.stateDirectory, 'worker-ready.json'), JSON.stringify(ready) + '\n');
+    }
     if (balance < minimum) {
       console.error('UNIFIED_KEEPER_NEEDS_TEST_GAS=' + signer.address + ' MINIMUM_TBNB=0.001 CHAIN_ID=97');
       process.exitCode = 42;
       return;
     }
-    if (command === '--check') {
-      const ready = {sourceSha:sha, proofSha256:createHash('sha256').update(raw).digest('hex'),
-        chainId:97, vault:getAddress(proof.vault), operator:signer.address, block};
-      atomicFile(path.join(profile.stateDirectory, 'worker-ready.json'), JSON.stringify(ready) + '\n');
-    } else {
+    if (command === '--tick') {
       console.log('UNIFIED_WORKER_RESULT', JSON.stringify(await tick(provider, signer.connect(provider), proof, process.env.STATE_DIRECTORY)));
     }
   } finally { provider.destroy(); }

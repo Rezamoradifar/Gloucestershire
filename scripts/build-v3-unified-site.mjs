@@ -23,7 +23,8 @@ const proof=readPinnedProof(proofPath,digest);
 const verifyPlan=provider=>planUnifiedPreviewSite({provider,proof,sourceSha:actual,expectedSourceSha:sha,profile});
 const plan=await withUnifiedReadRpc(rpc,'pre-build',verifyPlan);
 const worker={sha,digest,vault:proof.vault};
-if(writes)verifyActiveWorker(worker,profile);
+let workerReady;
+if(writes)workerReady=verifyActiveWorker(worker,profile);
 const clean={...process.env};
 for(const key of Object.keys(clean))if(key.startsWith('VITE_'))delete clean[key];
 const run=(args,env)=>{
@@ -33,10 +34,13 @@ const run=(args,env)=>{
 run(['test','--prefix','website','--','--maxWorkers=2'],clean);
 const releaseEnv={...clean,...plan.env,VITE_WALLETCONNECT_PROJECT_ID:wallet==='disabled'?'':wallet};
 if(writes)releaseEnv.VITE_V3_UNIFIED_WALLET_ACTIONS='verified-isolated-testnet';
+if(writes&&profile.mode==='single-capital-testnet')
+ releaseEnv.VITE_V3_UNIFIED_KEEPER=workerReady.operator;
 run(['run','build','--prefix','website'],releaseEnv);
 await withUnifiedReadRpc(rpc,'post-build',async provider=>{
  await verifyPlan(provider);
  await recheckUnifiedBlock(provider,plan.anchor);
 });
-if(writes)verifyActiveWorker(worker,profile);
+if(writes&&verifyActiveWorker(worker,profile).operator!==workerReady.operator)
+ throw Error('UNIFIED_SITE_WORKER_IDENTITY_CHANGED');
 console.log('UNIFIED_SITE_BUILD_VERIFIED '+JSON.stringify({chainId:97,sourceSha:sha,vault:plan.env.VITE_V3_CONTRACT_ADDRESS,route:plan.routeCandidate,readOnlyPreview:!writes}));

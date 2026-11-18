@@ -157,5 +157,80 @@ class ApplyTestnet(unittest.TestCase):
                                      f"--verify-existing {READ_RPC} --single-capital"])
 
 
+class WorkerGasInstallation(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.tools = self.root / "bin"
+        self.tools.mkdir()
+        self.units = self.root / "system"
+        self.units.mkdir()
+        config = self.root / "config"
+        config.mkdir()
+        source = SOURCE.with_name("install-v3-unified-worker.sh").read_text()
+        source = source.replace("/etc/globaldroptrade", str(config))
+        source = source.replace("/etc/systemd/system", str(self.units))
+        source = source.replace("/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin", str(self.tools))
+        for label in ["unified", "single-capital"]:
+            release_root = self.root / (label + "-worker")
+            release = release_root / REVISION
+            release.mkdir(parents=True)
+            (release / ".release").write_text(REVISION + "\n")
+            proof = self.root / (label + "-state")
+            proof.mkdir()
+            (proof / "deployment-proof.json").write_bytes(PROOF)
+            source = source.replace("/opt/global-v3-" + label + "-worker", str(release_root))
+            source = source.replace("/var/lib/globaldroptrade/v3-" + label + "-testnet", str(proof))
+        self.script = self.root / "worker.sh"
+        self.script.write_text(source)
+        self.env = dict(os.environ, PATH=str(self.tools) + os.pathsep + os.environ["PATH"],
+                        REVISION=REVISION, TRACE=str(self.root / "calls"), GAS_STATUS="0")
+        self.mock("hostname", "echo vps-luna-2585")
+        self.mock("git", 'if [[ $1 == rev-parse ]]; then echo "$REVISION"; fi')
+        self.mock("id", """case "$1:$#" in
+  -u:1) echo 0 ;;
+  -u:2) echo 1001 ;;
+  -Gn:2) echo "$2" ;;
+  *) exit 99 ;;
+esac""")
+        self.mock("stat", 'if [[ $2 == %u ]]; then echo 0; else exec /usr/bin/stat "$@"; fi')
+        self.mock("npm", "exit 99")
+        self.mock("node", """echo "$*" >> "$TRACE"
+if [[ $2 == --check ]]; then exit "$GAS_STATUS"; fi""")
+        self.mock("getent", 'echo "$2:x:1001:1001::/nonexistent:/usr/sbin/nologin"')
+        self.mock("systemd-analyze", 'echo "verify $*" >> "$TRACE"')
+        self.mock("systemctl", 'echo "systemctl $*" >> "$TRACE"')
+
+    def mock(self, name, code):
+        script = self.tools / name
+        script.write_text("#!/bin/bash\nset -eu\n" + code + "\n")
+        script.chmod(0o755)
+
+    def invoke(self, status, *profile):
+        self.env["GAS_STATUS"] = str(status)
+        return subprocess.run(["bash", str(self.script), REVISION, *profile],
+                              env=self.env, capture_output=True, text=True)
+
+    def test_single_capital_installs_timer_for_zero_gas_and_checks_again_after_funding(self):
+        waiting = self.invoke(42, "--single-capital")
+        self.assertEqual(waiting.returncode, 0, waiting.stderr)
+        self.assertIn("UNIFIED_TESTNET_WORKER_WAITING_FOR_TEST_GAS", waiting.stdout)
+        unit = "global-v3-single-capital-keeper-testnet"
+        self.assertIn("SuccessExitStatus=42", (self.units / (unit + ".service")).read_text())
+        calls = (self.root / "calls").read_text()
+        self.assertIn("systemctl start " + unit + ".service", calls)
+        self.assertIn("systemctl enable --now " + unit + ".timer", calls)
+        funded = self.invoke(0, "--single-capital")
+        self.assertEqual(funded.returncode, 0, funded.stderr)
+        self.assertIn("UNIFIED_TESTNET_WORKER_ACTIVE", funded.stdout)
+
+    def test_other_errors_and_the_legacy_gas_gate_still_stop_before_installation(self):
+        for status, profile in [(1, ("--single-capital",)), (42, ())]:
+            result = self.invoke(status, *profile)
+            self.assertEqual(result.returncode, status, result.stderr)
+            self.assertEqual(list(self.units.iterdir()), [])
+
+
 if __name__ == "__main__":
     unittest.main()

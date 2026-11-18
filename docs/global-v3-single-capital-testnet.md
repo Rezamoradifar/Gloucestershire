@@ -43,9 +43,12 @@ To deploy and publish the separate testnet account, run
 The command checks a saved proof first. With a pending deployment it recovers
 the original transaction. With neither record it checks the cost and deploys.
 Omit `--deploy-testnet` to publish only an existing verified deployment. The separate
-`global-v3-single-capital-keeper-testnet.timer` needs its own gas-only wallet
-with at least 0.001 tBNB. The installer prints the public address if gas is
-missing and keeps the candidate route read-only until the verified timer is
-active. The successful wallet-enabled publication marker includes the new
+`global-v3-single-capital-keeper-testnet.timer` uses its own gas-only wallet.
+The installer verifies that operator and starts the timer even when its test
+gas is missing. It enables deposits and registration once the deployment,
+worker identity and active timer are verified. The dashboard shows the
+operator's public address and confirmed tBNB balance. Automatic claim
+recording waits for at least 0.001 tBNB in that wallet and resumes on a later
+timer tick after funding. The successful wallet-enabled publication marker includes the new
 route URL. Confirm the first eligible keeper transaction and test withdrawal
 receipt separately.

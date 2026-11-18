@@ -54,7 +54,13 @@ fi
 [[ -d $release && ! -L $release && $(stat -c %u "$release") == 0 &&
    $(cat "$release/.release") == "$sha" && $((8#$(stat -c %a "$release") & 0022)) == 0 ]]
 node "$release/scripts/run-v3-unified-worker.mjs" --init-key "${profile[@]}"
-node "$release/scripts/run-v3-unified-worker.mjs" --check "$sha" "${profile[@]}"
+gas_status=0
+node "$release/scripts/run-v3-unified-worker.mjs" --check "$sha" "${profile[@]}" || gas_status=$?
+if (( gas_status != 0 )); then
+  [[ $gas_status == 42 && ${profile[0]:-} == --single-capital ]] || exit "$gas_status"
+fi
+success_exit=''
+if [[ ${profile[0]:-} == --single-capital ]]; then success_exit='SuccessExitStatus=42'; fi
 if ! getent passwd "$user" >/dev/null; then
   useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$user"
 fi
@@ -68,6 +74,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 Environment=TZ=UTC
+$success_exit
 User=$user
 Group=$user
 StateDirectory=$unit
@@ -113,4 +120,8 @@ systemctl daemon-reload
 systemctl start "$unit.service"
 systemctl enable --now "$unit.timer"
 systemctl is-active --quiet "$unit.timer"
-echo UNIFIED_TESTNET_WORKER_ACTIVE
+if (( gas_status == 42 )); then
+  echo UNIFIED_TESTNET_WORKER_WAITING_FOR_TEST_GAS
+else
+  echo UNIFIED_TESTNET_WORKER_ACTIVE
+fi

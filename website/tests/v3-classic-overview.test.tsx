@@ -46,4 +46,14 @@ describe('classic Global layout with current V3 data',()=>{
   expect(html).toMatch(/<button type="submit"[^>]*disabled[^>]*aria-describedby="gv1-read-only"/);
   expect(html).toContain('Wallet transactions are disabled in this preview.');
  });
+ it('enables the first deposit while the separate keeper wallet has no test BNB',()=>{
+  const view={registered:false,capital:0n,walletTestTokenBalance:to('6490'),
+   suspended:false,paused:false,tier:0,dailyRateBps:50,qualifiedDirects:0,requiredDirects:6,
+   qualifiedVolume:0n,requiredVolume:to('10000'),positions:[],ledger,
+   keeper:{operator:'0x4444444444444444444444444444444444444444',gasWei:0n}} as unknown as V3Snapshot;
+  const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={view} value="1000" unifiedRelease readOnly={false}/>);
+  const submit=html.match(/<button type="submit"[^>]*>/)?.[0];
+  expect(submit).toBeDefined();
+  expect(submit).not.toContain('disabled');
+ });
 });

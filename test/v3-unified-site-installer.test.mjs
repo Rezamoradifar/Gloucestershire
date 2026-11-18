@@ -29,7 +29,7 @@ test('site install defaults to read-only and verifies an explicit wallet opt-in 
  assert.match(shell,/UNIFIED_SITE_LEGACY_CHANGED/);
  assert.match(shell,/UNIFIED_SITE_NEEDS_FREE_INODES_OR_SPACE/);
  assert.match(build,/planUnifiedPreviewSite/);
- assert.match(build,/if\(writes\)verifyActiveWorker\(worker,profile\)/);
+ assert.match(build,/if\(writes\)workerReady=verifyActiveWorker\(worker,profile\)/);
  assert.match(build,/if\(writes\)releaseEnv.VITE_V3_UNIFIED_WALLET_ACTIONS='verified-isolated-testnet'/);
  assert.doesNotMatch(shell,/systemctl\s+(?:stop|disable|restart)/);
 });
@@ -41,9 +41,10 @@ test('wallet activation requires a worker for the same verified release and vaul
   vault: expected.vault, operator: '0x'+'33'.repeat(20)};
  checkWorkerIdentity(ready, expected);
  for (const override of [{chainId:56}, {sourceSha: 'c'.repeat(40)}, {proofSha256: 'd'.repeat(64)},
-                         {vault: '0x'+'44'.repeat(20)}, {operator: '0x'+'00'.repeat(20)}]) {
+                         {vault: '0x'+'44'.repeat(20)}, {operator: '0x'+'00'.repeat(20)}, {gasReady:'false'}]) {
   assert.throws(() => checkWorkerIdentity({...ready, ...override}, expected));
  }
+ checkWorkerIdentity({...ready,gasReady:false},expected);
 });
 
 test('single-capital site writes refuse the previous deployment proof path', () => {

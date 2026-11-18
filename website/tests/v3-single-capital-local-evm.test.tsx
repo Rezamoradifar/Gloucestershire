@@ -67,7 +67,7 @@ describe('one verified capital account on chain 97',()=>{
    const book=new Contract(bookAddress,artifacts.SingleCapitalBook.abi,rpc);
    const config={address,runtimeHash:proof.vaultRuntimeHash,deploymentTx:proof.deploymentTx,
     unified:{singleCapital:true as const,book:bookAddress,bookRuntimeHash:proof.bookRuntimeHash,
-     network,networkRuntimeHash:proof.networkRuntimeHash}};
+     network,networkRuntimeHash:proof.networkRuntimeHash,keeper:keeper.address}};
    expect(keccak256(await rpc.getCode(address))).toBe(config.runtimeHash);
    const sender=await deployer.getAddress();
    await expect(verifyUnifiedRelease(rpc,proof,sender)).rejects.toThrow(/PROFILE_MISMATCH/);
@@ -93,13 +93,19 @@ describe('one verified capital account on chain 97',()=>{
     expect(result.transactionSent).toBe(true);
    };
    await (await token.mint(wallet,parseEther('3000'))).wait();
+   await eip.request({method:'evm_setAccountBalance',params:[keeper.address,'0x0']});
    await mine();
+   expect((await snapshot()).keeper?.gasWei).toBe(0n);
    await deposit('1000');
    await sendV3UnifiedCheckIn(walletProvider as any,wallet,config,{enabled:true});
    await advance(3599);
    expect((await tick()).state).toBe('IDLE_CHECKPOINT_RECORDED');
    expect((await vault.positionOf(wallet,0)).availableProfit).toBe(0n);
    await advance(1);
+   await expect(tick()).rejects.toThrow('UNIFIED_KEEPER_TEST_BNB_TOO_LOW');
+   expect((await vault.positionOf(wallet,0)).availableProfit).toBe(0n);
+   await eip.request({method:'evm_setAccountBalance',params:[keeper.address,'0x56bc75e2d63100000']});
+   await mine();
    await expectAccrual();
    expect((await vault.positionOf(wallet,0)).availableProfit).toBe(parseEther('7'));
 

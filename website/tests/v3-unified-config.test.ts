@@ -38,6 +38,14 @@ describe('unified testnet release identity',()=>{
   expect(unifiedWalletEnabled(single,'/unified-test/',true,primary,mode)).toBe(false);
   expect(unifiedWalletEnabled(config,'/single-capital-test/',true,primary,mode)).toBe(false);
  });
+ it('keeps the gas-only operator separate from the investment contract identity',()=>{
+  const keeper='0x4444444444444444444444444444444444444444';
+  const config=v3ParseReleaseConfig({...unified,unifiedMode:'single-capital-testnet',keeper});
+  expect(config?.unified?.keeper).toBe(keeper);
+  expect(unifiedWalletEnabled(config,'/single-capital-test/',true,'verified-testnet','verified-isolated-testnet')).toBe(true);
+  for(const keeper of [ZeroAddress,unified.address,unified.book,unified.network,'invalid'])
+   expect(v3ParseReleaseConfig({...unified,keeper})).toBeNull();
+ });
  it('blocks every wallet-writing entry point in the unfinished unified preview',async()=>{
   const request=vi.fn(),provider={request} as any,config=v3ParseReleaseConfig(unified)!;
   await expect(sendV3Action(provider,base.address,{kind:'register',referrer:ZeroAddress},config)).rejects.toThrow(/read-only preview/);
