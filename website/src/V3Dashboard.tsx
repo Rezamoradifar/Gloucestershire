@@ -12,6 +12,7 @@ import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQu
  type V3Action} from './v3-actions';
 import {v3PrepareUserClaims} from './v3-claim-balance';
 import {getV3UnifiedAccount,planV3UnifiedWithdrawal} from './v3-unified-account';
+import {summarizeV3AccrualStatus} from './v3-profit-status';
 import V3ClaimsReadout from './V3ClaimsReadout';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
@@ -157,6 +158,11 @@ export default function V3Dashboard(){
  }
  const claims=view?v3PrepareUserClaims(view.ledger):null;
  const unified=view?getV3UnifiedAccount(view.positions,view.asOf,view.ledger.requestCap):null;
+ const profitStatus=view?summarizeV3AccrualStatus({
+  registered:view.registered,suspended:view.suspended,paused:view.paused,
+  eligible:view.eligible,capital:view.capital,lastCheckIn:view.lastCheckIn,
+  asOf:view.asOf,positions:view.positions
+ }):null;
  const due=view?.positions.filter(p=>p.principal>0n&&view.asOf>=p.lastAccruedAt+86400).slice(0,20).map(p=>p.id)??[];
  const requestValue=()=>{
   if(!view)throw Error('No verified V3 account.');
@@ -264,14 +270,29 @@ export default function V3Dashboard(){
        <div className="gv2-metric"><small>TEST token wallet balance</small><strong>{show(view.walletTestTokenBalance)} TEST</strong><span>Actual wallet tokens, unrelated to accrued internal Current</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong>{claims?show(claims.overallUnfundedLiability):'—'}</strong><span>Not guaranteed to be paid</span></div>
       </div>
-      <div className="gv2-panel"><div className="gv2-panel-head"><h3>Daily activity & automatic compounding</h3></div>
-       <p>Once your position qualifies, a user-signed or gas-funded permissionless keeper transaction credits daily interest and automatic profit-on-profit into Internal Current. It does not transfer tokens to your wallet. A signed daily check-in is still required, with one accrued period per eligible 24 hours and no missed-day backfill.</p>
-       <div className="gv2-buttons"><button className="gv2-primary" disabled={busy||!view.registered||view.suspended||view.paused} onClick={()=>
-        void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
-         due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?')}>
-        <CheckCircle2 size={16}/> Check in {due.length?'& accrue due positions':''}</button>
-        <button onClick={()=>navigate('withdrawals')}>Withdrawal requests</button></div>
-       <p className="gv2-small">Last signed check-in: {date(view.lastCheckIn)} · Currently due positions: {due.length}.</p>
+      <div className="gv2-panel" data-testid="v3-profit-readiness">
+       <div className="gv2-panel-head"><h3>Daily Current & automatic profit-on-profit</h3></div>
+       <p>Only a confirmed on-chain TESTNET accrual credits Internal Current. The hourly keeper needs no manager approval and sends no reward tokens to your wallet; user check-in within the past 24 hours is still required.</p>
+       {profitStatus&&<p className="gv3-profit-explanation" role="status">
+        <Info size={17}/> <strong>{profitStatus.code}</strong> — {profitStatus.message}
+       </p>}
+       {profitStatus?.nextDueAt!=null&&<p className="gv2-small">Next 24-hour ledger maturity: {date(profitStatus.nextDueAt)}. Actual posting needs valid check-in and a confirmed keeper or user transaction.</p>}
+       <div className="gv2-buttons"><button className="gv2-primary"
+        disabled={busy||!view.registered||view.suspended||view.paused||
+         (profitStatus?.canSignCheckIn===false&&!profitStatus.shouldAccrueWithoutCheckIn)}
+        onClick={()=>{
+         if(profitStatus?.shouldAccrueWithoutCheckIn&&due.length>0){
+          void perform({kind:'accrueDaily',positionId:due[0]},
+           'Sign one due on-chain V3 TESTNET internal profit accrual. No tokens will be sent to your wallet?');
+         }else if(profitStatus?.canSignCheckIn){
+          void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
+           due.length?'Sign V3 daily check-in and book '+due.length+' due internal profit entries?':'Sign V3 daily check-in?');
+         }
+        }}>
+        <CheckCircle2 size={16}/> {profitStatus?.shouldAccrueWithoutCheckIn?'Record due profit':due.length?'Check in and record profit':'Daily check-in'}
+       </button>
+       <button onClick={()=>navigate('withdrawals')}>Unified withdrawal request</button></div>
+       <p className="gv2-small">Last signed check-in: {date(view.lastCheckIn)} · Matured entries: {due.length}. Live server timer state requires VPS logs; the browser cannot assume it is running.</p>
       </div>
      </>}
      {tab==='positions'&&<>
