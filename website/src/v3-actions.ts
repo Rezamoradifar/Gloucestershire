@@ -12,6 +12,7 @@ export type V3Action=
  | {kind:'register';referrer:string}
  | {kind:'checkIn'}
  | {kind:'checkInAndAccrue';positionIds:number[]}
+ | {kind:'accrueDaily';positionId:number}
  | {kind:'requestProfit';positionId:number;amount:bigint}
  | {kind:'requestReferral';amount:bigint}
  | {kind:'requestPrincipal';positionId:number;amount:bigint}
@@ -54,6 +55,9 @@ export async function sendV3Action(walletProvider:Eip1193Provider,wallet:string,
      throw Error('Choose a valid V3 referral address or the zero address.');
     name='register';args=[getAddress(action.referrer)];break;
    case 'checkIn':name='checkIn';args=[];break;
+   case 'accrueDaily':
+    if(!validIndex(action.positionId))throw Error('Choose a verified due testnet position.');
+    name='accrueDaily';args=[getAddress(wallet),action.positionId];break;
    case 'checkInAndAccrue':
     if(!action.positionIds.length||action.positionIds.length>20||
       action.positionIds.some(x=>!validIndex(x))||

@@ -11,6 +11,8 @@ import {V3_TEST_TOKEN} from './v3-site-config';
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit,readV3ManagerQueue,
  type V3Action} from './v3-actions';
 import {v3PrepareUserClaims} from './v3-claim-balance';
+import {getV3UnifiedAccount,planV3UnifiedWithdrawal} from './v3-unified-account';
+import {summarizeV3AccrualStatus} from './v3-profit-status';
 import V3ClaimsReadout from './V3ClaimsReadout';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
@@ -51,7 +53,7 @@ export default function V3Dashboard(){
  const [connecting,setConnecting]=useState(false),[loading,setLoading]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [txHash,setTxHash]=useState(''),[view,setView]=useState<V3Snapshot|null>(null);
- const [value,setValue]=useState(''),[selectedPosition,setSelectedPosition]=useState('0');
+ const [value,setValue]=useState('');
  const [referrer,setReferrer]=useState(ZeroAddress);
  const [requestKind,setRequestKind]=useState<'profit'|'principal'|'referral'>('profit');
  const [adminQueue,setAdminQueue]=useState<{count:number;page:number;requests:V3Withdrawal[]}|null>(null);
@@ -155,30 +157,33 @@ export default function V3Dashboard(){
   finally{setBusy(false);}
  }
  const claims=view?v3PrepareUserClaims(view.ledger):null;
+ const unified=view?getV3UnifiedAccount(view.positions,view.asOf,view.ledger.requestCap):null;
+ const profitStatus=view?summarizeV3AccrualStatus({
+  registered:view.registered,suspended:view.suspended,paused:view.paused,
+  eligible:view.eligible,capital:view.capital,lastCheckIn:view.lastCheckIn,
+  asOf:view.asOf,positions:view.positions
+ }):null;
  const due=view?.positions.filter(p=>p.principal>0n&&view.asOf>=p.lastAccruedAt+86400).slice(0,20).map(p=>p.id)??[];
  const requestValue=()=>{
   if(!view)throw Error('No verified V3 account.');
   const n=amount(value);
   if(!view.registered||view.suspended||view.pendingWithdrawal||view.asOf<view.nextRequestAt)
    throw Error('Withdrawal already pending, account suspended or 72-hour cooldown active.');
-  const p=view.positions.find(x=>x.id===Number(selectedPosition));
   if(requestKind==='referral'){
-   if(n>view.referralAvailable||n>view.ledger.requestCap)throw Error('Referral amount exceeds verified claim or cap.');
+   if(n>view.referralAvailable||n>view.ledger.requestCap)
+    throw Error('Referral claim exceeds your recorded TEST credit or the V3 contract cap.');
    return {kind:'requestReferral',amount:n} as const;
   }
-  if(!p)throw Error('Select a verified V3 position.');
-  if(requestKind==='profit'){
-   if(n>p.availableProfit||n>view.ledger.requestCap)throw Error('Claim exceeds recorded position profit or 10% per-request limit.');
-   return {kind:'requestProfit',positionId:p.id,amount:n} as const;
-  }
-  if(view.asOf<p.openedAt+90*86400||n>p.principal-p.reservedPrincipal)
-   throw Error('This principal is not past its 90-day lock or is already reserved.');
-  return {kind:'requestPrincipal',positionId:p.id,amount:n} as const;
+  // Auto-select one eligible on-chain position; never split two ledger
+  // entries into a fake single on-chain withdrawal or pending request.
+  return planV3UnifiedWithdrawal(
+   requestKind,n,view.positions,view.asOf,view.ledger.requestCap
+  );
  };
  const request=()=>{
   try{
    const a=requestValue();
-   void perform(a,'Request '+value+' MOCK TUSDT '+requestKind+' withdrawal. 3% fee for profit, 30% principal penalty after lock. Manager approval and actual funding required.');
+   void perform(a,'Request '+value+' MOCK TUSDT from the unified Global V3 account. The verified contract will use one automatically selected eligible internal ledger entry. Profit fee 3%; principal penalty 30% after lock. Manager approval and real TEST-token escrow remain required.');
   }catch(e){setError((e as Error).message);}
  };
  const withdrawItem=(r:V3Withdrawal,admin=false)=>
@@ -265,26 +270,43 @@ export default function V3Dashboard(){
        <div className="gv2-metric"><small>TEST token wallet balance</small><strong>{show(view.walletTestTokenBalance)} TEST</strong><span>Actual wallet tokens, unrelated to accrued internal Current</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong>{claims?show(claims.overallUnfundedLiability):'—'}</strong><span>Not guaranteed to be paid</span></div>
       </div>
-      <div className="gv2-panel"><div className="gv2-panel-head"><h3>Daily activity & automatic compounding</h3></div>
-       <p>Once your position qualifies, a user-signed or gas-funded permissionless keeper transaction credits daily interest and automatic profit-on-profit into Internal Current. It does not transfer tokens to your wallet. A signed daily check-in is still required, with one accrued period per eligible 24 hours and no missed-day backfill.</p>
-       <div className="gv2-buttons"><button className="gv2-primary" disabled={busy||!view.registered||view.suspended||view.paused} onClick={()=>
-        void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
-         due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?')}>
-        <CheckCircle2 size={16}/> Check in {due.length?'& accrue due positions':''}</button>
-        <button onClick={()=>navigate('withdrawals')}>Withdrawal requests</button></div>
-       <p className="gv2-small">Last signed check-in: {date(view.lastCheckIn)} · Currently due positions: {due.length}.</p>
+      <div className="gv2-panel" data-testid="v3-profit-readiness">
+       <div className="gv2-panel-head"><h3>Daily Current & automatic profit-on-profit</h3></div>
+       <p>Only a confirmed on-chain TESTNET accrual credits Internal Current. The hourly keeper needs no manager approval and sends no reward tokens to your wallet; user check-in within the past 24 hours is still required.</p>
+       {profitStatus&&<p className="gv3-profit-explanation" role="status">
+        <Info size={17}/> <strong>{profitStatus.code}</strong> — {profitStatus.message}
+       </p>}
+       {profitStatus?.nextDueAt!=null&&<p className="gv2-small">Next 24-hour ledger maturity: {date(profitStatus.nextDueAt)}. Actual posting needs valid check-in and a confirmed keeper or user transaction.</p>}
+       <div className="gv2-buttons"><button className="gv2-primary"
+        disabled={busy||!view.registered||view.suspended||view.paused||
+         (profitStatus?.canSignCheckIn===false&&!profitStatus.shouldAccrueWithoutCheckIn)}
+        onClick={()=>{
+         if(profitStatus?.shouldAccrueWithoutCheckIn&&due.length>0){
+          void perform({kind:'accrueDaily',positionId:due[0]},
+           'Sign one due on-chain V3 TESTNET internal profit accrual. No tokens will be sent to your wallet?');
+         }else if(profitStatus?.canSignCheckIn){
+          void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
+           due.length?'Sign V3 daily check-in and book '+due.length+' due internal profit entries?':'Sign V3 daily check-in?');
+         }
+        }}>
+        <CheckCircle2 size={16}/> {profitStatus?.shouldAccrueWithoutCheckIn?'Record due profit':due.length?'Check in and record profit':'Daily check-in'}
+       </button>
+       <button onClick={()=>navigate('withdrawals')}>Unified withdrawal request</button></div>
+       <p className="gv2-small">Last signed check-in: {date(view.lastCheckIn)} · Matured entries: {due.length}. Live server timer state requires VPS logs; the browser cannot assume it is running.</p>
       </div>
      </>}
      {tab==='positions'&&<>
-      <section className="gv2-panel"><div className="gv2-panel-head"><h3>My verified V3 positions</h3><span>{view.positions.length} entries</span></div>
-       {view.positions.map(p=><article className="gv3-position-card" key={p.id}>
-        <div><strong>Position #{p.id+1}{p.fromReinvestment?' · from manual reinvestment':''}</strong>
-         <small>Opened {date(p.openedAt)} · Next eligible accrual after {date(p.lastAccruedAt+86400)}</small></div>
-        <div><b>{show(p.principal)} TEST</b><small>Original principal entry</small></div>
-        <div><b>{show(p.availableDaily)} + {show(p.availableCompound)}</b><small>Daily + compound available claims</small></div>
-        <div><b>{show(p.reservedProfit)} TEST</b><small>Reserved for pending withdrawal</small></div>
-       </article>)}
-       {!view.positions.length&&<p>No independently verified V3 positions exist in this wallet.</p>}
+      <section className="gv2-panel" data-testid="v3-unified-position">
+       <div className="gv2-panel-head"><h3>Unified Global V3 investment</h3><span>One account</span></div>
+       <article className="gv3-position-card">
+        <div><strong>My unified investment account</strong>
+         <small>Verified TESTNET accounting across all internal ledger entries, without migrating V2 funds</small></div>
+        <div><b>{unified?show(unified.principal):'0'} TEST</b><small>Combined recorded principal</small></div>
+        <div><b>{unified?show(unified.currentDaily):'0'} + {unified?show(unified.currentCompound):'0'}</b><small>Daily + automatic compound internal credits</small></div>
+        <div><b>{unified?show(unified.pendingProfit):'0'} TEST</b><small>Pending withdrawal reservation</small></div>
+       </article>
+       <p className="gv2-small">One visible investment, with automatically routed withdrawal requests. The deployed V3 still retains multiple immutable ledger entries that cannot genuinely be merged without an independently reviewed new contract.</p>
+       {!view.positions.length&&<p>No confirmed V3 deposits yet for this wallet. V2 positions were not transferred.</p>}
       </section>
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
        <p>100% of test tokens remains in V3 vault. The deployed V2 used different 10/10/80 routing; no old account is migrated.</p>
@@ -294,14 +316,10 @@ export default function V3Dashboard(){
         <small>Wallet balance: {show(view.walletTestTokenBalance)} MOCK TEST USDT</small>
         <button className="gv2-primary" disabled={busy||view.paused} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
-      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.</p>
-       <div className="gv3-input-row"><label htmlFor="v3-reinvest-id">Position</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
-        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1}</option>)}</select>
-        <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
-        <button disabled={busy||!view.positions.length} onClick={()=>{
-         try{void perform({kind:'reinvest',positionId:Number(selectedPosition),amount:amount(value)},'Manually convert accrued test profit to 90-day locked principal?');}
-         catch(e){setError((e as Error).message);}
-        }}>Reinvest recorded TEST claim</button></div></section>
+      <section className="gv2-panel"><h3>Automatic internal profit-on-profit</h3>
+       <p>Profit-on-profit is credited in the internal Current after an eligible 24-hour on-chain accrual. You do not need to choose a position or manually reinvest for compounding. A recent signed check-in and an operating TESTNET keeper or user transaction are still required.</p>
+       <button onClick={()=>navigate('overview')}>Review Current and accrual eligibility</button>
+      </section>
      </>}
      {tab==='team'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Team and referral credits</h3><Users size={18}/></div>
       <div className="gv2-detail"><span>Your referrer</span><b>{view.referrer===ZeroAddress?'None':view.referrer}</b></div>
@@ -334,12 +352,15 @@ export default function V3Dashboard(){
       <p>Claimed profit is a recorded obligation, not escrowed cash. Manager approval and actual TEST token funding are required before payment.</p>
       <div className="gv2-detail"><span>Internal Current (accrued only)</span><b>{claims?show(claims.internalCurrent):'0'} TEST</b></div>
       <div className="gv2-detail"><span>Reserved internal credits, pending</span><b>{claims?show(claims.pendingInternal):'0'} TEST</b></div>
-      <div className="gv2-detail"><span>Maximum single profit/referral request now</span><b>{claims?show(claims.maxSingleRequest):'0'} TEST</b></div>
+      <div className="gv2-detail"><span>Combined personal profit credits</span><b>{unified?show(unified.currentProfit):'0'} TEST</b></div>
+       <div className="gv2-detail"><span>Maximum one profit withdrawal supported by V3</span><b>{unified?show(unified.maxSingleProfitRequest):'0'} TEST</b></div>
+       <div className="gv2-detail"><span>Total matured principal across your account</span><b>{unified?show(unified.maturedPrincipal):'0'} TEST</b></div>
+       <div className="gv2-detail"><span>Maximum one principal withdrawal supported by V3</span><b>{unified?show(unified.maxSinglePrincipalRequest):'0'} TEST</b></div>
+       <p className="gv2-small">One withdrawal form automatically selects an eligible internal ledger entry. The immutable deployed V3 can only spend from one entry per request; a larger multi-entry amount is blocked rather than secretly split.</p>
       <div className="gv3-input-row">
        <label htmlFor="v3-request-kind">Withdrawal type</label>
        <select id="v3-request-kind" value={requestKind} onChange={e=>setRequestKind(e.target.value as 'profit'|'principal'|'referral')}><option value="profit">Accrued profit</option><option value="referral">Referral claim</option><option value="principal">Matured principal</option></select>
-       {requestKind!=='referral'&&<><label htmlFor="v3-request-position">Position</label><select id="v3-request-position" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
-        {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1}</option>)}</select></>}
+       {/* V3 underlying ledger entry is chosen automatically by the exact request planner. */}
        <label htmlFor="v3-request-amount">TEST USDT amount</label><input id="v3-request-amount" value={value} inputMode="decimal" onChange={e=>setValue(e.target.value)} placeholder="0.00"/>
        <button className="gv2-primary" disabled={busy||!view.registered||view.pendingWithdrawal||view.paused} onClick={request}>Review & sign withdrawal request</button>
       </div>
