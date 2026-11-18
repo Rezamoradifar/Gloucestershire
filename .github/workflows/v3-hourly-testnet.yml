@@ -45,4 +45,4 @@ jobs:
           npm ci --prefix website --ignore-scripts --no-audit --no-fund
           npm test --prefix website -- --maxWorkers=2
           VITE_V3_HOURLY_TEST=isolated-1h VITE_V3_PRIMARY_DASHBOARD=verified-testnet VITE_V3_CONTRACT_ADDRESS=0x1111111111111111111111111111111111111111 VITE_V3_RUNTIME_HASH=0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa VITE_V3_DEPLOYMENT_TX=0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb npm run build --prefix website
-          grep -RilF 'SEPARATE ONE-HOUR TEST CONTRACT' website/dist/assets --include='*.js' >/dev/null
+          grep -RilF 'ONE-HOUR BNB TESTNET CONTRACT' website/dist/assets --include='*.js' >/dev/null
