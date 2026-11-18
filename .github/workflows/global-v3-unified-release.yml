@@ -1,0 +1,38 @@
+name: Global V3 unified user account and TESTNET profit activation checks
+on:
+  pull_request:
+    paths:
+      - 'website/src/v3-unified-account.ts'
+      - 'website/src/v3-profit-status.ts'
+      - 'website/src/V3Dashboard.tsx'
+      - 'website/src/v3-actions.ts'
+      - 'website/src/v3-chain.ts'
+      - 'website/tests/v3-unified-account.test.ts'
+      - 'website/tests/v3-profit-status.test.ts'
+      - 'scripts/activate-global-v3-unified-profit.sh'
+      - 'scripts/fund-v3-keeper-gas-from-old-deployer.mjs'
+      - 'scripts/diagnose-global-v3-profit-readonly.mjs'
+      - 'test/global-v3-unified-activation.test.mjs'
+      - '.github/workflows/global-v3-unified-release.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guard-user-funds-and-signers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.23.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Static syntax and exact no-mint/no-mainnet funds guard
+        run: |
+          node --check scripts/fund-v3-keeper-gas-from-old-deployer.mjs
+          node --check scripts/diagnose-global-v3-profit-readonly.mjs
+          bash -n scripts/activate-global-v3-unified-profit.sh
+          node --test test/global-v3-unified-activation.test.mjs
