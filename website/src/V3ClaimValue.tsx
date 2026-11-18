@@ -40,8 +40,8 @@ export default function V3ClaimValue({value,block,size='card'}:{
  const directionText=signal?.direction==='up'?'increased':signal?.direction==='down'?'decreased':'';
  return <span className={'gv3-claim-value'+(signal?' gv3-claim-value--'+signal.direction:'')}>
   <span key={signal?.revision??0} className="gv3-claim-value-pulse">
-   <DigitalValue value={formatted} unit="TEST USDT" size={size}
-    label={formatted+' TEST USDT'+(directionText?' · '+directionText:'')}/>
+   <DigitalValue value={formatted} unit="USDT" size={size}
+    label={formatted+' USDT'+(directionText?' · '+directionText:'')}/>
   </span>
   {signal&&<span className="gv3-claim-direction" aria-hidden="true">{signal.direction==='up'?'↑':'↓'}</span>}
  </span>;

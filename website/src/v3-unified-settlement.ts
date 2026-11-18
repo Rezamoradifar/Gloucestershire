@@ -19,7 +19,7 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
  if(!options.enabled||!config?.unified)throw Error('The unified testnet preview is read-only.');
  const who=getAddress(wallet);
  if('id' in action&&(!Number.isSafeInteger(action.id)||action.id<0))throw Error('Invalid withdrawal request ID.');
- if('amount' in action&&action.amount<=0n)throw Error('Enter a positive TEST amount.');
+ if('amount' in action&&action.amount<=0n)throw Error('Enter a positive USDT amount.');
  if('positionId' in action&&(!Number.isSafeInteger(action.positionId)||action.positionId<0))throw Error('Invalid position ID.');
  const review=async()=>v3ReadSession(provider,who,config,true);
  let session=await review();

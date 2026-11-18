@@ -48,9 +48,9 @@ describe('V3 history log queries against an in-process EVM',()=>{
    expect(page.items.map(item=>item.title)).toEqual([
     'Withdrawal paid','Withdrawal requested','Daily claim recorded','Test-token deposit'
    ]);
-   expect(page.items[0].value).toBe('0.97 TEST USDT');
-   expect(page.items[2].value).toBe('1.02 TEST USDT');
-   expect(page.items[3].value).toBe('100.00 TEST USDT');
+   expect(page.items[0].value).toBe('0.97 USDT');
+   expect(page.items[2].value).toBe('1.02 USDT');
+   expect(page.items[3].value).toBe('100.00 USDT');
   }finally{provider.destroy();await rpc.disconnect();}
  },30000);
  it('queries separate vault and network contracts within one anchored range',async()=>{

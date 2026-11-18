@@ -25,7 +25,7 @@ export async function runV3Registration(input:Input,deps:Dependencies=dependenci
 }
 export async function runV3Deposit(input:Input&{amount:bigint},deps:Dependencies=dependencies){
  const {wallet,referrer,config}=validate(input);
- if(typeof input.amount!=='bigint'||input.amount<=0n)throw Error('Enter a positive TEST amount.');
+ if(typeof input.amount!=='bigint'||input.amount<=0n)throw Error('Enter a positive USDT amount.');
  if(config.unified)return deps.unifiedDeposit(input.provider,wallet,input.amount,referrer,config,
   {enabled:true,onProgress:input.onProgress});
  return deps.deposit(input.provider,wallet,input.amount,referrer,config,input.onProgress);

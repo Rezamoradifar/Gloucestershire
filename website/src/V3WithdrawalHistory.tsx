@@ -30,7 +30,7 @@ export default function V3WithdrawalHistory({wallet,config}:{wallet:string;confi
    {data.items.map(r=><article className="gv3-withdrawal-row" key={r.id}>
     <div><strong>Request #{r.id+1} · {kinds[r.kind]??'Unknown'}</strong>
      <small>{formatUtcTime(r.requestedAt)}</small></div>
-    <div><b>{formatV3Amount(r.gross)} TEST USDT</b><small>Net {formatV3Amount(r.gross-r.fee)} · Fee {formatV3Amount(r.fee)}</small></div>
+    <div><b>{formatV3Amount(r.gross)} USDT</b><small>Net {formatV3Amount(r.gross-r.fee)} · Fee {formatV3Amount(r.fee)}</small></div>
     <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span></div>
    </article>)}
    {!data.items.length&&<p>No confirmed withdrawal requests for this wallet.</p>}

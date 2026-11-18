@@ -24,7 +24,7 @@ describe('atomic unified reinvestment planning',()=>{
    {positionId:1,amount:E('226.316601'),start:0,limit:0}
   ]);
   const html=renderToStaticMarkup(createElement(V3UnifiedReinvestSummary,{positions}));
-  expect(html).toContain('960.62873 TEST');
+  expect(html).toContain('960.62873 USDT');
   expect(html).not.toContain('<select');
   expect(html).toContain('Referral and network rewards are separate');
  });

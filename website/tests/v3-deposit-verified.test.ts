@@ -356,7 +356,7 @@ describe('V3 verified transaction reads',()=>{
  it('preserves a clear declined status without exposing the wallet error message',async()=>{
   state.sendFailure={code:4001,message:'sensitive wallet details'};
   const result=await sendV3TestTokenDeposit(provider as any,wallet,amount,ZeroAddress,config).catch(e=>e.message);
-  expect(result).toBe('TEST token approval was declined in your wallet.');
+  expect(result).toBe('USDT token approval was declined in your wallet.');
   expect(state.depositSends).toHaveLength(0);
  });
  it('treats a known hash as uncertain even when the wallet also reports rejection',async()=>{

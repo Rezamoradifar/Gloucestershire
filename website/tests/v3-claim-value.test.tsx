@@ -47,7 +47,7 @@ describe('confirmed claim movement indicators',()=>{
  });
  it('initially displays the exact formatted amount with no movement signal',()=>{
   const html=renderToStaticMarkup(<V3ClaimValue value={parseEther('1000.25')} block={100}/>);
-  expect(html).toContain('aria-label="1,000.25 TEST USDT"');
+  expect(html).toContain('aria-label="1,000.25 USDT"');
   expect(html).not.toContain('gv3-claim-value--up');
   expect(html).not.toContain('gv3-claim-value--down');
  });

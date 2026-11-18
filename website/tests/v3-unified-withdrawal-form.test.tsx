@@ -17,16 +17,16 @@ describe('unified testnet withdrawal form',()=>{
  it('shows only the selected page, exact limits, fees, funding and read-only status',()=>{
   const html=renderToStaticMarkup(<V3UnifiedWithdrawalForm {...props} readOnly/>);
   expect(html).toContain('Additions 1–8 of 10');
-  expect(html).toContain('4.000000000000000001 TEST');
-  expect(html).toContain('8.5 TEST');
-  expect(html).toContain('Maximum profit request on this page: <strong>3.0 TEST</strong>');
+  expect(html).toContain('4.000000000000000001 USDT');
+  expect(html).toContain('8.5 USDT');
+  expect(html).toContain('Maximum profit request on this page: <strong>3.0 USDT</strong>');
   expect(html).toContain('Profit request fee: 3%');
   expect(html).toContain('Principal request penalty: 30%');
   expect(html).toContain('only the additions shown on this page');
   expect(html).toContain('manager approval and actual test-token funding');
-  expect(html).toContain('Gross: 2.000000000000000001 TEST');
-  expect(html).toContain('Fee: 0.06 TEST');
-  expect(html).toContain('Net: 1.940000000000000001 TEST');
+  expect(html).toContain('Gross: 2.000000000000000001 USDT');
+  expect(html).toContain('Fee: 0.06 USDT');
+  expect(html).toContain('Net: 1.940000000000000001 USDT');
   expect(html).toContain('This test preview is read-only');
   expect(html).toMatch(/<button type="submit" disabled=""/);
  });

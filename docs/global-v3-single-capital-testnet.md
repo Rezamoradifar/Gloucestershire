@@ -7,6 +7,11 @@ The keeper records eligible accrual after an on-chain check-in. The deposit
 routes, tiers, compounding, withdrawal fees and payout approvals use the
 existing V3 rules.
 
+Account amounts use the display denomination `USDT` consistently in balances,
+forms, transaction reviews and history. The network remains explicitly labeled
+BNB Testnet. This presentation change does not replace the pinned mock token,
+change the chain, convert any balance to real assets or enable a mainnet release.
+
 All account deadlines use the confirmed block's Unix timestamp. The dashboard
 shows these times in UTC to the second. Each addition earns its first eligible
 hour 3,600 seconds after it is recorded. For example, an addition at 23:40 UTC

@@ -26,7 +26,7 @@ describe('V3 cycle eligibility presentation',()=>{
  });
  it('explains another unmet requirement instead of asking only for check-in',()=>{
   const html=render({eligible:false,capital:parseEther('1')});
-  expect(html).toContain('A minimum of 10 TEST principal is required');
+  expect(html).toContain('A minimum of 10 USDT principal is required');
  });
  it('labels the accelerated hourly rate only for the hourly build',()=>{
   const html=render();

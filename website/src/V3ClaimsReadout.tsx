@@ -14,7 +14,7 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
  catch{return <section className="gv3-claims-readout gv3-claims-error" role="alert">
   <ShieldAlert size={19}/> V3 contract or accounting data could not be verified. No claimable balance is shown.
  </section>;}
- const unit='TEST USDT';
+ const unit='USDT';
  return <section className="gv3-claims-readout" aria-label="Verified V3 on-chain accrued claims">
   <div className="gv3-claims-heading"><h2><Coins size={19}/> Internal Current · BNB Testnet</h2>
    <small>Confirmed block {claims.block.toLocaleString('en-US')}</small></div>

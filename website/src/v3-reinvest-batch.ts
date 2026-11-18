@@ -9,7 +9,7 @@ const MAX_SOURCES=16,MAX_GROUP_SPAN=128;
 const validIndex=(value:number)=>Number.isSafeInteger(value)&&value>=0;
 
 export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:UnifiedPositionPage[],amount:bigint){
- if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive TEST amount.');
+ if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive USDT amount.');
  if(positions.length>100)throw Error('The complete position list is required.');
  const ids=new Set<number>();let group:V3WalletPosition|undefined,total=0n;
  const ordered=[...positions].sort((a,b)=>a.id-b.id);
@@ -48,7 +48,7 @@ export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:Unifi
  const add=(positionId:number,available:bigint,start:number,limit:number)=>{
   if(remaining===0n||available===0n)return;
   if(sources.length===MAX_SOURCES||span+limit>MAX_GROUP_SPAN)
-   throw Error('This amount requires more than one transaction. Reinvest up to '+formatUnits(amount-remaining,18)+' TEST in this transaction, then refresh the remaining recorded profit.');
+   throw Error('This amount requires more than one transaction. Reinvest up to '+formatUnits(amount-remaining,18)+' USDT in this transaction, then refresh the remaining recorded profit.');
   const take=available<remaining?available:remaining;
   sources.push({positionId,amount:take,start,limit});remaining-=take;span+=limit;
  };
@@ -62,7 +62,7 @@ export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:Unifi
 // all at the verified block belonging to the caller's independent session.
 export async function readUnifiedReinvestmentPlan(session:Awaited<ReturnType<typeof v3ReadSession>>,wallet:string,amount:bigint){
  if(!session.config.unified||!session.book)throw Error('A verified unified testnet deployment is required.');
- if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive TEST amount.');
+ if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive USDT amount.');
  const who=getAddress(wallet),{vault,book,options,block,provider}=session;
  const [countRaw,groupRaw]=await Promise.all([vault.positionCount(who,options),vault.reinvestmentPositionPlusOne(who,options)]);
  const count=Number(countRaw),groupPlusOne=Number(groupRaw);

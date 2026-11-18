@@ -58,7 +58,7 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   expect(code).not.toContain('TRADES_VAULT_ADDRESS');
   expect(code).not.toContain('0x4C0F6141b18971db4b14e45c0bE8CddB09febc14');
  });
- it('uses reviewed Global theme/mobile nav while showing TEST claims separately from funded payouts',()=>{
+ it('uses reviewed Global theme/mobile nav while showing testnet USDT claims separately from funded payouts',()=>{
   const dashboard=file('V3Dashboard.tsx');
   expect(dashboard).toContain("import './v2-signature-dashboard.css'");
   expect(dashboard).toContain('gv2-mobile-bottom');

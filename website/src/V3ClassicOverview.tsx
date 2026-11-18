@@ -44,31 +44,31 @@ export default function V3ClassicOverview(props:Props){
  ];
  return <section className="gv1-overview" aria-label="Account overview">
   <div className="gv1-section-head"><div><h2>Your assets</h2><p>Balances from your connected testnet account</p></div>
-   <span className="gv1-asset-pill"><span>₮</span> TEST USDT</span></div>
+   <span className="gv1-asset-pill"><span>₮</span> USDT</span></div>
   <div className="gv1-asset-grid">{cards.map(({label,value:cardValue,Icon,foot})=><article className="gv1-asset-card" key={label}>
    <div className="gv1-card-top"><span>{label}</span><Icon size={19}/></div>
-   <strong><DigitalValue value={cardValue} unit="TEST"/></strong><small>{foot}</small>
+   <strong><DigitalValue value={cardValue} unit="USDT"/></strong><small>{foot}</small>
   </article>)}</div>
   <div className="gv1-home-grid">
    <section className="gv1-panel gv1-operation" aria-labelledby="gv1-manage-title">
-    <div className="gv1-panel-title"><div><h2 id="gv1-manage-title">Manage capital</h2><p>Selected asset: TEST USDT</p></div><span className="gv1-round-icon"><ArrowDownLeft size={20}/></span></div>
+    <div className="gv1-panel-title"><div><h2 id="gv1-manage-title">Manage capital</h2><p>Selected asset: USDT</p></div><span className="gv1-round-icon"><ArrowDownLeft size={20}/></span></div>
     <div className="gv1-operation-tabs" role="group" aria-label="Choose account operation">
      {([{id:'deposit',label:'Deposit'},{id:'withdraw',label:'Withdraw profit'},{id:'reinvest',label:'Reinvest'}] as const).map(item=>
       <button key={item.id} type="button" aria-pressed={mode===item.id} disabled={busy} onClick={()=>setMode(item.id)}>{item.label}</button>)}
     </div>
     <form onSubmit={submit}>
-     {mode==='reinvest'&&view&&<p className="gv2-small">{view.singleCapital?'Total reinvested':'Combined reinvested principal'}: {money(reinvested)} TEST.
+     {mode==='reinvest'&&view&&<p className="gv2-small">{view.singleCapital?'Total reinvested':'Combined reinvested principal'}: {money(reinvested)} USDT.
       {' '}{view.singleCapital?'Reinvestment adds to the same investment account.':
        unified?'Reinvestments share one position; each addition has its own lock.':'Each reinvestment remains a separate contract position with its own lock.'}</p>}
      {mode==='reinvest'&&unified&&<V3UnifiedReinvestSummary positions={positions}/>}
      {requiresPosition&&<label className="gv1-field">Source position for recorded profit
       <select value={selectedPosition} disabled={!view||busy||positions.length===0} onChange={event=>onPosition(event.target.value)}>
-       {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} TEST profit</option>):<option value="0">No position available</option>}
+       {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} USDT profit</option>):<option value="0">No position available</option>}
       </select></label>}
      <label className="gv1-field" htmlFor="gv1-amount"><span>Amount <small>{!view?'Connect wallet to view balance':mode==='deposit'?
-      `Wallet balance: ${money(view.walletTestTokenBalance)} TEST`:mode==='withdraw'||(mode==='reinvest'&&unified)?
-      `Recorded account profit: ${money(recordedPositionProfit)} TEST`:position?
-      `Recorded position profit: ${money(position.availableProfit)} TEST`:'Select a position'}</small></span>
+      `Wallet balance: ${money(view.walletTestTokenBalance)} USDT`:mode==='withdraw'||(mode==='reinvest'&&unified)?
+      `Recorded account profit: ${money(recordedPositionProfit)} USDT`:position?
+      `Recorded position profit: ${money(position.availableProfit)} USDT`:'Select a position'}</small></span>
       <div className="gv1-amount"><input id="gv1-amount" value={value} onChange={event=>onValue(event.target.value)}
        disabled={!view||busy} inputMode="decimal" autoComplete="off" placeholder="0.00"/><span>₮</span></div></label>
      {mode==='deposit'&&view&&!view.registered&&<label className="gv1-field" htmlFor="gv1-referrer">Referral address or invitation link <small>Optional and permanent after registration</small>
@@ -76,7 +76,7 @@ export default function V3ClassicOverview(props:Props){
       {invalidInvite&&!referrer.trim()&&<span role="status" className="gv1-inline-warning">Invitation is invalid. Enter a valid address or continue without one.</span>}</label>}
      {requiresExistingPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
      <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Continue to the account withdrawal form. Eligible records are selected automatically.':
-      mode==='reinvest'?(unified?'Recorded profit adds to the account with a separate 90-day lock.':'Recorded profit creates a new 90-day locked position.'):'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 TEST USDT.'}</p>
+      mode==='reinvest'?(unified?'Recorded profit adds to the account with a separate 90-day lock.':'Recorded profit creates a new 90-day locked position.'):'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 USDT.'}</p>
      {readOnly&&<p id="gv1-read-only" className="gv1-inline-warning">Wallet transactions are disabled in this preview.</p>}
      <button type="submit" className="gv2-primary gv1-action" disabled={!usable} aria-describedby={readOnly?'gv1-read-only':undefined}>
       {mode==='deposit'?'Review test deposit':mode==='withdraw'?'Review withdrawal request':'Review reinvestment'} <ArrowRight size={16}/></button>
@@ -89,7 +89,7 @@ export default function V3ClassicOverview(props:Props){
      <div className="gv1-panel-title"><h2 id="gv1-plan-title">Your plan</h2><span className="gv1-plan-tag">{view?(view.registered?(['Starter','Basic','Growth','Pro','VIP'][view.tier]??'Member'):'Not registered'):'Not connected'}</span></div>
      <div className="gv1-plan-figure"><span className="gv1-plan-symbol">◆</span><div>
       <strong><DigitalValue value={view?String(view.dailyRateBps/100):'—'} unit="%"/></strong><small>Daily test rate · conditional</small></div></div>
-     <div className="gv1-plan-detail"><span>Recorded capital value</span><b>{view?money(view.capital):'—'} TEST</b></div>
+     <div className="gv1-plan-detail"><span>Recorded capital value</span><b>{view?money(view.capital):'—'} USDT</b></div>
      <div className="gv1-plan-detail"><span>Qualified directs</span><b>{view?`${view.qualifiedDirects} / ${view.requiredDirects}`:'—'}</b></div>
      <div className="gv1-plan-detail"><span>Eligible volume</span><b>{view?`${money(view.qualifiedVolume)} / ${money(view.requiredVolume)}`:'—'}</b></div>
      <button type="button" className="gv1-text-button" onClick={onNetwork}>Explore referral network <ArrowRight size={15}/></button>
