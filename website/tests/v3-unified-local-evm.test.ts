@@ -63,7 +63,7 @@ describe('unified testnet read-only site preview on local EVM',()=>{
    expect(snapshot.unifiedPage?.lots[0].principal).toBe(parseEther('3'));
    expect(snapshot.qualifiedDirects).toBe(0);
    await expect(readV3Snapshot(walletProvider as any,wallet,{...config,unified:{...config.unified,bookRuntimeHash:'0x'+'00'.repeat(32)}}))
-    .rejects.toThrow('Verified V3 BNB Testnet reads unavailable');
+    .rejects.toThrow('An independently verified V3 BNB Testnet RPC is unavailable');
    await expect(sendV3Action(walletProvider as any,wallet,{kind:'reinvest',positionId:0,amount:parseEther('1')},config))
     .rejects.toThrow(/read-only preview/);
    const balance=await token.balanceOf(wallet);
