@@ -19,7 +19,7 @@ describe('classic Global layout with current V3 data',()=>{
  it('shows the original layout without inventing a balance before connection',()=>{
   const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={null}/>);
   for(const label of ['Your assets','Active principal','Recorded profit &amp; rewards',
-   'Largest claim request limit','Manage capital','Your plan','24-hour daily cycle'])expect(html).toContain(label);
+   'Per-request reward cap','Manage capital','Your plan','24-hour daily cycle'])expect(html).toContain(label);
   expect(html).toContain('aria-label="— TEST"');
   expect(html).toContain('Connect wallet');
   expect(html).not.toContain('aria-label="0.00 TEST"');
@@ -29,7 +29,7 @@ describe('classic Global layout with current V3 data',()=>{
    registered:true,suspended:false,paused:false,qualifiedDirects:2,requiredDirects:6,
    qualifiedVolume:to('500'),requiredVolume:to('10000'),positions:[{id:0}],ledger} as unknown as V3Snapshot;
   const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={view}/>);
-  for(const value of ['1,000.00','15.249','14.049'])expect(html).toContain(`aria-label="${value} TEST"`);
+  for(const value of ['1,000.00','15.249','100.00'])expect(html).toContain(`aria-label="${value} TEST"`);
   expect(html).toContain('Basic');
   expect(html).toContain('2 / 6');
   expect(html).toContain('100% of a test deposit is routed to designated wallets, including fee wallets');

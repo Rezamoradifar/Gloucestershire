@@ -67,6 +67,7 @@ jobs:
         run: |
           python3 test/test-v3-unified-start.py
           python3 test/test-v3-unified-resume.py
+          python3 test/test-v3-unified-diagnose.py
           python3 test/test-v3-unified-apply.py
           python3 test/test-v3-unified-route-http.py
           bash -n scripts/install-v3-unified-worker.sh

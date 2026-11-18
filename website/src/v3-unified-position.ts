@@ -4,6 +4,7 @@
 import {getAddress,ZeroAddress} from 'ethers';
 
 const LOCK=90*86400,PERIOD=3600,MAX_PAGE=16;
+export const MAX_UNIFIED_WITHDRAWAL_LOTS=256;
 type At={blockTag:number};
 type Position={principal:bigint;compoundedBasis:bigint;availableProfit:bigint;reservedProfit:bigint;
  reservedPrincipal:bigint;cumulativeDaily:bigint;cumulativeCompound:bigint;fromReinvestment:boolean};
@@ -86,6 +87,22 @@ export async function readUnifiedPositionPage(vault:UnifiedVaultReader,book:Unif
   compound,reservedProfit:p.reservedProfit,lots,
   availableProfitOnPage:lots.reduce((sum,lot)=>sum+lot.daily+lot.compound,0n),
   maturedPrincipalOnPage:lots.reduce((sum,lot)=>sum+(asOf>=lot.unlockAt?lot.principal-lot.reservedPrincipal:0n),0n)};
+}
+
+// Collect complete withdrawal coverage without mixing blocks or repeatedly
+// reading one addition. The caller verifies block canonicality after all reads.
+export async function readUnifiedWithdrawalPages(vault:UnifiedVaultReader,book:UnifiedBookReader,
+ seed:UnifiedPositionPage):Promise<UnifiedPositionPage[]>{
+ if(seed.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS)
+  throw Error('This account exceeds the supported withdrawal scan of '+MAX_UNIFIED_WITHDRAWAL_LOTS+' additions. No partial withdrawal limit is shown.');
+ const pages:UnifiedPositionPage[]=[];
+ for(let start=0;start<seed.totalLots;start+=16){
+  const starts=[start,start+8].filter(index=>index<seed.totalLots);
+  pages.push(...await Promise.all(starts.map(index=>
+   index===seed.start&&seed.limit===8?Promise.resolve(seed):
+    readUnifiedPositionPage(vault,book,seed.wallet,seed.positionId,seed.block,seed.asOf,index,8))));
+ }
+ return pages;
 }
 
 type Account={registered:boolean;suspended:boolean;paused:boolean;pendingWithdrawal:boolean;nextRequestAt:number;requestCap:bigint};

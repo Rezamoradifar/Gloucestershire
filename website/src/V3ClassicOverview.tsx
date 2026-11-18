@@ -26,9 +26,9 @@ export default function V3ClassicOverview(props:Props){
  const positions=view?.positions??[];
  const unified=unifiedRelease??Boolean(view&&view.unifiedPage!==undefined);
  const reinvested=positions.filter(item=>item.fromReinvestment).reduce((sum,item)=>sum+item.principal,0n);
- const recordedPositionProfit=unified?positions.reduce((sum,item)=>sum+item.availableProfit,0n):0n;
+ const recordedPositionProfit=claims?.outstandingPersonal??0n;
  const position=positions.find(item=>item.id===Number(selectedPosition));
- const requiresPosition=mode==='withdraw'||(mode==='reinvest'&&!unified);
+ const requiresPosition=mode==='reinvest'&&!unified;
  const requiresExistingPosition=mode!=='deposit';
  const usable=ready&&value.trim()!==''&&(!requiresExistingPosition||positions.length>0);
  function submit(event:FormEvent){
@@ -37,9 +37,9 @@ export default function V3ClassicOverview(props:Props){
   if(mode==='deposit')onDeposit();else if(mode==='withdraw')onWithdraw();else onReinvest();
  }
  const cards=[
-  {label:'Active principal',value:view?money(view.capital):'—',Icon:Layers,foot:view?`${positions.length} verified position${positions.length===1?'':'s'}`:'Available after connection'},
+  {label:'Active principal',value:view?money(view.capital):'—',Icon:Layers,foot:view?'Combined verified account principal':'Available after connection'},
   {label:'Recorded profit & rewards',value:claims?money(claims.internalCurrent):'—',Icon:Coins,foot:'Internal account credit; not wallet cash'},
-  {label:'Largest claim request limit',value:claims?money(claims.maxSingleRequest):'—',Icon:ArrowUpRight,foot:'One profit or reward request; approval and funding required'}
+  {label:'Per-request reward cap',value:view?money(view.ledger.requestCap):'—',Icon:ArrowUpRight,foot:'Available request amount is verified in the withdrawal form'}
  ];
  return <section className="gv1-overview" aria-label="Account overview">
   <div className="gv1-section-head"><div><h2>Your assets</h2><p>Balances from your connected testnet account</p></div>
@@ -63,8 +63,8 @@ export default function V3ClassicOverview(props:Props){
        {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} TEST profit</option>):<option value="0">No position available</option>}
       </select></label>}
      <label className="gv1-field" htmlFor="gv1-amount"><span>Amount <small>{!view?'Connect wallet to view balance':mode==='deposit'?
-      `Wallet balance: ${money(view.walletTestTokenBalance)} TEST`:mode==='reinvest'&&unified?
-      `Recorded position profit: ${money(recordedPositionProfit)} TEST`:position?
+      `Wallet balance: ${money(view.walletTestTokenBalance)} TEST`:mode==='withdraw'||(mode==='reinvest'&&unified)?
+      `Recorded account profit: ${money(recordedPositionProfit)} TEST`:position?
       `Recorded position profit: ${money(position.availableProfit)} TEST`:'Select a position'}</small></span>
       <div className="gv1-amount"><input id="gv1-amount" value={value} onChange={event=>onValue(event.target.value)}
        disabled={!view||busy} inputMode="decimal" autoComplete="off" placeholder="0.00"/><span>₮</span></div></label>
@@ -72,7 +72,7 @@ export default function V3ClassicOverview(props:Props){
       <input id="gv1-referrer" value={referrer} onChange={event=>onReferrer(event.target.value)} disabled={busy} placeholder="0x… or Global invitation link"/>
       {invalidInvite&&!referrer.trim()&&<span role="status" className="gv1-inline-warning">Invitation is invalid. Enter a valid address or continue without one.</span>}</label>}
      {requiresExistingPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
-     <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Requests need manager approval and actual test-token funding.':
+     <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Continue to the account withdrawal form. Eligible records are selected automatically.':
       mode==='reinvest'?(unified?'Recorded profit adds to the reinvestment position with a separate 90-day lock.':'Recorded profit creates a new 90-day locked position.'):'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 TEST USDT.'}</p>
      {readOnly&&<p id="gv1-read-only" className="gv1-inline-warning">Wallet transactions are disabled in this preview.</p>}
      <button type="submit" className="gv2-primary gv1-action" disabled={!usable} aria-describedby={readOnly?'gv1-read-only':undefined}>
