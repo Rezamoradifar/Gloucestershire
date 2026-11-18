@@ -1,28 +1,36 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {getAddress, ZeroAddress} from 'ethers';
 
-const READY_FILE = '/var/lib/globaldroptrade/v3-unified-testnet/worker-ready.json';
-const TIMER = 'global-v3-unified-keeper-testnet.timer';
+import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
 
 export function checkWorkerIdentity(ready, {sha, digest, vault}) {
   if (ready?.chainId !== 97 || ready.sourceSha !== sha || ready.proofSha256 !== digest ||
       getAddress(ready.vault) !== getAddress(vault) || getAddress(ready.operator) === ZeroAddress) {
     throw Error('UNIFIED_SITE_WORKER_IDENTITY_MISMATCH');
   }
+  if (ready.gasReady !== undefined && typeof ready.gasReady !== 'boolean')
+    throw Error('UNIFIED_SITE_WORKER_GAS_STATUS_INVALID');
 }
 
-export function verifyActiveWorker(expected) {
-  if (fs.realpathSync(READY_FILE) !== READY_FILE) throw Error('UNIFIED_SITE_WORKER_READY_FILE_INVALID');
-  const fd = fs.openSync(READY_FILE, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+export function verifyActiveWorker(expected,profile=UNIFIED_PROFILE) {
+  const readyFile=path.join(profile.stateDirectory,'worker-ready.json');
+  if (fs.realpathSync(readyFile) !== readyFile) throw Error('UNIFIED_SITE_WORKER_READY_FILE_INVALID');
+  const fd = fs.openSync(readyFile, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  let ready;
   try {
     const st = fs.fstatSync(fd);
     if (!st.isFile() || st.uid !== 0 || (st.mode & 0o077) || st.size === 0 || st.size > 8192) {
       throw Error('UNIFIED_SITE_WORKER_READY_FILE_INVALID');
     }
-    checkWorkerIdentity(JSON.parse(fs.readFileSync(fd, 'utf8')), expected);
+    ready=JSON.parse(fs.readFileSync(fd, 'utf8'));
+    checkWorkerIdentity(ready, expected);
   } finally {
     fs.closeSync(fd);
   }
-  execFileSync('systemctl', ['is-active', '--quiet', TIMER], {stdio: 'ignore'});
+  if (ready.gasReady === false && profile !== SINGLE_CAPITAL_PROFILE)
+    throw Error('UNIFIED_SITE_WORKER_NEEDS_TEST_GAS');
+  execFileSync('systemctl', ['is-active', '--quiet', profile.timer], {stdio: 'ignore'});
+  return ready;
 }

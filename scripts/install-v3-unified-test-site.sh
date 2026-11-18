@@ -4,16 +4,26 @@ set +x
 set -Eeuo pipefail
 umask 077
 [[ $(id -u) == 0 && $(hostname -s) == vps-luna-2585 ]] || { echo UNIFIED_SITE_WRONG_SERVER; exit 1; }
+profile=()
+route_name=unified-test
+expected_proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
+if [[ ${1:-} == --single-capital ]]; then
+  shift
+  profile=(--single-capital)
+  route_name=single-capital-test
+  expected_proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
+fi
+route="https://globaldroptrade.com/$route_name/"
 mode=${1:-}
 sha=${2:-}
 [[ $sha =~ ^[a-f0-9]{40}$ ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
 case "$mode" in
  --install-status)
-  [[ $# == 2 ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
+  [[ $# == 2 && $route_name == unified-test ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
   ;;
  --install|--install-prepared)
   if [[ $# == 6 && ($mode != --install-prepared || $6 != --enable-testnet-wallets) ]]; then echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; fi
-  [[ ($# == 5 || $# == 6) && $3 == /var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json && $4 =~ ^[a-f0-9]{64}$ ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
+  [[ ($# == 5 || $# == 6) && $3 == "$expected_proof" && $4 =~ ^[a-f0-9]{64}$ ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
   proof=$3 digest=$4 rpc=$5
   [[ $rpc == https://bsc-testnet-dataseed.bnbchain.org || $rpc == https://bsc-testnet-rpc.publicnode.com ]] || { echo UNIFIED_SITE_RPC_INVALID; exit 1; }
   case $(uname -m) in x86_64) arch=x64;; aarch64) arch=arm64;; *) echo UNIFIED_SITE_ARCH_INVALID; exit 1;; esac
@@ -48,7 +58,7 @@ cleanup(){
  if [[ $installed == 1 ]]; then
   # Only the exact newly installed directory may be removed during rollback.
   if [[ -d $target && ! -L $target && $(stat -c '%d:%i' "$target") == "$target_inode" ]]; then
-   if python3 "$publisher" rollback "$stage" "$target" "$status_html" "$previous_id"; then
+   if python3 "$publisher" rollback "$stage" "$target" "$status_html" "$previous_id" "${profile[@]}"; then
     echo UNIFIED_SITE_ROUTE_ROLLED_BACK >&2
    else echo UNIFIED_SITE_ROLLBACK_REQUIRES_REVIEW >&2; stage=''; fi
   else echo UNIFIED_SITE_ROLLBACK_REQUIRES_REVIEW >&2; stage=''; fi
@@ -70,9 +80,12 @@ site_root=$(python3 scripts/verify-nginx-served-root.py --nginx-config "$work/ng
 hourly="$site_root/hourly-test"
 [[ -d $hourly && ! -L $hourly && -f $hourly/index.html && ! -L $hourly/index.html && -d $hourly/assets && ! -L $hourly/assets ]] || { echo UNIFIED_SITE_HOURLY_INVALID; exit 1; }
 cmp -s "$hourly/index.html" "$work/hourly-before.html" || { echo UNIFIED_SITE_HOURLY_MISMATCH; exit 1; }
-target="$site_root/unified-test"
+if [[ $route_name == single-capital-test ]]; then
+ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-before.html"
+fi
+target="$site_root/$route_name"
 if [[ -e $target || -L $target ]]; then
- python3 "$publisher" owned "$site_root/.unified-test-stage.check" "$target" "$status_html" none
+ python3 "$publisher" owned "$site_root/.$route_name-stage.check" "$target" "$status_html" none "${profile[@]}"
  previous_id=$(stat -c '%d:%i' "$target")
  if [[ $mode == --install-status ]]; then
   cmp -s "$target/index.html" "$status_html" || { echo UNIFIED_SITE_FULL_PREVIEW_ALREADY_INSTALLED; exit 1; }
@@ -119,7 +132,7 @@ npm ci --prefix website --ignore-scripts --no-audit --no-fund
 fi
 build_args=("$proof" "$digest" "$sha" "$rpc" "$wallet")
 if [[ ${6:-} == --enable-testnet-wallets ]]; then build_args+=("--enable-testnet-wallets"); fi
-node scripts/build-v3-unified-site.mjs "${build_args[@]}"
+node scripts/build-v3-unified-site.mjs "${build_args[@]}" "${profile[@]}"
 [[ -s website/dist/index.html && -d website/dist/assets && ! -L website/dist/assets ]] || { echo UNIFIED_SITE_BUILD_INCOMPLETE; exit 1; }
 dist="$PWD/website/dist"
 fi
@@ -138,27 +151,31 @@ for root,dirs,files in os.walk(sys.argv[1],followlinks=False):
   if not (stat.S_ISDIR(st.st_mode) or stat.S_ISREG(st.st_mode)):
    raise SystemExit('UNIFIED_SITE_BUILD_UNSAFE_FILE')
 PYCODE
-stage=$(mktemp -d "$site_root/.unified-test-stage.XXXXXXXX")
+stage=$(mktemp -d "$site_root/.$route_name-stage.XXXXXXXX")
 cp -a "$dist/." "$stage/"
 chmod -R u=rwX,go=rX "$stage"
-if [[ $mode != --install-status ]]; then python3 "$publisher" mark "$stage" "$target" "$status_html" none; fi
+if [[ $mode != --install-status ]]; then python3 "$publisher" mark "$stage" "$target" "$status_html" none "${profile[@]}"; fi
 target_inode=$(stat -c '%d:%i' "$stage")
 # Keep the previous status page at stage until the new preview passes all HTTP checks.
 installed=1
-python3 "$publisher" install "$stage" "$target" "$status_html" "$previous_id"
-curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/unified-after.html"
+python3 "$publisher" install "$stage" "$target" "$status_html" "$previous_id" "${profile[@]}"
+curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 "$route" -o "$work/unified-after.html"
 cmp -s "$dist/index.html" "$work/unified-after.html" || { echo UNIFIED_SITE_ROUTE_NOT_SERVED; exit 1; }
 if [[ $mode != --install-status ]]; then
- python3 scripts/check-v3-unified-route.py "$dist" "$work"
+ python3 scripts/check-v3-unified-route.py "$dist" "$work" "${profile[@]}"
 fi
 curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$work/main-after.html"
 curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/hourly-test/ -o "$work/hourly-after.html"
 cmp -s "$work/main-before.html" "$work/main-after.html" && cmp -s "$work/hourly-before.html" "$work/hourly-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
+if [[ $route_name == single-capital-test ]]; then
+ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-after.html"
+ cmp -s "$work/legacy-unified-before.html" "$work/legacy-unified-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
+fi
 installed=0
 if [[ $mode == --install-status ]]; then
  echo 'UNIFIED_SITE_STATUS_AVAILABLE=https://globaldroptrade.com/unified-test/'
 else
- echo 'UNIFIED_SITE_INSTALLED=https://globaldroptrade.com/unified-test/'
+ echo "UNIFIED_SITE_INSTALLED=$route"
 fi
 echo "UNIFIED_SITE_SOURCE_SHA=$sha"
 echo 'UNIFIED_SITE_ONLY_NO_MIGRATION_NO_KEEPER_NO_CHAIN_TRANSACTION'

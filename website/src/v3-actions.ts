@@ -8,7 +8,8 @@ import {
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession,v3ReleaseConfig,type V3Withdrawal} from './v3-chain';
 import {readUnifiedReinvestmentPlan} from './v3-reinvest-batch';
-import {prepareUnifiedPageAction,readUnifiedPositionPage,type UnifiedBookReader,type UnifiedVaultReader} from './v3-unified-position';
+import {prepareUnifiedPageAction,readUnifiedPositionPage,unifiedWithdrawalWindow,
+ type UnifiedBookReader,type UnifiedVaultReader} from './v3-unified-position';
 const EVENTS=new Interface(V3_ABI);
 const TOKEN_METHODS=new Interface(V3_TEST_TOKEN_ABI);
 export type V3Action=
@@ -458,7 +459,7 @@ export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider
    vault.users(who,session.options),vault.paused(session.options),vault.profitWithdrawalCap(who,session.options),
    vault.BPS(session.options),vault.PROFIT_FEE_BPS(session.options),vault.PRINCIPAL_PENALTY_BPS(session.options),
    readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,book as unknown as UnifiedBookReader,
-    who,positionId,block.number,block.timestamp,start,8)
+    who,positionId,block.number,block.timestamp,start,unifiedWithdrawalWindow(config.unified.singleCapital))
   ]);
   const nextRequestAt=Number(user.nextRequestAt);
   if(!Number.isSafeInteger(nextRequestAt)||nextRequestAt<0||BigInt(bps)!==10000n||
@@ -584,6 +585,7 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
    try{
     const event=EVENTS.parseLog({topics:raw.topics,data:raw.data});
     return event?.name==='DepositRouted'&&getAddress(event.args.user)===getAddress(wallet)&&
+     (!config.unified?.singleCapital||BigInt(event.args.positionId)===0n)&&
      BigInt(event.args.amount)===amount&&BigInt(event.args.fee1)===expectedFee&&
      BigInt(event.args.fee2)===expectedFee&&BigInt(event.args.operations)===amount-2n*expectedFee;
    }catch{return false;}

@@ -4,11 +4,14 @@
 set +x
 set -Eeuo pipefail
 umask 077
+export TZ=UTC
 
 deployment_cli=scripts/deploy-v3-unified-isolated.mjs
 deployment_rpc=https://bsc-testnet-dataseed.bnbchain.org
 verification_rpc=https://bsc-testnet-rpc.publicnode.com
 deployment_proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
+route_name=unified-test
+profile=()
 
 fail() { echo "$1" >&2; exit 1; }
 
@@ -35,9 +38,9 @@ check_site_target() {
   [[ -d $site_root/hourly-test/assets && ! -L $site_root/hourly-test && ! -L $site_root/hourly-test/assets &&
      -f $site_root/hourly-test/index.html && ! -L $site_root/hourly-test/index.html ]] || fail UNIFIED_LEGACY_ROUTE_INVALID
   cmp -s -- "$site_root/hourly-test/index.html" "$work/hourly.html" || fail UNIFIED_LEGACY_ROUTE_MISMATCH
-  target="$site_root/unified-test"
+  target="$site_root/$route_name"
   if [[ -e $target || -L $target ]]; then
-    python3 scripts/publish-v3-unified-route.py owned "$site_root/.unified-test-stage.check" "$target" website/static/unified-test-status.html none
+    python3 scripts/publish-v3-unified-route.py owned "$site_root/.$route_name-stage.check" "$target" website/static/unified-test-status.html none "${profile[@]}"
   fi
   check_capacity "$site_root" 1500 65536
 }
@@ -47,7 +50,7 @@ verify_proof() {
   local result delay
   for delay in 0 4 8 12; do
     if (( delay )); then sleep "$delay"; fi
-    if result=$(node "$deployment_cli" --verify-existing "$verification_rpc"); then
+    if result=$(node "$deployment_cli" --verify-existing "$verification_rpc" "${profile[@]}"); then
       [[ $result =~ ^UNIFIED_DEPLOYMENT_PROOF_SHA256=([a-f0-9]{64})$ ]] || fail UNIFIED_INVALID_PROOF_REPORT
       printf '%s\n' "${BASH_REMATCH[1]}"
       return 0
@@ -59,16 +62,18 @@ verify_proof() {
 apply_release() {
   local sha=$1 proof=$2 digest on_disk worker_status=0
   local journal="${2%/*}/pending.json"
-  local -a publish=(bash scripts/install-v3-unified-test-site.sh --install-prepared "$sha" "$proof")
+  local -a publish=(bash scripts/install-v3-unified-test-site.sh "${profile[@]}" --install-prepared "$sha" "$proof")
   if [[ -e $proof || -L $proof ]]; then
     echo UNIFIED_RECHECKING_EXISTING_DEPLOYMENT
+  elif [[ $route_name == single-capital-test && ${3:-} != --deploy-testnet ]]; then
+    fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
   elif [[ -e $journal || -L $journal ]]; then
     echo UNIFIED_RECOVERING_PREVIOUS_DEPLOYMENT
-    node "$deployment_cli" --recover-existing "$verification_rpc" || return $?
+    node "$deployment_cli" --recover-existing "$verification_rpc" "${profile[@]}" || return $?
   else
     # Check the separate RPC before any signature. The signer rechecks all limits on its own RPC.
-    node "$deployment_cli" --check "$verification_rpc" || return $?
-    node "$deployment_cli" --deploy-testnet "$deployment_rpc" || return $?
+    node "$deployment_cli" --check "$verification_rpc" "${profile[@]}" || return $?
+    node "$deployment_cli" --deploy-testnet "$deployment_rpc" "${profile[@]}" || return $?
   fi
   digest=$(verify_proof) || return $?
   on_disk=$(sha256sum -- "$proof") || return $?
@@ -76,7 +81,7 @@ apply_release() {
   # The proof above used an independent reader. Prefer the worker's BNB Chain
   # endpoint for the fresh pre- and post-build reads of that verified proof.
   publish+=("$digest" "$deployment_rpc")
-  bash scripts/install-v3-unified-worker.sh "$sha" || worker_status=$?
+  bash scripts/install-v3-unified-worker.sh "$sha" "${profile[@]}" || worker_status=$?
   case $worker_status in
     0) publish+=(--enable-testnet-wallets) ;;
     42) echo UNIFIED_WORKER_NEEDS_TEST_GAS >&2 ;;
@@ -84,16 +89,28 @@ apply_release() {
   esac
   "${publish[@]}" || return $?
   if (( worker_status == 42 )); then
-    echo 'UNIFIED_TESTNET_READ_ONLY_AVAILABLE=https://globaldroptrade.com/unified-test/'
+    echo "UNIFIED_TESTNET_READ_ONLY_AVAILABLE=https://globaldroptrade.com/$route_name/"
     return 42
   fi
-  echo 'UNIFIED_TESTNET_WALLET_DASHBOARD_AVAILABLE=https://globaldroptrade.com/unified-test/'
+  echo "UNIFIED_TESTNET_WALLET_DASHBOARD_AVAILABLE=https://globaldroptrade.com/$route_name/"
 }
 
 main() {
   local sha=${1:-} checkout work arch runtime lock_dir
   [[ $(id -u) == 0 && $(hostname -s) == vps-luna-2585 ]] || fail UNIFIED_APPLY_WRONG_SERVER
-  [[ $# == 1 && $sha =~ ^[a-f0-9]{40}$ ]] || fail UNIFIED_APPLY_EXPECTED_PINNED_SHA
+  [[ $sha =~ ^[a-f0-9]{40}$ ]] || fail UNIFIED_APPLY_EXPECTED_PINNED_SHA
+  case "$#:${2:-}:${3:-}" in
+    1::) ;;
+    2:--single-capital:|3:--single-capital:--deploy-testnet)
+      profile=(--single-capital)
+      route_name=single-capital-test
+      deployment_proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
+      if [[ $# == 2 ]]; then
+        [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+      fi
+      ;;
+    *) fail UNIFIED_APPLY_EXPECTED_PINNED_SHA ;;
+  esac
   checkout=$(pwd -P)
   work=${checkout%/release}
   [[ $checkout =~ ^/opt/global-v3-unified-run\.[a-zA-Z0-9]{8}/release$ && $work != "$checkout" &&
@@ -129,7 +146,7 @@ main() {
   npm ci --prefix website --ignore-scripts --no-audit --no-fund
   python3 scripts/verify-v3-prepared-checkout.py
   check_capacity "$work" 6000 262144
-  apply_release "$sha" "$deployment_proof"
+  apply_release "$sha" "$deployment_proof" "${3:-}"
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

@@ -49,6 +49,8 @@ export function createCommerceStatus({env=process.env,fetcher=fetch,now=Date.now
    for(const order of orders){
     if(!order||typeof order.orderId!=='string'||!order.orderId||order.orderId.length>120||
       typeof order.orderPaymentStatus!=='string'||ids.has(order.orderId))throw Error('Invalid seller order');
+    if(typeof order.creationDate!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(order.creationDate))
+     throw Error('Seller order timestamp needs a timezone');
     const created=Date.parse(order.creationDate);
     if(!Number.isFinite(created)||created<start||created>end)throw Error('Order outside requested range');
     ids.add(order.orderId);

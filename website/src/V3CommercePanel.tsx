@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react';
 import {ArrowUpRight,RefreshCw,ShoppingBag,TrendingUp} from 'lucide-react';
+import {formatUtcTime,parseZonedTimestamp} from './utc-time';
 import './v3-commerce.css';
 
 type Status='live'|'not_configured'|'unavailable'|'rate_limited'|'incomplete';
@@ -15,7 +16,7 @@ export function readCommerceSummary(value:unknown,now=Date.now()):Summary|null{
  if(v.version!==1||v.source!=='ebay'||!Object.hasOwn(statuses,v.status)||
   v.commercialProfit!==null||v.profitStatus!=='unverified_costs_and_fees')return null;
  if(v.status!=='live')return v.paidOrders===null?{...v,updatedAt:null,windowStart:null,windowEnd:null}:null;
- const updated=Date.parse(v.updatedAt??''),start=Date.parse(v.windowStart??''),end=Date.parse(v.windowEnd??'');
+ const updated=parseZonedTimestamp(v.updatedAt),start=parseZonedTimestamp(v.windowStart),end=parseZonedTimestamp(v.windowEnd);
  if(typeof v.paidOrders!=='number'||!Number.isSafeInteger(v.paidOrders)||v.paidOrders<0||v.paidOrders>100||
   !Number.isFinite(updated)||!Number.isFinite(start)||!Number.isFinite(end)||
   start>end||end>updated||updated>now+60000||now-updated>120000||end-start>31*86400000)return null;
@@ -53,7 +54,7 @@ export default function V3CommercePanel(){
    <div><TrendingUp size={18}/><small>Verified commercial profit</small><strong>—</strong>
     <span>Sales, supplier costs, refunds and fees must be reconciled first.</span></div>
   </div>
-  {summary?.status==='live'&&summary.updatedAt&&<p className="gv3-commerce-updated">Seller snapshot: {new Date(summary.updatedAt).toLocaleString('en-US')}</p>}
+  {summary?.status==='live'&&summary.updatedAt&&<p className="gv3-commerce-updated">Seller snapshot: {formatUtcTime(summary.updatedAt)}</p>}
   <a href="#marketplace">Explore product listings <ArrowUpRight size={15}/></a>
  </section>;
 }

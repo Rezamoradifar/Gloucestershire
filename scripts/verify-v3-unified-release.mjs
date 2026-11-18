@@ -1,16 +1,16 @@
 import {getAddress, getCreateAddress, keccak256} from 'ethers';
 import {verifyUnifiedDeployment, recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 import {
- UNIFIED_TOKEN_RUNTIME_HASH, UNIFIED_INITCODE_HASH, UNIFIED_DEPLOYER,
- UNIFIED_MANAGER, UNIFIED_FEE_RECEIVER
+ UNIFIED_TOKEN_RUNTIME_HASH, UNIFIED_DEPLOYER, UNIFIED_MANAGER, UNIFIED_FEE_RECEIVER, UNIFIED_PROFILE
 } from './v3-unified-release-pins.mjs';
 
 // Reconstruct the transaction identity from public chain data. A hash calculated
 // from an unchecked local proof is insufficient to identify this release.
-export async function verifyUnifiedRelease(provider, rawProof, expectedDeployer = UNIFIED_DEPLOYER) {
+export async function verifyUnifiedRelease(provider, rawProof, expectedDeployer = UNIFIED_DEPLOYER, profile = UNIFIED_PROFILE) {
+ if(rawProof?.status!==profile.status)throw Error('UNIFIED_RELEASE_PROFILE_MISMATCH');
  const checked = await verifyUnifiedDeployment(provider, rawProof);
  const {proof, block, vault} = checked;
- if (proof.initcodeHash !== UNIFIED_INITCODE_HASH || proof.tokenRuntimeHash !== UNIFIED_TOKEN_RUNTIME_HASH ||
+ if (proof.initcodeHash !== profile.initcodeHash || proof.tokenRuntimeHash !== UNIFIED_TOKEN_RUNTIME_HASH ||
      proof.manager !== UNIFIED_MANAGER || proof.feeReceiver !== UNIFIED_FEE_RECEIVER) {
   throw Error('UNIFIED_RELEASE_PIN_MISMATCH');
  }
@@ -20,7 +20,7 @@ export async function verifyUnifiedRelease(provider, rawProof, expectedDeployer 
  if (!tx || tx.hash.toLowerCase() !== proof.deploymentTx || tx.from !== getAddress(expectedDeployer) ||
      tx.to !== null || tx.value !== 0n || tx.chainId !== 97n || tx.blockNumber !== proof.deploymentBlock ||
      getCreateAddress({from:tx.from,nonce:tx.nonce}) !== proof.vault ||
-     keccak256(tx.data) !== UNIFIED_INITCODE_HASH || keccak256(tokenCode) !== UNIFIED_TOKEN_RUNTIME_HASH) {
+     keccak256(tx.data) !== profile.initcodeHash || keccak256(tokenCode) !== UNIFIED_TOKEN_RUNTIME_HASH) {
   throw Error('UNIFIED_RELEASE_CREATION_MISMATCH');
  }
  const at={blockTag:block.number};

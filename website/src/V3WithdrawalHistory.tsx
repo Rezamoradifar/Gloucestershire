@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {getWalletProvider} from './wallet';
 import {formatV3Amount} from './v3-format';
+import {formatUtcTime} from './utc-time';
 import {readV3WithdrawalPage,type V3WithdrawalAnchor,type V3WithdrawalPage} from './v3-withdrawal-history';
 import type {V3SiteReleaseConfig} from './v3-site-config';
 
@@ -28,7 +29,7 @@ export default function V3WithdrawalHistory({wallet,config}:{wallet:string;confi
    <p className="gv3-history-range">{data.total} total · confirmed block {data.anchor.block.toLocaleString('en-US')}</p>
    {data.items.map(r=><article className="gv3-withdrawal-row" key={r.id}>
     <div><strong>Request #{r.id+1} · {kinds[r.kind]??'Unknown'}</strong>
-     <small>{r.requestedAt?new Date(r.requestedAt*1000).toLocaleString('en-US'):'Not recorded'}</small></div>
+     <small>{formatUtcTime(r.requestedAt)}</small></div>
     <div><b>{formatV3Amount(r.gross)} TEST USDT</b><small>Net {formatV3Amount(r.gross-r.fee)} · Fee {formatV3Amount(r.fee)}</small></div>
     <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span></div>
    </article>)}

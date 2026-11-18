@@ -1,6 +1,7 @@
 // Read-only identity check for an operator-pinned, actual chain-97 deployment.
 // This is not a deployer, a migration mechanism or a financial/security audit.
 import {Contract,getAddress,isAddress,keccak256,toQuantity,ZeroAddress} from 'ethers';
+import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
@@ -11,6 +12,7 @@ const VAULT_ABI=[
  'function asset() view returns(address)','function feeReceiver() view returns(address)',
  'function reinvestmentBook() view returns(address)','function networkPlan() view returns(address)',
  'function ACCRUAL_PERIOD() view returns(uint256)','function ONE_DAY() view returns(uint256)',
+ 'function SINGLE_CAPITAL_VERSION() view returns(uint256)',
  'function FEE_WALLET_1() view returns(address)','function FEE_WALLET_2() view returns(address)',
  'function OPERATIONS_WALLET() view returns(address)','function DEPOSIT_FEE_EACH_BPS() view returns(uint256)',
  'function DEFAULT_ADMIN_ROLE() view returns(bytes32)','function MANAGER_ROLE() view returns(bytes32)',
@@ -56,7 +58,7 @@ export async function recheckUnifiedBlock(provider,block){
 }
 
 export function validateUnifiedProof(raw){
- if(!raw||raw.status!=='VERIFIED_UNIFIED_TESTNET_ONLY'||raw.chainId!==97||
+ if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status].includes(raw.status)||raw.chainId!==97||
     !Number.isSafeInteger(raw.deploymentBlock)||raw.deploymentBlock<1||
     ![raw.vaultRuntimeHash,raw.bookRuntimeHash,raw.networkRuntimeHash,raw.deploymentTx].every(x=>typeof x==='string'&&pattern.test(x)))
   throw Error('INVALID_UNIFIED_DEPLOYMENT_PROOF');
@@ -94,6 +96,8 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  if(typeof tokenCode!=='string'||!/^0x(?:[0-9a-fA-F]{2})+$/.test(tokenCode))throw Error('UNIFIED_TEST_TOKEN_NOT_DEPLOYED');
  const vault=makeContract(proof.vault,VAULT_ABI),book=makeContract(proof.book,BOOK_ABI);
  const network=makeContract(proof.network,CHILD_ABI),at={blockTag:number};
+ if(proof.status===SINGLE_CAPITAL_PROFILE.status&&BigInt(await vault.SINGLE_CAPITAL_VERSION(at))!==1n)
+  throw Error('UNIFIED_SINGLE_CAPITAL_VERSION_MISMATCH');
  const [token,fee,bookAddress,networkAddress,period,activity,fee1,fee2,operations,bps,role,bookVault,networkVault]=await Promise.all([
   vault.asset(at),vault.feeReceiver(at),vault.reinvestmentBook(at),vault.networkPlan(at),
   vault.ACCRUAL_PERIOD(at),vault.ONE_DAY(at),vault.FEE_WALLET_1(at),vault.FEE_WALLET_2(at),

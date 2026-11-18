@@ -13,3 +13,24 @@ export const UNIFIED_INITCODE_HASH = '0x31c92f6efd0b21c271977758e9f59407dcbba1ee
 export const UNIFIED_DEPLOYER = '0xCf6Eb63ba4D2174CA2759eff57a720a54416b71d';
 export const UNIFIED_MANAGER = '0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632';
 export const UNIFIED_FEE_RECEIVER = '0x74015deDF36677485793f1714Ec7bD4893907b26';
+
+export const UNIFIED_PROFILE = Object.freeze({
+ status:'VERIFIED_UNIFIED_TESTNET_ONLY', mode:'unified-testnet', route:'/unified-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-unified-testnet',
+ gasKey:'/etc/globaldroptrade/v3-unified-keeper-testnet-gas-only.key',
+ timer:'global-v3-unified-keeper-testnet.timer', initcodeHash:UNIFIED_INITCODE_HASH
+});
+export const SINGLE_CAPITAL_PROFILE = Object.freeze({
+ status:'VERIFIED_SINGLE_CAPITAL_TESTNET_ONLY', mode:'single-capital-testnet', route:'/single-capital-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-single-capital-testnet',
+ gasKey:'/etc/globaldroptrade/v3-single-capital-keeper-testnet-gas-only.key',
+ timer:'global-v3-single-capital-keeper-testnet.timer',
+ // compileSingleCapitalTestnet() with the reviewed test constructor inputs above.
+ initcodeHash:'0xff83d9ff867e0c683d44ad1949cbf430871f612c232ef2a881ec9d24ac548c5b'
+});
+
+export function unifiedProfileForFlag(flag) {
+ if(flag===undefined)return UNIFIED_PROFILE;
+ if(flag==='--single-capital')return SINGLE_CAPITAL_PROFILE;
+ throw Error('UNIFIED_RELEASE_PROFILE_INVALID');
+}

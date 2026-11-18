@@ -2,9 +2,9 @@
 // It cannot sign, broadcast, deploy, migrate accounts or update a website.
 // A successful estimate is not a release approval or an operational keeper.
 import {ContractFactory,Interface,getAddress,getCreateAddress,isAddress,keccak256,parseEther,toQuantity,ZeroAddress} from 'ethers';
-import {compileUnifiedTestnet} from './compile-global-v3-unified-testnet.mjs';
+import {compileUnifiedTestnet,compileSingleCapitalTestnet} from './compile-global-v3-unified-testnet.mjs';
 
-import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER} from './v3-unified-release-pins.mjs';
+import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER,UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TOKEN=getAddress(UNIFIED_TOKEN);
 const MANAGER=getAddress(UNIFIED_MANAGER);
@@ -13,7 +13,8 @@ const MAX_GAS=12_000_000n,MAX_GAS_PRICE=100_000_000_000n,MAX_FEE=parseEther('0.0
 const TOKEN_ABI=new Interface(['function decimals() view returns(uint8)']);
 const HASH=/^0x[0-9a-fA-F]{64}$/;
 
-export async function planUnifiedDeployment({provider,from,compile=compileUnifiedTestnet}){
+export async function planUnifiedDeployment({provider,from,profile=UNIFIED_PROFILE,
+ compile=profile===SINGLE_CAPITAL_PROFILE?compileSingleCapitalTestnet:compileUnifiedTestnet}){
  if(!isAddress(from))throw Error('UNIFIED_DEPLOYER_ADDRESS_REQUIRED');
  const sender=getAddress(from);
  if(sender===ZeroAddress||sender===MANAGER||sender===FEE_RECEIVER)
@@ -29,7 +30,7 @@ export async function planUnifiedDeployment({provider,from,compile=compileUnifie
  if(typeof code!=='string'||!/^0x(?:[0-9a-fA-F]{2})+$/.test(code))throw Error('UNIFIED_TEST_TOKEN_MISSING');
  const decimals=await provider.call({to:TOKEN,data:TOKEN_ABI.encodeFunctionData('decimals'),blockTag:number});
  if(TOKEN_ABI.decodeFunctionResult('decimals',decimals)[0]!==18n)throw Error('UNIFIED_TEST_TOKEN_DECIMALS_MISMATCH');
- const artifact=compile()?.GlobalV3UnifiedTestnet;
+ const artifact=compile()?.[profile===SINGLE_CAPITAL_PROFILE?'GlobalV3SingleCapitalTestnet':'GlobalV3UnifiedTestnet'];
  if(!artifact?.abi||typeof artifact.evm?.bytecode?.object!=='string'||
     !/^(?:[0-9a-fA-F]{2})+$/.test(artifact.evm.bytecode.object))throw Error('UNIFIED_ARTIFACT_INVALID');
  const factory=new ContractFactory(artifact.abi,'0x'+artifact.evm.bytecode.object);

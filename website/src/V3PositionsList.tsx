@@ -2,14 +2,14 @@ import type {V3WalletPosition} from './v3-chain';
 import {V3_PERIOD_SECONDS} from './v3-cycle';
 import {formatV3Amount as show} from './v3-format';
 import DigitalValue from './DigitalValue';
+import {formatUtcTime} from './utc-time';
 
 const PRINCIPAL_LOCK_SECONDS=90*24*60*60;
-const date=(seconds:number)=>seconds?new Date(seconds*1000).toLocaleString('en-US'):'Not recorded';
 
 function PositionRow({position:p}:{position:V3WalletPosition}){
  return <article className="gv3-position-card">
   <div><strong>Position #{p.id+1}{p.fromReinvestment?' · from manual reinvestment':''}</strong>
-   <small>Opened {date(p.openedAt)} · Principal unlock after {date(p.openedAt+PRINCIPAL_LOCK_SECONDS)} · Next eligible accrual after {date(p.lastAccruedAt+V3_PERIOD_SECONDS)}</small></div>
+   <small>Opened {formatUtcTime(p.openedAt)} · Principal unlock at {formatUtcTime(p.openedAt+PRINCIPAL_LOCK_SECONDS)} · Next eligible accrual at {formatUtcTime(p.lastAccruedAt+V3_PERIOD_SECONDS)}</small></div>
   <div><b><DigitalValue value={show(p.principal)} unit="TEST"/></b><small>Recorded principal</small></div>
   <div><b><DigitalValue value={show(p.availableDaily)} unit="TEST"/></b><small>Daily available claims</small>
    <b><DigitalValue value={show(p.availableCompound)} unit="TEST"/></b><small>Profit-on-profit available claims</small></div>

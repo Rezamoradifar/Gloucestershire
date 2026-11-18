@@ -52,7 +52,8 @@ function compileHarness(){
 test('one testnet reinvestment position preserves separate lot cycles, locks and claims',async()=>{
  const artifact=compile();
  assert.ok(artifact.evm.deployedBytecode.object.length/2<24576);
- const rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},wallet:{totalAccounts:4,defaultBalance:50}});
+ const rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},
+  miner:{timestampIncrement:0},wallet:{totalAccounts:4,defaultBalance:50}});
  const provider=new BrowserProvider(rpc,undefined,{cacheTimeout:-1});provider.pollingInterval=20;
  try{
   const vault=await provider.getSigner(0),attacker=await provider.getSigner(1);

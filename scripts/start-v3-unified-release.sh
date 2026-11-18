@@ -5,6 +5,7 @@ umask 077
 
 install_from_github() (
   local parent=$1 sha=$2 stage checkout fetched
+  shift 2
   stage=$(mktemp -d -- "$parent/global-v3-unified-run.XXXXXXXX")
   trap 'rm -rf --one-file-system -- "$stage"' EXIT
   trap 'exit 129' HUP
@@ -23,19 +24,23 @@ install_from_github() (
   fi
   git -C "$checkout" -c core.hooksPath=/dev/null checkout --quiet --detach "$sha"
   cd -- "$checkout"
-  bash scripts/apply-v3-unified-testnet.sh "$sha"
+  bash scripts/apply-v3-unified-testnet.sh "$sha" "$@"
 )
 
 main() {
-  if [[ $# != 1 || ! ${1:-} =~ ^[0-9a-f]{40}$ ]]; then
+  if [[ ! ${1:-} =~ ^[0-9a-f]{40}$ ]]; then
     echo UNIFIED_START_EXPECTED_PINNED_SHA >&2
     return 1
   fi
+  case "$#:${2:-}:${3:-}" in
+    1::|2:--single-capital:|3:--single-capital:--deploy-testnet) ;;
+    *) echo UNIFIED_START_INVALID_PROFILE >&2; return 1 ;;
+  esac
   if [[ $(id -u) != 0 || $(hostname -s) != vps-luna-2585 ]]; then
     echo UNIFIED_START_WRONG_SERVER >&2
     return 1
   fi
-  install_from_github /opt "$1"
+  install_from_github /opt "$@"
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

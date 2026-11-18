@@ -23,4 +23,14 @@ describe('unified test account activity',()=>{
   expect(render(active,false,true)).toMatch(/<button[^>]*disabled/);
   expect(render(active,false)).not.toMatch(/<button[^>]*disabled/);
  });
+ it('shows pending keeper gas without disabling the user check-in',()=>{
+  const keeper={operator:'0x4444444444444444444444444444444444444444',gasWei:0n};
+  const waiting=render({...active,keeper},false);
+  expect(waiting).toContain('Automatic profit waiting for tBNB');
+  expect(waiting).toContain(keeper.operator);
+  expect(waiting).toContain('Deposits and account registration are enabled');
+  expect(waiting).not.toMatch(/<button[^>]*disabled/);
+  expect(render({...active,keeper:{...keeper,gasWei:1000000000000000n}},false)).toContain('Keeper gas available');
+  expect(render({...active,keeper:{...keeper,gasWei:null}},false)).toContain('Keeper gas status unavailable');
+ });
 });

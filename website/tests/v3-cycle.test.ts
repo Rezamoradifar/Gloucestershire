@@ -3,10 +3,17 @@ import {parseEther} from 'ethers';
 import {v3Countdown,v3CycleView} from '../src/v3-cycle';
 import type {V3WalletPosition} from '../src/v3-chain';
 import {formatV3Amount} from '../src/v3-format';
+import {formatUtcTime} from '../src/utc-time';
 
 const position={id:0,principal:parseEther('1000'),compoundedBasis:parseEther('10'),
  lastAccruedAt:1000} as V3WalletPosition;
 describe('V3 display-only 24-hour cycle',()=>{
+ it('shows a unique UTC instant for repeated local hours and preserves the unset time',()=>{
+  expect(formatUtcTime('2026-11-01T01:40:00-04:00')).toBe('2026-11-01 05:40:00 UTC');
+  expect(formatUtcTime('2026-11-01T01:40:00-05:00')).toBe('2026-11-01 06:40:00 UTC');
+  expect(formatUtcTime('2026-11-01T01:40:00')).toBe('Not recorded');
+  expect(formatUtcTime(0)).toBe('Not recorded');
+ });
  it('shows the isolated hourly cycle while retaining a 24-hour activity window',()=>{
   const half=v3CycleView([position],1000,1800,1000,70,3600);
   const due=v3CycleView([position],1000,3600,1000,70,3600);
