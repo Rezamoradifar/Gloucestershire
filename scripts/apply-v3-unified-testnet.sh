@@ -4,6 +4,7 @@
 set +x
 set -Eeuo pipefail
 umask 077
+export TZ=UTC
 
 deployment_cli=scripts/deploy-v3-unified-isolated.mjs
 deployment_rpc=https://bsc-testnet-dataseed.bnbchain.org
@@ -64,15 +65,15 @@ apply_release() {
   local -a publish=(bash scripts/install-v3-unified-test-site.sh "${profile[@]}" --install-prepared "$sha" "$proof")
   if [[ -e $proof || -L $proof ]]; then
     echo UNIFIED_RECHECKING_EXISTING_DEPLOYMENT
-  elif [[ $route_name == single-capital-test ]]; then
+  elif [[ $route_name == single-capital-test && ${3:-} != --deploy-testnet ]]; then
     fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
   elif [[ -e $journal || -L $journal ]]; then
     echo UNIFIED_RECOVERING_PREVIOUS_DEPLOYMENT
-    node "$deployment_cli" --recover-existing "$verification_rpc" || return $?
+    node "$deployment_cli" --recover-existing "$verification_rpc" "${profile[@]}" || return $?
   else
     # Check the separate RPC before any signature. The signer rechecks all limits on its own RPC.
-    node "$deployment_cli" --check "$verification_rpc" || return $?
-    node "$deployment_cli" --deploy-testnet "$deployment_rpc" || return $?
+    node "$deployment_cli" --check "$verification_rpc" "${profile[@]}" || return $?
+    node "$deployment_cli" --deploy-testnet "$deployment_rpc" "${profile[@]}" || return $?
   fi
   digest=$(verify_proof) || return $?
   on_disk=$(sha256sum -- "$proof") || return $?
@@ -98,13 +99,15 @@ main() {
   local sha=${1:-} checkout work arch runtime lock_dir
   [[ $(id -u) == 0 && $(hostname -s) == vps-luna-2585 ]] || fail UNIFIED_APPLY_WRONG_SERVER
   [[ $sha =~ ^[a-f0-9]{40}$ ]] || fail UNIFIED_APPLY_EXPECTED_PINNED_SHA
-  case $#:${2:-} in
-    1:) ;;
-    2:--single-capital)
+  case "$#:${2:-}:${3:-}" in
+    1::) ;;
+    2:--single-capital:|3:--single-capital:--deploy-testnet)
       profile=(--single-capital)
       route_name=single-capital-test
       deployment_proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
-      [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+      if [[ $# == 2 ]]; then
+        [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+      fi
       ;;
     *) fail UNIFIED_APPLY_EXPECTED_PINNED_SHA ;;
   esac
@@ -143,7 +146,7 @@ main() {
   npm ci --prefix website --ignore-scripts --no-audit --no-fund
   python3 scripts/verify-v3-prepared-checkout.py
   check_capacity "$work" 6000 262144
-  apply_release "$sha" "$deployment_proof"
+  apply_release "$sha" "$deployment_proof" "${3:-}"
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

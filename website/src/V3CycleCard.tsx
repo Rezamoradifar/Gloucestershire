@@ -5,6 +5,7 @@ import {v3Countdown,v3CycleView,V3_PERIOD_SECONDS} from './v3-cycle';
 import {V3_HOURLY_TEST} from './v3-site-config';
 import {formatV3Amount as money} from './v3-format';
 import DigitalValue from './DigitalValue';
+import {formatUtcTime} from './utc-time';
 
 export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnabled=false}:{
  view:V3Snapshot;busy:boolean;unifiedEnabled?:boolean;onCheckIn:()=>void;onPositions:()=>void;
@@ -54,7 +55,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
     </div>
     <div className="gv3-cycle-copy"><span className="gv3-kicker">NEXT POSITION</span>
      <h3>{remaining===null?'No active position':due?'Ready for on-chain confirmation':'Next eligibility window'}</h3>
-     <p>{cycle.nextAt===null?'Open a test position to start its timer.':new Date(cycle.nextAt*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}</p>
+     <p>{cycle.nextAt===null?'Open a test position to start its timer.':formatUtcTime(cycle.nextAt)}</p>
      <small>The timer is an estimate based on the last verified block. Reaching zero does not itself credit or pay profit.</small>
      <button type="button" onClick={onPositions}>View positions <ArrowRight size={15}/></button>
     </div>

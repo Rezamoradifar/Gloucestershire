@@ -67,6 +67,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=TZ=UTC
 User=$user
 Group=$user
 StateDirectory=$unit

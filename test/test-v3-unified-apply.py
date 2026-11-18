@@ -41,7 +41,7 @@ bash() {
   esac
 }
 sleep() { :; }
-apply_release "$REVISION" "$TEST_PROOF"
+apply_release "$REVISION" "$TEST_PROOF" "${DEPLOY_OPTION:-}"
 """
 
 
@@ -131,6 +131,30 @@ class ApplyTestnet(unittest.TestCase):
         self.assertIn("scripts/install-v3-unified-test-site.sh --single-capital --install-prepared", calls[2])
         self.assertIn("UNIFIED_TESTNET_WALLET_DASHBOARD_AVAILABLE=https://globaldroptrade.com/single-capital-test/",
                       installed.stdout)
+
+    def test_explicit_single_capital_install_deploys_only_once_and_resumes_after_funding(self):
+        options = dict(SINGLE_CAPITAL="1", DEPLOY_OPTION="--deploy-testnet")
+        first, calls = self.apply(**options, WORKER_RESULT="42")
+        self.assertEqual(first.returncode, 42, first.stderr)
+        self.assertEqual(calls[:3], [f"--check {READ_RPC} --single-capital",
+                                     f"--deploy-testnet {SIGN_RPC} --single-capital",
+                                     f"--verify-existing {READ_RPC} --single-capital"])
+        self.assertIn("UNIFIED_TESTNET_READ_ONLY_AVAILABLE=https://globaldroptrade.com/single-capital-test/", first.stdout)
+        retry, calls = self.apply(**options)
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        self.assertFalse(any("--deploy-testnet" in call for call in calls))
+        self.assertTrue(calls[-1].endswith("--enable-testnet-wallets"))
+
+    def test_single_capital_pending_receipt_never_rebroadcasts(self):
+        (self.proof.parent / "pending.json").write_text("{}")
+        options = dict(SINGLE_CAPITAL="1", DEPLOY_OPTION="--deploy-testnet")
+        pending, calls = self.apply(**options, RECOVER_RESULT="1")
+        self.assertNotEqual(pending.returncode, 0)
+        self.assertEqual(calls, [f"--recover-existing {READ_RPC} --single-capital"])
+        recovered, calls = self.apply(**options)
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual(calls[:2], [f"--recover-existing {READ_RPC} --single-capital",
+                                     f"--verify-existing {READ_RPC} --single-capital"])
 
 
 if __name__ == "__main__":

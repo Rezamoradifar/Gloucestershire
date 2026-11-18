@@ -22,7 +22,7 @@ describe('V3 reinvestment group display',()=>{
    expect(html).toContain(`aria-label="${label}"`);
   expect(html).toContain('The existing contract still keeps a separate position, accrual time and principal lock for each reinvestment');
   expect(html).toContain('Position #1');expect(html).toContain('Position #2');expect(html).toContain('Position #3');
-  expect((html.match(/Principal unlock after/g)||[]).length).toBe(3);
+  expect((html.match(/Principal unlock at/g)||[]).length).toBe(3);
   expect(positions.map(p=>p.principal)).toEqual([amount('1000'),amount('10'),amount('20')]);
  });
  it('does not invent a reinvestment group for an account without reinvestments',()=>{

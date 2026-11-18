@@ -40,6 +40,7 @@ import V3WalletControl from './V3WalletControl';
 import WalletPicker from './WalletPicker';
 import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
+import {formatUtcTime} from './utc-time';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
 import {parseV3Amount as amount,type V3WithdrawalKind} from './v3-withdrawal-form';
 import './v2-dashboard.css';
@@ -66,7 +67,6 @@ const dock=[{id:'overview' as Tab,label:'Home',Icon:Home},{id:'positions' as Tab
  {id:'team' as Tab,label:'Team',Icon:Users},{id:'history' as Tab,label:'History',Icon:History},
  {id:'profile' as Tab,label:'Profile',Icon:UserRound}];
 const short=(s:string)=>s.slice(0,9)+'…'+s.slice(-5);
-const date=(seconds:number)=>seconds?new Date(seconds*1000).toLocaleString('en-US'):'Not recorded';
 const kinds=['Profit','Principal','Referral','Network milestone'] as const;
 const statuses=['Requested','Manager approved','Cash escrowed','Paid','Rejected','Cancelled'] as const;
 export default function V3Dashboard(){
@@ -420,7 +420,7 @@ export default function V3Dashboard(){
  const withdrawItem=(r:V3Withdrawal,admin=false)=>
   <article className="gv3-withdrawal-row" key={r.id}>
    <div><strong>Request #{r.id+1} · {kinds[r.kind]??'Unknown'}</strong>
-    <small>{date(r.requestedAt)} · {short(r.beneficiary)}</small></div>
+    <small>{formatUtcTime(r.requestedAt)} · {short(r.beneficiary)}</small></div>
    <div><b><DigitalValue value={show(r.gross)} unit="TEST USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>
     {config?.unified&&!admin&&r.beneficiary.toLowerCase()===wallet.toLowerCase()&&<>
@@ -508,7 +508,7 @@ export default function V3Dashboard(){
       <p>Balances can differ across blocks or RPCs; this check does not prove a wallet transaction will succeed.</p></div>}
     </section>}
     {tab==='overview'&&view&&<div className="gv3-sync-line" aria-live="off"><span className="gv3-live-status">{loading?'CHECKING BLOCKCHAIN':'AUTO REFRESH · 20 SEC'}</span>
-     <span>Verified block {view.block.toLocaleString('en-US')} · {date(view.asOf)}</span></div>}
+     <span>Verified block {view.block.toLocaleString('en-US')} · {formatUtcTime(view.asOf)}</span></div>}
     {tab==='overview'&&<V3ClassicOverview view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
@@ -526,7 +526,7 @@ export default function V3Dashboard(){
        <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="TEST"/></strong><span>Includes cash reserved for requests</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="TEST"/></strong><span>Not guaranteed to be paid</span></div>
       </div>
-      <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {date(view.lastCheckIn)}.
+      <div className="gv3-cycle-note"><CheckCircle2 size={16}/> Last confirmed check-in: {formatUtcTime(view.lastCheckIn)}.
        {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
@@ -559,8 +559,8 @@ export default function V3Dashboard(){
       <div className="gv2-detail"><span>Registration</span><b>{view.registered?'Registered on V3':'Not registered'}</b></div>
       <div className="gv2-detail"><span>KYC</span><b>{view.vipKyc?'Manager verified':'Not verified'}</b></div>
       <div className="gv2-detail"><span>Suspension</span><b>{view.suspended?'Suspended':'No suspension'}</b></div>
-      <div className="gv2-detail"><span>Last check-in</span><b>{date(view.lastCheckIn)}</b></div>
-      <div className="gv2-detail"><span>Next new withdrawal allowed after</span><b>{date(view.nextRequestAt)}</b></div>
+      <div className="gv2-detail"><span>Last check-in</span><b>{formatUtcTime(view.lastCheckIn)}</b></div>
+      <div className="gv2-detail"><span>Next new withdrawal allowed at</span><b>{formatUtcTime(view.nextRequestAt)}</b></div>
       <div className="gv2-detail"><span>Cumulative V3 test deposits</span><b>{show(view.originalDeposits)}</b></div>
       <div className="gv2-detail"><span>Cumulative manual reinvestments</span><b>{show(view.reinvestments)}</b></div>
       {!view.registered&&<div className="gv3-input-row">

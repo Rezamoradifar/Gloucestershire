@@ -7,6 +7,13 @@ The keeper records eligible accrual after an on-chain check-in. The deposit
 routes, tiers, compounding, withdrawal fees and payout approvals use the
 existing V3 rules.
 
+All account deadlines use the confirmed block's Unix timestamp. The dashboard
+shows these times in UTC to the second. Each addition earns its first eligible
+hour 3,600 seconds after it is recorded. For example, an addition at 23:40 UTC
+is first eligible at 00:40 UTC the following day. The next period starts at
+its confirmed accrual. A check-in lasts 24 hours, the withdrawal cooldown lasts
+72 hours and each principal lock lasts 90 elapsed days.
+
 The form totals confirmed profit for the whole account and calculates a
 separate maximum for one request. The transaction uses the account's verified
 additions automatically and honors the request cap, withdrawal cooldown and
@@ -31,13 +38,11 @@ Check the estimate with:
 node scripts/deploy-v3-unified-isolated.mjs --check https://bsc-testnet-rpc.publicnode.com --single-capital
 ```
 
-For an approved testnet deployment, use `--deploy-testnet` with the same
-profile flag. If the network drops after submission, inspect the new profile's
-pending journal and reconcile it with `--recover-existing`. The install
-entry point requires the new deployment proof before staging the site.
-
-Run `bash scripts/start-v3-unified-release.sh <reviewed-sha> --single-capital`
-to publish `/single-capital-test/` against that proof. The separate
+To deploy and publish the separate testnet account, run
+`bash scripts/start-v3-unified-release.sh <reviewed-sha> --single-capital --deploy-testnet`.
+The command checks a saved proof first. With a pending deployment it recovers
+the original transaction. With neither record it checks the cost and deploys.
+Omit `--deploy-testnet` to publish only an existing verified deployment. The separate
 `global-v3-single-capital-keeper-testnet.timer` needs its own gas-only wallet
 with at least 0.001 tBNB. The installer prints the public address if gas is
 missing and keeps the candidate route read-only until the verified timer is

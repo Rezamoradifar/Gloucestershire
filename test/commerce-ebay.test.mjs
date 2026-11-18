@@ -42,7 +42,9 @@ test('empty complete results can be zero; incomplete or duplicate pages cannot',
   [{total:0},'live',0],
   [{total:101,orders:[order('A')]},'incomplete',null],
   [{total:2,orders:[order('A')]},'unavailable',null],
-  [{total:2,orders:[order('A'),order('A')]},'unavailable',null]
+  [{total:2,orders:[order('A'),order('A')]},'unavailable',null],
+  [{total:1,orders:[{...order('A'),creationDate:'2026-11-10T10:00:00'}]},'unavailable',null],
+  [{total:1,orders:[{...order('A'),creationDate:'2026-11-10T13:30:00+03:30'}]},'live',1]
  ]){
   const service=createCommerceStatus({env,now:()=>clock,fetcher:async url=>url.includes('/identity/')?
    ok({access_token:'token',expires_in:7200}):ok(data)});

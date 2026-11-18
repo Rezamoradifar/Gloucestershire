@@ -1,5 +1,6 @@
 import {useId,type FormEvent} from 'react';
 import {formatUnits} from 'ethers';
+import {formatUtcTime} from './utc-time';
 import type {V3Snapshot} from './v3-chain';
 import type {V3WithdrawalKind} from './v3-withdrawal-form';
 import {planV3AccountWithdrawal,summarizeV3AccountWithdrawal,v3AccountTotals} from './v3-account-withdrawal';
@@ -53,6 +54,7 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
    <input id={id+'-amount'} value={props.value} onChange={e=>props.onValue(e.target.value)} disabled={props.busy}
     inputMode="decimal" autoComplete="off" placeholder="0.00"/>
    <p>Maximum this dashboard can submit in one request: <strong>{state.maximum===null?'Awaiting complete records':formatUnits(state.maximum,18)+' TEST'}</strong>.</p>
+   {props.view.nextRequestAt>props.view.asOf&&<p>Withdrawal cooldown ends at {formatUtcTime(props.view.nextRequestAt)}.</p>}
    {props.kind==='principal'?<p>Each addition keeps its 90-day lock. Principal withdrawal penalty: 30%.</p>:
     <p>Profit, referral and network withdrawal fee: 3%.</p>}
    {state.amount!==null&&state.fee!==null&&state.net!==null&&<p aria-live="polite">
@@ -61,7 +63,7 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
    {state.coverageError&&<p role="status">{state.coverageError}</p>}
    {state.error&&state.error!==state.coverageError&&<p role="alert">{state.error}</p>}
    {props.readOnly&&<p role="status">This testnet release is open for viewing only. Wallet requests are disabled.</p>}
-   <p>Requests need manager approval and actual test-token funding before payment. The current contract cannot combine separate positions into one request.</p>
+   <p>Requests need manager approval and actual test-token funding before payment.{!props.view.singleCapital&&' The current contract cannot combine separate positions into one request.'}</p>
    <button className="gv2-primary" type="submit" disabled={!state.canSubmit}>Review & sign withdrawal request</button>
   </form>
  </section>;

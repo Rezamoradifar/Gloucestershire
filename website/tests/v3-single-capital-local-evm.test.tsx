@@ -13,6 +13,7 @@ import {deployUnifiedIsolated,verifyUnifiedRelease} from '../../scripts/deploy-v
 import {planUnifiedPreviewSite} from '../../scripts/v3-unified-site-preview-preflight.mjs';
 import {SINGLE_CAPITAL_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../../scripts/v3-unified-release-pins.mjs';
 import V3AccountWithdrawalForm from '../src/V3AccountWithdrawalForm';
+import V3UnifiedPositionPage from '../src/V3UnifiedPositionPage';
 
 const local=vi.hoisted(()=>({rpc:null as any}));
 vi.mock('ethers',async importOriginal=>{
@@ -37,8 +38,9 @@ describe('one verified capital account on chain 97',()=>{
   let artifacts;
   try{process.chdir('..');artifacts=compileSingleCapitalTestnet();}finally{process.chdir(previous);}
   const tokenArtifact=JSON.parse(fs.readFileSync('../artifacts/MockToken.json','utf8'));
-  const eip=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},
-   miner:{blockGasLimit:30_000_000},wallet:{totalAccounts:3,defaultBalance:50,unlockedAccounts:[UNIFIED_MANAGER]}});
+  const eip=ganache.provider({logging:{quiet:true},
+   chain:{chainId:97,hardfork:'shanghai',time:new Date('2026-10-31T23:40:00Z')},
+   miner:{timestampIncrement:0,blockGasLimit:30_000_000},wallet:{totalAccounts:3,defaultBalance:50,unlockedAccounts:[UNIFIED_MANAGER]}});
   local.rpc=eip;
   const rpc=new BrowserProvider(eip as any,undefined,{cacheTimeout:-1});rpc.pollingInterval=20;
   const journalDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'single-capital-'));
@@ -94,7 +96,10 @@ describe('one verified capital account on chain 97',()=>{
    await mine();
    await deposit('1000');
    await sendV3UnifiedCheckIn(walletProvider as any,wallet,config,{enabled:true});
-   await advance(3601);
+   await advance(3599);
+   expect((await tick()).state).toBe('IDLE_CHECKPOINT_RECORDED');
+   expect((await vault.positionOf(wallet,0)).availableProfit).toBe(0n);
+   await advance(1);
    await expectAccrual();
    expect((await vault.positionOf(wallet,0)).availableProfit).toBe(parseEther('7'));
 
@@ -124,6 +129,10 @@ describe('one verified capital account on chain 97',()=>{
    expect(view.unifiedPage?.lots.map(lot=>lot.principal)).toEqual(['1000','2000','4'].map(parseEther));
    expect(view.unifiedPage?.lots[1].unlockAt).toBeGreaterThan(view.unifiedPage!.lots[0].unlockAt);
    const totals=summarizeV3AccountWithdrawal(view,true);
+   const times=renderToStaticMarkup(<V3UnifiedPositionPage page={view.unifiedPage!} singleCapital onPrevious={()=>{}} onNext={()=>{}}/>);
+   expect(times).toContain('Opened 2026-10-31 23:40:00 UTC');
+   expect(times).toContain('Opened 2026-11-01 00:40:00 UTC');
+   expect(times).toContain('Principal unlock at 2027-01-29 23:40:00 UTC');
    expect(totals.maturedPrincipal).toBe(0n);
    expect(totals.profit).toBe(parseEther('30.063'));
    expect(totals.maxProfit).toBe(totals.profit);
@@ -139,6 +148,11 @@ describe('one verified capital account on chain 97',()=>{
    const requested=await sendV3UnifiedPageWithdrawal(walletProvider as any,wallet,plan.kind,plan.page.positionId,
     plan.page.start,plan.amount,config,{enabled:true});
    const withdrawal=await vault.withdrawalOf(requested.id);
+   const afterRequest=await snapshot();
+   expect(afterRequest.nextRequestAt).toBe(Number(withdrawal.requestedAt)+72*3600);
+   const cooldown=renderToStaticMarkup(<V3AccountWithdrawalForm view={afterRequest} unified busy={false} readOnly={false}
+    value="" kind="profit" onKind={()=>{}} onValue={()=>{}} onSubmit={()=>{}}/>);
+   expect(cooldown).toContain('Withdrawal cooldown ends at 2026-11-04 01:40:01 UTC');
    expect(withdrawal.gross).toBe(totals.profit);
    expect(withdrawal.positionId).toBe(0n);
    expect((await vault.positionOf(wallet,0)).availableProfit).toBe(0n);

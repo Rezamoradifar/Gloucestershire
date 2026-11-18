@@ -17,6 +17,12 @@ describe('commercial activity requires actual seller records',()=>{
   expect(readCommerceSummary({...live,status:'incomplete',paidOrders:4},now)).toBeNull();
   expect(readCommerceSummary({...live,paidOrders:-1},now)).toBeNull();
  });
+ it('accepts an equivalent zoned instant and rejects a timezone-free report or window',()=>{
+  expect(readCommerceSummary({...live,updatedAt:'2026-11-14T15:29:59+03:30'},now)?.paidOrders).toBe(4);
+  for(const key of ['updatedAt','windowStart','windowEnd'] as const){
+   expect(readCommerceSummary({...live,[key]:live[key].slice(0,-1)},now)).toBeNull();
+  }
+ });
  it('does not invent a profit or paid order count during loading',()=>{
   const html=renderToStaticMarkup(<V3CommercePanel/>);
   expect(html).toContain('Verified commercial profit');

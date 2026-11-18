@@ -34,7 +34,7 @@ exec /usr/bin/mktemp -d -- {shlex.quote(str(self.stages))}/global-v3-unified-run
   *" rev-parse "*) echo "$RECEIVED_SHA" ;;
   *" checkout "*) mkdir -p "$2/scripts"
 cat > "$2/scripts/apply-v3-unified-testnet.sh" <<'SH'
-printf '%s %s\\n' "$1" "$PWD" > "$APPLY_LOG"
+printf '%s %s%s\\n' "$1" "$PWD" "${2:+ $2}${3:+ $3}" > "$APPLY_LOG"
 exit "$APPLY_STATUS"
 SH
     ;;
@@ -66,6 +66,15 @@ esac''')
         self.assertIn("UNIFIED_START_WRONG_SERVER", self.invoke(PIN).stderr)
         self.assertIn("UNIFIED_START_EXPECTED_PINNED_SHA", self.invoke("main").stderr)
         self.assertFalse(self.log.exists())
+
+    def test_explicit_single_capital_deployment_flag_is_forwarded_only_with_its_profile(self):
+        result = self.invoke(PIN, "--single-capital", "--deploy-testnet")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log.read_text().split()[2:], ["--single-capital", "--deploy-testnet"])
+        self.log.unlink()
+        for flags in [("--deploy-testnet",), ("--single-capital", "--other")]:
+            self.assertNotEqual(self.invoke(PIN, *flags).returncode, 0)
+            self.assertFalse(self.log.exists())
 
 
 if __name__ == "__main__":

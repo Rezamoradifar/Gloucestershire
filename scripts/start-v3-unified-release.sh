@@ -28,10 +28,14 @@ install_from_github() (
 )
 
 main() {
-  if [[ ! ${1:-} =~ ^[0-9a-f]{40}$ || ( $# != 1 && ( $# != 2 || ${2:-} != --single-capital ) ) ]]; then
+  if [[ ! ${1:-} =~ ^[0-9a-f]{40}$ ]]; then
     echo UNIFIED_START_EXPECTED_PINNED_SHA >&2
     return 1
   fi
+  case "$#:${2:-}:${3:-}" in
+    1::|2:--single-capital:|3:--single-capital:--deploy-testnet) ;;
+    *) echo UNIFIED_START_INVALID_PROFILE >&2; return 1 ;;
+  esac
   if [[ $(id -u) != 0 || $(hostname -s) != vps-luna-2585 ]]; then
     echo UNIFIED_START_WRONG_SERVER >&2
     return 1
