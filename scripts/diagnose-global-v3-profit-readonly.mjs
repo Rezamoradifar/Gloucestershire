@@ -51,13 +51,10 @@ async function open(){
  throw Error('V3_DIAGNOSTIC_PUBLIC_RPC_UNAVAILABLE '+errs.join(' | '));
 }
 async function main(){
- if(process.argv[2]!=='--check'||process.argv.length>4)
-  throw Error('Usage: --check [--config /etc/globaldroptrade/v3-keeper-testnet.json]');
+ if(process.argv[2]!=='--check'||![3,4].includes(process.argv.length)||
+    (process.argv.length===4&&!process.argv[3]?.startsWith('--config=')))
+  throw Error('Usage: --check [--config=/etc/globaldroptrade/v3-keeper-testnet.json]');
  let pinned=null;
- if(process.argv.length===4){
-  if(process.argv[3]!=='--config')throw Error('V3_DIAGNOSTIC_CONFIG_INVALID');
-  // Call with --check --config=path as argument count3 instead, see below.
- }
  if(process.argv[3]?.startsWith('--config=')){
   const config=JSON.parse(fs.readFileSync(process.argv[3].slice(9),'utf8'));
   if(config.chainId!==CHAIN_ID||getAddress(config.contract)!==VAULT||
