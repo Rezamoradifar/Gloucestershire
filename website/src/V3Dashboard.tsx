@@ -145,8 +145,18 @@ export default function V3Dashboard(){
      error:'Unable to read the wallet account or network. Reconnect your wallet and try again.'});
    }
   };
+  const resume=()=>{if(document.visibilityState==='visible')void wallets.restore();};
   const stop=wallets.subscribe(()=>{void sync();});void sync();
-  return()=>{alive=false;walletVersion.current++;diagnosticVersion.current++;stop();};
+  resume();
+  // Mobile in-app browsers may inject their provider after the first render.
+  const delayed=window.setTimeout(resume,1000);
+  window.addEventListener('ethereum#initialized',resume);
+  document.addEventListener('visibilitychange',resume);
+  return()=>{
+   alive=false;walletVersion.current++;diagnosticVersion.current++;stop();
+   window.clearTimeout(delayed);window.removeEventListener('ethereum#initialized',resume);
+   document.removeEventListener('visibilitychange',resume);
+  };
  },[finishReview]);
  const refresh=useCallback(async()=>{
   const provider=walletSession.provider;

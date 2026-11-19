@@ -4,6 +4,15 @@ import {session} from '../src/chain';
 
 vi.mock('../src/config',()=>({chainId:97,chainName:'BNB Testnet',explorer:'https://testnet.bscscan.com',configured:true,vaultAddress:'0x7f19354B765920B9b17003d0840EEaA133883DcA',feeWallets:[]}));
 const address='0xeBfbE2348a0edD7D643ffA441cF6F7B1F2425Be5';
+function browserStorage(){
+ const entries=new Map<string,string>();
+ vi.stubGlobal('window',{localStorage:{
+  getItem:(key:string)=>entries.get(key)??null,
+  setItem:(key:string,value:string)=>entries.set(key,value),
+  removeItem:(key:string)=>entries.delete(key),
+ }});
+ return entries;
+}
 function provider(){
  const events=new Map<string,Set<(...args:unknown[])=>void>>();
  return {
@@ -32,6 +41,66 @@ describe('wallet connection boundaries',()=>{
  it('does not contact wallets until the user chooses a connection',()=>{
   const injected=provider(),mobile=vi.fn();const connection=new WalletConnection(()=>injected,mobile);
   expect(connection.getProvider()).toBeNull();expect(injected.request).not.toHaveBeenCalled();expect(mobile).not.toHaveBeenCalled();
+ });
+ it('restores an authorized injected wallet after a reload and honors explicit disconnect',async()=>{
+  const saved=browserStorage(),injected=provider(),mobile=vi.fn();
+  const visit=()=>new WalletConnection(()=>injected,mobile);
+  await visit().restore();
+  expect(injected.request).not.toHaveBeenCalled();
+  await visit().connect('injected');
+  expect([...saved.values()]).toEqual(['injected']);
+  injected.request.mockClear();
+  const reloaded=visit();await reloaded.restore();
+  expect(reloaded.getProvider()).toBe(injected);
+  expect(injected.request).toHaveBeenCalledExactlyOnceWith({method:'eth_accounts'});
+  await reloaded.disconnect();injected.request.mockClear();
+  await visit().restore();
+  expect(saved.size).toBe(0);expect(injected.request).not.toHaveBeenCalled();
+  expect(mobile).not.toHaveBeenCalled();
+ });
+ it('waits for an injected wallet that appears late, is locked, or is briefly offline',async()=>{
+  browserStorage();const injected=provider(),mobile=vi.fn();
+  await new WalletConnection(()=>injected,mobile).connect('injected');
+  let available=false;
+  const reloaded=new WalletConnection(()=>available?injected:undefined,mobile);
+  await reloaded.restore();expect(reloaded.getProvider()).toBeNull();
+  available=true;
+  injected.request.mockClear().mockRejectedValueOnce(Error('offline')).mockResolvedValueOnce([]);
+  await reloaded.restore();await reloaded.restore();expect(reloaded.getProvider()).toBeNull();
+  await reloaded.restore();expect(reloaded.getProvider()).toBe(injected);
+  expect(injected.request.mock.calls.map(([call])=>call.method)).toEqual(Array(3).fill('eth_accounts'));
+ });
+ it('only restores live WalletConnect sessions with the selected account on the configured chain',async()=>{
+  browserStorage();
+  const session={expiry:Math.floor(Date.now()/1000)+300,namespaces:{eip155:{accounts:['eip155:97:'+address]}}};
+  const mobile={...provider(),session},injected=vi.fn();
+  const visit=()=>new WalletConnection(injected,async()=>mobile);
+  await visit().connect('walletconnect');mobile.enable.mockClear();
+  const reloaded=visit(),expiry=session.expiry;
+  session.expiry=1;await reloaded.restore();
+  expect(mobile.request).not.toHaveBeenCalled();
+  session.expiry=expiry;session.namespaces.eip155.accounts=['eip155:56:'+address];
+  await reloaded.restore();expect(reloaded.getProvider()).toBeNull();
+  session.namespaces.eip155.accounts=['eip155:97:'+address];
+  mobile.request.mockResolvedValueOnce([address]).mockResolvedValueOnce('0x38');
+  await reloaded.restore();expect(reloaded.getProvider()).toBeNull();
+  await reloaded.restore();expect(reloaded.getProvider()).toBe(mobile);
+  expect(mobile.enable).not.toHaveBeenCalled();expect(injected).not.toHaveBeenCalled();
+  expect(mobile.request.mock.calls.every(([call])=>['eth_accounts','eth_chainId'].includes(call.method))).toBe(true);
+ });
+ it('does not resurrect a pending restore after disconnect or replace a new explicit connection',async()=>{
+  browserStorage();const injected=provider(),mobile=provider();
+  const visit=()=>new WalletConnection(()=>injected,async()=>mobile);
+  const first=visit();await first.connect('injected');
+  for(const replacement of [false,true]){
+   const reloaded=visit();await first.connect('injected');
+   let resolve!:(accounts:string[])=>void;
+   injected.request.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+   const restoring=reloaded.restore();
+   if(replacement)await reloaded.connect('walletconnect');else await reloaded.disconnect();
+   resolve([address]);await restoring;
+   expect(reloaded.getProvider()).toBe(replacement?mobile:null);
+  }
  });
  it('connects to the SafePal browser provider when no generic Ethereum injection exists',async()=>{
   const safePal=provider();vi.stubGlobal('window',{safepalProvider:safePal});

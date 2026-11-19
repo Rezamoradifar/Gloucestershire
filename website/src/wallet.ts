@@ -6,8 +6,22 @@ export type WalletProvider=Eip1193Provider & {
  removeListener?:(event:string,listener:(...args:unknown[])=>void)=>unknown;
  disconnect?:()=>Promise<void>;
 };
-type MobileProvider=WalletProvider & {enable:()=>Promise<string[]>};
+type MobileSession={expiry:number;namespaces:Record<string,{accounts:string[]}>};
+type MobileProvider=WalletProvider & {enable:()=>Promise<string[]>;session?:MobileSession};
 export type WalletKind='injected'|'walletconnect';
+const connectorPreferenceKey='global-wallet-connector:'+chainId;
+function savedConnector():WalletKind|null{
+ try{
+  const value=window.localStorage.getItem(connectorPreferenceKey);
+  return value==='injected'||value==='walletconnect'?value:null;
+ }catch{return null;}
+}
+function saveConnector(kind:WalletKind|null){
+ try{
+  if(kind)window.localStorage.setItem(connectorPreferenceKey,kind);
+  else window.localStorage.removeItem(connectorPreferenceKey);
+ }catch{/* Private browsers can still connect for the current visit. */}
+}
 type InjectedWalletScope={safepalProvider?:WalletProvider;ethereum?:WalletProvider&{providers?:Array<WalletProvider&{isSafePal?:boolean}>}};
 export function selectInjectedWalletProvider(scope:InjectedWalletScope):WalletProvider|undefined{
  const providers=Array.isArray(scope.ethereum?.providers)?scope.ethereum.providers:[];
@@ -36,6 +50,7 @@ export class WalletConnection {
  private listeners=new Set<()=>void>();
  private removeEvents=()=>{};
  private pending:Promise<void>|null=null;
+ private restoring:Promise<void>|null=null;
  private attempt=0;
  constructor(private injected:()=>WalletProvider|undefined,private mobile:()=>Promise<MobileProvider>){}
  getProvider(){return this.active;}
@@ -52,6 +67,34 @@ export class WalletConnection {
   }else this.removeEvents=()=>{};
   this.emit();
  }
+ restore(){
+  if(this.active||this.pending)return Promise.resolve();
+  if(this.restoring)return this.restoring;
+  const kind=savedConnector();
+  if(!kind)return Promise.resolve();
+  const attempt=this.attempt;
+  this.restoring=this.restoreSelected(kind,attempt).catch(()=>{
+   // A temporarily locked wallet or an offline relay can recover on return.
+  }).finally(()=>{this.restoring=null;});
+  return this.restoring;
+ }
+ private async restoreSelected(kind:WalletKind,attempt:number){
+  const mobile=kind==='walletconnect'?await this.mobile():null;
+  const provider=mobile??this.injected();
+  if(!provider||attempt!==this.attempt)return;
+  if(mobile&&(!mobile.session||mobile.session.expiry<=Date.now()/1000))return;
+  const accounts=await provider.request({method:'eth_accounts'});
+  const address=Array.isArray(accounts)?accounts[0]:null;
+  if(typeof address!=='string'||!/^0x[\da-f]{40}$/i.test(address))return;
+  if(mobile){
+   const chain=await provider.request({method:'eth_chainId'});
+   const session=mobile.session;
+   const expectedAccount='eip155:'+chainId+':'+address.toLowerCase();
+   if(Number(chain)!==chainId||!session||session.expiry<=Date.now()/1000||
+      !Object.values(session.namespaces).some(ns=>ns.accounts.some(account=>account.toLowerCase()===expectedAccount)))return;
+  }
+  if(attempt===this.attempt&&savedConnector()===kind)this.select(provider,kind);
+ }
  connect(kind:WalletKind){
   if(this.pending)return this.pending;
   const attempt=++this.attempt;
@@ -61,13 +104,13 @@ export class WalletConnection {
     if(!provider)throw Error('No browser wallet found. Use WalletConnect on mobile, or open this site inside your wallet browser.');
     const accounts=await provider.request({method:'eth_requestAccounts'});
     if(!Array.isArray(accounts)||!accounts.length)throw Error('No wallet account was connected.');
-    if(attempt===this.attempt)this.select(provider,kind);
+    if(attempt===this.attempt){saveConnector(kind);this.select(provider,kind);}
    }else{
     const provider=await this.mobile();
     if(attempt!==this.attempt)return;
     const accounts=await provider.enable();
     if(!accounts.length)throw Error('No wallet account was connected.');
-    if(attempt===this.attempt)this.select(provider,kind);
+    if(attempt===this.attempt){saveConnector(kind);this.select(provider,kind);}
     else await provider.disconnect?.();
    }
   })();
@@ -76,6 +119,7 @@ export class WalletConnection {
  }
  async disconnect(){
   this.attempt++;
+  saveConnector(null);
   const previous=this.active,kind=this.kind;
   this.select(null,null);
   if(kind==='walletconnect')await previous?.disconnect?.();

@@ -55,6 +55,12 @@ describe('unified testnet release identity',()=>{
   expect(enabled('/hourly-test/')).toBe(true);
   expect(enabled('/hourly-test')).toBe(true);
   expect(enabled('/single-capital-test/')).toBe(true);
+  expect(enabled('/single-capital-test/index.html')).toBe(true);
+  expect(enabled('/hourly-test/index.html')).toBe(true);
+  expect(enabled('/hourly-test/index.html','')).toBe(false);
+  expect(enabled('/unified-test/index.html')).toBe(false);
+  expect(enabled('/previous-hourly-test/index.html')).toBe(false);
+  expect(enabled('/single-capital-test/other/index.html')).toBe(false);
   expect(enabled('/','')).toBe(false);
   for(const path of ['/unified-test/','/other/','/previous-hourly-test/'])expect(enabled(path)).toBe(false);
   expect(unifiedWalletEnabled(v3ParseReleaseConfig(unified),'/',true,'verified-testnet',
