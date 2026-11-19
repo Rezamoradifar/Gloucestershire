@@ -6,7 +6,7 @@ import type {V3Snapshot} from '../src/v3-chain';
 import type {V3ClaimLedger} from '../src/v3-claim-balance';
 
 const to=(value:string)=>parseEther(value);
-const actions={busy:false,loading:false,connecting:false,value:'',onValue:()=>{},referrer:'',onReferrer:()=>{},invalidInvite:false,
+const actions={connected:false,busy:false,loading:false,connecting:false,value:'',onValue:()=>{},referrer:'',onReferrer:()=>{},invalidInvite:false,
  selectedPosition:'0',onPosition:()=>{},onDeposit:()=>{},onWithdraw:()=>{},onReinvest:()=>{},
  onNetwork:()=>{},onConnect:()=>{},onWalletConnect:()=>{}};
 const ledger:V3ClaimLedger={chainId:97,runtimeVerified:true,block:1234,asOf:1000,nextRequestAt:0,
@@ -23,6 +23,14 @@ describe('classic Global layout with current V3 data',()=>{
   expect(html).toContain('aria-label="— USDT"');
   expect(html).toContain('Connect wallet');
   expect(html).not.toContain('aria-label="0.00 USDT"');
+ });
+ it('keeps the wallet connected when a contract read is pending or unavailable',()=>{
+  for(const loading of [true,false]){
+   const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={null} connected loading={loading}/>);
+   expect(html).toContain(loading?'Checking account…':'Account data unavailable');
+   expect(html).not.toContain('Not connected');
+   expect(html).not.toContain('Connect wallet');
+  }
  });
  it('shows the exact verified V3 capital and separate recorded claims',()=>{
   const view={capital:to('1000'),walletTestTokenBalance:to('7'),tier:1,dailyRateBps:70,

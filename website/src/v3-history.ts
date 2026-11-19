@@ -1,5 +1,5 @@
 import {getAddress,Interface,zeroPadValue,type Eip1193Provider,type Log,type Provider} from 'ethers';
-import {V3_ABI,v3ReadSession} from './v3-chain';
+import {V3_ABI,V3_INDEPENDENT_READER_COUNT,v3ReadSession} from './v3-chain';
 import {formatV3Amount} from './v3-format';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 
@@ -160,7 +160,7 @@ export async function readV3HistoryPage(walletProvider:Eip1193Provider,wallet:st
  // must independently verify the deployment and agree on the anchor block.
  let selected=anchor;
  let nextReader=0;
- for(let attempt=0;attempt<3;attempt++){
+ while(nextReader<=V3_INDEPENDENT_READER_COUNT){
   let session:Awaited<ReturnType<typeof v3ReadSession>>;
   try{session=await v3ReadSession(walletProvider,wallet,config,false,nextReader);}
   catch{throw Error(historyUnavailable);}
@@ -170,7 +170,7 @@ export async function readV3HistoryPage(walletProvider:Eip1193Provider,wallet:st
     throw Error('History anchor or deployment block is no longer verified.');
    return await queryV3HistoryWindow(session.provider,config.address,wallet,selected,page,config.unified?.network);
   }catch(error){
-   if(!(error instanceof Error)||error.message!==historyUnavailable||session.readerIndex>=2)throw error;
+   if(!(error instanceof Error)||error.message!==historyUnavailable||session.readerIndex>=V3_INDEPENDENT_READER_COUNT)throw error;
    nextReader=session.readerIndex+1;
   }finally{session.provider.destroy();}
  }

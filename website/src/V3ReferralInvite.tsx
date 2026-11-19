@@ -8,9 +8,10 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
  const address=view.registered?view.wallet:'';
  const link=useMemo(()=>{
   if(!address||typeof window==='undefined')return '';
-  try{return referralLink(address,window.location.origin,window.location.pathname);}
+  const publishedAtRoot=view.singleCapital&&import.meta.env.VITE_V3_UNIFIED_PRIMARY==='single-capital-testnet';
+  try{return referralLink(address,window.location.origin,publishedAtRoot?'/':window.location.pathname);}
   catch{return '';}
- },[address]);
+ },[address,view.singleCapital]);
  async function copy(value:string){
   if(!value)return;
   try{

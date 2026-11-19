@@ -48,9 +48,10 @@ export function v3ParseReleaseConfig(raw:{
 export function unifiedWalletEnabled(config:V3SiteReleaseConfig|null,path:string,
  hourly=V3_HOURLY_TEST,primary=import.meta.env.VITE_V3_PRIMARY_DASHBOARD,mode=import.meta.env.VITE_V3_UNIFIED_WALLET_ACTIONS,
  unifiedPrimary=import.meta.env.VITE_V3_UNIFIED_PRIMARY){
+ const page=path.endsWith('/index.html')?path.slice(0,-'index.html'.length):path;
  const route=config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
  const root=config?.unified?.singleCapital&&unifiedPrimary==='single-capital-testnet'&&
-  (path==='/'||path==='/index.html'||path==='/hourly-test/'||path==='/hourly-test');
+  (page==='/'||page==='/hourly-test/'||page==='/hourly-test');
  return Boolean(config?.unified)&&hourly&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&
-  (root||path===route||path===route.slice(0,-1));
+  (root||page===route||page===route.slice(0,-1));
 }

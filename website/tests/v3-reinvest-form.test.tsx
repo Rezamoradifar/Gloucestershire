@@ -22,7 +22,7 @@ const ledger={chainId:97,runtimeVerified:true,block:1234,asOf:1000,nextRequestAt
 const view={capital:E('2000'),walletTestTokenBalance:0n,tier:1,dailyRateBps:70,registered:true,
  suspended:false,paused:false,qualifiedDirects:0,requiredDirects:6,qualifiedVolume:0n,requiredVolume:E('10000'),
  positions,ledger} as V3Snapshot;
-const actions={busy:true,loading:false,connecting:false,value:'',onValue:()=>{},referrer:'',onReferrer:()=>{},invalidInvite:false,
+const actions={connected:false,busy:true,loading:false,connecting:false,value:'',onValue:()=>{},referrer:'',onReferrer:()=>{},invalidInvite:false,
  selectedPosition:'0',onPosition:()=>{},onDeposit:()=>{},onWithdraw:()=>{},onReinvest:()=>{},
  onNetwork:()=>{},onConnect:()=>{},onWalletConnect:()=>{}};
 
