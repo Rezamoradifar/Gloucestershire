@@ -173,7 +173,7 @@ export default function V3Dashboard(){
  },[walletSession,wallet,chain,config,tab,branchPage,groupPage,unifiedPageStart]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
-  if(!config||!wallet||chain!==97)return;
+  if(loading||!config||!wallet||chain!==97)return;
   const tick=()=>{
    if(document.visibilityState!=='visible'||busy||polling.current)return;
    polling.current=true;
@@ -182,7 +182,7 @@ export default function V3Dashboard(){
   const timer=setInterval(tick,20000);
   document.addEventListener('visibilitychange',tick);
   return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',tick);};
- },[wallet,chain,busy,refresh,config]);
+ },[wallet,chain,busy,loading,refresh,config]);
  async function connect(kind:WalletKind){
   setConnecting(true);setError('');
   try{await wallets.connect(kind);}
@@ -519,7 +519,7 @@ export default function V3Dashboard(){
     </section>}
     {tab==='overview'&&view&&<div className="gv3-sync-line" aria-live="off"><span className="gv3-live-status">{loading?'CHECKING BLOCKCHAIN':'AUTO REFRESH · 20 SEC'}</span>
      <span>Verified block {view.block.toLocaleString('en-US')} · {formatUtcTime(view.asOf)}</span></div>}
-    {tab==='overview'&&<V3ClassicOverview view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
+    {tab==='overview'&&<V3ClassicOverview view={view} connected={Boolean(wallet)} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
      onDeposit={()=>void deposit()} onWithdraw={()=>request('profit')} onReinvest={reinvest}

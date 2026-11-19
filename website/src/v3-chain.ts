@@ -127,8 +127,14 @@ export const V3_TEST_TOKEN_ABI=[
 ];
 const endpoints=[
  'https://bsc-testnet-dataseed.bnbchain.org',
+ 'https://bnb-testnet.api.onfinality.io/public',
+ 'https://bsc-prebsc-dataseed.bnbchain.org',
  'https://bsc-testnet-rpc.publicnode.com'
 ] as const;
+export const V3_INDEPENDENT_READER_COUNT=endpoints.length;
+const rpcRequestTimeoutMs=8_000;
+// Verification reads several dependent rounds, including an anchor recheck.
+const verificationTimeoutMs=60_000;
 const withTimeout=<T,>(promise:Promise<T>,milliseconds:number)=>Promise.race([
  promise,new Promise<T>((_,reject)=>{
   const timer=setTimeout(()=>reject(Error('V3_RPC_TIMEOUT')),milliseconds);
@@ -197,9 +203,10 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
   !Array.isArray(accounts)||!accounts.some(a=>typeof a==='string'&&a.toLowerCase()===wallet.toLowerCase()))
   throw Error('Select the same connected wallet on BNB Testnet (chain 97).');
  const verify=async(provider:JsonRpcProvider|BrowserProvider,checkChain:boolean)=>{
-  if(checkChain&&Number(BigInt(await provider.send('eth_chainId',[])))!==97)
-   throw Error('V3 source returned a different chain.');
-  const height=await provider.getBlockNumber();
+  const [chainId,height]=await Promise.all([
+   checkChain?provider.send('eth_chainId',[]):chain,provider.getBlockNumber()
+  ]);
+  if(Number(BigInt(String(chainId)))!==97)throw Error('V3 source returned a different chain.');
   if(height<4)throw Error('BNB Testnet has no confirmed V3 blocks.');
   const [block,code,receipt]=await Promise.all([
    provider.getBlock(height-3),provider.getCode(config.address,'latest'),
@@ -216,19 +223,23 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    vault.FEE_WALLET_1(options),vault.FEE_WALLET_2(options),
    vault.OPERATIONS_WALLET(options),vault.DEPOSIT_FEE_EACH_BPS(options)
   ]);
-  const adminAllowed=await vault.hasRole(managerRole,V3_EXPECTED_MANAGER,options);
+  if(config.unified&&!V3_HOURLY_TEST)throw Error('The unified release requires the one-hour test profile.');
+  const [adminAllowed,period,singleCapitalVersion]=await Promise.all([
+   vault.hasRole(managerRole,V3_EXPECTED_MANAGER,options),
+   V3_HOURLY_TEST?vault.ACCRUAL_PERIOD(options):null,
+   config.unified?.singleCapital?vault.SINGLE_CAPITAL_VERSION(options):null
+  ]);
   if(getAddress(asset)!==V3_TEST_TOKEN||
     getAddress(fees)!==V3_EXPECTED_FEE_RECEIVER||!adminAllowed||
     getAddress(depositFee1)!==V3_DEPOSIT_FEE_1||getAddress(depositFee2)!==V3_DEPOSIT_FEE_2||
     getAddress(operations)!==V3_OPERATIONS||BigInt(depositBps)!==1000n)
    throw Error('V3 asset, routing destinations, fees or manager role was not verified.');
   // Never show an accelerated clock against the existing 24-hour contract.
-  if(V3_HOURLY_TEST&&BigInt(await vault.ACCRUAL_PERIOD(options))!==3600n)
+  if(V3_HOURLY_TEST&&BigInt(period)!==3600n)
    throw Error('The isolated hourly test contract period was not verified.');
   let network=vault,book:Contract|null=null;
   if(config.unified){
-   if(!V3_HOURLY_TEST)throw Error('The unified release requires the one-hour test profile.');
-   if(config.unified.singleCapital&&BigInt(await vault.SINGLE_CAPITAL_VERSION(options))!==1n)
+   if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==1n)
     throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
     vault.reinvestmentBook(options),vault.networkPlan(options),
@@ -252,14 +263,14 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
  // Try independent sources sequentially; retain the successful provider only
  // for the scoped read, so its connection is not destroyed prematurely.
  for(let index=startReader;index<endpoints.length;index++){
-  const request=new FetchRequest(endpoints[index]);request.timeout=8000;
+  const request=new FetchRequest(endpoints[index]);request.timeout=rpcRequestTimeoutMs;
   const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
-  try{return {...await withTimeout(verify(provider,true),12000),readerIndex:index};}
+  try{return {...await withTimeout(verify(provider,true),verificationTimeoutMs),readerIndex:index};}
   catch{provider.destroy();}
  }
  if(requireIndependent)throw Error('An independently verified V3 BNB Testnet RPC is unavailable. Check transaction history before retrying.');
  const browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
- try{return {...await withTimeout(verify(browser,false),12000),readerIndex:endpoints.length};}
+ try{return {...await withTimeout(verify(browser,false),verificationTimeoutMs),readerIndex:endpoints.length};}
  catch{
   browser.destroy();
   throw Error('Verified V3 BNB Testnet reads unavailable. No financial values will be shown; retry.');

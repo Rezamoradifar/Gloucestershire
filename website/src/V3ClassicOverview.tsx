@@ -9,7 +9,7 @@ import type {V3Snapshot} from './v3-chain';
 
 type Mode='deposit'|'withdraw'|'reinvest';
 type Props={
- view:V3Snapshot|null;busy:boolean;loading:boolean;connecting:boolean;readOnly?:boolean;unifiedRelease?:boolean;
+ view:V3Snapshot|null;connected:boolean;busy:boolean;loading:boolean;connecting:boolean;readOnly?:boolean;unifiedRelease?:boolean;
  value:string;onValue:(value:string)=>void;
  referrer:string;onReferrer:(value:string)=>void;invalidInvite:boolean;
  selectedPosition:string;onPosition:(value:string)=>void;
@@ -18,7 +18,7 @@ type Props={
 };
 
 export default function V3ClassicOverview(props:Props){
- const {view,busy,loading,connecting,readOnly=false,unifiedRelease,value,onValue,referrer,onReferrer,invalidInvite,
+ const {view,connected,busy,loading,connecting,readOnly=false,unifiedRelease,value,onValue,referrer,onReferrer,invalidInvite,
   selectedPosition,onPosition,onDeposit,onWithdraw,onReinvest,onNetwork,onConnect,onWalletConnect}=props;
  const [mode,setMode]=useState<Mode>('deposit');
  const claims=view?v3PrepareUserClaims(view.ledger):null;
@@ -37,8 +37,9 @@ export default function V3ClassicOverview(props:Props){
   if(!usable)return;
   if(mode==='deposit')onDeposit();else if(mode==='withdraw')onWithdraw();else onReinvest();
  }
+ const accountReadStatus=loading?'Checking account…':'Account data unavailable';
  const cards=[
-  {label:'Active principal',value:view?money(view.capital):'—',Icon:Layers,foot:view?'Combined verified account principal':'Available after connection'},
+  {label:'Active principal',value:view?money(view.capital):'—',Icon:Layers,foot:view?'Combined verified account principal':connected?accountReadStatus:'Available after connection'},
   {label:'Recorded profit & rewards',value:claims?money(claims.internalCurrent):'—',Icon:Coins,foot:'Internal account credit; not wallet cash'},
   {label:'Per-request reward cap',value:view?money(view.ledger.requestCap):'—',Icon:ArrowUpRight,foot:'Available request amount is verified in the withdrawal form'}
  ];
@@ -65,7 +66,7 @@ export default function V3ClassicOverview(props:Props){
       <select value={selectedPosition} disabled={!view||busy||positions.length===0} onChange={event=>onPosition(event.target.value)}>
        {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} USDT profit</option>):<option value="0">No position available</option>}
       </select></label>}
-     <label className="gv1-field" htmlFor="gv1-amount"><span>Amount <small>{!view?'Connect wallet to view balance':mode==='deposit'?
+     <label className="gv1-field" htmlFor="gv1-amount"><span>Amount <small>{!view?(connected?accountReadStatus:'Connect wallet to view balance'):mode==='deposit'?
       `Wallet balance: ${money(view.walletTestTokenBalance)} USDT`:mode==='withdraw'||(mode==='reinvest'&&unified)?
       `Recorded account profit: ${money(recordedPositionProfit)} USDT`:position?
       `Recorded position profit: ${money(position.availableProfit)} USDT`:'Select a position'}</small></span>
@@ -80,13 +81,13 @@ export default function V3ClassicOverview(props:Props){
      {readOnly&&<p id="gv1-read-only" className="gv1-inline-warning">Wallet transactions are disabled in this preview.</p>}
      <button type="submit" className="gv2-primary gv1-action" disabled={!usable} aria-describedby={readOnly?'gv1-read-only':undefined}>
       {mode==='deposit'?'Review test deposit':mode==='withdraw'?'Review withdrawal request':'Review reinvestment'} <ArrowRight size={16}/></button>
-     {!view&&<div className="gv1-connect-actions"><button type="button" disabled={connecting} onClick={onConnect}><Wallet size={15}/> Connect wallet</button>
+     {!view&&!connected&&<div className="gv1-connect-actions"><button type="button" disabled={connecting} onClick={onConnect}><Wallet size={15}/> Connect wallet</button>
       <button type="button" disabled={connecting} onClick={onWalletConnect}>WalletConnect</button></div>}
     </form>
    </section>
    <aside className="gv1-side-panels">
     <section className="gv1-panel gv1-plan" aria-labelledby="gv1-plan-title">
-     <div className="gv1-panel-title"><h2 id="gv1-plan-title">Your plan</h2><span className="gv1-plan-tag">{view?(view.registered?(['Starter','Basic','Growth','Pro','VIP'][view.tier]??'Member'):'Not registered'):'Not connected'}</span></div>
+     <div className="gv1-panel-title"><h2 id="gv1-plan-title">Your plan</h2><span className="gv1-plan-tag">{view?(view.registered?(['Starter','Basic','Growth','Pro','VIP'][view.tier]??'Member'):'Not registered'):connected?accountReadStatus:'Not connected'}</span></div>
      <div className="gv1-plan-figure"><span className="gv1-plan-symbol">◆</span><div>
       <strong><DigitalValue value={view?String(view.dailyRateBps/100):'—'} unit="%"/></strong><small>Daily test rate · conditional</small></div></div>
      <div className="gv1-plan-detail"><span>Recorded capital value</span><b>{view?money(view.capital):'—'} USDT</b></div>
@@ -95,7 +96,7 @@ export default function V3ClassicOverview(props:Props){
      <button type="button" className="gv1-text-button" onClick={onNetwork}>Explore referral network <ArrowRight size={15}/></button>
     </section>
     <section className="gv1-panel gv1-cycle-preview"><ClockIcon/><div><h3>{V3_HOURLY_TEST?'One-hour test cycle':'24-hour daily cycle'}</h3>
-     <p>{view?'The live timer and separate profit details are shown below.':'Connect your wallet to load the live cycle.'}</p></div></section>
+     <p>{view?'The live timer and separate profit details are shown below.':connected?'Cycle details appear after the account is verified.':'Connect your wallet to load the live cycle.'}</p></div></section>
    </aside>
   </div>
  </section>;
