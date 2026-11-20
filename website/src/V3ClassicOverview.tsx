@@ -61,7 +61,7 @@ export default function V3ClassicOverview(props:Props){
      {mode==='reinvest'&&view&&<p className="gv2-small">{view.singleCapital?'Total reinvested':'Combined reinvested principal'}: {money(reinvested)} USDT.
       {' '}{view.singleCapital?'Reinvestment adds to the same investment account.':
        unified?'Reinvestments share one position; each addition has its own lock.':'Each reinvestment remains a separate contract position with its own lock.'}</p>}
-     {mode==='reinvest'&&unified&&<V3UnifiedReinvestSummary positions={positions}/>}
+     {mode==='reinvest'&&unified&&view&&<V3UnifiedReinvestSummary positions={positions}/>}
      {requiresPosition&&<label className="gv1-field">Source position for recorded profit
       <select value={selectedPosition} disabled={!view||busy||positions.length===0} onChange={event=>onPosition(event.target.value)}>
        {positions.length?positions.map(position=><option key={position.id} value={position.id}>Position #{position.id+1} · {position.fromReinvestment?'Reinvestment':'Deposit'} · {money(position.availableProfit)} USDT profit</option>):<option value="0">No position available</option>}

@@ -9,6 +9,7 @@ import {V3_HOURLY_TEST,V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
 import {v3PageRange} from './v3-pagination';
 import {readV3NetworkPreview,type V3NetworkPreview} from './v3-network-preview';
+import {readWalletSelection} from './wallet-read';
 import {readUnifiedPositionPage,readUnifiedWithdrawalPages,MAX_UNIFIED_WITHDRAWAL_LOTS,
  type UnifiedBookReader,type UnifiedPositionPage,type UnifiedVaultReader} from './v3-unified-position';
 
@@ -135,12 +136,21 @@ export const V3_INDEPENDENT_READER_COUNT=endpoints.length;
 const rpcRequestTimeoutMs=8_000;
 // Verification reads several dependent rounds, including an anchor recheck.
 const verificationTimeoutMs=60_000;
-const withTimeout=<T,>(promise:Promise<T>,milliseconds:number)=>Promise.race([
+// Verification and all fallback attempts share one dashboard refresh budget.
+// Individual read failures can retry, but cannot restart this clock.
+const accountSnapshotTimeoutMs=120_000;
+const withTimeout=<T,>(promise:Promise<T>,milliseconds:number,code='V3_RPC_TIMEOUT')=>Promise.race([
  promise,new Promise<T>((_,reject)=>{
-  const timer=setTimeout(()=>reject(Error('V3_RPC_TIMEOUT')),milliseconds);
+  const timer=setTimeout(()=>reject(Error(code)),milliseconds);
   void promise.finally(()=>clearTimeout(timer)).catch(()=>{});
  })
 ]);
+const remainingTimeout=(limit:number,deadlineAt?:number)=>{
+ if(deadlineAt===undefined)return limit;
+ const remaining=deadlineAt-Date.now();
+ if(remaining<=0)throw Error('V3_ACCOUNT_READ_TIMEOUT');
+ return Math.min(limit,remaining);
+};
 export const v3ReleaseConfig:V3SiteReleaseConfig|null=v3ParseReleaseConfig({
  address:import.meta.env.VITE_V3_CONTRACT_ADDRESS,
  runtimeHash:import.meta.env.VITE_V3_RUNTIME_HASH,
@@ -190,15 +200,16 @@ const toSafeCount=(raw:bigint,label:string)=>{
  return n;
 };
 export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig,requireIndependent=false,startReader=0){
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,requireIndependent=false,startReader=0,deadlineAt?:number){
  if(!Number.isInteger(startReader)||startReader<0||startReader>endpoints.length)throw Error('Invalid V3 reader index.');
+ if(deadlineAt!==undefined&&!Number.isFinite(deadlineAt))throw Error('Invalid V3 account read deadline.');
  if(!config)throw Error('The V3 testnet contract has not been deployed and verified for this site.');
  if(!isAddress(wallet))throw Error('Connect a valid testnet wallet.');
  wallet=getAddress(wallet);
- const [chain,accounts]=await Promise.all([
-  walletProvider.request({method:'eth_chainId'}),
-  walletProvider.request({method:'eth_accounts'})
- ]);
+ const selectionTimeout=remainingTimeout(rpcRequestTimeoutMs,deadlineAt);
+ const selection=readWalletSelection(walletProvider);
+ const {chainId:chain,accounts}=await (deadlineAt===undefined?selection:
+  withTimeout(selection,selectionTimeout,'V3_ACCOUNT_READ_TIMEOUT'));
  if(Number(BigInt(String(chain)))!==V3_TESTNET_CHAIN_ID||
   !Array.isArray(accounts)||!accounts.some(a=>typeof a==='string'&&a.toLowerCase()===wallet.toLowerCase()))
   throw Error('Select the same connected wallet on BNB Testnet (chain 97).');
@@ -263,24 +274,59 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
  // Try independent sources sequentially; retain the successful provider only
  // for the scoped read, so its connection is not destroyed prematurely.
  for(let index=startReader;index<endpoints.length;index++){
+  const timeout=remainingTimeout(verificationTimeoutMs,deadlineAt);
   const request=new FetchRequest(endpoints[index]);request.timeout=rpcRequestTimeoutMs;
   const provider=new JsonRpcProvider(request,97,{staticNetwork:true,batchMaxCount:1,cacheTimeout:-1});
-  try{return {...await withTimeout(verify(provider,true),verificationTimeoutMs),readerIndex:index};}
+  try{
+   const session=await withTimeout(verify(provider,true),timeout);
+   remainingTimeout(verificationTimeoutMs,deadlineAt);
+   return {...session,readerIndex:index};
+  }
   catch{provider.destroy();}
  }
+ const timeout=remainingTimeout(verificationTimeoutMs,deadlineAt);
  if(requireIndependent)throw Error('An independently verified V3 BNB Testnet RPC is unavailable. Check transaction history before retrying.');
  const browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
- try{return {...await withTimeout(verify(browser,false),verificationTimeoutMs),readerIndex:endpoints.length};}
+ try{
+  const session=await withTimeout(verify(browser,false),timeout);
+  remainingTimeout(verificationTimeoutMs,deadlineAt);
+  return {...session,readerIndex:endpoints.length};
+ }
  catch{
   browser.destroy();
+  remainingTimeout(verificationTimeoutMs,deadlineAt);
   throw Error('Verified V3 BNB Testnet reads unavailable. No financial values will be shown; retry.');
  }
 }
 export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:string,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,
  networkPage:{branches:number;groups:number}|null=null,unifiedPageStart=0,withdrawalCoverage=false):Promise<V3Snapshot>{
- const {vault,network,book,provider,options,block}=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified));
- try{
+ // Verification can succeed before an RPC starts throttling account reads.
+ // Retry the complete snapshot on the next independently verified source. Each
+ // attempt gets its own confirmed block; partial balances are never combined.
+ const deadlineAt=Date.now()+accountSnapshotTimeoutMs;
+ let startReader=0;
+ while(startReader<=endpoints.length){
+  const session=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified),startReader,deadlineAt);
+  try{
+   const timeout=remainingTimeout(accountSnapshotTimeoutMs,deadlineAt);
+   const result=await withTimeout(
+    readVerifiedV3Snapshot(session,wallet,config!,networkPage,unifiedPageStart,withdrawalCoverage),
+    timeout,'V3_ACCOUNT_READ_TIMEOUT');
+   remainingTimeout(accountSnapshotTimeoutMs,deadlineAt);
+   return result;
+  }
+  catch(error){
+   startReader=session.readerIndex+1;
+   if(startReader>endpoints.length||(config?.unified&&startReader===endpoints.length))throw error;
+  }finally{session.provider.destroy();}
+ }
+ throw Error('Verified V3 account reads unavailable. Retry using a healthy BNB Testnet RPC.');
+}
+async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSession>>,wallet:string,
+ config:V3SiteReleaseConfig,networkPage:{branches:number;groups:number}|null,
+ unifiedPageStart:number,withdrawalCoverage:boolean):Promise<V3Snapshot>{
+ const {vault,network,book,provider,options,block}=session;
  wallet=getAddress(wallet);
  const [user,eligible,nPosition,nWithdraw,tWithdraw,nMember,cap,paused,managerRole,funderRole,cashStatus]=await Promise.all([
   vault.users(wallet,options),vault.isEligible(wallet,options),
@@ -438,5 +484,4 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
   ...(config!.unified?.keeper?{keeper:{operator:config!.unified.keeper,gasWei:keeperGasWei}}:{}),
   gasWei:BigInt(gasWei),ledger
  };
- }finally{provider.destroy();}
 }

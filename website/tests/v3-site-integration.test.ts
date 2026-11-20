@@ -40,7 +40,10 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
  it('V3 money reads require verified bytecode and do not import old V2 contract state',()=>{
   const code=file('v3-chain.ts');
   for(const required of [
-   'v3ParseReleaseConfig','v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified))',
+   'v3ParseReleaseConfig','v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified),startReader,deadlineAt)',
+   'readVerifiedV3Snapshot(session,wallet,config!',
+   'const selection=readWalletSelection(walletProvider)',
+   'Number(BigInt(String(chain)))!==V3_TESTNET_CHAIN_ID',
    "provider.getCode(config.address,'latest')",
    'provider.getTransactionReceipt(config.deploymentTx)',
    'V3_EXPECTED_MANAGER',
@@ -54,6 +57,9 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
    'vault.cashStatus(options)',
    'vault.profitWithdrawalCap(wallet,options)'
   ])expect(code).toContain(required);
+  const walletReads=file('wallet-read.ts');
+  expect(walletReads).toContain("readWalletValue(provider,'eth_accounts')");
+  expect(walletReads).toContain("readWalletValue(provider,'eth_chainId')");
   expect(code).not.toContain('/api/config');
   expect(code).not.toContain('TRADES_VAULT_ADDRESS');
   expect(code).not.toContain('0x4C0F6141b18971db4b14e45c0bE8CddB09febc14');

@@ -1,5 +1,6 @@
 import type {Eip1193Provider} from 'ethers';
 import {chainId,chainName,explorer} from './config';
+import {readWalletValue} from './wallet-read';
 
 export type WalletProvider=Eip1193Provider & {
  on?:(event:string,listener:(...args:unknown[])=>void)=>unknown;
@@ -83,11 +84,11 @@ export class WalletConnection {
   const provider=mobile??this.injected();
   if(!provider||attempt!==this.attempt)return;
   if(mobile&&(!mobile.session||mobile.session.expiry<=Date.now()/1000))return;
-  const accounts=await provider.request({method:'eth_accounts'});
+  const accounts=await readWalletValue(provider,'eth_accounts');
   const address=Array.isArray(accounts)?accounts[0]:null;
   if(typeof address!=='string'||!/^0x[\da-f]{40}$/i.test(address))return;
   if(mobile){
-   const chain=await provider.request({method:'eth_chainId'});
+   const chain=await readWalletValue(provider,'eth_chainId');
    const session=mobile.session;
    const expectedAccount='eip155:'+chainId+':'+address.toLowerCase();
    if(Number(chain)!==chainId||!session||session.expiry<=Date.now()/1000||
