@@ -12,12 +12,15 @@ verification_rpc=https://bsc-testnet-rpc.publicnode.com
 deployment_proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
 route_name=unified-test
 profile=()
+build_inodes=95000
 
 fail() { echo "$1" >&2; exit 1; }
 
+free_inodes() { df -Pi -- "$1" | awk 'NR==2 {print $4}'; }
+
 check_capacity() {
   local mount_path=$1 min_inodes=$2 min_kib=$3 inodes kib
-  inodes=$(df -Pi -- "$mount_path" | awk 'NR==2 {print $4}')
+  inodes=$(free_inodes "$mount_path")
   kib=$(df -Pk -- "$mount_path" | awk 'NR==2 {print $4}')
   [[ $inodes =~ ^[0-9]+$ && $kib =~ ^[0-9]+$ ]] || fail UNIFIED_FILESYSTEM_USAGE_UNAVAILABLE
   if (( inodes < min_inodes || kib < min_kib )); then
@@ -101,6 +104,58 @@ apply_release() {
   echo "UNIFIED_TESTNET_WALLET_DASHBOARD_AVAILABLE=https://globaldroptrade.com/$route_name/"
 }
 
+install_and_apply() {
+  local work=$1 sha=$2 route_name=$3 proof=$4 option=$5
+  local -a profile=()
+  if [[ $route_name == single-capital-test ]]; then profile=(--single-capital); fi
+  # Both locked dependency trees, the fresh npm cache and build output use this filesystem.
+  check_capacity "$work" "$build_inodes" 2097152
+  check_capacity /var/lib 2000 65536
+  check_site_target "$work"
+  export npm_config_cache="$work/npm-cache"
+  npm ci --ignore-scripts --no-audit --no-fund
+  npm ci --prefix website --ignore-scripts --no-audit --no-fund
+  python3 scripts/verify-v3-prepared-checkout.py
+  check_capacity "$work" 6000 262144
+  apply_release "$sha" "$proof" "$option"
+}
+
+install_with_available_storage() (
+  local work=$1 inodes stage image='' tool
+  inodes=$(free_inodes "$work")
+  [[ $inodes =~ ^[0-9]+$ ]] || fail UNIFIED_FILESYSTEM_USAGE_UNAVAILABLE
+  if (( inodes >= build_inodes )); then
+    install_and_apply "$@"
+    return
+  fi
+
+  # Reserve 3 GiB for a private filesystem and leave space for the persistent worker and site.
+  check_capacity "$work" 10000 4194304
+  for tool in fallocate mkfs.ext4 unshare mount; do
+    command -v "$tool" >/dev/null || fail "UNIFIED_REQUIRED_COMMAND_MISSING_$tool"
+  done
+  stage=$(mktemp -d -- "${work%/*}/global-v3-unified-run.XXXXXXXX")
+  trap '[[ -z $image ]] || rm -f -- "$image"; rmdir -- "$stage"' EXIT
+  image=$(mktemp -- "$work/build.XXXXXXXX")
+  fallocate -l 3G -- "$image"
+  mkfs.ext4 -q -F -m 0 -N 131072 -E nodiscard "$image"
+  check_capacity "$work" 10000 1048576
+  echo UNIFIED_USING_PRIVATE_INODE_WORKSPACE
+
+  # The parent holds the deployment lock. Only the child sees the mount; nginx
+  # and systemd still use their persistent paths on the host filesystem.
+  shift
+  unshare --mount --propagation private --fork --kill-child -- bash -ceu '
+    image=$1; stage=$2; source_checkout=$3; shift 3
+    mount -t ext4 -o loop,nodev,nosuid "$image" "$stage"
+    chmod 0700 -- "$stage"
+    cp -a -- "$source_checkout" "$stage/release"
+    cd -P -- "$stage/release"
+    source scripts/apply-v3-unified-testnet.sh
+    install_and_apply "$stage" "$@"
+  ' bash "$image" "$stage" "$work/release" "$@"
+)
+
 main() {
   local sha=${1:-} checkout work arch runtime lock_dir
   [[ $(id -u) == 0 && $(hostname -s) == vps-luna-2585 ]] || fail UNIFIED_APPLY_WRONG_SERVER
@@ -108,7 +163,6 @@ main() {
   case "$#:${2:-}:${3:-}" in
     1::) ;;
     2:--single-capital:|3:--single-capital:--deploy-testnet|3:--single-capital:--primary)
-      profile=(--single-capital)
       route_name=single-capital-test
       deployment_proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
       if [[ ${3:-} != --deploy-testnet ]]; then
@@ -142,17 +196,7 @@ main() {
   exec 8>"$lock_dir/apply.lock"
   flock -n 8 || fail UNIFIED_APPLY_ALREADY_RUNNING
 
-  # Two locked dependency trees use about 77,000 inodes. Include the fresh package
-  # cache, build output and a small operational reserve on the same filesystem.
-  check_capacity "$work" 95000 2097152
-  check_capacity /var/lib 2000 65536
-  check_site_target "$work"
-  export npm_config_cache="$work/npm-cache"
-  npm ci --ignore-scripts --no-audit --no-fund
-  npm ci --prefix website --ignore-scripts --no-audit --no-fund
-  python3 scripts/verify-v3-prepared-checkout.py
-  check_capacity "$work" 6000 262144
-  apply_release "$sha" "$deployment_proof" "${3:-}"
+  install_with_available_storage "$work" "$sha" "$route_name" "$deployment_proof" "${3:-}"
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

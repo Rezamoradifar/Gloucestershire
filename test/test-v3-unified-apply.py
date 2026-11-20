@@ -171,6 +171,79 @@ class ApplyTestnet(unittest.TestCase):
         self.assertNotIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", failure.stdout)
 
 
+class InodeWorkspace(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.parent = Path(temp.name)
+        self.work = self.parent / "global-v3-unified-run.ABCDef12"
+        self.checkout = self.work / "release"
+        scripts = self.checkout / "scripts"
+        scripts.mkdir(parents=True)
+        self.trace = self.parent / "trace"
+        self.env = dict(os.environ, SOURCE=str(SOURCE), WORK=str(self.work), TRACE=str(self.trace),
+                        TEST_INODES="92667", TEST_KIB="10037276", REVISION=REVISION, INSTALL_STATUS="0")
+        # In a real private mount, exercise the production capacity check and verify
+        # that only the build moved. Stop before calling npm or any service.
+        (scripts / SOURCE.name).write_text(SOURCE.read_text() + r"""
+install_and_apply() {
+  check_capacity "$1" "$build_inodes" 2097152
+  mountpoint -q "$1"
+  [[ $(stat -f -c %T "$1") == ext2/ext3 && $(stat -c %a "$1") == 700 ]]
+  [[ $(stat -c %d "$1") != $(stat -c %d "$WORK") && $PWD == "$1/release" ]]
+  [[ -f scripts/apply-v3-unified-testnet.sh ]]
+  printf '%s\n' "$@" > "$TRACE"
+  exit "$INSTALL_STATUS"
+}
+""")
+
+    def invoke(self, **changes):
+        harness = r"""
+source "$SOURCE"
+df() {
+  if [[ ${!#} != "$WORK" ]]; then command df "$@"; return; fi
+  local value=$TEST_INODES
+  if [[ $1 == -Pk ]]; then value=$TEST_KIB; fi
+  printf 'Filesystem total used available\nfixture 0 0 %s\n' "$value"
+}
+install_and_apply() { printf '%s\n' "$@" > "$TRACE"; }
+install_with_available_storage "$WORK" "$REVISION" single-capital-test /var/lib/example/proof.json --primary
+"""
+        env = dict(self.env, **changes)
+        return subprocess.run(["bash", "-c", harness], cwd=self.checkout, env=env,
+                              capture_output=True, text=True)
+
+    def assert_clean(self):
+        self.assertEqual(list(self.work.iterdir()), [self.checkout])
+        self.assertEqual(set(self.parent.iterdir()) - {self.trace}, {self.work})
+
+    def test_normal_storage_without_image_and_persistent_space_floor(self):
+        result = self.invoke(TEST_INODES="95000")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.trace.read_text().splitlines(), [
+            str(self.work), REVISION, "single-capital-test", "/var/lib/example/proof.json", "--primary"])
+        self.trace.unlink()
+        for changes in [{"TEST_KIB": "4194303"}, {"TEST_INODES": "9999"}, {"TEST_INODES": "-"}]:
+            with self.subTest(changes=changes):
+                result = self.invoke(**changes)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.trace.exists())
+                self.assert_clean()
+
+    @unittest.skipUnless(os.geteuid() == 0, "the private ext4 mount needs root")
+    def test_reported_shortfall_uses_private_ext4_and_cleans_up_after_success_and_failure(self):
+        for status in (0, 37):
+            with self.subTest(status=status):
+                result = self.invoke(INSTALL_STATUS=str(status))
+                self.assertEqual(result.returncode, status, result.stdout + result.stderr)
+                self.assertIn("UNIFIED_USING_PRIVATE_INODE_WORKSPACE", result.stdout)
+                stage, *args = self.trace.read_text().splitlines()
+                self.assertNotEqual(stage, str(self.work))
+                self.assertEqual(args, [REVISION, "single-capital-test", "/var/lib/example/proof.json", "--primary"])
+                self.assert_clean()
+                self.trace.unlink()
+
+
 class WorkerGasInstallation(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

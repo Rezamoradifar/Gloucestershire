@@ -71,6 +71,7 @@ jobs:
           python3 test/test-v3-unified-resume.py
           python3 test/test-v3-unified-diagnose.py
           python3 test/test-v3-unified-apply.py
+          sudo python3 test/test-v3-unified-apply.py InodeWorkspace.test_reported_shortfall_uses_private_ext4_and_cleans_up_after_success_and_failure
           python3 test/test-v3-unified-route-http.py
           python3 test/test-v3-unified-hourly-route.py
           python3 scripts/test-v3-primary-install-transaction.py
