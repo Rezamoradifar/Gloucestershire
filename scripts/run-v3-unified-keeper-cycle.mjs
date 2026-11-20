@@ -1,20 +1,28 @@
-// A cycle handles at most one accrual. A prepared hash without a canonical
-// receipt stays pending, even when the operator's pending nonce equals latest.
+// A cycle handles at most one accrual. An interrupted broadcast can resume only
+// its saved signed bytes; every canonical receipt still requires reconciliation.
 import path from 'node:path';
 import {getAddress,Wallet} from 'ethers';
 import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {reviewUnifiedConfirmedRecord} from './review-v3-unified-confirmed.mjs';
 import {validateUnifiedProof,recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 import {executeWithKeeperLock} from './execute-v3-unified-keeper.mjs';
+import {resumeUnifiedSignedAccrual} from './resume-v3-unified-accrual.mjs';
 import {atomicWrite,checkpointIdentity,readCheckpoint,scanWithKeeperLock} from './checkpoint-v3-unified-idle-scan.mjs';
 
 async function reconcile(options,transactionSent){
- const {provider,proof,who,journal,journalDirectory,proofIdentity,makeContract}=options;
+ const {provider,proof,who,journal,journalDirectory,proofIdentity,makeContract,waitReceipt}=options;
  const record=journal.read();
  const filename=path.join(journalDirectory,'idle-checkpoint.json');
  const previous=readCheckpoint(filename,proofIdentity,who);
  if(previous)await recheckUnifiedBlock(provider,previous.anchor);
- const result=await reviewUnifiedConfirmedRecord({provider,proof,operator:who,record,makeContract});
+ let result=await reviewUnifiedConfirmedRecord({provider,proof,operator:who,record,makeContract});
+ if(result.state==='RECEIPT_NOT_OBSERVED'&&!transactionSent){
+  const resumed=await resumeUnifiedSignedAccrual({provider,proof,operator:who,record,journal,waitReceipt,makeContract});
+  if(resumed.transactionSent){
+   transactionSent=true;
+   result=await reviewUnifiedConfirmedRecord({provider,proof,operator:who,record:journal.read(),makeContract});
+  }
+ }
  if(result.state!=='CONFIRMED_REQUIRES_RECONCILIATION')
   return {...result,hash:record.hash,transactionSent};
 
@@ -52,7 +60,7 @@ export async function runUnifiedKeeperCycle({provider,signer,proof:raw,journalDi
  const journal=openUnifiedJournal(journalDirectory);
  try{
   const options={provider,proof,who,journal,journalDirectory,proofIdentity:checkpointIdentity(proof),
-   maxWork,lotPageSize,makeContract};
+   maxWork,lotPageSize,makeContract,waitReceipt};
   if(journal.read())return await reconcile(options,false);
   const step=await scanWithKeeperLock(options);
   if(step.state!=='ONE_CANDIDATE_REQUIRES_CONFIRMATION')return step;

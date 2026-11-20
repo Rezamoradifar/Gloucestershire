@@ -27,6 +27,23 @@ const actions={connected:false,busy:true,loading:false,connecting:false,value:''
  onNetwork:()=>{},onConnect:()=>{},onWalletConnect:()=>{}};
 
 describe('unified reinvestment form',()=>{
+ it.each([
+  {state:'disconnected',connected:false,loading:false,message:'Connect wallet to view balance'},
+  {state:'loading',connected:true,loading:true,message:'Checking account…'},
+  {state:'unavailable',connected:true,loading:false,message:'Account data unavailable'}
+ ])('does not present an unloaded account as zero recorded profit when $state',({connected,loading,message})=>{
+  const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={null} unifiedRelease connected={connected} loading={loading}/>);
+  expect(html).toContain(message);
+  expect(html).not.toContain('Recorded position profit across all sources');
+  expect(html).not.toContain('0.00 USDT');
+ });
+ it('shows a verified zero profit distinctly from an account that has not loaded',()=>{
+  const emptyView={...view,capital:0n,positions:[],ledger:{...ledger,positions:[],
+   principalLiability:0n,profitLiability:0n,requestCap:0n}};
+  const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={emptyView} unifiedRelease connected/>);
+  expect(html).toContain('Recorded position profit across all sources: <strong>0.00 USDT</strong>');
+  expect(html).toContain('Referral and network rewards are separate');
+ });
  it('shows one total and no source selector in the read-only unified profile',()=>{
   const html=renderToStaticMarkup(<V3ClassicOverview {...actions} view={{...view,unifiedPage:null}}/>);
   expect(html).toContain('957.891897 USDT');

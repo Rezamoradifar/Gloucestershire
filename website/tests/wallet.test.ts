@@ -88,6 +88,23 @@ describe('wallet connection boundaries',()=>{
   expect(mobile.enable).not.toHaveBeenCalled();expect(injected).not.toHaveBeenCalled();
   expect(mobile.request.mock.calls.every(([call])=>['eth_accounts','eth_chainId'].includes(call.method))).toBe(true);
  });
+ it('can retry a stalled restore without letting its late answer replace the selected wallet',async()=>{
+  browserStorage();const injected=provider(),mobile=provider();
+  await new WalletConnection(()=>injected,async()=>mobile).connect('injected');
+  let finish!:(accounts:string[])=>void;
+  injected.request.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+  const reloaded=new WalletConnection(()=>injected,async()=>mobile);
+  vi.useFakeTimers();
+  try{
+   const pending=reloaded.restore();
+   await vi.advanceTimersByTimeAsync(8_001);await pending;
+   expect(reloaded.getProvider()).toBeNull();
+   await reloaded.connect('walletconnect');
+   finish([address]);await Promise.resolve();
+   expect(reloaded.getProvider()).toBe(mobile);
+   expect(injected.request.mock.calls.filter(([call])=>call.method==='eth_requestAccounts')).toHaveLength(1);
+  }finally{vi.useRealTimers();}
+ });
  it('does not resurrect a pending restore after disconnect or replace a new explicit connection',async()=>{
   browserStorage();const injected=provider(),mobile=provider();
   const visit=()=>new WalletConnection(()=>injected,async()=>mobile);

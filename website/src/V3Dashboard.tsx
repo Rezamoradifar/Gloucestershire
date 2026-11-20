@@ -7,10 +7,13 @@ import {ZeroAddress,getAddress,formatUnits} from 'ethers';
 import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,Info,
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
+import {readWalletSelection} from './wallet-read';
 import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdrawal} from './v3-chain';
 import {sendV3Action,sendV3FundWithdrawal,sendV3UnifiedPageWithdrawal,readV3ManagerQueue,
  type V3Action,type V3TransactionProgress} from './v3-actions';
-import {V3TransactionProgressTracker,v3TransactionProgressText} from './v3-transaction-progress';
+import {v3TransactionProgressText} from './v3-transaction-progress';
+import {V3PersistentTransactionTracker,readV3PendingReview,clearV3PendingReview,v3ReviewKey,
+ V3_PENDING_REVIEW_MESSAGE,type V3ReviewScope} from './v3-pending-review';
 import {runUnifiedReinvestment} from './v3-unified-reinvestment-flow';
 import {runV3Deposit,runV3Registration} from './v3-account-flow';
 import {diagnoseV3Wallet,type V3WalletDiagnostic} from './v3-wallet-diagnostic';
@@ -100,6 +103,9 @@ export default function V3Dashboard(){
  const menuTrigger=useRef<HTMLButtonElement>(null);
  const [smallScreen,setSmallScreen]=useState(()=>typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 960px)').matches);
  const config=v3ReleaseConfig;
+ const reviewScope:V3ReviewScope|null=wallet&&chain===97&&config?{chainId:97,contract:config.address,wallet}:null;
+ const reviewKey=reviewScope?v3ReviewKey(reviewScope):null;
+ const currentReviewKey=useRef<string|null>(null);currentReviewKey.current=reviewKey;
  const singleCapital=config?.unified?.singleCapital===true;
  const tabLabel=(id:Tab,label:string)=>singleCapital&&id==='positions'?'Investment account':label;
  const activeTabLabel=tabLabel(tab,menus.find(item=>item.id===tab)?.label??'');
@@ -108,6 +114,18 @@ export default function V3Dashboard(){
  const operatorAccess=Boolean(view?.canManage||(config?.unified&&view?.canFund));
  useEffect(()=>{setUnifiedPageStart(0);},[wallet,chain,config?.address]);
  const invalidInvite=typeof window!=='undefined'&&readReferralInvite(window.location.search).status==='invalid';
+
+ useEffect(()=>{
+  const restore=()=>{
+   const pending=reviewScope?readV3PendingReview(reviewScope):null;
+   reviewRequiredRef.current=Boolean(pending);setReviewRequired(Boolean(pending));
+   setReviewDetail(pending?{message:V3_PENDING_REVIEW_MESSAGE,hash:pending.hash}:null);
+  };
+  restore();setTransactionProgress(null);
+  const changed=(event:StorageEvent)=>{if(event.key===reviewKey||event.key===null)restore();};
+  window.addEventListener('storage',changed);
+  return()=>window.removeEventListener('storage',changed);
+ },[reviewKey]);
 
  useEffect(()=>{
   if(typeof window.matchMedia!=='function')return;
@@ -133,9 +151,7 @@ export default function V3Dashboard(){
    const disconnected={wallet:'',chain:null,provider:p,version:current};
    if(!p){if(alive)setWalletSession(disconnected);return;}
    try{
-    const [accounts,chainId]=await Promise.all([
-     p.request({method:'eth_accounts'}),p.request({method:'eth_chainId'})
-    ]);
+    const {accounts,chainId}=await readWalletSelection(p);
     if(alive&&current===walletVersion.current){
      const account=Array.isArray(accounts)&&typeof accounts[0]==='string'?getAddress(accounts[0]):'';
      setWalletSession({wallet:account,chain:Number(chainId),provider:p,version:current});
@@ -214,7 +230,19 @@ export default function V3Dashboard(){
   }catch{if(version===diagnosticVersion.current)setError('Wallet diagnostics could not be completed.');}
   finally{if(version===diagnosticVersion.current)setDiagnosing(false);}
  }
- function acknowledgeReview(){reviewRequiredRef.current=false;setReviewRequired(false);setReviewDetail(null);setTransactionProgress(null);setError('');}
+ function showPendingReview(scope:V3ReviewScope|null,detail:{message:string;hash?:string}){
+  if(!scope||v3ReviewKey(scope)!==currentReviewKey.current)return;
+  reviewRequiredRef.current=true;setReviewRequired(true);setReviewDetail(detail);
+ }
+ function pendingReviewGate(){
+  const pending=reviewScope?readV3PendingReview(reviewScope):null;
+  if(pending)showPendingReview(reviewScope,{message:V3_PENDING_REVIEW_MESSAGE,hash:pending.hash});
+  return Boolean(pending)||reviewRequiredRef.current;
+ }
+ function acknowledgeReview(){
+  if(reviewScope)clearV3PendingReview(reviewScope);
+  reviewRequiredRef.current=false;setReviewRequired(false);setReviewDetail(null);setTransactionProgress(null);setError('');
+ }
  function chosenReferrer(){
   const input=referrer.trim();
   if(!input||input.toLowerCase()===ZeroAddress.toLowerCase())return ZeroAddress;
@@ -222,6 +250,7 @@ export default function V3Dashboard(){
  }
  async function confirmAction(title:string,description:string,target?:string){
   if(!config)return false;
+  if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return false;}
   if(!config.unified)return window.confirm('BNB TESTNET ONLY\n\n'+description+'\nV3 contract: '+config.address);
   const provider=getWalletProvider(),version=walletVersion.current;
   if(!provider||provider!==walletSession.provider||version!==walletSession.version||chain!==97||!wallet||unifiedReadOnly)return false;
@@ -230,7 +259,7 @@ export default function V3Dashboard(){
    setError('The wallet connection changed. Review the transaction again.');
    return false;
   }
-  return !inFlight.current&&!reviewRequiredRef.current;
+  return !inFlight.current&&!pendingReviewGate();
  }
  async function perform(action:V3Action|UnifiedWithdrawal,description:string){
   if(busy||inFlight.current)return;
@@ -242,12 +271,12 @@ export default function V3Dashboard(){
   if(config.unified&&action.kind!=='register'&&!isUnifiedWithdrawal(action)&&!isUnifiedNetworkAction(action)){setError('This action is unavailable on the unified test network.');return;}
   if(!config.unified&&(action.kind==='fundWithdrawal'||action.kind==='cancelWithdrawal'))return;
   const trackedAction=Boolean(config.unified)||action.kind==='register'||action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
-  if(trackedAction&&reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  if(trackedAction&&pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   const target=config.unified&&isUnifiedNetworkAction(action)?networkActionTarget(config,action):config.address;
   if(!await confirmAction('Review testnet transaction',description+'\nUSDT on BNB Testnet is a test token with no monetary value. Confirm the separate blockchain transaction in your wallet.',target))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice(action.kind==='register'?'Checking registration…':'Confirm the V3 TESTNET transaction in your connected wallet…');setTxHash('');
-  const tracker=new V3TransactionProgressTracker();
+  const tracker=new V3PersistentTransactionTracker(reviewScope!);
   let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
@@ -261,10 +290,10 @@ export default function V3Dashboard(){
    }else if(action.kind!=='fundWithdrawal'&&action.kind!=='cancelWithdrawal'){
     hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    }else throw Error('Select the verified unified withdrawal profile.');
-   setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
+   tracker.complete();setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(operatorAccess)await readQueue(adminQueue?.page??0);
   }catch(e){const message=e instanceof Error?e.message:'V3 action not confirmed.';setNotice('');setError(message);
-   if(trackedAction&&tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+   if(trackedAction&&tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
   finally{inFlight.current=false;setBusy(false);}
  }
  async function deposit(){
@@ -274,7 +303,7 @@ export default function V3Dashboard(){
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
-  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   let n:bigint;
   try{n=amount(value);}catch(e){setError((e as Error).message);return;}
   if(n>view.walletTestTokenBalance){setError('Connected wallet lacks this amount of mock TUSDT.');return;}
@@ -287,16 +316,16 @@ export default function V3Dashboard(){
    '\nThis is not a real-money deposit and future yields/withdrawals are not guaranteed. Approve token (if needed) and confirm the deposit?'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected. Reconnect before continuing.');return;}
   inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice('Checking the test deposit…');setTxHash('');
-  const tracker=new V3TransactionProgressTracker();
+  const tracker=new V3PersistentTransactionTracker(reviewScope!);
   let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
    const tx=await runV3Deposit({provider:p,wallet,amount:n,referrer:parent,config,
     unifiedEnabled,onProgress:report});
-   setTxHash(tx);setNotice('USDT test-token deposit confirmed in V3.');setValue('');
+   tracker.complete();setTxHash(tx);setNotice('USDT test-token deposit confirmed in V3.');setValue('');
    await refresh();
   }catch(e){const message=e instanceof Error?e.message:'V3 deposit not confirmed.';setNotice('');setError(message);
-   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+   if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
   finally{inFlight.current=false;setBusy(false);}
  }
  async function readQueue(page=0){
@@ -328,18 +357,18 @@ export default function V3Dashboard(){
   if(busy||inFlight.current)return;
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your BNB Testnet account.');return;}
-  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   if(!view.registered||view.suspended||view.paused){setError('This test account cannot check in.');return;}
   if(!await confirmAction('Review check-in','Record your account activity? This requires a wallet transaction and testnet gas. It does not credit or transfer profit.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setNotice('Checking test account activity…');setTxHash('');setTransactionProgress(null);
-  const tracker=new V3TransactionProgressTracker();let progressHash:string|undefined;
+  const tracker=new V3PersistentTransactionTracker(reviewScope!);let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
    const result=await sendV3UnifiedCheckIn(p,wallet,config,{enabled:unifiedEnabled,onProgress:report});
-   setTxHash(result.hash);setNotice('Test check-in confirmed. Eligible claims require separate accrual.');await refresh();
+   tracker.complete();setTxHash(result.hash);setNotice('Test check-in confirmed. Eligible claims require separate accrual.');await refresh();
   }catch(e){const message=e instanceof Error?e.message:'V3 check-in not confirmed.';setNotice('');setError(message);
-   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+   if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
   finally{inFlight.current=false;setBusy(false);}
  }
  const checkIn=()=>{
@@ -368,7 +397,7 @@ export default function V3Dashboard(){
   if(busy||loading||inFlight.current)return;
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your unified BNB Testnet account.');return;}
-  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   if(page.wallet.toLowerCase()!==wallet.toLowerCase()||page.block!==view.block||page.asOf!==view.asOf||
      page.limit!==unifiedWithdrawalWindow(singleCapital)){
    setError('The verified withdrawal records changed. Refresh before continuing.');return;
@@ -383,21 +412,21 @@ export default function V3Dashboard(){
    ' USDT. Manager approval and actual test-token funding are required. The wallet must sign one transaction.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setNotice('Checking the test withdrawal request…');setTxHash('');setTransactionProgress(null);
-  const tracker=new V3TransactionProgressTracker();let progressHash:string|undefined;
+  const tracker=new V3PersistentTransactionTracker(reviewScope!);let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
    const result=await sendV3UnifiedPageWithdrawal(p,wallet,kind,page.positionId,page.start,n,config,
     {enabled:unifiedEnabled,onProgress:report});
-   setTxHash(result.hash);setNotice('Test withdrawal requested. Approval and funding are separate.');setValue('');await refresh();
+   tracker.complete();setTxHash(result.hash);setNotice('Test withdrawal requested. Approval and funding are separate.');setValue('');await refresh();
   }catch(e){const message=e instanceof Error?e.message:'V3 withdrawal request not confirmed.';setNotice('');setError(message);
-   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+   if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
   finally{inFlight.current=false;setBusy(false);}
  }
  async function reinvestUnified(n:bigint){
   if(busy||inFlight.current)return;
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your BNB Testnet account.');return;}
-  if(reviewRequiredRef.current){setError('Check your wallet transaction history before trying again.');return;}
+  if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   if(!view.registered||view.suspended||view.paused){setError('This test account cannot reinvest.');return;}
   const total=view.positions.reduce((sum,position)=>sum+position.availableProfit,0n);
   if(n>total){setError('The amount exceeds recorded position profit.');return;}
@@ -405,13 +434,13 @@ export default function V3Dashboard(){
    '\nThe addition has a separate 90-day principal lock. The wallet must sign one blockchain transaction.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setNotice('Checking the test reinvestment…');setTxHash('');setTransactionProgress(null);
-  const tracker=new V3TransactionProgressTracker();let progressHash:string|undefined;
+  const tracker=new V3PersistentTransactionTracker(reviewScope!);let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
    const result=await runUnifiedReinvestment({enabled:unifiedEnabled,provider:p,wallet,amount:n,config,onProgress:report});
-   setTxHash(result.hash);setNotice('Test reinvestment confirmed on-chain.');setValue('');await refresh();
+   tracker.complete();setTxHash(result.hash);setNotice('Test reinvestment confirmed on-chain.');setValue('');await refresh();
   }catch(e){const message=e instanceof Error?e.message:'V3 reinvestment not confirmed.';setNotice('');setError(message);
-   if(tracker.needsReview(message)){reviewRequiredRef.current=true;setReviewDetail({message,hash:progressHash});setReviewRequired(true);}}
+   if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
   finally{inFlight.current=false;setBusy(false);}
  }
  const reinvest=()=>{
@@ -496,7 +525,7 @@ export default function V3Dashboard(){
     {transactionProgress&&<p className="gv2-message" role="status">{busy?'Current step: ':'Last step: '}{v3TransactionProgressText(transactionProgress)}{' '}
      {transactionProgress.hash&&<a href={V3_EXPLORER+'/tx/'+transactionProgress.hash} target="_blank" rel="noreferrer">View transaction <ExternalLink size={14}/></a>}</p>}
     {reviewRequired&&<section className="gv3-notice" role="alert"><ShieldAlert size={18}/><div>
-     <strong>Check wallet activity before retrying.</strong><p>A request may have been sent. This reminder lasts only while this page remains open; check the transaction before reloading or trying again.</p>
+     <strong>Check wallet activity before retrying.</strong><p>A request may have been sent. The reminder is saved for this wallet and contract when browser storage is available. Check the transaction before trying again.</p>
      {reviewDetail&&<p>{reviewDetail.message} {reviewDetail.hash&&<a href={V3_EXPLORER+'/tx/'+reviewDetail.hash} target="_blank" rel="noreferrer">View transaction <ExternalLink size={14}/></a>}</p>}
      <button type="button" disabled={busy} onClick={acknowledgeReview}>I checked wallet history</button></div></section>}
     {!wallet&&tab!=='overview'&&<section className="gv2-panel gv3-connect"><Wallet size={31}/><h2>Connect your BNB Testnet wallet</h2>
