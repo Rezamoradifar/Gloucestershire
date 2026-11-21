@@ -42,6 +42,31 @@ function props(view=account(),unified=false):V3AccountWithdrawalFormProps{
 }
 
 describe('one account withdrawal',()=>{
+ it('requests referral earnings directly on Account without selecting a position or loading its profit pages',()=>{
+  const view=unifiedAccount(['100']);view.singleCapital=true;
+  view.referralAvailable=E('0.7');view.referralReserved=E('0.1');view.unifiedWithdrawalPages=undefined;
+  const input={...props(view,true),kind:'referral' as const,onKind:undefined,value:'0.7'};
+  const state=accountWithdrawalFormState(input);
+  expect(state).toMatchObject({canSubmit:true,maximum:E('0.7'),fee:E('0.021'),net:E('0.679')});
+  expect(planV3AccountWithdrawal(view,input.value,'referral',true)).toEqual({
+   source:'position',action:{kind:'requestReferral',amount:E('0.7')}
+  });
+  const html=renderToStaticMarkup(<V3AccountWithdrawalForm {...input}/>);
+  expect(html).toContain('Withdraw referral earnings');expect(html).toContain('Use maximum');
+  expect(html).toContain('0.1 test USDT');expect(html).not.toMatch(/<select|Total principal|personal compound profit/);
+  view.ledger.requestCap=E('0.6');
+  expect(accountWithdrawalFormState(input)).toMatchObject({canSubmit:false,maximum:E('0.6'),error:'The per-request cap is 0.6 test USDT.'});
+  expect(renderToStaticMarkup(<V3AccountWithdrawalForm {...input}/>)).toContain('Remaining commission stays in your account.');
+  const balanceLimited={...input,view:{...view,referralAvailable:E('0.5')}};
+  expect(accountWithdrawalFormState(balanceLimited)).toMatchObject({canSubmit:false,maximum:E('0.5'),error:'Your available referral balance is 0.5 test USDT.'});
+  expect(accountWithdrawalFormState({...input,value:'0.4'})).toMatchObject({canSubmit:true,net:E('0.388')});
+  for(const change of [{pendingWithdrawal:true},{nextRequestAt:now+1},{referralAvailable:0n},{paused:true},{suspended:true},{registered:false}]){
+   expect(accountWithdrawalFormState({...input,view:{...view,...change},value:'0.1'})).toMatchObject({canSubmit:false,maximum:0n});
+  }
+  for(const stop of [{busy:true},{readOnly:true}]){
+   expect(accountWithdrawalFormState({...input,...stop,value:'0.1'}).canSubmit).toBe(false);
+  }
+ });
  it('automatically chooses one eligible deposit and keeps the exact amount',()=>{
   expect(planV3AccountWithdrawal(account(),'6.000000000000000001','profit')).toEqual({source:'position',
    action:{kind:'requestProfit',positionId:1,amount:E('6.000000000000000001')}});

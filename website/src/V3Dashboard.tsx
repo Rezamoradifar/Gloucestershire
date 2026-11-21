@@ -4,7 +4,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {flushSync} from 'react-dom';
 import {ZeroAddress,getAddress,formatUnits} from 'ethers';
-import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,Info,
+import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {readWalletSelection} from './wallet-read';
@@ -90,6 +90,7 @@ export default function V3Dashboard(){
  const [walletDiagnostic,setWalletDiagnostic]=useState<V3WalletDiagnostic|null>(null),[diagnosing,setDiagnosing]=useState(false);
  const diagnosticVersion=useRef(0);
  const [value,setValue]=useState(''),[selectedPosition,setSelectedPosition]=useState('0');
+ const [referralAmount,setReferralAmount]=useState('');
  const [referrer,setReferrer]=useState(()=>{
   const invite=readReferralInvite(typeof window==='undefined'?'':window.location.search);
   return invite.status==='valid'?invite.address:'';
@@ -112,7 +113,7 @@ export default function V3Dashboard(){
  const unifiedEnabled=unifiedWalletEnabled(config,typeof window==='undefined'?'':window.location.pathname);
  const unifiedReadOnly=Boolean(config?.unified)&&!unifiedEnabled;
  const operatorAccess=Boolean(view?.canManage||(config?.unified&&view?.canFund));
- useEffect(()=>{setUnifiedPageStart(0);},[wallet,chain,config?.address]);
+ useEffect(()=>{setUnifiedPageStart(0);setReferralAmount('');},[wallet,chain,config?.address]);
  const invalidInvite=typeof window!=='undefined'&&readReferralInvite(window.location.search).status==='invalid';
 
  useEffect(()=>{
@@ -290,7 +291,10 @@ export default function V3Dashboard(){
    }else if(action.kind!=='fundWithdrawal'&&action.kind!=='cancelWithdrawal'){
     hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    }else throw Error('Select the verified unified withdrawal profile.');
-   tracker.complete();setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
+   tracker.complete();setTxHash(hash);
+   if(action.kind==='requestReferral'){
+    setReferralAmount('');setNotice('Referral withdrawal requested. Manager approval and funding are pending.');
+   }else setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(operatorAccess)await readQueue(adminQueue?.page??0);
   }catch(e){const message=e instanceof Error?e.message:'V3 action not confirmed.';setNotice('');setError(message);
    if(trackedAction&&tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
@@ -313,7 +317,7 @@ export default function V3Dashboard(){
   if(!await confirmAction('Review test deposit','Deposit exactly '+formatUnits(n,18)+' MOCK TUSDT.'+
    '\nReferrer: '+(parent===ZeroAddress?'None':parent)+' (permanent after first registration).'+
    '\nYour test deposit routes 10% to each original fee wallet and 80% to the original operations wallet. Gross principal is recorded but is not held as vault cash.'+
-   '\nThis is not a real-money deposit and future yields/withdrawals are not guaranteed. Approve token (if needed) and confirm the deposit?'))return;
+   '\nThis test deposit locks principal for 90 days. Future payouts depend on approval and funding. Approve the token if needed and confirm the deposit?'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected. Reconnect before continuing.');return;}
   inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice('Checking the test deposit…');setTxHash('');
   const tracker=new V3PersistentTransactionTracker(reviewScope!);
@@ -376,13 +380,10 @@ export default function V3Dashboard(){
   void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
    due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?');
  };
- const request=(kind=requestKind)=>{
-  if(tab!=='withdrawals'){
-   setRequestKind(kind);setTab('withdrawals');setMenuOpen(false);setError('');return;
-  }
+ const request=(kind:V3WithdrawalKind,input:string)=>{
   try{
    if(!view||view.wallet.toLowerCase()!==wallet.toLowerCase())throw Error('The connected wallet changed. Refresh the account before requesting a withdrawal.');
-   const plan=planV3AccountWithdrawal(view,value,kind,Boolean(config?.unified));
+   const plan=planV3AccountWithdrawal(view,input,kind,Boolean(config?.unified));
    if(plan.source==='book'){
     void requestUnifiedPage(plan.kind,plan.page,plan.amount);return;
    }
@@ -463,6 +464,8 @@ export default function V3Dashboard(){
    <div><b><DigitalValue value={show(r.gross)} unit="USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>
     {config?.unified&&!admin&&r.beneficiary.toLowerCase()===wallet.toLowerCase()&&<>
+     {r.status===0&&<small>Waiting for manager approval.</small>}
+     {r.status===1&&<small>Waiting for {formatUnits(r.gross,18)} test USDT to be reserved for this request.</small>}
      {(r.status===0||r.status===1)&&<button disabled={busy||reviewRequired||unifiedReadOnly||!view||view.asOf<r.requestedAt+72*3600}
       onClick={()=>void perform({kind:'cancelWithdrawal',id:r.id},'Cancel this unescrowed request and release the reserved test claim?')}>Cancel after 72 hours</button>}
      {r.status===2&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the funded test withdrawal to your wallet?')}>Collect funded USDT</button>}
@@ -477,7 +480,10 @@ export default function V3Dashboard(){
     </div>}
    </div>
   </article>;
- const navigate=(to:Tab)=>{setTab(to);setMenuOpen(false);setError('');setValue('');};
+ const navigate=(to:Tab,nextValue='')=>{setTab(to);setMenuOpen(false);setError('');setValue(nextValue);};
+ const recentReferralRequest=view?.withdrawals.find(row=>row.kind===2);
+ const openAccountWithdrawal=view?.pendingWithdrawal
+  ?view.withdrawals.find(row=>row.status>=0&&row.status<=2):undefined;
  return <div className="gv2 shell gv2-classic gv3-workspace" dir="ltr">
   <aside id="v3-dashboard-menu" className={'sidebar gv2-sidebar '+(menuOpen?'open':'')} aria-label="Global V3 testnet navigation" inert={smallScreen&&!menuOpen}>
    <button className="gv2-sidebar-close" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"><X size={18}/></button>
@@ -499,26 +505,17 @@ export default function V3Dashboard(){
      <V3WalletControl address={wallet} busy={connecting||busy} onConnect={openWalletPicker} onDisconnect={()=>void disconnect()}/></div>
    </header>
    <main className="gv2-wrap">
-    {V3_HOURLY_TEST&&<div className="gv3-notice" role="status"><Info size={16}/>
-     ONE-HOUR BNB TESTNET CONTRACT. Accounts and claims shown here belong to this test deployment. Test tokens only.</div>}
-    <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE</span>
+    <div className="gv2-heading"><div><span className="gv2-page-label">{V3_HOURLY_TEST?'ONE-HOUR BNB TESTNET CONTRACT':'BNB TESTNET'}</span>
      <h1>{tab==='overview'?'Account overview':activeTabLabel}</h1>
-     <p>{tab==='overview'?'Your capital, recorded profit and withdrawal availability.':'Your verified testnet account and current contract information.'}</p>
+     <p>Test tokens only. No monetary value.</p>
+     {unifiedReadOnly&&<p role="status"><strong>Read-only preview.</strong> Wallet transactions are disabled.</p>}
     </div>{wallet&&config&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17}/> Refresh</button>}</div>
-    <section className="gv2-release"><ShieldCheck size={19}/><div className="gv2-release-copy">
-     <strong>Isolated Global V3 test environment</strong>
-     <span>{config?'Account data is checked before wallet actions.':'The current testnet account connection has not yet been verified.'}</span>
-    </div></section>
     {!config&&<section className="gv2-panel gv3-not-ready" role="status"><ShieldAlert size={26}/>
      <h2>V3 integration is prepared, but activation is locked</h2>
      <p>The testnet contract must be deployed and independently verified before this dashboard can show account data.</p>
      <a href="#">Return to Global landing <ArrowUpRight size={16}/></a>
     </section>}
-    {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
-    {config.unified&&<div className="gv3-notice" role="status"><Info size={16}/><div>
-     {unifiedReadOnly?'Unified testnet is a read-only preview. Wallet transactions are not enabled.':'Unified BNB Testnet · Wallet signatures enabled'}
-     <p>{singleCapital?'Deposits and reinvested claims add to one investment account.':'Reinvested claims accumulate in one position.'} Each addition has its own 90-day lock and first accrual time. Check-in records activity. Posting eligible claims requires a separate gas-paying transaction. The manager must approve withdrawals, and each payout requires available test tokens.</p></div></div>}
-    {config.unified&&<V3SeparateTestAccounts config={config}/>}
+    {config&&<>
     {error&&<p className="gv2-error" role="alert">{error}</p>}
     {readError&&<p className="gv2-error" role="alert">{readError}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
@@ -551,7 +548,7 @@ export default function V3Dashboard(){
     {tab==='overview'&&<V3ClassicOverview view={view} connected={Boolean(wallet)} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
-     onDeposit={()=>void deposit()} onWithdraw={()=>request('profit')} onReinvest={reinvest}
+     onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest}
      onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}/>}
     {tab==='overview'&&<V3CommercePanel/>}
     {view&&<div className="gv2-content">
@@ -569,6 +566,12 @@ export default function V3Dashboard(){
        {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
+      {singleCapital&&<section className="gv2-panel">
+       {openAccountWithdrawal&&withdrawItem(openAccountWithdrawal)}
+       <V3AccountWithdrawalForm view={view} unified={true} kind="referral" value={referralAmount} onValue={setReferralAmount}
+        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onSubmit={()=>request('referral',referralAmount)}/>
+       {recentReferralRequest&&recentReferralRequest.id!==openAccountWithdrawal?.id&&withdrawItem(recentReferralRequest)}
+      </section>}
       {!singleCapital&&<V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>}
       {singleCapital&&!view.unifiedPage&&<p>This account has no verified test deposits.</p>}
       {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage} singleCapital={singleCapital}
@@ -614,7 +617,7 @@ export default function V3Dashboard(){
       <V3AccountWithdrawalForm view={view} unified={Boolean(config.unified)}
        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly}
        kind={requestKind} onKind={setRequestKind} value={value} onValue={setValue}
-       onSubmit={()=>request()}/>
+       onSubmit={()=>request(requestKind,value)}/>
       <h3>Your recent V3 requests</h3>{view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
      </section>}
@@ -633,6 +636,7 @@ export default function V3Dashboard(){
         <button disabled={busy||(adminQueue.page+1)*20>=adminQueue.count} onClick={()=>void readQueue(adminQueue.page+1)}>Older requests</button></div></>}
      </section>}
     </div>}
+    {tab==='profile'&&<V3SeparateTestAccounts config={config}/>}
     </>}
     <footer className="gv2-foot">GLOBAL DROP TRADE · V3 ISOLATED TESTNET · No real deposits or guaranteed yield</footer>
    </main>
