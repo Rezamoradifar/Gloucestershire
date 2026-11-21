@@ -18,14 +18,13 @@ describe('separate BNB test account navigation',()=>{
   const html=renderToStaticMarkup(<V3SeparateTestAccounts config={single}/>);
   expect(html).toContain('href="/previous-hourly-test/"');
   expect(html).toContain('href="/unified-test/"');
-  expect(html).toContain('They are not automatically transferred or combined with this account.');
+  expect(html).toMatch(/<details\b(?![^>]*\bopen\b)[^>]*><summary>Previous test accounts<\/summary>/);
  });
  it('uses only the previous hourly test path and clearly separates account data',()=>{
   const html=renderToStaticMarkup(<V3SeparateTestAccounts config={unified}/>);
   expect(PREVIOUS_HOURLY_TEST_PATH).toBe('/hourly-test/');
   expect(html).toContain('href="/hourly-test/"');
-  expect(html).toContain('Positions, balances and requests on the previous hourly test contract remain separate.');
-  expect(html).toContain('They are not automatically transferred or combined with this account.');
+  expect(html).toContain('Positions, balances and requests stay on their original contracts.');
   expect(html).not.toContain('?ref=');
   expect(html).not.toContain('TEST USDT');
   expect(html).not.toContain('0x0000000000000000000000000000000000000001');

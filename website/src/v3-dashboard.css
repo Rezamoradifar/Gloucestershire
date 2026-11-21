@@ -1,6 +1,5 @@
 /* Global V3 gated TESTNET workspace. Reuses current navy/gold V2 signature
    theme, breakpoints and five-tab mobile dock, with dedicated financial cards. */
-.gv3-workspace .gv2-release{border-color:#617567;background:linear-gradient(130deg,#132d2b,#172733)}
 .gv3-workspace .gv2-panel{margin:17px 0}
 .gv3-workspace .gv2-panel a,.gv3-not-ready>a{color:#f0d18a;text-decoration:underline}
 .gv3-workspace .gv2-panel b,.gv3-workspace .gv2-detail b{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
@@ -11,6 +10,11 @@
 .gv3-not-ready>a{display:inline-flex;align-items:center;gap:7px}
 .gv3-notice{display:flex;align-items:flex-start;gap:9px;margin:8px 0 18px;padding:14px 17px;border:1px solid #806d46;border-radius:12px;background:#2b2c27;color:#e5d3ab;font-size:12px;line-height:1.7}
 .gv3-notice svg{flex-shrink:0;margin-top:3px}
+.gv3-account-archive{margin:16px 0;color:#bdc7ce;font-size:13px}
+.gv3-account-archive summary{width:fit-content;max-width:100%;padding:12px 0;min-height:44px;cursor:pointer;color:#e9cf9a;font-weight:650}
+.gv3-account-archive p{margin:2px 0 6px}
+.gv3-account-archive a{display:flex;align-items:center;gap:5px;width:fit-content;max-width:100%;min-height:44px;color:#e9cf9a;text-decoration:underline}
+.gv3-account-archive :is(summary,a):focus-visible{outline:2px solid #e9cf9a;outline-offset:2px}
 .gv3-connect{display:grid;justify-items:center;gap:13px;text-align:center;padding:34px}
 .gv3-connect>svg{color:#e3c481}
 .gv3-connect h2{font-size:20px}

@@ -69,7 +69,9 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   expect(dashboard).toContain("import './v2-signature-dashboard.css'");
   expect(dashboard).toContain('gv2-mobile-bottom');
   expect(dashboard).toMatch(/<V3ClaimsReadout[^>]+verifiedLedger=\{view\.ledger\}/);
-  expect(dashboard).toContain('manager-approved');
+  expect(dashboard).toContain('Test tokens only. No monetary value.');
+  expect(dashboard).toContain("tab==='profile'&&<V3SeparateTestAccounts");
+  expect(file('V3AccountWithdrawalForm.tsx')).toContain('Requests need manager approval and actual test-token funding before payment.');
   expect(dashboard).toContain('10% to each original fee wallet');
   expect(dashboard).toContain('Unfunded total obligations');
   expect(dashboard).not.toContain('DEMO_BALANCE');

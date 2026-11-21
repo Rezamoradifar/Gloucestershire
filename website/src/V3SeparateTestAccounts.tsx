@@ -1,4 +1,4 @@
-import {ArrowUpRight,Info} from 'lucide-react';
+import {ArrowUpRight} from 'lucide-react';
 import type {V3SiteReleaseConfig} from './v3-site-config';
 
 // A presentation-only link for a separately installed unified test profile.
@@ -10,14 +10,10 @@ export default function V3SeparateTestAccounts({config}:{config:V3SiteReleaseCon
  if(!config?.unified)return null;
  const singleCapital=config.unified.singleCapital===true;
  const primary=singleCapital&&import.meta.env.VITE_V3_UNIFIED_PRIMARY==='single-capital-testnet';
- return <section className="gv3-notice" aria-label="Separate test accounts">
-  <Info size={16}/><div>
-   <strong>Previous test account is separate</strong>
-   <p>Positions, balances and requests on the previous {singleCapital?'unified':'hourly'} test contract remain separate.
-    They are not automatically transferred or combined with this account.</p>
-   <a href={singleCapital?'/unified-test/':PREVIOUS_HOURLY_TEST_PATH}>Open previous {singleCapital?'unified':'hourly'} test account <ArrowUpRight size={14}/></a>
-   {primary&&<p><a href="/previous-hourly-test/">Open earlier hourly contract records <ArrowUpRight size={14}/></a></p>}
-   <p>Open the previous page to review its contract and account separately.</p>
-  </div>
- </section>;
+ return <details className="gv3-account-archive">
+  <summary>Previous test accounts</summary>
+  <p>Positions, balances and requests stay on their original contracts.</p>
+  <a href={singleCapital?'/unified-test/':PREVIOUS_HOURLY_TEST_PATH}>Previous {singleCapital?'unified':'hourly'} account <ArrowUpRight size={14} aria-hidden="true"/></a>
+  {primary&&<a href="/previous-hourly-test/">Earlier hourly records <ArrowUpRight size={14} aria-hidden="true"/></a>}
+ </details>;
 }

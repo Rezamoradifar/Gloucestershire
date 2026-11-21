@@ -24,8 +24,7 @@
 .gv2-classic.gv3-workspace .gv2-heading{align-items:center;margin-bottom:24px}
 .gv2-classic.gv3-workspace .gv2-heading h1{font-size:clamp(26px,2.7vw,32px);letter-spacing:-.04em;color:#f2f3f6}
 .gv2-classic.gv3-workspace .gv2-heading p{font-size:12px;color:#a2a8b4}.gv2-classic.gv3-workspace .gv2-page-label{font-size:10px;letter-spacing:.14em;color:#858d9c}
-.gv2-classic.gv3-workspace .gv2-release,.gv2-classic.gv3-workspace .gv3-notice{background:#c6ad6110;border-color:#a6965947;color:#d9d0ad;box-shadow:none}
-.gv2-classic.gv3-workspace .gv2-release-copy strong,.gv2-classic.gv3-workspace .gv2-release-copy span{color:#d6ceaf}
+.gv2-classic.gv3-workspace .gv3-notice{background:#c6ad6110;border-color:#a6965947;color:#d9d0ad;box-shadow:none}
 .gv2-classic.gv3-workspace :is(.gv2-panel,.gv2-metric){background:linear-gradient(135deg,#171a22,#101319);border-color:#353840;box-shadow:none}
 .gv1-overview{min-width:0;margin:22px 0 26px}.gv1-section-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:0 0 17px}
 .gv1-section-head h2{margin:0;color:#eef0f4;font-size:16px}.gv1-section-head p{margin:4px 0 0;color:var(--gv1-muted);font-size:11px}

@@ -4,7 +4,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {flushSync} from 'react-dom';
 import {ZeroAddress,getAddress,formatUnits} from 'ethers';
-import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,Info,
+import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {readWalletSelection} from './wallet-read';
@@ -499,26 +499,17 @@ export default function V3Dashboard(){
      <V3WalletControl address={wallet} busy={connecting||busy} onConnect={openWalletPicker} onDisconnect={()=>void disconnect()}/></div>
    </header>
    <main className="gv2-wrap">
-    {V3_HOURLY_TEST&&<div className="gv3-notice" role="status"><Info size={16}/>
-     ONE-HOUR BNB TESTNET CONTRACT. Accounts and claims shown here belong to this test deployment. Test tokens only.</div>}
-    <div className="gv2-heading"><div><span className="gv2-page-label">GLOBAL FINANCE</span>
+    <div className="gv2-heading"><div><span className="gv2-page-label">{V3_HOURLY_TEST?'ONE-HOUR BNB TESTNET CONTRACT':'BNB TESTNET'}</span>
      <h1>{tab==='overview'?'Account overview':activeTabLabel}</h1>
-     <p>{tab==='overview'?'Your capital, recorded profit and withdrawal availability.':'Your verified testnet account and current contract information.'}</p>
+     <p>Test tokens only. No monetary value.</p>
+     {unifiedReadOnly&&<p role="status"><strong>Read-only preview.</strong> Wallet transactions are disabled.</p>}
     </div>{wallet&&config&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17}/> Refresh</button>}</div>
-    <section className="gv2-release"><ShieldCheck size={19}/><div className="gv2-release-copy">
-     <strong>Isolated Global V3 test environment</strong>
-     <span>{config?'Account data is checked before wallet actions.':'The current testnet account connection has not yet been verified.'}</span>
-    </div></section>
     {!config&&<section className="gv2-panel gv3-not-ready" role="status"><ShieldAlert size={26}/>
      <h2>V3 integration is prepared, but activation is locked</h2>
      <p>The testnet contract must be deployed and independently verified before this dashboard can show account data.</p>
      <a href="#">Return to Global landing <ArrowUpRight size={16}/></a>
     </section>}
-    {config&&<><div className="gv3-notice"><Info size={16}/> BNB Testnet uses test USDT with no monetary value. Profit and rewards are recorded claims, not verified business earnings or wallet cash. Withdrawals are manager-approved and require funding; automatic profit-on-profit needs an eligible check-in and a gas-paying keeper.</div>
-    {config.unified&&<div className="gv3-notice" role="status"><Info size={16}/><div>
-     {unifiedReadOnly?'Unified testnet is a read-only preview. Wallet transactions are not enabled.':'Unified BNB Testnet · Wallet signatures enabled'}
-     <p>{singleCapital?'Deposits and reinvested claims add to one investment account.':'Reinvested claims accumulate in one position.'} Each addition has its own 90-day lock and first accrual time. Check-in records activity. Posting eligible claims requires a separate gas-paying transaction. The manager must approve withdrawals, and each payout requires available test tokens.</p></div></div>}
-    {config.unified&&<V3SeparateTestAccounts config={config}/>}
+    {config&&<>
     {error&&<p className="gv2-error" role="alert">{error}</p>}
     {readError&&<p className="gv2-error" role="alert">{readError}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
@@ -633,6 +624,7 @@ export default function V3Dashboard(){
         <button disabled={busy||(adminQueue.page+1)*20>=adminQueue.count} onClick={()=>void readQueue(adminQueue.page+1)}>Older requests</button></div></>}
      </section>}
     </div>}
+    {tab==='profile'&&<V3SeparateTestAccounts config={config}/>}
     </>}
     <footer className="gv2-foot">GLOBAL DROP TRADE · V3 ISOLATED TESTNET · No real deposits or guaranteed yield</footer>
    </main>
