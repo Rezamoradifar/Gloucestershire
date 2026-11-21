@@ -1,4 +1,4 @@
-import {parseUnits} from 'ethers';
+import {formatUnits,parseUnits} from 'ethers';
 import {normalizeAmount} from './money';
 import type {V3Action} from './v3-actions';
 import type {V3Snapshot} from './v3-chain';
@@ -20,7 +20,9 @@ export function prepareV3WithdrawalRequest(view:V3Snapshot|null,input:string,pos
  if(!view.registered||view.suspended||view.pendingWithdrawal||view.asOf<view.nextRequestAt)
   throw Error('Withdrawal already pending, account suspended or 72-hour cooldown active.');
  if(kind==='referral'){
-  if(amount>view.referralAvailable||amount>view.ledger.requestCap)throw Error('Referral amount exceeds verified claim or cap.');
+  const capped=view.ledger.requestCap<view.referralAvailable;
+  const maximum=capped?view.ledger.requestCap:view.referralAvailable;
+  if(amount>maximum)throw Error((capped?'The per-request cap is ':'Your available referral balance is ')+formatUnits(maximum,18)+' test USDT.');
   return {kind:'requestReferral',amount};
  }
  if(kind==='network'){

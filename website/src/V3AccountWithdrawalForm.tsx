@@ -69,6 +69,7 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
    {referral&&maximum!==null&&maximum>0n&&<button type="button" disabled={props.busy||props.readOnly}
     onClick={()=>props.onValue(formatUnits(maximum,18))}>Use maximum</button>}
    <p>{referral?'Available to request now: ':'Maximum this dashboard can submit in one request: '}<strong>{maximum===null?'Awaiting complete records':formatUnits(maximum,18)+' USDT'}</strong>.</p>
+   {referral&&view.referralAvailable>view.ledger.requestCap&&<p>Each request is limited to {formatUnits(view.ledger.requestCap,18)} test USDT. Remaining commission stays in your account.</p>}
    {referral&&view.referralAvailable===0n&&<p>No referral earnings are available to request.</p>}
    {referral&&view.pendingWithdrawal&&<p role="status">An existing withdrawal must be settled, rejected or cancelled before another request.</p>}
    {referral&&(view.paused||view.suspended||!view.registered)&&<p role="status">{view.paused?'Contract withdrawals are paused.':view.suspended?'Withdrawals are suspended for this account.':'Register this wallet to request a withdrawal.'}</p>}

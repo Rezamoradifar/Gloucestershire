@@ -464,6 +464,8 @@ export default function V3Dashboard(){
    <div><b><DigitalValue value={show(r.gross)} unit="USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>
     {config?.unified&&!admin&&r.beneficiary.toLowerCase()===wallet.toLowerCase()&&<>
+     {r.status===0&&<small>Waiting for manager approval.</small>}
+     {r.status===1&&<small>Waiting for {formatUnits(r.gross,18)} test USDT to be reserved for this request.</small>}
      {(r.status===0||r.status===1)&&<button disabled={busy||reviewRequired||unifiedReadOnly||!view||view.asOf<r.requestedAt+72*3600}
       onClick={()=>void perform({kind:'cancelWithdrawal',id:r.id},'Cancel this unescrowed request and release the reserved test claim?')}>Cancel after 72 hours</button>}
      {r.status===2&&<button disabled={busy||reviewRequired||unifiedReadOnly} onClick={()=>void perform({kind:'payWithdrawal',id:r.id},'Pay the funded test withdrawal to your wallet?')}>Collect funded USDT</button>}
@@ -480,6 +482,8 @@ export default function V3Dashboard(){
   </article>;
  const navigate=(to:Tab,nextValue='')=>{setTab(to);setMenuOpen(false);setError('');setValue(nextValue);};
  const recentReferralRequest=view?.withdrawals.find(row=>row.kind===2);
+ const openAccountWithdrawal=view?.pendingWithdrawal
+  ?view.withdrawals.find(row=>row.status>=0&&row.status<=2):undefined;
  return <div className="gv2 shell gv2-classic gv3-workspace" dir="ltr">
   <aside id="v3-dashboard-menu" className={'sidebar gv2-sidebar '+(menuOpen?'open':'')} aria-label="Global V3 testnet navigation" inert={smallScreen&&!menuOpen}>
    <button className="gv2-sidebar-close" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"><X size={18}/></button>
@@ -563,9 +567,10 @@ export default function V3Dashboard(){
      </>}
      {tab==='positions'&&<>
       {singleCapital&&<section className="gv2-panel">
+       {openAccountWithdrawal&&withdrawItem(openAccountWithdrawal)}
        <V3AccountWithdrawalForm view={view} unified={true} kind="referral" value={referralAmount} onValue={setReferralAmount}
         busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onSubmit={()=>request('referral',referralAmount)}/>
-       {recentReferralRequest&&withdrawItem(recentReferralRequest)}
+       {recentReferralRequest&&recentReferralRequest.id!==openAccountWithdrawal?.id&&withdrawItem(recentReferralRequest)}
       </section>}
       {!singleCapital&&<V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>}
       {singleCapital&&!view.unifiedPage&&<p>This account has no verified test deposits.</p>}

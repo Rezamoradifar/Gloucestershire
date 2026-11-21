@@ -55,7 +55,10 @@ describe('one account withdrawal',()=>{
   expect(html).toContain('Withdraw referral earnings');expect(html).toContain('Use maximum');
   expect(html).toContain('0.1 test USDT');expect(html).not.toMatch(/<select|Total principal|personal compound profit/);
   view.ledger.requestCap=E('0.6');
-  expect(accountWithdrawalFormState(input)).toMatchObject({canSubmit:false,maximum:E('0.6')});
+  expect(accountWithdrawalFormState(input)).toMatchObject({canSubmit:false,maximum:E('0.6'),error:'The per-request cap is 0.6 test USDT.'});
+  expect(renderToStaticMarkup(<V3AccountWithdrawalForm {...input}/>)).toContain('Remaining commission stays in your account.');
+  const balanceLimited={...input,view:{...view,referralAvailable:E('0.5')}};
+  expect(accountWithdrawalFormState(balanceLimited)).toMatchObject({canSubmit:false,maximum:E('0.5'),error:'Your available referral balance is 0.5 test USDT.'});
   expect(accountWithdrawalFormState({...input,value:'0.4'})).toMatchObject({canSubmit:true,net:E('0.388')});
   for(const change of [{pendingWithdrawal:true},{nextRequestAt:now+1},{referralAvailable:0n},{paused:true},{suspended:true},{registered:false}]){
    expect(accountWithdrawalFormState({...input,view:{...view,...change},value:'0.1'})).toMatchObject({canSubmit:false,maximum:0n});
