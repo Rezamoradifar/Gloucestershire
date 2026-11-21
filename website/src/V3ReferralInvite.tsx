@@ -8,10 +8,10 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
  const address=view.registered?view.wallet:'';
  const link=useMemo(()=>{
   if(!address||typeof window==='undefined')return '';
-  const publishedAtRoot=view.singleCapital&&import.meta.env.VITE_V3_UNIFIED_PRIMARY==='single-capital-testnet';
+  const publishedAtRoot=!view.dailyPlan&&view.singleCapital&&import.meta.env.VITE_V3_UNIFIED_PRIMARY==='single-capital-testnet';
   try{return referralLink(address,window.location.origin,publishedAtRoot?'/':window.location.pathname);}
   catch{return '';}
- },[address,view.singleCapital]);
+ },[address,view.singleCapital,view.dailyPlan]);
  async function copy(value:string){
   if(!value)return;
   try{
@@ -25,6 +25,7 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
   {!view.registered&&<p className="gv1-inline-warning">Register this wallet before sharing an invitation.</p>}
   {view.registered&&!view.eligible&&<p className="gv1-inline-warning">Your link is available; referral eligibility also requires a current check-in and the contract conditions.</p>}
   <p className="gv2-small">The account must be eligible when a referral claim is recorded. Referral claims skipped while ineligible are not automatically added later.</p>
+  {view.dailyPlan&&<p>Referral earnings use the downline member's base daily claim. An inactive referrer's share is skipped. Higher levels keep their original percentages.</p>}
   <label htmlFor="gv1-referral-address">Your wallet address</label>
   <div className="gv1-copy-field"><input id="gv1-referral-address" value={address} readOnly placeholder="Register your wallet first" onFocus={event=>event.currentTarget.select()}/>
    <button type="button" disabled={!address} onClick={()=>void copy(address)} aria-label="Copy referral address"><Copy size={16}/></button></div>

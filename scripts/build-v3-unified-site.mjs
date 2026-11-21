@@ -8,7 +8,7 @@ import {readPinnedProof,planUnifiedPreviewSite} from './v3-unified-site-preview-
 import {unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 
 const args=process.argv.slice(2);
-const profile=unifiedProfileForFlag(args.at(-1)==='--single-capital'?args.pop():undefined);
+const profile=unifiedProfileForFlag(['--single-capital','--daily-capital'].includes(args.at(-1))?args.pop():undefined);
 const primary=args.at(-1)==='--primary'?Boolean(args.pop()):false;
 const writes=args.length===6&&args[5]==='--enable-testnet-wallets';
 if(primary&&(!writes||profile.mode!=='single-capital-testnet'))throw Error('UNIFIED_PRIMARY_REQUIRES_SINGLE_CAPITAL_WALLETS');
@@ -36,7 +36,7 @@ const run=(args,env)=>{
 run(['test','--prefix','website','--','--maxWorkers=2'],clean);
 const releaseEnv={...clean,...plan.env,VITE_WALLETCONNECT_PROJECT_ID:wallet==='disabled'?'':wallet};
 if(writes)releaseEnv.VITE_V3_UNIFIED_WALLET_ACTIONS='verified-isolated-testnet';
-if(writes&&profile.mode==='single-capital-testnet')
+if(writes&&profile.mode!=='unified-testnet')
  releaseEnv.VITE_V3_UNIFIED_KEEPER=workerReady.operator;
 if(primary){
  releaseEnv.VITE_V3_LANDING_AT_ROOT='true';

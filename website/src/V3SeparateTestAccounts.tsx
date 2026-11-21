@@ -13,7 +13,7 @@ export default function V3SeparateTestAccounts({config}:{config:V3SiteReleaseCon
  return <details className="gv3-account-archive">
   <summary>Previous test accounts</summary>
   <p>Positions, balances and requests stay on their original contracts.</p>
-  <a href={singleCapital?'/unified-test/':PREVIOUS_HOURLY_TEST_PATH}>Previous {singleCapital?'unified':'hourly'} account <ArrowUpRight size={14} aria-hidden="true"/></a>
+  <a href={config.unified.dailyPlan?'/single-capital-test/':singleCapital?'/unified-test/':PREVIOUS_HOURLY_TEST_PATH}>Previous {config.unified.dailyPlan?'single-capital':singleCapital?'unified':'hourly'} account <ArrowUpRight size={14} aria-hidden="true"/></a>
   {primary&&<a href="/previous-hourly-test/">Earlier hourly records <ArrowUpRight size={14} aria-hidden="true"/></a>}
  </details>;
 }

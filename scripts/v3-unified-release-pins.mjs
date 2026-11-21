@@ -29,8 +29,17 @@ export const SINGLE_CAPITAL_PROFILE = Object.freeze({
  initcodeHash:'0xff83d9ff867e0c683d44ad1949cbf430871f612c232ef2a881ec9d24ac548c5b'
 });
 
+export const DAILY_CAPITAL_PROFILE = Object.freeze({
+ status:'VERIFIED_DAILY_CAPITAL_TESTNET_ONLY', mode:'daily-capital-testnet', route:'/daily-capital-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-daily-capital-testnet',
+ gasKey:'/etc/globaldroptrade/v3-daily-capital-keeper-testnet-gas-only.key',
+ timer:'global-v3-daily-capital-keeper-testnet.timer',
+ initcodeHash:'0x0ea45b0a8db193a745cb7ac79a30698bfc9c65d5806d049d04a23a790c96db00'
+});
+
 export function unifiedProfileForFlag(flag) {
  if(flag===undefined)return UNIFIED_PROFILE;
+ if(flag==='--daily-capital')return DAILY_CAPITAL_PROFILE;
  if(flag==='--single-capital')return SINGLE_CAPITAL_PROFILE;
  throw Error('UNIFIED_RELEASE_PROFILE_INVALID');
 }

@@ -175,3 +175,17 @@ describe('one account withdrawal',()=>{
   expect(html).not.toContain('<form');expect(accountWithdrawalFormState(props(view)).canSubmit).toBe(false);
  });
 });
+
+it('submits from addition 257 with a verified window and never spends other pages as part of it',()=>{
+ const view=unifiedAccount(Array.from({length:257},(_,i)=>i===256?'4':'1'));
+ // Model the single-capital dashboard's last window; the vault position is #0.
+ const group={...view.positions[1],id:0};
+ const last={...view.unifiedWithdrawalPages!.at(-1)!,positionId:0,limit:16};
+ view.positions=[group];view.singleCapital=true;view.unifiedWithdrawalPages=undefined;
+ view.unifiedPage=last;view.withdrawalPage=last;
+ expect(summarizeV3AccountWithdrawal(view,true)).toMatchObject({profit:E('260'),maxProfit:E('4'),maxPrincipal:E('10')});
+ expect(planV3AccountWithdrawal(view,'4','profit',true)).toMatchObject({source:'book',page:{start:256,limit:16}});
+ expect(()=>planV3AccountWithdrawal(view,'5','profit',true)).toThrow();
+ expect(()=>summarizeV3AccountWithdrawal({...view,withdrawalPage:{...last,block:last.block-1}},true)).toThrow();
+ expect(()=>summarizeV3AccountWithdrawal({...view,withdrawalPage:{...last,lots:[{...last.lots[0],id:255}]}},true)).toThrow();
+});

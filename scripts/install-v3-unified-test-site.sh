@@ -7,11 +7,12 @@ umask 077
 profile=()
 route_name=unified-test
 expected_proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
-if [[ ${1:-} == --single-capital ]]; then
+if [[ ${1:-} == --single-capital || ${1:-} == --daily-capital ]]; then
+  name=${1#--}
+  profile=("$1")
   shift
-  profile=(--single-capital)
-  route_name=single-capital-test
-  expected_proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
+  route_name=$name-test
+  expected_proof=/var/lib/globaldroptrade/v3-$name-testnet/deployment-proof.json
 fi
 route="https://globaldroptrade.com/$route_name/"
 mode=${1:-}
@@ -82,8 +83,11 @@ site_root=$(python3 scripts/verify-nginx-served-root.py --nginx-config "$work/ng
 hourly="$site_root/hourly-test"
 [[ -d $hourly && ! -L $hourly && -f $hourly/index.html && ! -L $hourly/index.html && -d $hourly/assets && ! -L $hourly/assets ]] || { echo UNIFIED_SITE_HOURLY_INVALID; exit 1; }
 cmp -s "$hourly/index.html" "$work/hourly-before.html" || { echo UNIFIED_SITE_HOURLY_MISMATCH; exit 1; }
-if [[ $route_name == single-capital-test ]]; then
+if [[ $route_name != unified-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-before.html"
+fi
+if [[ $route_name == daily-capital-test ]]; then
+ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/single-capital-test/ -o "$work/single-before.html"
 fi
 target="$site_root/$route_name"
 if [[ -e $target || -L $target ]]; then
@@ -173,8 +177,12 @@ fi
 curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/ -o "$work/main-after.html"
 curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/hourly-test/ -o "$work/hourly-after.html"
 cmp -s "$work/main-before.html" "$work/main-after.html" && cmp -s "$work/hourly-before.html" "$work/hourly-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
-if [[ $route_name == single-capital-test ]]; then
+if [[ $route_name != unified-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-after.html"
+ if [[ $route_name == daily-capital-test ]]; then
+  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/single-capital-test/ -o "$work/single-after.html"
+  cmp -s "$work/single-before.html" "$work/single-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
+ fi
  cmp -s "$work/legacy-unified-before.html" "$work/legacy-unified-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 fi
 installed=0

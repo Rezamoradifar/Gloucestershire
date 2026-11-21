@@ -6,8 +6,7 @@ import {hostname} from 'node:os';
 import {createHash,randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {Contract,ContractFactory,JsonRpcProvider,Transaction,Wallet,getAddress,getCreateAddress,keccak256} from 'ethers';
-import {compileUnifiedTestnet,compileSingleCapitalTestnet} from './compile-global-v3-unified-testnet.mjs';
-import {planUnifiedDeployment} from './v3-unified-deploy-preflight.mjs';
+import {planUnifiedDeployment,deploymentArtifact} from './v3-unified-deploy-preflight.mjs';
 import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {waitV3DeploymentReceipt} from './v3-deploy-receipt-poll.mjs';
 import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
@@ -16,7 +15,7 @@ import {withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
 export {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 
 import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_DEPLOYER,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER,
- UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
+ UNIFIED_PROFILE,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 
 const DEPLOYER=getAddress(UNIFIED_DEPLOYER);
 const RPCS=new Set(['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com']);
@@ -54,7 +53,7 @@ async function verifyPrivateProofFile(provider,profile) {
 }
 
 export async function deployUnifiedIsolated({provider,signer,directory,expectedDeployer=DEPLOYER,
- profile=UNIFIED_PROFILE,compile=profile===SINGLE_CAPITAL_PROFILE?compileSingleCapitalTestnet:compileUnifiedTestnet,
+ profile=UNIFIED_PROFILE,compile=deploymentArtifact(profile).compile,
  waitReceipt=waitV3DeploymentReceipt}){
  if(!(signer instanceof Wallet)||signer.provider!==provider||
     getAddress(await signer.getAddress())!==getAddress(expectedDeployer))
@@ -63,7 +62,7 @@ export async function deployUnifiedIsolated({provider,signer,directory,expectedD
  try{
   if(journal.read()||fs.existsSync(path.join(directory,'deployment-proof.json')))
    throw Error('UNIFIED_PREVIOUS_DEPLOYMENT_NEEDS_REVIEW');
-  const artifacts=compile(),artifact=artifacts[profile===SINGLE_CAPITAL_PROFILE?'GlobalV3SingleCapitalTestnet':'GlobalV3UnifiedTestnet'];
+  const artifacts=compile(),artifact=artifacts[deploymentArtifact(profile).name];
   const plan=await planUnifiedDeployment({provider,from:expectedDeployer,profile,compile:()=>artifacts});
   if(plan.initcodeHash.toLowerCase()!==profile.initcodeHash)
    throw Error('UNIFIED_REVIEWED_INITCODE_HASH_MISMATCH');

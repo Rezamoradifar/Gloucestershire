@@ -97,7 +97,7 @@ export async function readUnifiedReinvestmentPlan(session:Awaited<ReturnType<typ
   if(!validIndex(lotCount)||lotCount<1)throw Error('The verified reinvestment lot count is invalid.');
   for(let start=0;start<lotCount&&covered<amount;start+=8){
    const page=await readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,
-    book as unknown as UnifiedBookReader,who,groupPlusOne-1,block.number,block.timestamp,start,8);
+    book as unknown as UnifiedBookReader,who,groupPlusOne-1,block.number,block.timestamp,start,8,session.config.unified.dailyPlan?86400:3600);
    if(page.availableProfitOnPage>0n){pages.push(page);covered+=page.availableProfitOnPage;}
    // The contract caps the contributing sources, not the index of a contributing lot.
    if(pages.length>MAX_SOURCES)break;

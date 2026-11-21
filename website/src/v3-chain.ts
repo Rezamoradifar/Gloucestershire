@@ -22,6 +22,16 @@ export const V3_OPERATIONS=getAddress('0x8c4ac9b009808a0b49ba77b58e3871e7cdba463
 export const V3_ABI=[
  'function asset() view returns(address)',
  'function ACCRUAL_PERIOD() view returns(uint256)',
+ 'function CYCLE_VOLUME() view returns(uint256)',
+ 'function CYCLE_REWARD() view returns(uint256)',
+ 'function cycleProgress(address,uint256) view returns(uint256 stage,uint256 preparedUsd,uint256 cursor,uint256 branches)',
+ 'function cyclePreview(address,uint256) view returns(bool eligible,uint256 volumeUsd,uint256 rewardUsd,uint256[] consume)',
+ 'function prepareNetworkCycle(uint256,uint256,uint256)',
+ 'function claimNetworkCycles(uint256,uint256,uint8)',
+ 'function fundPlanReserve(uint256)',
+ 'event PlanReserveFunded(address indexed funder,uint256 amount)',
+ 'event CyclePrepared(address indexed user,uint256 indexed group,uint256 cycle,uint256 preparedUsd,uint256 cursor)',
+ 'event CycleEarned(address indexed user,uint256 indexed group,uint256 cycle,uint256 volumeUsd,uint256 rewardUsd)',
  'function SINGLE_CAPITAL_VERSION() view returns(uint256)',
  'function BPS() view returns(uint256)',
  'function PROFIT_FEE_BPS() view returns(uint256)',
@@ -38,6 +48,7 @@ export const V3_ABI=[
  'function paused() view returns(bool)',
  'function users(address) view returns(address referrer,bool registered,bool suspended,bool vipKyc,uint64 lastCheckIn,uint64 nextRequestAt,bool pendingRequest,uint256 capital,uint256 originalDeposits,uint256 reinvestments,uint256 referralAvailable,uint256 referralReserved,uint256 cumulativeReferral)',
  'function isEligible(address) view returns(bool)',
+ 'function nextAccrual(address,uint256) view returns(uint256 due,uint16 bps,uint8 tier)',
  'function tierOf(address) view returns(uint8)',
  'function dailyBps(uint8) view returns(uint16)',
  'function effectiveDailyBps(address) view returns(uint16)',
@@ -116,6 +127,7 @@ export const V3_ABI=[
  'event WithdrawalPaid(uint256 indexed id,address indexed beneficiary,uint256 net,uint256 fee)'
 ];
 export const V3_UNIFIED_BOOK_ABI=[
+ 'function PERIOD() view returns(uint256)',
  'function vault() view returns(address)',
  'function position(address) view returns(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint256 cumulativeDaily,uint256 cumulativeCompound,uint256 lots)',
  'function lot(address,uint256) view returns(tuple(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint64 openedAt,uint64 lastAccruedAt))'
@@ -186,9 +198,10 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
- singleCapital?:true;
+ singleCapital?:true;dailyPlan?:true;
  unifiedWithdrawalPages?:UnifiedPositionPage[];
  withdrawalCoverageError?:string;
+ withdrawalPage?:UnifiedPositionPage;
  withdrawCount:number;memberCount:number;totalWithdrawalCount:number;
  walletTestTokenBalance:bigint;allowance:bigint;gasWei:bigint;
  keeper?:{operator:string;gasWei:bigint|null};
@@ -234,10 +247,11 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    vault.FEE_WALLET_1(options),vault.FEE_WALLET_2(options),
    vault.OPERATIONS_WALLET(options),vault.DEPOSIT_FEE_EACH_BPS(options)
   ]);
-  if(config.unified&&!V3_HOURLY_TEST)throw Error('The unified release requires the one-hour test profile.');
+  const daily=config.unified?.dailyPlan===true;
+  if(config.unified&&(daily===V3_HOURLY_TEST))throw Error('The configured test period does not match the unified release.');
   const [adminAllowed,period,singleCapitalVersion]=await Promise.all([
    vault.hasRole(managerRole,V3_EXPECTED_MANAGER,options),
-   V3_HOURLY_TEST?vault.ACCRUAL_PERIOD(options):null,
+   (V3_HOURLY_TEST||daily)?vault.ACCRUAL_PERIOD(options):null,
    config.unified?.singleCapital?vault.SINGLE_CAPITAL_VERSION(options):null
   ]);
   if(getAddress(asset)!==V3_TEST_TOKEN||
@@ -246,11 +260,11 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
     getAddress(operations)!==V3_OPERATIONS||BigInt(depositBps)!==1000n)
    throw Error('V3 asset, routing destinations, fees or manager role was not verified.');
   // Never show an accelerated clock against the existing 24-hour contract.
-  if(V3_HOURLY_TEST&&BigInt(period)!==3600n)
-   throw Error('The isolated hourly test contract period was not verified.');
+  if((V3_HOURLY_TEST||daily)&&BigInt(period)!==(daily?86400n:3600n))
+   throw Error('The test contract accrual period was not verified.');
   let network=vault,book:Contract|null=null;
   if(config.unified){
-   if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==1n)
+   if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==(daily?2n:1n))
     throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
     vault.reinvestmentBook(options),vault.networkPlan(options),
@@ -262,6 +276,10 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
     throw Error('The unified testnet components do not match the pinned deployment.');
    book=new Contract(config.unified.book,V3_UNIFIED_BOOK_ABI,provider);
    network=new Contract(config.unified.network,V3_ABI,provider);
+   if(daily){
+    const [bookPeriod,volume,reward]=await Promise.all([book.PERIOD(options),network.CYCLE_VOLUME(options),network.CYCLE_REWARD(options)]);
+    if(bookPeriod!==86400n||volume!==500n*10n**18n||reward!==35n*10n**18n)throw Error('The daily test plan terms could not be verified.');
+   }
    const [bookVault,networkVault]=await Promise.all([book.vault(options),network.vault(options)]);
    if(getAddress(bookVault)!==config.address||getAddress(networkVault)!==config.address)
     throw Error('The unified components are not bound to this testnet vault.');
@@ -370,12 +388,14 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   const count=Math.min(5,groupRange.length-start);
   const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
    const id=groupRange.start+start+offset;
-   const progress=await network.rewardProgress(wallet,id,options),stage=Number(progress.stage);
-   if(stage<0||stage>14)throw Error('Invalid V3 network stage.');
-   const terms=stage<14?await network.rewardStage(stage,options):null;
+   const daily=config?.unified?.dailyPlan===true;
+   const progress=daily?await network.cycleProgress(wallet,id,options):await network.rewardProgress(wallet,id,options);
+   const stage=Number(progress.stage);
+   if(!Number.isSafeInteger(stage)||stage<0||(!daily&&stage>14))throw Error('Invalid V3 network stage.');
+   const terms=daily?{volumeUsd:500n*10n**18n,rewardUsd:35n*10n**18n}:stage<14?await network.rewardStage(stage,options):null;
    const branches=toSafeCount(progress.branches,'group branch');
    const target=terms?BigInt(terms.volumeUsd):0n,reward=terms?BigInt(terms.rewardUsd):0n;
-   const preview=await readV3NetworkPreview(network,wallet,id,branches,target,reward,options);
+   const preview=await readV3NetworkPreview(network,wallet,id,branches,target,reward,options,daily);
    return {id,stage,prepared:BigInt(progress.preparedUsd),branches,target,reward,preview};
   }));
   networkGroups.push(...page);
@@ -400,7 +420,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   } as V3WalletPosition;
  }));
  let unifiedPage:UnifiedPositionPage|null=null;
- let unifiedWithdrawalPages:UnifiedPositionPage[]|undefined,withdrawalCoverageError:string|undefined;
+ let unifiedWithdrawalPages:UnifiedPositionPage[]|undefined;
  if(config!.unified){
   if(!book)throw Error('The verified reinvestment book is unavailable.');
   const plusOne=toSafeCount(await vault.reinvestmentPositionPlusOne(wallet,options),'unified position');
@@ -413,11 +433,9 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
    throw Error('The verified single investment account does not reconcile.');
   if(plusOne!==0){
    unifiedPage=await readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,
-    book as unknown as UnifiedBookReader,wallet,plusOne-1,block.number,block.timestamp,unifiedPageStart);
+    book as unknown as UnifiedBookReader,wallet,plusOne-1,block.number,block.timestamp,unifiedPageStart,withdrawalCoverage&&config!.unified.singleCapital?16:8,config!.unified.dailyPlan?86400:3600);
    if(withdrawalCoverage){
-    if(unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS)
-     withdrawalCoverageError='This account exceeds the supported withdrawal scan of '+MAX_UNIFIED_WITHDRAWAL_LOTS+' additions. No partial withdrawal limit is shown.';
-    else unifiedWithdrawalPages=await readUnifiedWithdrawalPages(vault as unknown as UnifiedVaultReader,
+    if(unifiedPage.totalLots<=MAX_UNIFIED_WITHDRAWAL_LOTS)unifiedWithdrawalPages=await readUnifiedWithdrawalPages(vault as unknown as UnifiedVaultReader,
      book as unknown as UnifiedBookReader,unifiedPage);
    }
   }
@@ -477,8 +495,9 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   networkBranches,networkBranchCount:branchCount,networkGroups,networkGroupCount:groupCount,networkLoaded:Boolean(networkPage),
   networkBranchPage:branchRange.page,networkGroupPage:groupRange.page,
   canManage:Boolean(canManage),canFund:Boolean(canFund),
-  positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,withdrawalCoverageError,
-   singleCapital:config!.unified.singleCapital}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+  positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,
+   withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,
+   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   ...(config!.unified?.keeper?{keeper:{operator:config!.unified.keeper,gasWei:keeperGasWei}}:{}),

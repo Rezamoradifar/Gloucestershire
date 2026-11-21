@@ -270,7 +270,7 @@ export default function V3Dashboard(){
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
   if(config.unified&&action.kind!=='register'&&!isUnifiedWithdrawal(action)&&!isUnifiedNetworkAction(action)){setError('This action is unavailable on the unified test network.');return;}
-  if(!config.unified&&(action.kind==='fundWithdrawal'||action.kind==='cancelWithdrawal'))return;
+  if(!config.unified&&(action.kind==='fundWithdrawal'||action.kind==='cancelWithdrawal'||action.kind==='fundPlanReserve'))return;
   const trackedAction=Boolean(config.unified)||action.kind==='register'||action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
   if(trackedAction&&pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   const target=config.unified&&isUnifiedNetworkAction(action)?networkActionTarget(config,action):config.address;
@@ -288,7 +288,7 @@ export default function V3Dashboard(){
     hash=await sendUnifiedNetworkAction(p,wallet,action,config,{enabled:unifiedEnabled,onProgress:report});
    }else if(config.unified&&isUnifiedWithdrawal(action)){
     hash=await sendUnifiedWithdrawal(p,wallet,action,config,{enabled:unifiedEnabled,onProgress:report});
-   }else if(action.kind!=='fundWithdrawal'&&action.kind!=='cancelWithdrawal'){
+   }else if(action.kind!=='fundWithdrawal'&&action.kind!=='cancelWithdrawal'&&action.kind!=='fundPlanReserve'){
     hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    }else throw Error('Select the verified unified withdrawal profile.');
    tracker.complete();setTxHash(hash);
@@ -311,6 +311,9 @@ export default function V3Dashboard(){
   let n:bigint;
   try{n=amount(value);}catch(e){setError((e as Error).message);return;}
   if(n>view.walletTestTokenBalance){setError('Connected wallet lacks this amount of mock TUSDT.');return;}
+  if(view.dailyPlan&&view.ledger.cash<view.ledger.principalLiability+view.ledger.profitLiability+n){
+   setError('The plan reserve cannot cover this deposit. Ask the operator to fund the reserve.');return;
+  }
   let parent:string;
   try{parent=view.registered?view.referrer:chosenReferrer();}
   catch(e){setError(e instanceof Error?e.message:'Invalid referral address.');return;}
@@ -336,6 +339,13 @@ export default function V3Dashboard(){
   const p=getWalletProvider();if(!p||!config||!wallet)return;
   try{setAdminQueue(await readV3ManagerQueue(p,wallet,config,page));}
   catch(e){setError(e instanceof Error?e.message:'V3 manager queue unavailable.');}
+ }
+ function fundReserve(){
+  if(!config?.unified?.dailyPlan||!view?.canFund)return;
+  try{
+   const gross=amount(value);
+   void perform({kind:'fundPlanReserve',gross},'Provide '+formatUnits(gross,18)+' test USDT from this wallet as backing for the plan. This funding does not credit an investment account.');
+  }catch(e){setError(e instanceof Error?e.message:'Enter a positive reserve amount.');}
  }
  async function fund(id:number,gross:bigint,beneficiary:string){
   if(!config||busy||!wallet||!view?.canFund)return;
@@ -578,6 +588,7 @@ export default function V3Dashboard(){
        onPrevious={()=>setUnifiedPageStart(Math.max(0,view.unifiedPage!.start-view.unifiedPage!.limit))}
        onNext={()=>setUnifiedPageStart(view.unifiedPage!.start+view.unifiedPage!.limit)}/>}
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
+       {view.dailyPlan&&<p>Every external deposit and every new reward requires enough separate test-token reserve to cover all recorded principal and accrued claims.</p>}
        <p>100% of each test deposit is routed to designated wallets, including fee wallets. It does not remain as cash in the vault or establish product spending.</p>
        <div className="gv3-input-row"><label htmlFor="v3-deposit">Amount (USDT)</label><input id="v3-deposit" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" placeholder="1000"/>
         {!view.registered&&<><label htmlFor="v3-parent">Referrer (optional)</label>
@@ -614,15 +625,26 @@ export default function V3Dashboard(){
       <p>This profile shows only the current contract's confirmed account records.</p>
      </section>}
      {tab==='withdrawals'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Request a V3 testnet withdrawal</h3><Clock3 size={18}/></div>
+      {view.withdrawalPage&&(requestKind==='profit'||requestKind==='principal')&&<div className="gv2-buttons">
+       <span>Additions {view.withdrawalPage.start+1}–{view.withdrawalPage.start+view.withdrawalPage.lots.length} of {view.withdrawalPage.totalLots}</span>
+       <button disabled={busy||loading||view.withdrawalPage.start===0} onClick={()=>setUnifiedPageStart(Math.max(0,view.withdrawalPage!.start-view.withdrawalPage!.limit))}>Previous additions</button>
+       <button disabled={busy||loading||view.withdrawalPage.start+view.withdrawalPage.limit>=view.withdrawalPage.totalLots} onClick={()=>setUnifiedPageStart(view.withdrawalPage!.start+view.withdrawalPage!.limit)}>Next additions</button>
+      </div>}
       <V3AccountWithdrawalForm view={view} unified={Boolean(config.unified)}
        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly}
        kind={requestKind} onKind={setRequestKind} value={value} onValue={setValue}
        onSubmit={()=>request(requestKind,value)}/>
+      {view.dailyPlan&&<p>Requests for profit and team rewards are limited to 10% of external deposits. A rejected request releases the balance for a new request immediately.</p>}
       <h3>Your recent V3 requests</h3>{view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
      </section>}
      {tab==='admin'&&operatorAccess&&<section className="gv2-panel">
       <div className="gv2-panel-head"><h3>V3 manager approval and payout</h3><button disabled={busy} onClick={()=>void readQueue()}>Load latest 20 requests</button></div>
+      {view.dailyPlan&&view.canFund&&<div className="gv3-input-row">
+       <label htmlFor="reserve-funding">Fund the plan reserve (test USDT)</label>
+       <input id="reserve-funding" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" disabled={busy}/>
+       <button type="button" disabled={busy||loading||reviewRequired||unifiedReadOnly} onClick={fundReserve}>Review reserve funding</button>
+      </div>}
       <p>Daily accrual and automatic profit-on-profit require NO manager approval. Only here can management approve withdrawals, reserve available cash, or authorize exact USDT-token funding. Funding does NOT automatically pay.</p>
       <div className="gv2-detail"><span>Total recorded V3 principal claims</span><b>{show(view.ledger.principalLiability)} USDT</b></div>
       <div className="gv2-detail"><span>Accrued test-profit liabilities</span><b>{show(view.ledger.profitLiability)} USDT</b></div>

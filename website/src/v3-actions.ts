@@ -459,7 +459,7 @@ export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider
    vault.users(who,session.options),vault.paused(session.options),vault.profitWithdrawalCap(who,session.options),
    vault.BPS(session.options),vault.PROFIT_FEE_BPS(session.options),vault.PRINCIPAL_PENALTY_BPS(session.options),
    readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,book as unknown as UnifiedBookReader,
-    who,positionId,block.number,block.timestamp,start,unifiedWithdrawalWindow(config.unified.singleCapital))
+    who,positionId,block.number,block.timestamp,start,unifiedWithdrawalWindow(config.unified.singleCapital),config.unified.dailyPlan?86400:3600)
   ]);
   const nextRequestAt=Number(user.nextRequestAt);
   if(!Number.isSafeInteger(nextRequestAt)||nextRequestAt<0||BigInt(bps)!==10000n||
@@ -522,6 +522,11 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
    s.vault.paused(s.options)
   ]);
   if(paused)throw Error('Deposits are paused on this V3 test contract.');
+  if(config?.unified?.dailyPlan){
+   const reserve=await s.vault.cashStatus(s.options);
+   if(reserve.cash<reserve.principal+reserve.accruedProfit+amount)
+    throw Error('The plan reserve is too low to cover this deposit. The operator must fund the test-token reserve.');
+  }
   if(BigInt(balance)<amount)throw Error('This wallet does not have enough USDT on this V3 test network.');
   if(BigInt(allowance)<0n)throw Error('Invalid token allowance');
   await checkV3DepositAccount(s.vault,wallet,referrer,amount,s.options);

@@ -259,7 +259,7 @@ class WorkerGasInstallation(unittest.TestCase):
         source = source.replace("/etc/globaldroptrade", str(config))
         source = source.replace("/etc/systemd/system", str(self.units))
         source = source.replace("/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin", str(self.tools))
-        for label in ["unified", "single-capital"]:
+        for label in ["unified", "single-capital", "daily-capital"]:
             release_root = self.root / (label + "-worker")
             release = release_root / REVISION
             release.mkdir(parents=True)
@@ -269,6 +269,8 @@ class WorkerGasInstallation(unittest.TestCase):
             (proof / "deployment-proof.json").write_bytes(PROOF)
             source = source.replace("/opt/global-v3-" + label + "-worker", str(release_root))
             source = source.replace("/var/lib/globaldroptrade/v3-" + label + "-testnet", str(proof))
+        source = source.replace("/opt/global-v3-$name-worker", str(self.root / "$name-worker"))
+        source = source.replace("/var/lib/globaldroptrade/v3-$name-testnet", str(self.root / "$name-state"))
         self.script = self.root / "worker.sh"
         self.script.write_text(source)
         self.env = dict(os.environ, PATH=str(self.tools) + os.pathsep + os.environ["PATH"],
@@ -311,6 +313,14 @@ if [[ $2 == --check ]]; then exit "$GAS_STATUS"; fi""")
         funded = self.invoke(0, "--single-capital")
         self.assertEqual(funded.returncode, 0, funded.stderr)
         self.assertIn("UNIFIED_TESTNET_WORKER_ACTIVE", funded.stdout)
+
+    def test_daily_worker_uses_its_own_deployment_and_timer(self):
+        result = self.invoke(0, "--daily-capital")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        unit = self.units / "global-v3-daily-capital-keeper-testnet.service"
+        self.assertIn(str(self.root / "daily-capital-state" / "deployment-proof.json"), unit.read_text())
+        self.assertIn("--tick --daily-capital", unit.read_text())
+        self.assertFalse((self.units / "global-v3-single-capital-keeper-testnet.timer").exists())
 
     def test_other_errors_and_the_legacy_gas_gate_still_stop_before_installation(self):
         for status, profile in [(1, ("--single-capital",)), (42, ())]:

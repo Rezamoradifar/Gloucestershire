@@ -3,7 +3,7 @@
 // the calling session before a page is displayed or a transaction is signed.
 import {getAddress,ZeroAddress} from 'ethers';
 
-const LOCK=90*86400,PERIOD=3600,MAX_PAGE=16;
+const LOCK=90*86400,MAX_PAGE=16;
 export const MAX_UNIFIED_WITHDRAWAL_LOTS=256;
 export const unifiedWithdrawalWindow=(singleCapital?:boolean)=>singleCapital?MAX_PAGE:8;
 type At={blockTag:number};
@@ -14,6 +14,7 @@ type Summary={principal:bigint;reservedPrincipal:bigint;daily:bigint;compound:bi
 type RawLot={principal:bigint;reservedPrincipal:bigint;daily:bigint;compound:bigint;basis:bigint;
  reservedProfit:bigint;openedAt:bigint;lastAccruedAt:bigint};
 export type UnifiedVaultReader={
+ nextAccrual?:(wallet:string,last:bigint,options:At)=>Promise<{due:bigint}>;
  reinvestmentPositionPlusOne:(wallet:string,options:At)=>Promise<bigint>;
  positionOf:(wallet:string,id:number,options:At)=>Promise<Position>;
  claimableDaily:(wallet:string,id:number,options:At)=>Promise<bigint>;
@@ -26,7 +27,7 @@ export type UnifiedBookReader={
 export type UnifiedLot={id:number;principal:bigint;reservedPrincipal:bigint;daily:bigint;compound:bigint;
  basis:bigint;reservedProfit:bigint;openedAt:number;lastAccruedAt:number;unlockAt:number;nextAccrualAt:number};
 export type UnifiedPositionPage={wallet:string;positionId:number;block:number;asOf:number;start:number;limit:number;
- totalLots:number;principal:bigint;daily:bigint;compound:bigint;reservedProfit:bigint;
+ periodSeconds?:number;totalLots:number;principal:bigint;daily:bigint;compound:bigint;reservedProfit:bigint;
  availableProfitOnPage:bigint;maturedPrincipalOnPage:bigint;lots:UnifiedLot[]};
 
 function integer(value:unknown,label:string){
@@ -40,9 +41,9 @@ function units(value:unknown,label:string){
 }
 
 export async function readUnifiedPositionPage(vault:UnifiedVaultReader,book:UnifiedBookReader,wallet:string,
- positionId:number,block:number,asOf:number,start:number,limit=8):Promise<UnifiedPositionPage>{
+ positionId:number,block:number,asOf:number,start:number,limit=8,periodSeconds=3600):Promise<UnifiedPositionPage>{
  const who=getAddress(wallet);
- if(who===ZeroAddress||integer(block,'block')===0||integer(positionId,'position')!==positionId||positionId>=Number.MAX_SAFE_INTEGER||
+ if((periodSeconds!==3600&&periodSeconds!==86400)||who===ZeroAddress||integer(block,'block')===0||integer(positionId,'position')!==positionId||positionId>=Number.MAX_SAFE_INTEGER||
     integer(asOf,'time')!==asOf||integer(start,'page')!==start||
     !Number.isSafeInteger(limit)||limit<1||limit>MAX_PAGE)throw Error('Invalid unified position page.');
  const options={blockTag:block};
@@ -73,10 +74,19 @@ export async function readUnifiedPositionPage(vault:UnifiedVaultReader,book:Unif
   const lotDaily=units(l.daily,'daily claim'),lotCompound=units(l.compound,'compound claim');
   const basis=units(l.basis,'compound basis'),reservedProfit=units(l.reservedProfit,'reserved profit');
   if(reservedPrincipal>principal||basis!==lotDaily+lotCompound||openedAt>lastAccruedAt||
-     lastAccruedAt>asOf||openedAt>Number.MAX_SAFE_INTEGER-LOCK||lastAccruedAt>Number.MAX_SAFE_INTEGER-PERIOD)
+     lastAccruedAt>asOf||openedAt>Number.MAX_SAFE_INTEGER-LOCK||lastAccruedAt>Number.MAX_SAFE_INTEGER-periodSeconds)
    throw Error('The verified reinvestment lot is inconsistent.');
+  let nextAccrualAt=lastAccruedAt+periodSeconds;
+  if(periodSeconds===86400){
+   if(!vault.nextAccrual)throw Error('The daily accrual calendar is unavailable.');
+   const calendar=await vault.nextAccrual(who,l.lastAccruedAt,options);
+   const due=integer(calendar.due,'daily maturity');
+   if(due<nextAccrualAt||(due-lastAccruedAt)%periodSeconds!==0)
+    throw Error('The verified daily maturity is inconsistent.');
+   nextAccrualAt=due;
+  }
   return {id,principal,reservedPrincipal,daily:lotDaily,compound:lotCompound,basis,reservedProfit,
-   openedAt,lastAccruedAt,unlockAt:openedAt+LOCK,nextAccrualAt:lastAccruedAt+PERIOD};
+   openedAt,lastAccruedAt,unlockAt:openedAt+LOCK,nextAccrualAt};
  }));
  const sums=lots.reduce((a,lot)=>({principal:a.principal+lot.principal,reservedPrincipal:a.reservedPrincipal+lot.reservedPrincipal,
   daily:a.daily+lot.daily,compound:a.compound+lot.compound,reservedProfit:a.reservedProfit+lot.reservedProfit}),
@@ -84,7 +94,7 @@ export async function readUnifiedPositionPage(vault:UnifiedVaultReader,book:Unif
  if(sums.principal>summary.principal||sums.reservedPrincipal>summary.reservedPrincipal||
     sums.daily>summary.daily||sums.compound>summary.compound||sums.reservedProfit>summary.reservedProfit)
   throw Error('The verified reinvestment page exceeds the group totals.');
- return {wallet:who,positionId,block,asOf,start,limit,totalLots,principal:p.principal,daily,
+ return {wallet:who,positionId,block,asOf,start,limit,periodSeconds,totalLots,principal:p.principal,daily,
   compound,reservedProfit:p.reservedProfit,lots,
   availableProfitOnPage:lots.reduce((sum,lot)=>sum+lot.daily+lot.compound,0n),
   maturedPrincipalOnPage:lots.reduce((sum,lot)=>sum+(asOf>=lot.unlockAt?lot.principal-lot.reservedPrincipal:0n),0n)};
@@ -101,7 +111,7 @@ export async function readUnifiedWithdrawalPages(vault:UnifiedVaultReader,book:U
   const starts=[start,start+8].filter(index=>index<seed.totalLots);
   pages.push(...await Promise.all(starts.map(index=>
    index===seed.start&&seed.limit===8?Promise.resolve(seed):
-    readUnifiedPositionPage(vault,book,seed.wallet,seed.positionId,seed.block,seed.asOf,index,8))));
+    readUnifiedPositionPage(vault,book,seed.wallet,seed.positionId,seed.block,seed.asOf,index,8,seed.periodSeconds))));
  }
  return pages;
 }

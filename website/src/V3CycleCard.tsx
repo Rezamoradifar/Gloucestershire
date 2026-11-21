@@ -18,15 +18,15 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
  },[view.asOf]);
  const unified=view.unifiedPage!==undefined;
  if(unified&&(!unifiedEnabled||!view.unifiedPage))return <section className="gv3-cycle" aria-label="Unified test cycle">
-  <div className="gv3-cycle-head"><div><span className="gv3-kicker">ONE-HOUR TEST CYCLE</span>
+  <div className="gv3-cycle-head"><div><span className="gv3-kicker">{view.dailyPlan?'DAILY CYCLE':'ONE-HOUR TEST CYCLE'}</span>
    <h2>Each addition has its own cycle</h2><p>Review accrual times in the {view.singleCapital?'investment account':'reinvestment position'}.</p></div></div>
   <div className="gv3-cycle-copy"><p>{unifiedEnabled?'See the recorded daily and compound claims for each addition.':'Estimates are unavailable while the unified account is in read-only preview.'}</p>
    <button type="button" onClick={onPositions}>{view.singleCapital?'View investment account':'View positions'} <ArrowRight size={15}/></button></div>
  </section>;
- const hourly=V3_HOURLY_TEST||unified;
- const periodSeconds=hourly?3600:V3_PERIOD_SECONDS;
+ const hourly=!view.dailyPlan&&(V3_HOURLY_TEST||unified);
+ const periodSeconds=view.dailyPlan?86400:hourly?3600:V3_PERIOD_SECONDS;
  const positions=unified?view.unifiedPage!.lots.map(lot=>({
-  principal:lot.principal,compoundedBasis:lot.basis,lastAccruedAt:lot.lastAccruedAt
+  principal:lot.principal,compoundedBasis:lot.basis,lastAccruedAt: view.dailyPlan?lot.nextAccrualAt-periodSeconds:lot.lastAccruedAt
  })):view.positions;
  const partial=unified&&(view.unifiedPage!.start!==0||view.unifiedPage!.lots.length!==view.unifiedPage!.totalLots);
  let cycle:ReturnType<typeof v3CycleView>;
@@ -37,6 +37,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
  const due=remaining===0;
  // A recent check-in alone does not prove contract eligibility. A snapshot can
  // also expire locally before the next verified block refresh.
+ const needsCapital=view.dailyPlan&&(view.capital<10n*10n**18n||(view.capital>50000n*10n**18n&&!view.vipKyc));
  const active=view.eligible&&cycle.activityRemaining>0&&!view.paused;
  const activityReason=view.paused?'The test contract is paused.':
   !view.registered?'Register this test wallet first.':
@@ -73,14 +74,14 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
      <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="USDT"/></strong>
      <p>{active?'A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.':'Progress is hidden while eligibility is not confirmed. Refresh or check in as needed.'}</p>
      <div className="gv3-forecast-row gv3-forecast-row--daily"><span>{hourly?'Cycle base estimate so far':'Daily estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressDaily):'—'}/></b></div>
-     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>Profit-on-profit estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>
+     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>{view.dailyPlan?'Personal compound estimate so far':'Profit-on-profit estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>
      <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="USDT"/></b></div>
      <small>At the verified {view.dailyRateBps/100}% test rate, if each {unified?'addition':'position'} becomes eligible. {hourly&&'The full daily test rate is applied once per eligible one-hour test cycle; this is accelerated test accounting. '}Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>
     <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Account eligible':'Eligibility needs attention'}</strong>
      <small>{activityReason}
       {checkInWait>0&&' · Next check-in in '+v3Countdown(checkInWait)}</small></div>
-     <button type="button" disabled={busy||!view.registered||view.suspended||view.paused||checkInWait>0} onClick={onCheckIn}>
+     <button type="button" disabled={busy||needsCapital||!view.registered||view.suspended||view.paused||checkInWait>0} onClick={onCheckIn}>
       <RefreshCw size={14}/> Check in</button></div>
    </div>
   </div>

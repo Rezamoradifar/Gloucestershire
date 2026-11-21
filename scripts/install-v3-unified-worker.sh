@@ -15,13 +15,14 @@ key=$config/v3-unified-keeper-testnet-gas-only.key
 profile=()
 case $#:${2:-} in
   1:) ;;
-  2:--single-capital)
-    root=/opt/global-v3-single-capital-worker
-    proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
-    unit=global-v3-single-capital-keeper-testnet
-    user=global-v3-single-capital
-    key=$config/v3-single-capital-keeper-testnet-gas-only.key
-    profile=(--single-capital)
+  2:--single-capital|2:--daily-capital)
+    name=${2#--}
+    root=/opt/global-v3-$name-worker
+    proof=/var/lib/globaldroptrade/v3-$name-testnet/deployment-proof.json
+    unit=global-v3-$name-keeper-testnet
+    user=global-v3-$name
+    key=$config/v3-$name-keeper-testnet-gas-only.key
+    profile=("$2")
     ;;
   *) echo UNIFIED_WORKER_INVALID_RELEASE_PROFILE >&2; exit 1 ;;
 esac
@@ -57,10 +58,10 @@ node "$release/scripts/run-v3-unified-worker.mjs" --init-key "${profile[@]}"
 gas_status=0
 node "$release/scripts/run-v3-unified-worker.mjs" --check "$sha" "${profile[@]}" || gas_status=$?
 if (( gas_status != 0 )); then
-  [[ $gas_status == 42 && ${profile[0]:-} == --single-capital ]] || exit "$gas_status"
+  [[ $gas_status == 42 && ${#profile[@]} != 0 ]] || exit "$gas_status"
 fi
 success_exit=''
-if [[ ${profile[0]:-} == --single-capital ]]; then success_exit='SuccessExitStatus=42'; fi
+if [[ ${#profile[@]} != 0 ]]; then success_exit='SuccessExitStatus=42'; fi
 if ! getent passwd "$user" >/dev/null; then
   useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$user"
 fi

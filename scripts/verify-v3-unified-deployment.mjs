@@ -1,7 +1,7 @@
 // Read-only identity check for an operator-pinned, actual chain-97 deployment.
 // This is not a deployer, a migration mechanism or a financial/security audit.
 import {Contract,getAddress,isAddress,keccak256,toQuantity,ZeroAddress} from 'ethers';
-import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
@@ -12,6 +12,8 @@ const VAULT_ABI=[
  'function asset() view returns(address)','function feeReceiver() view returns(address)',
  'function reinvestmentBook() view returns(address)','function networkPlan() view returns(address)',
  'function ACCRUAL_PERIOD() view returns(uint256)','function ONE_DAY() view returns(uint256)',
+ 'function canSettleEarnedDays(address) view returns(bool)',
+ 'function nextAccrual(address,uint256) view returns(uint256 due,uint16 bps,uint8 tier)',
  'function SINGLE_CAPITAL_VERSION() view returns(uint256)',
  'function FEE_WALLET_1() view returns(address)','function FEE_WALLET_2() view returns(address)',
  'function OPERATIONS_WALLET() view returns(address)','function DEPOSIT_FEE_EACH_BPS() view returns(uint256)',
@@ -25,8 +27,8 @@ const VAULT_ABI=[
  'function positionOf(address,uint256) view returns(tuple(uint256 principal,uint256 compoundedBasis,uint256 availableProfit,uint256 reservedProfit,uint256 reservedPrincipal,uint256 cumulativeDaily,uint256 cumulativeCompound,uint64 openedAt,uint64 lastAccruedAt,bool fromReinvestment))',
  'function accrueDaily(address,uint256)','function accrueReinvestmentPage(address,uint256,uint256)'
 ];
-const CHILD_ABI=['function vault() view returns(address)'];
-const BOOK_ABI=[...CHILD_ABI,
+const CHILD_ABI=['function vault() view returns(address)','function CYCLE_VOLUME() view returns(uint256)','function CYCLE_REWARD() view returns(uint256)'];
+const BOOK_ABI=[...CHILD_ABI,'function PERIOD() view returns(uint256)',
  'function position(address) view returns(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint256 cumulativeDaily,uint256 cumulativeCompound,uint256 lots)',
  'function lot(address,uint256) view returns(tuple(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint64 openedAt,uint64 lastAccruedAt))'
 ];
@@ -58,7 +60,7 @@ export async function recheckUnifiedBlock(provider,block){
 }
 
 export function validateUnifiedProof(raw){
- if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status].includes(raw.status)||raw.chainId!==97||
+ if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status].includes(raw.status)||raw.chainId!==97||
     !Number.isSafeInteger(raw.deploymentBlock)||raw.deploymentBlock<1||
     ![raw.vaultRuntimeHash,raw.bookRuntimeHash,raw.networkRuntimeHash,raw.deploymentTx].every(x=>typeof x==='string'&&pattern.test(x)))
   throw Error('INVALID_UNIFIED_DEPLOYMENT_PROOF');
@@ -96,6 +98,12 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  if(typeof tokenCode!=='string'||!/^0x(?:[0-9a-fA-F]{2})+$/.test(tokenCode))throw Error('UNIFIED_TEST_TOKEN_NOT_DEPLOYED');
  const vault=makeContract(proof.vault,VAULT_ABI),book=makeContract(proof.book,BOOK_ABI);
  const network=makeContract(proof.network,CHILD_ABI),at={blockTag:number};
+ const daily=proof.status===DAILY_CAPITAL_PROFILE.status;
+ if(daily){
+  const [version,bookPeriod,volume,reward]=await Promise.all([vault.SINGLE_CAPITAL_VERSION(at),book.PERIOD(at),network.CYCLE_VOLUME(at),network.CYCLE_REWARD(at)]);
+  if(version!==2n||bookPeriod!==86400n||volume!==500n*10n**18n||reward!==35n*10n**18n)
+   throw Error('UNIFIED_DAILY_CONFIGURATION_MISMATCH');
+ }
  if(proof.status===SINGLE_CAPITAL_PROFILE.status&&BigInt(await vault.SINGLE_CAPITAL_VERSION(at))!==1n)
   throw Error('UNIFIED_SINGLE_CAPITAL_VERSION_MISMATCH');
  const [token,fee,bookAddress,networkAddress,period,activity,fee1,fee2,operations,bps,role,bookVault,networkVault]=await Promise.all([
@@ -107,7 +115,7 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  if(getAddress(token)!==proof.token||getAddress(fee)!==proof.feeReceiver||
     getAddress(bookAddress)!==proof.book||getAddress(networkAddress)!==proof.network||
     getAddress(bookVault)!==proof.vault||getAddress(networkVault)!==proof.vault||
-    BigInt(period)!==3600n||BigInt(activity)!==86400n||getAddress(fee1)!==FEE_1||
+    BigInt(period)!==(daily?86400n:3600n)||BigInt(activity)!==86400n||getAddress(fee1)!==FEE_1||
     getAddress(fee2)!==FEE_2||getAddress(operations)!==OPERATIONS||BigInt(bps)!==1000n||
     !await vault.hasRole(role,proof.manager,at))throw Error('UNIFIED_DEPLOYMENT_CONFIGURATION_MISMATCH');
  await recheckUnifiedBlock(provider,block);

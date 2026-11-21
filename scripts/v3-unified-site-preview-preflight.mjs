@@ -9,7 +9,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {FetchRequest,JsonRpcProvider,getAddress} from 'ethers';
 import {validateUnifiedProof,verifyUnifiedDeployment,recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
-import {UNIFIED_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_PROFILE,DAILY_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
 
 const MANAGER=getAddress('0x5bC282A45A8a1d7D9b915f04fC1D4031156d7632');
 const FEE=getAddress('0x74015dedf36677485793f1714ec7bd4893907b26');
@@ -48,7 +48,7 @@ export async function planUnifiedPreviewSite({provider,proof:raw,sourceSha,expec
  const verified=await verifyUnifiedDeployment(provider,proof,makeContract?{makeContract}:{});
  await recheckUnifiedBlock(provider,verified.block);
  // These values are data only; never evaluate them as shell or install them.
- const env={VITE_V3_PRIMARY_DASHBOARD:'verified-testnet',VITE_V3_HOURLY_TEST:'isolated-1h',VITE_V3_LANDING_AT_ROOT:'false',
+ const env={VITE_V3_PRIMARY_DASHBOARD:'verified-testnet',VITE_V3_HOURLY_TEST:profile===DAILY_CAPITAL_PROFILE?'':'isolated-1h',VITE_V3_LANDING_AT_ROOT:'false',
   VITE_V3_CONTRACT_ADDRESS:proof.vault,VITE_V3_RUNTIME_HASH:proof.vaultRuntimeHash,
   VITE_V3_DEPLOYMENT_TX:proof.deploymentTx,VITE_V3_UNIFIED_MODE:profile.mode,
   VITE_V3_UNIFIED_BOOK:proof.book,VITE_V3_UNIFIED_BOOK_HASH:proof.bookRuntimeHash,

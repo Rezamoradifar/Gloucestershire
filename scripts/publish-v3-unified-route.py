@@ -93,9 +93,9 @@ def identity(path):
 
 def main():
     action, stage_name, target_name, status_name, previous_id, *args = sys.argv[1:]
-    if args not in ([], ["--single-capital"]):
+    if args not in ([], ["--single-capital"], ["--daily-capital"]):
         raise ValueError("UNIFIED_SITE_ROUTE_INVALID")
-    route_name = "single-capital-test" if args else "unified-test"
+    route_name = args[0][2:] + "-test" if args else "unified-test"
     stage, target, status = map(Path, (stage_name, target_name, status_name))
     if stage.parent != target.parent or target.name != route_name:
         raise ValueError("UNIFIED_SITE_ROUTE_INVALID")
