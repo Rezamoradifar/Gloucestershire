@@ -90,6 +90,7 @@ export default function V3Dashboard(){
  const [walletDiagnostic,setWalletDiagnostic]=useState<V3WalletDiagnostic|null>(null),[diagnosing,setDiagnosing]=useState(false);
  const diagnosticVersion=useRef(0);
  const [value,setValue]=useState(''),[selectedPosition,setSelectedPosition]=useState('0');
+ const [referralAmount,setReferralAmount]=useState('');
  const [referrer,setReferrer]=useState(()=>{
   const invite=readReferralInvite(typeof window==='undefined'?'':window.location.search);
   return invite.status==='valid'?invite.address:'';
@@ -112,7 +113,7 @@ export default function V3Dashboard(){
  const unifiedEnabled=unifiedWalletEnabled(config,typeof window==='undefined'?'':window.location.pathname);
  const unifiedReadOnly=Boolean(config?.unified)&&!unifiedEnabled;
  const operatorAccess=Boolean(view?.canManage||(config?.unified&&view?.canFund));
- useEffect(()=>{setUnifiedPageStart(0);},[wallet,chain,config?.address]);
+ useEffect(()=>{setUnifiedPageStart(0);setReferralAmount('');},[wallet,chain,config?.address]);
  const invalidInvite=typeof window!=='undefined'&&readReferralInvite(window.location.search).status==='invalid';
 
  useEffect(()=>{
@@ -290,7 +291,10 @@ export default function V3Dashboard(){
    }else if(action.kind!=='fundWithdrawal'&&action.kind!=='cancelWithdrawal'){
     hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    }else throw Error('Select the verified unified withdrawal profile.');
-   tracker.complete();setTxHash(hash);setNotice('V3 TESTNET action confirmed on-chain.');
+   tracker.complete();setTxHash(hash);
+   if(action.kind==='requestReferral'){
+    setReferralAmount('');setNotice('Referral withdrawal requested. Manager approval and funding are pending.');
+   }else setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(operatorAccess)await readQueue(adminQueue?.page??0);
   }catch(e){const message=e instanceof Error?e.message:'V3 action not confirmed.';setNotice('');setError(message);
    if(trackedAction&&tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
@@ -376,13 +380,10 @@ export default function V3Dashboard(){
   void perform(due.length?{kind:'checkInAndAccrue',positionIds:due}:{kind:'checkIn'},
    due.length?'Sign daily check-in and record '+due.length+' due reward position(s)?':'Sign daily eligibility check-in?');
  };
- const request=(kind=requestKind)=>{
-  if(tab!=='withdrawals'){
-   setRequestKind(kind);setTab('withdrawals');setMenuOpen(false);setError('');return;
-  }
+ const request=(kind:V3WithdrawalKind,input:string)=>{
   try{
    if(!view||view.wallet.toLowerCase()!==wallet.toLowerCase())throw Error('The connected wallet changed. Refresh the account before requesting a withdrawal.');
-   const plan=planV3AccountWithdrawal(view,value,kind,Boolean(config?.unified));
+   const plan=planV3AccountWithdrawal(view,input,kind,Boolean(config?.unified));
    if(plan.source==='book'){
     void requestUnifiedPage(plan.kind,plan.page,plan.amount);return;
    }
@@ -477,7 +478,8 @@ export default function V3Dashboard(){
     </div>}
    </div>
   </article>;
- const navigate=(to:Tab)=>{setTab(to);setMenuOpen(false);setError('');setValue('');};
+ const navigate=(to:Tab,nextValue='')=>{setTab(to);setMenuOpen(false);setError('');setValue(nextValue);};
+ const recentReferralRequest=view?.withdrawals.find(row=>row.kind===2);
  return <div className="gv2 shell gv2-classic gv3-workspace" dir="ltr">
   <aside id="v3-dashboard-menu" className={'sidebar gv2-sidebar '+(menuOpen?'open':'')} aria-label="Global V3 testnet navigation" inert={smallScreen&&!menuOpen}>
    <button className="gv2-sidebar-close" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"><X size={18}/></button>
@@ -542,7 +544,7 @@ export default function V3Dashboard(){
     {tab==='overview'&&<V3ClassicOverview view={view} connected={Boolean(wallet)} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
-     onDeposit={()=>void deposit()} onWithdraw={()=>request('profit')} onReinvest={reinvest}
+     onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest}
      onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}/>}
     {tab==='overview'&&<V3CommercePanel/>}
     {view&&<div className="gv2-content">
@@ -560,6 +562,11 @@ export default function V3Dashboard(){
        {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
+      {singleCapital&&<section className="gv2-panel">
+       <V3AccountWithdrawalForm view={view} unified={true} kind="referral" value={referralAmount} onValue={setReferralAmount}
+        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onSubmit={()=>request('referral',referralAmount)}/>
+       {recentReferralRequest&&withdrawItem(recentReferralRequest)}
+      </section>}
       {!singleCapital&&<V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>}
       {singleCapital&&!view.unifiedPage&&<p>This account has no verified test deposits.</p>}
       {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage} singleCapital={singleCapital}
@@ -605,7 +612,7 @@ export default function V3Dashboard(){
       <V3AccountWithdrawalForm view={view} unified={Boolean(config.unified)}
        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly}
        kind={requestKind} onKind={setRequestKind} value={value} onValue={setValue}
-       onSubmit={()=>request()}/>
+       onSubmit={()=>request(requestKind,value)}/>
       <h3>Your recent V3 requests</h3>{view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
      </section>}
