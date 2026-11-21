@@ -313,7 +313,7 @@ export default function V3Dashboard(){
   if(!await confirmAction('Review test deposit','Deposit exactly '+formatUnits(n,18)+' MOCK TUSDT.'+
    '\nReferrer: '+(parent===ZeroAddress?'None':parent)+' (permanent after first registration).'+
    '\nYour test deposit routes 10% to each original fee wallet and 80% to the original operations wallet. Gross principal is recorded but is not held as vault cash.'+
-   '\nThis is not a real-money deposit and future yields/withdrawals are not guaranteed. Approve token (if needed) and confirm the deposit?'))return;
+   '\nThis test deposit locks principal for 90 days. Future payouts depend on approval and funding. Approve the token if needed and confirm the deposit?'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected. Reconnect before continuing.');return;}
   inFlight.current=true;setBusy(true);setError('');setTransactionProgress(null);setNotice('Checking the test deposit…');setTxHash('');
   const tracker=new V3PersistentTransactionTracker(reviewScope!);
