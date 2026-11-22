@@ -9,7 +9,7 @@ import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {readWalletSelection} from './wallet-read';
 import {V3_EXPLORER,readV3Snapshot,v3ReleaseConfig,type V3Snapshot,type V3Withdrawal} from './v3-chain';
-import {sendV3Action,sendV3FundWithdrawal,sendV3UnifiedPageWithdrawal,readV3ManagerQueue,
+import {ApprovedDepositStopped,sendV3Action,sendV3FundWithdrawal,sendV3UnifiedPageWithdrawal,readV3ManagerQueue,
  type V3Action,type V3TransactionProgress} from './v3-actions';
 import {v3TransactionProgressText} from './v3-transaction-progress';
 import {V3PersistentTransactionTracker,readV3PendingReview,clearV3PendingReview,v3ReviewKey,
@@ -347,7 +347,8 @@ export default function V3Dashboard(){
   let progressHash:string|undefined;
   const report=(detail:V3TransactionProgress)=>{
    tracker.record(detail);
-   if(currentReviewKey.current===reviewKey&&detail.step==='confirmed'&&detail.blockNumber)
+   if(currentReviewKey.current!==reviewKey)return;
+   if(detail.step==='confirmed'&&detail.blockNumber)
     confirmedBlock.current=Math.max(confirmedBlock.current,detail.blockNumber);
    if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
@@ -362,10 +363,23 @@ export default function V3Dashboard(){
    };
    const tx=await runV3Deposit({provider:p,wallet,amount:n,referrer:parent,config,
     unifiedEnabled,onProgress:report,reviewApprovedDeposit});
-   tracker.complete();setTxHash(tx);setNotice('USDT test-token deposit confirmed in V3.');setValue('');
+   tracker.complete();
+   if(currentReviewKey.current!==reviewKey)return;
+   setTxHash(tx);setNotice('USDT test-token deposit confirmed in V3.');setValue('');
    await refresh();
-  }catch(e){const message=e instanceof Error?e.message:'V3 deposit not confirmed.';setNotice('');setError(message);
-   if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
+  }catch(e){
+   if(e instanceof ApprovedDepositStopped){
+    tracker.complete();
+    if(currentReviewKey.current===reviewKey){setTxHash(e.approvalHash);setNotice(e.message);await refresh();}
+   }else{
+    const message=e instanceof Error?e.message:'V3 deposit not confirmed.';
+    const needsReview=tracker.needsReview(message);
+    if(currentReviewKey.current===reviewKey){
+     setNotice('');setError(message);
+     if(needsReview)showPendingReview(reviewScope,{message,hash:progressHash});
+    }
+   }
+  }
   finally{inFlight.current=false;setBusy(false);}
  }
  async function readQueue(page=0){

@@ -509,6 +509,11 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
  return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,onProgress);
 }
 export type ReviewApprovedDeposit=(hash:string)=>Promise<boolean>;
+export class ApprovedDepositStopped extends Error{
+ constructor(readonly approvalHash:string){
+  super('Token approval confirmed. Deposit not submitted. Review the deposit when ready.');
+ }
+}
 async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:string,
  amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback,
  reviewApprovedDeposit?:ReviewApprovedDeposit){
@@ -572,8 +577,7 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
    lastApprovalHash=approval.hash;minimumBlock=approval.blockNumber;
    if(reviewApprovedDeposit&&!await reviewApprovedDeposit(approval.hash)){
     // A confirmed allowance survives cancelling the separate deposit.
-    lastApprovalHash='';
-    throw Error('Token approval confirmed. Deposit not submitted. Review the deposit when ready.');
+    throw new ApprovedDepositStopped(approval.hash);
    }
   }
   const check=await freshState();
@@ -605,7 +609,7 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
   if(!routed)throw Error('Deposit routing event for '+receipt.hash+' was not verified. Inspect the transaction before retrying.');
   return receipt.hash as string;
  }catch(error){
-  if(lastApprovalHash&&!depositSent){
+  if(lastApprovalHash&&!depositSent&&!(error instanceof ApprovedDepositStopped)){
    const message=error instanceof Error?error.message:'TESTNET deposit did not complete.';
    throw Error(message+' Last token approval/reset: '+lastApprovalHash+'. Check wallet history before retrying.');
   }
