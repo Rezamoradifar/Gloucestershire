@@ -22,7 +22,7 @@ export default function V3ClassicOverview(props:Props){
   selectedPosition,onPosition,onDeposit,onWithdraw,onReinvest,onNetwork,onConnect,onWalletConnect}=props;
  const [mode,setMode]=useState<Mode>('deposit');
  const claims=view?v3PrepareUserClaims(view.ledger):null;
- const ready=Boolean(view&&!view.paused&&!view.suspended&&!busy&&!readOnly);
+ const ready=Boolean(view&&!view.paused&&!view.suspended&&!busy&&!loading&&!readOnly);
  const positions=view?.positions??[];
  const unified=unifiedRelease??Boolean(view&&view.unifiedPage!==undefined);
  const reinvested=view?.singleCapital?view.reinvestments:
