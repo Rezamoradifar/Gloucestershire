@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {FetchRequest, toUtf8Bytes} from 'ethers';
-import {withUnifiedReadRpc} from '../scripts/v3-unified-verification-rpc.mjs';
+import {createUnifiedRpcProvider, withUnifiedReadRpc} from '../scripts/v3-unified-verification-rpc.mjs';
 
 const primary = 'https://bsc-testnet-rpc.publicnode.com';
 const alternate = 'https://bsc-testnet.drpc.org';
@@ -42,6 +42,24 @@ test('ethers retries the failed JSON-RPC read against the other endpoint', async
   const chain = await withUnifiedReadRpc(primary, 'post-build', provider => provider.send('eth_chainId', []));
   assert.equal(chain, '0x61');
   assert.deepEqual(requests, [[primary,'eth_chainId'], [alternate,'eth_chainId']]);
+});
+
+test('a transport failure on the fixed worker provider does not replay a submission', async t => {
+  const requests = [];
+  t.mock.method(FetchRequest, 'createGetUrlFunc', ({agent}) => async request => {
+    assert.equal(request.timeout, 12000);
+    assert.equal(agent.options.proxyEnv, process.env);
+    const {method} = JSON.parse(Buffer.from(request.body).toString());
+    requests.push([request.url, method]);
+    throw connectionTimeout();
+  });
+  const provider = createUnifiedRpcProvider(official, 12000);
+  try {
+    await assert.rejects(provider.send('eth_sendRawTransaction', ['0x00']));
+    assert.deepEqual(requests, [[official, 'eth_sendRawTransaction']]);
+  } finally {
+    provider.destroy();
+  }
 });
 
 test('returns the verified result on the preferred RPC and closes it', async () => {

@@ -38,20 +38,19 @@ function transportReason(error) {
   return !error.code && error.cause !== error ? transportReason(error.cause) : null;
 }
 
-let readAgent;
-function makeReadProvider(url) {
-  // The verifier issues concurrent reads at one pinned block. Bound sockets
-  // per origin and use the service's HTTPS proxy settings when configured.
-  readAgent ??= new Agent({keepAlive: true, maxSockets: 4, proxyEnv: process.env});
+let rpcAgent;
+export function createUnifiedRpcProvider(url, timeout = 15000) {
+  // Bound sockets per origin and honor the service's HTTPS proxy settings.
+  rpcAgent ??= new Agent({keepAlive: true, maxSockets: 4, proxyEnv: process.env});
   const request = new FetchRequest(url);
-  request.getUrlFunc = FetchRequest.createGetUrlFunc({agent: readAgent});
-  request.timeout = 15000;
+  request.getUrlFunc = FetchRequest.createGetUrlFunc({agent: rpcAgent});
+  request.timeout = timeout;
   request.retryFunc = async () => false;
   return new JsonRpcProvider(request, 97, {staticNetwork: true, batchMaxCount: 1, cacheTimeout: -1});
 }
 
 // Each attempt runs the entire verification on one RPC. A proof mismatch is final.
-export async function withUnifiedReadRpc(preferred, phase, read, createProvider = makeReadProvider) {
+export async function withUnifiedReadRpc(preferred, phase, read, createProvider = createUnifiedRpcProvider) {
   if (!allowedPrimary.has(preferred)) throw Error('UNIFIED_VERIFICATION_RPC_NOT_ALLOWED');
   const endpoints = new Set([preferred, publicNode, dRpc, onFinality]);
   // The existing-proof command is retried by the install shell. In build phases
