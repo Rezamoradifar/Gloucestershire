@@ -1,7 +1,7 @@
 // Read-only identity check for an operator-pinned, actual chain-97 deployment.
 // This is not a deployer, a migration mechanism or a financial/security audit.
 import {Contract,getAddress,isAddress,keccak256,toQuantity,ZeroAddress} from 'ethers';
-import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
@@ -14,7 +14,8 @@ const VAULT_ABI=[
  'function ACCRUAL_PERIOD() view returns(uint256)','function ONE_DAY() view returns(uint256)',
  'function canSettleEarnedDays(address) view returns(bool)',
  'function nextAccrual(address,uint256) view returns(uint256 due,uint16 bps,uint8 tier)',
- 'function SINGLE_CAPITAL_VERSION() view returns(uint256)',
+ 'function SINGLE_CAPITAL_VERSION() view returns(uint256)','function PROFIT_FEE_BPS() view returns(uint256)',
+ 'function PRINCIPAL_PENALTY_BPS() view returns(uint256)',
  'function FEE_WALLET_1() view returns(address)','function FEE_WALLET_2() view returns(address)',
  'function OPERATIONS_WALLET() view returns(address)','function DEPOSIT_FEE_EACH_BPS() view returns(uint256)',
  'function DEFAULT_ADMIN_ROLE() view returns(bytes32)','function MANAGER_ROLE() view returns(bytes32)',
@@ -27,7 +28,7 @@ const VAULT_ABI=[
  'function positionOf(address,uint256) view returns(tuple(uint256 principal,uint256 compoundedBasis,uint256 availableProfit,uint256 reservedProfit,uint256 reservedPrincipal,uint256 cumulativeDaily,uint256 cumulativeCompound,uint64 openedAt,uint64 lastAccruedAt,bool fromReinvestment))',
  'function accrueDaily(address,uint256)','function accrueReinvestmentPage(address,uint256,uint256)'
 ];
-const CHILD_ABI=['function vault() view returns(address)','function CYCLE_VOLUME() view returns(uint256)','function CYCLE_REWARD() view returns(uint256)'];
+const CHILD_ABI=['function AUTO_REWARD_GROUP_VERSION() view returns(uint256)','function vault() view returns(address)','function CYCLE_VOLUME() view returns(uint256)','function CYCLE_REWARD() view returns(uint256)'];
 const BOOK_ABI=[...CHILD_ABI,'function PERIOD() view returns(uint256)',
  'function position(address) view returns(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint256 cumulativeDaily,uint256 cumulativeCompound,uint256 lots)',
  'function lot(address,uint256) view returns(tuple(uint256 principal,uint256 reservedPrincipal,uint256 daily,uint256 compound,uint256 basis,uint256 reservedProfit,uint64 openedAt,uint64 lastAccruedAt))'
@@ -60,7 +61,7 @@ export async function recheckUnifiedBlock(provider,block){
 }
 
 export function validateUnifiedProof(raw){
- if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status,REFERRAL_PROFIT_PROFILE.status].includes(raw.status)||raw.chainId!==97||
+ if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status,REFERRAL_PROFIT_PROFILE.status,MANUAL_REINVEST_PROFILE.status].includes(raw.status)||raw.chainId!==97||
     !Number.isSafeInteger(raw.deploymentBlock)||raw.deploymentBlock<1||
     ![raw.vaultRuntimeHash,raw.bookRuntimeHash,raw.networkRuntimeHash,raw.deploymentTx].every(x=>typeof x==='string'&&pattern.test(x)))
   throw Error('INVALID_UNIFIED_DEPLOYMENT_PROOF');
@@ -99,6 +100,11 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  const vault=makeContract(proof.vault,VAULT_ABI),book=makeContract(proof.book,BOOK_ABI);
  const network=makeContract(proof.network,CHILD_ABI),at={blockTag:number};
  const daily=proof.status===DAILY_CAPITAL_PROFILE.status;
+ if(proof.status===MANUAL_REINVEST_PROFILE.status){
+  const [version,fee,principalFee,autoGroup]=await Promise.all([vault.SINGLE_CAPITAL_VERSION(at),vault.PROFIT_FEE_BPS(at),
+   vault.PRINCIPAL_PENALTY_BPS(at),network.AUTO_REWARD_GROUP_VERSION(at)]);
+  if(version!==4n||fee!==200n||principalFee!==3000n||autoGroup!==1n)throw Error('MANUAL_REINVEST_TERMS_MISMATCH');
+ }
  if(daily){
   const [version,bookPeriod,volume,reward]=await Promise.all([vault.SINGLE_CAPITAL_VERSION(at),book.PERIOD(at),network.CYCLE_VOLUME(at),network.CYCLE_REWARD(at)]);
   if(version!==2n||bookPeriod!==86400n||volume!==500n*10n**18n||reward!==35n*10n**18n)

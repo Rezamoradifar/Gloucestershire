@@ -7,11 +7,11 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {BrowserProvider,Contract,ContractFactory,ZeroAddress,formatUnits,keccak256,parseEther} from 'ethers';
 // The worker and deployer share the root ethers package instance.
 import {Wallet as RootWallet} from '../../node_modules/ethers/lib.esm/index.js';
-import {compileSingleCapitalTestnet} from '../../scripts/compile-global-v3-unified-testnet.mjs';
+import {compileSingleCapitalTestnet,compileManualReinvestTestnet} from '../../scripts/compile-global-v3-unified-testnet.mjs';
 import {runUnifiedKeeperCycle} from '../../scripts/run-v3-unified-keeper-cycle.mjs';
 import {deployUnifiedIsolated,verifyUnifiedRelease} from '../../scripts/deploy-v3-unified-isolated.mjs';
 import {planUnifiedPreviewSite} from '../../scripts/v3-unified-site-preview-preflight.mjs';
-import {SINGLE_CAPITAL_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../../scripts/v3-unified-release-pins.mjs';
+import {SINGLE_CAPITAL_PROFILE,MANUAL_REINVEST_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../../scripts/v3-unified-release-pins.mjs';
 import V3AccountWithdrawalForm from '../src/V3AccountWithdrawalForm';
 import V3UnifiedPositionPage from '../src/V3UnifiedPositionPage';
 import {primaryReleaseEnv} from '../../scripts/publish-v3-single-capital-primary.mjs';
@@ -26,7 +26,11 @@ vi.mock('ethers',async importOriginal=>{
 });
 
 describe('one verified capital account on chain 97',()=>{
- it('adds 1,000 and 2,000 to the same account, accrues both, adds reinvestment, and withdraws the pooled profit',async()=>{
+ it.each([
+  {label:'original',profile:SINGLE_CAPITAL_PROFILE,compile:compileSingleCapitalTestnet,accrued:'34.063',withdrawable:'30.063'},
+  {label:'manual reinvestment',profile:MANUAL_REINVEST_PROFILE,compile:compileManualReinvestTestnet,accrued:'34',withdrawable:'30.0'}
+ ])('$label account deposits, records profit with its keeper, reinvests manually, requests withdrawal and pays the member',
+ async({profile,compile,accrued,withdrawable})=>{
   vi.stubEnv('VITE_V3_HOURLY_TEST','isolated-1h');
   const {default:V3CycleCard}=await import('../src/V3CycleCard');
   const {v3ParseReleaseConfig,unifiedWalletEnabled}=await import('../src/v3-site-config');
@@ -39,7 +43,7 @@ describe('one verified capital account on chain 97',()=>{
   const {sendUnifiedWithdrawal}=await import('../src/v3-unified-settlement');
   const previous=process.cwd();
   let artifacts;
-  try{process.chdir('..');artifacts=compileSingleCapitalTestnet();}finally{process.chdir(previous);}
+  try{process.chdir('..');artifacts=compile();}finally{process.chdir(previous);}
   const tokenArtifact=JSON.parse(fs.readFileSync('../artifacts/MockToken.json','utf8'));
   const eip=ganache.provider({logging:{quiet:true},
    chain:{chainId:97,hardfork:'shanghai',time:new Date('2026-10-31T23:40:00Z')},
@@ -64,11 +68,11 @@ describe('one verified capital account on chain 97',()=>{
    await mine();
    const proof=await deployUnifiedIsolated({provider:rpc,signer:deploySigner,
     directory:path.join(journalDirectory,'deployment'),expectedDeployer:deploySigner.address,
-    profile:SINGLE_CAPITAL_PROFILE,compile:()=>artifacts,waitReceipt});
+    profile,compile:()=>artifacts,waitReceipt});
    const {vault:address,book:bookAddress,network}=proof;
    const vault=new Contract(address,contract.abi,deployer);
    const book=new Contract(bookAddress,artifacts.SingleCapitalBook.abi,rpc);
-   const release=primaryReleaseEnv(proof,keeper.address,'disabled');
+   const release=primaryReleaseEnv(proof,keeper.address,'disabled',profile);
    const config=v3ParseReleaseConfig({address:release.VITE_V3_CONTRACT_ADDRESS,
     runtimeHash:release.VITE_V3_RUNTIME_HASH,deploymentTx:release.VITE_V3_DEPLOYMENT_TX,
     unifiedMode:release.VITE_V3_UNIFIED_MODE,book:release.VITE_V3_UNIFIED_BOOK,
@@ -80,11 +84,11 @@ describe('one verified capital account on chain 97',()=>{
    expect(keccak256(await rpc.getCode(address))).toBe(config.runtimeHash);
    const sender=await deployer.getAddress();
    await expect(verifyUnifiedRelease(rpc,proof,sender)).rejects.toThrow(/PROFILE_MISMATCH/);
-   expect((await verifyUnifiedRelease(rpc,proof,sender,SINGLE_CAPITAL_PROFILE)).proof.vault).toBe(address);
+   expect((await verifyUnifiedRelease(rpc,proof,sender,profile)).proof.vault).toBe(address);
    const preview=await planUnifiedPreviewSite({provider:rpc,proof,sourceSha:'a'.repeat(40),
-    expectedSourceSha:'a'.repeat(40),profile:SINGLE_CAPITAL_PROFILE});
-   expect(preview.routeCandidate).toBe('/single-capital-test/');
-   expect(preview.env.VITE_V3_UNIFIED_MODE).toBe('single-capital-testnet');
+    expectedSourceSha:'a'.repeat(40),profile});
+   expect(preview.routeCandidate).toBe(profile.route);
+   expect(preview.env.VITE_V3_UNIFIED_MODE).toBe(profile.mode);
 
    const walletProvider={request:async({method,params}:any)=>{
     const result=await eip.request({method,params:params||[]});
@@ -128,7 +132,7 @@ describe('one verified capital account on chain 97',()=>{
    await advance(3601);
    await expectAccrual();
    expect((await tick()).state).toBe('IDLE_CHECKPOINT_RECORDED');
-   expect((await vault.positionOf(wallet,0)).availableProfit).toBe(parseEther('34.063'));
+   expect((await vault.positionOf(wallet,0)).availableProfit).toBe(parseEther(accrued));
    expect((await vault.positionOf(wallet,0)).cumulativeDaily).toBe(parseEther('34'));
 
    const reinvested=await runUnifiedReinvestment({enabled:true,provider:walletProvider as any,wallet,
@@ -152,13 +156,13 @@ describe('one verified capital account on chain 97',()=>{
    expect(times).toContain('Opened 2026-11-01 00:40:00 UTC');
    expect(times).toContain('Principal unlock at 2027-01-29 23:40:00 UTC');
    expect(totals.maturedPrincipal).toBe(0n);
-   expect(totals.profit).toBe(parseEther('30.063'));
+   expect(totals.profit).toBe(parseEther(withdrawable));
    expect(totals.maxProfit).toBe(totals.profit);
    expect(view.unifiedPage!.lots.every(lot=>lot.daily+lot.compound<totals.maxProfit)).toBe(true);
    const value=formatUnits(totals.maxProfit,18);
    const html=renderToStaticMarkup(<V3AccountWithdrawalForm view={view} unified busy={false} readOnly={false}
     value={value} kind="profit" onKind={()=>{}} onValue={()=>{}} onSubmit={()=>{}}/>);
-   expect(html).toContain('3004.0 USDT');expect(html).toContain('30.063 USDT');
+   expect(html).toContain('3004.0 USDT');expect(html).toContain(withdrawable+' USDT');
    expect(html).not.toMatch(/Position #|Source position/);
    const plan=planV3AccountWithdrawal(view,value,'profit',true);
    if(plan.source!=='book')throw Error('Expected the sole account ledger.');
@@ -172,6 +176,8 @@ describe('one verified capital account on chain 97',()=>{
     value="" kind="profit" onKind={()=>{}} onValue={()=>{}} onSubmit={()=>{}}/>);
    expect(cooldown).toContain('Withdrawal cooldown ends at 2026-11-04 01:40:01 UTC');
    expect(withdrawal.gross).toBe(totals.profit);
+   expect(withdrawal.fee).toBe(totals.profit*(profile===MANUAL_REINVEST_PROFILE?2n:3n)/100n);
+   expect(requested.fee).toBe(withdrawal.fee);
    expect(withdrawal.positionId).toBe(0n);
    expect((await vault.positionOf(wallet,0)).availableProfit).toBe(0n);
    expect((await vault.positionOf(wallet,0)).reservedProfit).toBe(totals.profit);

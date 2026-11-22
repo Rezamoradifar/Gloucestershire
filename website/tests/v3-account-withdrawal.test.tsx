@@ -51,6 +51,9 @@ describe('one account withdrawal',()=>{
   expect(planV3AccountWithdrawal(view,input.value,'referral',true)).toEqual({
    source:'position',action:{kind:'requestReferral',amount:E('0.7')}
   });
+  const manual={...input,view:{...view,manualReinvest:true}};
+  expect(accountWithdrawalFormState(manual)).toMatchObject({canSubmit:true,fee:E('0.014'),net:E('0.686')});
+  expect(renderToStaticMarkup(<V3AccountWithdrawalForm {...manual}/>)).toContain('2%');
   const html=renderToStaticMarkup(<V3AccountWithdrawalForm {...input}/>);
   expect(html).toContain('Withdraw referral earnings');expect(html).toContain('Use maximum');
   expect(html).toContain('0.1 test USDT');expect(html).not.toMatch(/<select|Total principal|personal compound profit/);

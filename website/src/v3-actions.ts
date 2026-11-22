@@ -1,6 +1,7 @@
 // Signed actions for ONLY the independently verified NEW V3 BNB TESTNET vault.
 // No raw key storage, background privileged sender, automatic payouts, real USDT
 // or transfer to an address supplied by anyone other than the contract.
+import {v3ProfitFeeBps} from './v3-withdrawal-form';
 import {
  BrowserProvider,Contract,Interface,ZeroAddress,getAddress,isAddress,toQuantity,
  type Eip1193Provider,type Log,type JsonRpcSigner,type TransactionReceipt
@@ -262,6 +263,7 @@ async function sendV3ActionCore(walletProvider:Eip1193Provider,wallet:string,
  action:V3Action,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback){
  if(action.kind==='register')progress(onProgress,{step:'preflight',action:'registration'});
  const groupAction=action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
+ if(groupAction&&config?.unified?.manualReinvest)throw Error('Direct branches are assigned to reward groups automatically.');
  if(groupAction)progress(onProgress,{step:'preflight',action:'network_group'});
  const context=await v3ReadSession(walletProvider,wallet,config,groupAction);
  const {vault,options}=context;
@@ -462,7 +464,7 @@ export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider
   ]);
   const nextRequestAt=Number(user.nextRequestAt);
   if(!Number.isSafeInteger(nextRequestAt)||nextRequestAt<0||BigInt(bps)!==10000n||
-     BigInt(profitFee)!==300n||BigInt(principalFee)!==3000n)
+     BigInt(profitFee)!==v3ProfitFeeBps(config.unified.manualReinvest)||BigInt(principalFee)!==3000n)
    throw Error('The verified withdrawal rules do not match the reviewed testnet profile.');
   const action=prepareUnifiedPageAction(page,{registered:Boolean(user.registered),suspended:Boolean(user.suspended),
    paused:Boolean(paused),pendingWithdrawal:Boolean(user.pendingRequest),nextRequestAt,requestCap:BigInt(cap)},kind,amount);
@@ -478,7 +480,7 @@ export async function sendV3UnifiedPageWithdrawal(walletProvider:Eip1193Provider
    'Withdrawal request','withdrawal_request',onProgress);
   try{
    const expectedKind=kind==='profit'?0n:1n;
-   const expectedFee=amount*(kind==='profit'?300n:3000n)/10000n;
+   const expectedFee=amount*BigInt(kind==='profit'?profitFee:principalFee)/BigInt(bps);
    const events=receipt.logs.flatMap(log=>{
     if(log.address.toLowerCase()!==config.address.toLowerCase())return [];
     try{const event=EVENTS.parseLog({topics:log.topics,data:log.data});

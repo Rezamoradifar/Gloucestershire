@@ -130,7 +130,7 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
    case 'DailyClaimAccrued':{
     const daily=BigInt(a.personal),compound=BigInt(a.compounded),total=BigInt(a.total);
     if(daily+compound!==total)throw Error('V3 daily claim does not reconcile.');
-    category='earnings';title='Daily claim recorded';detail='Position #'+number(BigInt(a.positionId))+' · Daily '+amount(daily)+' · Personal compound '+amount(compound);value=amount(total);break;
+    category='earnings';title='Daily claim recorded';detail='Position #'+number(BigInt(a.positionId))+' · Daily '+amount(daily)+(compound>0n?' · Personal compound '+amount(compound):'');value=amount(total);break;
    }
    case 'ReferralClaimAccrued':{
     const source=getAddress(a.source);

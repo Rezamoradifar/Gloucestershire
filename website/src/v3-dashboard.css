@@ -159,8 +159,8 @@
 .gv3-network-stats small,.gv3-network-stats span{color:#aabfbd;font-size:10px;line-height:1.5}
 .gv3-network-stats strong{color:#f5dfad;font-size:clamp(16px,2vw,22px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .gv3-network-stats em{font-size:.65em;color:#acc0bb;font-style:normal}.gv3-branch-list{display:grid;gap:8px;margin:14px 0}
-.gv3-branch-list label{display:flex;align-items:center;gap:12px;min-width:0;padding:12px;border:1px solid #425864;border-radius:11px;background:#0b1a27}
-.gv3-branch-list input{accent-color:#d6b676;flex:0 0 17px;width:17px;height:17px}.gv3-branch-list label>span{display:grid;gap:3px;min-width:0;flex:1}
+.gv3-branch-list > :is(label,div){display:flex;align-items:center;gap:12px;min-width:0;padding:12px;border:1px solid #425864;border-radius:11px;background:#0b1a27}
+.gv3-branch-list input{accent-color:#d6b676;flex:0 0 17px;width:17px;height:17px}.gv3-branch-list > :is(label,div)>span{display:grid;gap:3px;min-width:0;flex:1}
 .gv3-branch-list strong,.gv3-branch-list b{font-size:12px;color:#f0dfbd}.gv3-branch-list small{font-size:10px;color:#9fb4be;overflow-wrap:anywhere}
 .gv3-branch-list .gv3-branch-status{font-size:12px;font-weight:700;color:#a7dfc1}
 .gv3-branch-list .gv3-branch-assigned{border-color:#657175;background:#17242c}

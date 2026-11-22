@@ -1,5 +1,6 @@
 import {useId,type FormEvent} from 'react';
 import {formatUnits} from 'ethers';
+import {v3WithdrawalFee,v3ProfitFeeBps} from './v3-withdrawal-form';
 import {formatUtcTime} from './utc-time';
 import type {V3Snapshot} from './v3-chain';
 import type {V3WithdrawalKind} from './v3-withdrawal-form';
@@ -23,7 +24,7 @@ export function accountWithdrawalFormState(props:V3AccountWithdrawalFormProps){
  if(value.trim())try{plan=planV3AccountWithdrawal(view,value,kind,unified);}
  catch(e){error=e instanceof Error?e.message:'Invalid withdrawal request.';}
  const amount=plan?.source==='position'?plan.action.amount:plan?.amount??null;
- const fee=amount===null?null:amount*(kind==='principal'?3000n:300n)/10000n;
+ const fee=amount===null?null:v3WithdrawalFee(amount,kind==='principal',view.manualReinvest);
  const ready=view.registered&&!view.suspended&&!view.paused&&!view.pendingWithdrawal&&view.asOf>=view.nextRequestAt;
  const cap=view.ledger.requestCap;
  const balance=kind==='referral'?view.referralAvailable:view.networkAvailable;
@@ -53,7 +54,7 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
   <div className="gv2-detail"><span>Total principal</span><b>{formatUnits(totals.principal,18)} USDT</b></div>
   <div className="gv2-detail"><span>Total recorded profit</span><b>{formatUnits(totals.profit,18)} USDT</b></div>
   <div className="gv2-detail"><span>Recorded daily profit</span><b>{formatUnits(totals.daily,18)} USDT</b></div>
-  <div className="gv2-detail"><span>Recorded personal compound profit</span><b>{formatUnits(totals.compound,18)} USDT</b></div>
+  {!view.manualReinvest&&<div className="gv2-detail"><span>Recorded personal compound profit</span><b>{formatUnits(totals.compound,18)} USDT</b></div>}
   <div className="gv2-detail"><span>Profit reserved for pending withdrawal</span><b>{formatUnits(totals.pendingProfit,18)} USDT</b></div>
   <p>Enter the amount once. Eligible records are selected automatically. Existing contract limits apply to each request.</p>
   </>}
@@ -75,7 +76,7 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
    {referral&&(view.paused||view.suspended||!view.registered)&&<p role="status">{view.paused?'Contract withdrawals are paused.':view.suspended?'Withdrawals are suspended for this account.':'Register this wallet to request a withdrawal.'}</p>}
    {props.view.nextRequestAt>props.view.asOf&&<p>Withdrawal cooldown ends at {formatUtcTime(props.view.nextRequestAt)}.</p>}
    {props.kind==='principal'?<p>Each addition keeps its 90-day lock. Principal withdrawal penalty: 30%.</p>:
-    <p>{referral?'Referral withdrawal fee: 3%.':'Profit, referral and network withdrawal fee: 3%.'}</p>}
+    <p>{referral?'Referral withdrawal fee':'Profit, referral and network withdrawal fee'}: {Number(v3ProfitFeeBps(view.manualReinvest))/100}%.</p>}
    {state.amount!==null&&state.fee!==null&&state.net!==null&&<p aria-live="polite">
     Gross: {formatUnits(state.amount,18)} USDT · Fee: {formatUnits(state.fee,18)} USDT · Net: {formatUnits(state.net,18)} USDT.
    </p>}

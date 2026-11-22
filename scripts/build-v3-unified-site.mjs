@@ -8,10 +8,10 @@ import {readPinnedProof,planUnifiedPreviewSite} from './v3-unified-site-preview-
 import {unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 
 const args=process.argv.slice(2);
-const profile=unifiedProfileForFlag(['--single-capital','--daily-capital','--referral-profit'].includes(args.at(-1))?args.pop():undefined);
+const profile=unifiedProfileForFlag(['--single-capital','--daily-capital','--referral-profit','--manual-reinvest'].includes(args.at(-1))?args.pop():undefined);
 const primary=args.at(-1)==='--primary'?Boolean(args.pop()):false;
 const writes=args.length===6&&args[5]==='--enable-testnet-wallets';
-if(primary&&(!writes||!['single-capital-testnet','referral-profit-testnet'].includes(profile.mode)))throw Error('UNIFIED_PRIMARY_REQUIRES_SINGLE_CAPITAL_WALLETS');
+if(primary&&(!writes||!['single-capital-testnet','referral-profit-testnet','manual-reinvest-testnet'].includes(profile.mode)))throw Error('UNIFIED_PRIMARY_REQUIRES_SINGLE_CAPITAL_WALLETS');
 if((args.length!==5&&!writes)||!/^\/[\w./-]+$/.test(args[0])||!/^[a-f0-9]{64}$/.test(args[1])||
  !/^[a-f0-9]{40}$/.test(args[2])||!['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com'].includes(args[3])||
  !/^(disabled|[a-f0-9]{32})$/.test(args[4]))throw Error('UNIFIED_SITE_BUILD_ARGUMENTS_INVALID');

@@ -32,7 +32,7 @@ export const V3_ABI=[
  'event PlanReserveFunded(address indexed funder,uint256 amount)',
  'event CyclePrepared(address indexed user,uint256 indexed group,uint256 cycle,uint256 preparedUsd,uint256 cursor)',
  'event CycleEarned(address indexed user,uint256 indexed group,uint256 cycle,uint256 volumeUsd,uint256 rewardUsd)',
- 'function SINGLE_CAPITAL_VERSION() view returns(uint256)',
+ 'function SINGLE_CAPITAL_VERSION() view returns(uint256)','function AUTO_REWARD_GROUP_VERSION() view returns(uint256)',
  'function BPS() view returns(uint256)',
  'function PROFIT_FEE_BPS() view returns(uint256)',
  'function PRINCIPAL_PENALTY_BPS() view returns(uint256)',
@@ -199,7 +199,7 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
- singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;
+ singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;
  unifiedWithdrawalPages?:UnifiedPositionPage[];
  withdrawalCoverageError?:string;
  withdrawalPage?:UnifiedPositionPage;
@@ -265,7 +265,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    throw Error('The test contract accrual period was not verified.');
   let network=vault,book:Contract|null=null;
   if(config.unified){
-   const expectedVersion=daily?2n:config.unified.baseProfitReferrals?3n:1n;
+   const expectedVersion=config.unified.manualReinvest?4n:daily?2n:config.unified.baseProfitReferrals?3n:1n;
    if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==expectedVersion)
     throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
@@ -278,6 +278,11 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
     throw Error('The unified testnet components do not match the pinned deployment.');
    book=new Contract(config.unified.book,V3_UNIFIED_BOOK_ABI,provider);
    network=new Contract(config.unified.network,V3_ABI,provider);
+   if(config.unified.manualReinvest){
+    const [fee,principalFee,groupVersion]=await Promise.all([vault.PROFIT_FEE_BPS(options),
+     vault.PRINCIPAL_PENALTY_BPS(options),network.AUTO_REWARD_GROUP_VERSION(options)]);
+    if(fee!==200n||principalFee!==3000n||groupVersion!==1n)throw Error('The manual reinvestment terms could not be verified.');
+   }
    if(daily){
     const [bookPeriod,volume,reward]=await Promise.all([book.PERIOD(options),network.CYCLE_VOLUME(options),network.CYCLE_REWARD(options)]);
     if(bookPeriod!==86400n||volume!==500n*10n**18n||reward!==35n*10n**18n)throw Error('The daily test plan terms could not be verified.');
@@ -504,7 +509,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   canManage:Boolean(canManage),canFund:Boolean(canFund),
   positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,
    withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,
-   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   ...(config!.unified?.keeper?{keeper:{operator:config!.unified.keeper,gasWei:keeperGasWei}}:{}),

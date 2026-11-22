@@ -20,14 +20,14 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
  if(unified&&(!unifiedEnabled||!view.unifiedPage))return <section className="gv3-cycle" aria-label="Unified test cycle">
   <div className="gv3-cycle-head"><div><span className="gv3-kicker">{view.dailyPlan?'DAILY CYCLE':'ONE-HOUR TEST CYCLE'}</span>
    <h2>Each addition has its own cycle</h2><p>Review accrual times in the {view.singleCapital?'investment account':'reinvestment position'}.</p></div></div>
-  <div className="gv3-cycle-copy"><p>{unifiedEnabled?'See the recorded daily and compound claims for each addition.':'Estimates are unavailable while the unified account is in read-only preview.'}</p>
+  <div className="gv3-cycle-copy"><p>{unifiedEnabled?(view.manualReinvest?'See recorded earnings for each capital addition.':'See the recorded daily and compound claims for each addition.'):'Estimates are unavailable while the unified account is in read-only preview.'}</p>
    <button type="button" onClick={onPositions}>{view.singleCapital?'View investment account':'View positions'} <ArrowRight size={15}/></button></div>
  </section>;
  const hourly=!view.dailyPlan&&(V3_HOURLY_TEST||unified);
  const periodSeconds=view.dailyPlan?86400:hourly?3600:V3_PERIOD_SECONDS;
  const positions=unified?view.unifiedPage!.lots.map(lot=>({
-  principal:lot.principal,compoundedBasis:lot.basis,lastAccruedAt: view.dailyPlan?lot.nextAccrualAt-periodSeconds:lot.lastAccruedAt
- })):view.positions;
+  principal:lot.principal,compoundedBasis:view.manualReinvest?0n:lot.basis,lastAccruedAt: view.dailyPlan?lot.nextAccrualAt-periodSeconds:lot.lastAccruedAt
+ })):view.manualReinvest?view.positions.map(position=>({...position,compoundedBasis:0n})):view.positions;
  const partial=unified&&(view.unifiedPage!.start!==0||view.unifiedPage!.lots.length!==view.unifiedPage!.totalLots);
  let cycle:ReturnType<typeof v3CycleView>;
  try{cycle=v3CycleView(positions,view.asOf,elapsed,view.lastCheckIn,view.dailyRateBps,periodSeconds);}
@@ -74,7 +74,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
      <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="USDT"/></strong>
      <p>{active?'A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.':'Progress is hidden while eligibility is not confirmed. Refresh or check in as needed.'}</p>
      <div className="gv3-forecast-row gv3-forecast-row--daily"><span>{hourly?'Cycle base estimate so far':'Daily estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressDaily):'—'}/></b></div>
-     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>Personal compound estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>
+     {!view.manualReinvest&&<div className="gv3-forecast-row gv3-forecast-row--compound"><span>Personal compound estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>}
      <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="USDT"/></b></div>
      <small>At the verified {view.dailyRateBps/100}% test rate, if each {unified?'addition':'position'} becomes eligible. {hourly&&'The full daily test rate is applied once per eligible one-hour test cycle; this is accelerated test accounting. '}Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>

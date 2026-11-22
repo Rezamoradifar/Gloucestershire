@@ -52,6 +52,10 @@ describe('V3 cycle eligibility presentation',()=>{
   expect(html).toContain('1970-01-01 03:30:00 UTC');
   expect(html).toContain('Each addition starts its own one-hour test cycle');
   expect(html).not.toContain('loaded additions');
+  const manual=renderToStaticMarkup(<V3CycleCard view={{...view,manualReinvest:true}} busy={false} unifiedEnabled onCheckIn={()=>{}} onPositions={()=>{}}/>);
+  expect(manual).not.toContain('Personal compound estimate');
+  const zeroBasis={...view,manualReinvest:true,unifiedPage:{...view.unifiedPage!,lots:view.unifiedPage!.lots.map(lot=>({...lot,basis:0n}))}};
+  expect(manual).toEqual(renderToStaticMarkup(<V3CycleCard view={zeroBasis} busy={false} unifiedEnabled onCheckIn={()=>{}} onPositions={()=>{}}/>));
   const partial=renderToStaticMarkup(<V3CycleCard view={{...view,unifiedPage:{...page,totalLots:3}} as V3Snapshot}
    busy={false} unifiedEnabled onCheckIn={()=>{}} onPositions={()=>{}}/>);
   expect(partial).toContain('Timer and estimates cover the 2 loaded additions');

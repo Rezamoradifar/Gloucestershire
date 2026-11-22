@@ -14,6 +14,7 @@ export const isUnifiedNetworkAction=(action:{kind:string}):action is NetworkActi
 
 export function networkActionTarget(config:V3SiteReleaseConfig,action:NetworkAction){
  if(!config.unified)throw Error('The verified unified testnet contract is required.');
+ if(config.unified.manualReinvest&&isGroup(action))throw Error('Direct branches are assigned to reward groups automatically.');
  return isGroup(action)?config.unified.network:config.address;
 }
 

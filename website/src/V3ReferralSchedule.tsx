@@ -3,11 +3,11 @@ import type {V3Snapshot} from './v3-chain';
 
 const capitalBands=['10 – 500','>500 – 2,500','>2,500 – 10,000','>10,000 – 50,000','VIP · >50,000'];
 
-export default function V3ReferralSchedule({view}:{view:Pick<V3Snapshot,'dailyPlan'|'baseProfitReferrals'>}){
+export default function V3ReferralSchedule({view}:{view:Pick<V3Snapshot,'dailyPlan'|'baseProfitReferrals'|'manualReinvest'>}){
  const baseOnly=view.dailyPlan||view.baseProfitReferrals;
  return <section className="gv2-panel gv3-referral-schedule" aria-labelledby="referral-rates-heading">
   <h3 id="referral-rates-heading">Commission on team profit</h3>
-  <p>{baseOnly?'The member keeps all personal profit. Each active upline earns a separate share of profit on the member’s principal. Personal compound and referral credits earn no additional commission.':
+  <p>{view.manualReinvest?'The member retains all profit on principal. Active uplines earn their share of that base profit. A member can add earnings to principal through manual reinvestment.':baseOnly?'The member keeps all personal profit. Each active upline earns a separate share of profit on the member’s principal. Personal compound and referral credits earn no additional commission.':
    'This earlier hourly account calculates commission on the member’s base profit plus personal compound. The member keeps their full profit.'}</p>
   <table aria-label="Commission by the earning member’s capital in test USDT">
    <thead><tr><th scope="col">Member capital<br/><small>test USDT</small></th>

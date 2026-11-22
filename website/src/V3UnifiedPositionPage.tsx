@@ -3,8 +3,8 @@ import {formatV3Amount as show} from './v3-format';
 import type {UnifiedPositionPage} from './v3-unified-position';
 import {formatUtcTime} from './utc-time';
 
-export default function V3UnifiedPositionPage({page,onPrevious,onNext,singleCapital=false}:{
- page:UnifiedPositionPage;onPrevious:()=>void;onNext:()=>void;singleCapital?:boolean
+export default function V3UnifiedPositionPage({page,onPrevious,onNext,singleCapital=false,manualReinvest=false}:{
+ page:UnifiedPositionPage;onPrevious:()=>void;onNext:()=>void;singleCapital?:boolean;manualReinvest?:boolean
 }){
  const first=page.start+1,last=page.start+page.lots.length;
  return <section className="gv2-panel" aria-label={singleCapital?'Investment account':'Unified reinvestment position'}>
@@ -14,7 +14,7 @@ export default function V3UnifiedPositionPage({page,onPrevious,onNext,singleCapi
    <div><strong>{singleCapital?'All capital additions':'One reinvestment position'}</strong><small>{page.totalLots} additions</small></div>
    <div><b><DigitalValue value={show(page.principal)} unit="USDT"/></b><small>Recorded principal</small></div>
    <div><b><DigitalValue value={show(page.daily)} unit="USDT"/></b><small>Daily available claims</small>
-    <b><DigitalValue value={show(page.compound)} unit="USDT"/></b><small>Available personal compound earnings</small></div>
+    {!manualReinvest&&<><b><DigitalValue value={show(page.compound)} unit="USDT"/></b><small>Available personal compound earnings</small></>}</div>
    <div><b><DigitalValue value={show(page.reservedProfit)} unit="USDT"/></b><small>Reserved profit</small></div>
   </article>
   <p>Each addition keeps its own 90-day principal lock and accrual time.</p>

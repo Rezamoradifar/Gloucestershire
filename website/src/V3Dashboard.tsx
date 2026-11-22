@@ -46,7 +46,7 @@ import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import {formatUtcTime} from './utc-time';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
-import {parseV3Amount as amount,type V3WithdrawalKind} from './v3-withdrawal-form';
+import {parseV3Amount as amount,v3WithdrawalFee,type V3WithdrawalKind} from './v3-withdrawal-form';
 import './v2-dashboard.css';
 import './v2-classic-shell.css';
 import './v2-classic-refinement.css';
@@ -450,7 +450,7 @@ export default function V3Dashboard(){
     void requestUnifiedPage(plan.kind,plan.page,plan.amount);return;
    }
    const a=plan.action;
-   const fee=a.amount*(kind==='principal'?3000n:300n)/10000n;
+   const fee=v3WithdrawalFee(a.amount,kind==='principal',view.manualReinvest);
    void perform(a,'Request '+kind+' withdrawal from your account. Gross: '+formatUnits(a.amount,18)+
     ' USDT; fee: '+formatUnits(fee,18)+' USDT; net: '+formatUnits(a.amount-fee,18)+
     ' USDT. Manager approval and actual funding required.');
@@ -469,7 +469,7 @@ export default function V3Dashboard(){
    prepareUnifiedPageAction(page,{registered:view.registered,suspended:view.suspended,paused:view.paused,
     pendingWithdrawal:view.pendingWithdrawal,nextRequestAt:view.nextRequestAt,requestCap:view.ledger.requestCap},kind,n);
   }catch(e){setError(e instanceof Error?e.message:'Invalid withdrawal request.');return;}
-  const fee=n*(kind==='principal'?3000n:300n)/10000n;
+  const fee=v3WithdrawalFee(n,kind==='principal',view.manualReinvest);
   if(!await confirmAction('Review withdrawal request','Request '+kind+' withdrawal from your account?'+
    '\nGross: '+formatUnits(n,18)+' USDT; fee: '+formatUnits(fee,18)+' USDT; net: '+formatUnits(n-fee,18)+
    ' USDT. Manager approval and actual test-token funding are required. The wallet must sign one transaction.'))return;
@@ -619,10 +619,10 @@ export default function V3Dashboard(){
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly} onCheckIn={checkIn} onPositions={()=>navigate('positions')} unifiedEnabled={unifiedEnabled}/>
       {config.unified&&<V3UnifiedActivity view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} onCheckIn={checkIn}/>}
-      {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger}/>}
+      {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger} manualReinvest={view.manualReinvest}/>}
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
-       <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="USDT"/></strong><span>Includes personal compound earnings</span></div>
+       <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="USDT"/></strong><span>{view.manualReinvest?'Based on recorded principal':'Includes personal compound earnings'}</span></div>
        <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="USDT"/></strong><span>Includes cash reserved for requests</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="USDT"/></strong><span>Not guaranteed to be paid</span></div>
       </div>
@@ -639,7 +639,7 @@ export default function V3Dashboard(){
       </section>}
       {!singleCapital&&<V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>}
       {singleCapital&&!view.unifiedPage&&<p>This account has no verified test deposits.</p>}
-      {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage} singleCapital={singleCapital}
+      {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage} singleCapital={singleCapital} manualReinvest={view.manualReinvest}
        onPrevious={()=>setUnifiedPageStart(Math.max(0,view.unifiedPage!.start-view.unifiedPage!.limit))}
        onNext={()=>setUnifiedPageStart(view.unifiedPage!.start+view.unifiedPage!.limit)}/>}
       <section className="gv2-panel"><div className="gv2-panel-head"><h3>Mock test-token deposit</h3><span>NOT real money</span></div>
@@ -651,7 +651,7 @@ export default function V3Dashboard(){
         <small>Wallet balance: {show(view.walletTestTokenBalance)} test USDT · Minimum deposit: 10 USDT</small>
         <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||unifiedReadOnly} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
-      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>{config.unified?'Reinvestment adds recorded earnings to the same account. Each addition has its own lock.':'Manual reinvestment moves recorded earnings into a new locked position.'} Personal compound earnings accrue separately.</p>
+      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>{config.unified?'Reinvestment adds recorded earnings to the same account. Each addition has its own lock.':'Manual reinvestment moves recorded earnings into a new locked position.'}{view.manualReinvest?' Unreinvested earnings earn no additional profit.':' Personal compound earnings accrue separately.'}</p>
        <div className="gv3-input-row">{config.unified?<V3UnifiedReinvestSummary positions={view.positions}/>:<><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
         {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} USDT profit</option>)}</select></>}
         <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
@@ -702,7 +702,7 @@ export default function V3Dashboard(){
        <input id="reserve-funding" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" disabled={busy}/>
        <button type="button" disabled={busy||loading||reviewRequired||unifiedReadOnly} onClick={fundReserve}>Review reserve funding</button>
       </div>}
-      <p>Daily earnings and personal compound can be recorded automatically. Managers use this panel to approve withdrawals, reserve test tokens and authorize payouts.</p>
+      <p>{view.manualReinvest?'Eligible earnings on principal can be recorded automatically.':'Daily earnings and personal compound can be recorded automatically.'} Managers use this panel to approve withdrawals, reserve test tokens and authorize payouts.</p>
       <div className="gv2-detail"><span>Total recorded V3 principal claims</span><b>{show(view.ledger.principalLiability)} USDT</b></div>
       <div className="gv2-detail"><span>Accrued test-profit liabilities</span><b>{show(view.ledger.profitLiability)} USDT</b></div>
       <div className="gv2-detail"><span>V3 test-token cash</span><b>{show(view.ledger.cash)} USDT</b></div>

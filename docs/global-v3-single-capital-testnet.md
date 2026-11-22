@@ -123,3 +123,38 @@ bash scripts/start-v3-unified-release.sh "$release_sha" --referral-profit --prim
 Existing accounts and withdrawal requests stay on their original vaults.
 The prior hourly dashboard remains at `/single-capital-test/` and the daily
 account remains at `/daily-capital-test/`.
+
+## Manual reinvestment and automatic milestone groups (version 4)
+
+The hourly account at `/manual-reinvest-test/` earns personal profit only on
+principal. At 0.7% per eligible test cycle, 1,000 earns 7. Leaving that claim
+in the account earns another 7 in the following cycle. Reinvesting the 7 by
+signing a transaction raises principal in the same position to 1,007. Once
+both additions have matured, the next eligible cycle earns 7.049. Each new
+addition starts its own accrual clock and 90-day lock.
+
+The referral tier table still applies to the member's earnings on principal.
+A gross withdrawal of 100 in personal, referral or milestone earnings has a
+fee of 2 and pays 98 once approved and funded. A principal withdrawal after
+unlocking retains its separate 30% deduction.
+
+A direct branch's first recorded volume creates the first milestone group.
+Later branches join the current group automatically. The first 500-unit
+stage accepts at most 300 from one branch. Another 200 of unused volume
+qualifies the active member to record the 35-unit reward. Recording and
+withdrawing a reward are separate actions. Each of the 14 stages consumes
+fresh eligible volume. After stage 14 the next new branch opens a new group.
+Repeated deposits or reinvestments in an assigned branch retain its membership.
+
+On `vps-luna-2585`, run the pinned release in this order:
+
+```bash
+release_sha=$(git rev-parse HEAD)
+bash scripts/start-v3-unified-release.sh "$release_sha" --manual-reinvest --deploy-testnet &&
+bash scripts/start-v3-unified-release.sh "$release_sha" --manual-reinvest --primary
+```
+
+If the worker reports insufficient test gas, use the keeper address printed
+for this release and repeat the same commands once it is funded. The installer
+reuses its verified testnet deployment. Previous referral-profit accounts,
+requests and balances remain accessible at `/referral-profit-test/`.

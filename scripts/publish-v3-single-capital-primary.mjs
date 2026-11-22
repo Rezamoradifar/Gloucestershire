@@ -5,7 +5,7 @@ import {hostname} from 'node:os';
 import {createHash} from 'node:crypto';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {SINGLE_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
+import {SINGLE_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,unifiedProfileForFlag,UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
 import {readPinnedProof} from './v3-unified-site-preview-preflight.mjs';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 import {withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
@@ -35,7 +35,7 @@ function run(args,env=process.env){
 
 async function main(){
  const [mode,sha,digest,rpc,flag='--single-capital',...extra]=process.argv.slice(2);
- if(extra.length||!['--single-capital','--referral-profit'].includes(flag)||!['--install','--check-build'].includes(mode)||!/^[a-f0-9]{40}$/.test(sha??'')||
+ if(extra.length||!['--single-capital','--referral-profit','--manual-reinvest'].includes(flag)||!['--install','--check-build'].includes(mode)||!/^[a-f0-9]{40}$/.test(sha??'')||
   !/^[a-f0-9]{64}$/.test(digest??'')||
   !['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com'].includes(rpc))
   throw Error('GLOBAL_PRIMARY_ARGUMENTS_INVALID');
@@ -43,10 +43,11 @@ async function main(){
   throw Error('GLOBAL_PRIMARY_WRONG_SERVER');
  if(capture('git',['rev-parse','HEAD'])!==sha)throw Error('GLOBAL_PRIMARY_SOURCE_MISMATCH');
  execFileSync('git',['diff','--quiet','HEAD','--']);
- const profile=flag==='--referral-profit'?REFERRAL_PROFIT_PROFILE:SINGLE_CAPITAL_PROFILE;
+ const profile=unifiedProfileForFlag(flag);
  const proofPath=path.join(profile.stateDirectory,'deployment-proof.json');
  const proof=readPinnedProof(proofPath,digest);
  const ready=verifyActiveWorker({sha,digest,vault:proof.vault},profile);
+ if(profile===MANUAL_REINVEST_PROFILE&&ready.gasReady!==true)throw Error('GLOBAL_PRIMARY_MANUAL_REINVEST_KEEPER_NEEDS_TEST_GAS');
  if(profile===REFERRAL_PROFIT_PROFILE&&ready.gasReady!==true)throw Error('GLOBAL_PRIMARY_REFERRAL_KEEPER_NEEDS_TEST_GAS');
 
  if(mode==='--check-build'){
@@ -92,13 +93,14 @@ async function main(){
    GLOBAL_V3_RELEASE_PROFILE:'',GLOBAL_V3_MAIN_REUSE_TESTED_DEPS:'',
    V3_EXPECTED_WALLET_CONFIG:wallet
   });
-  if(profile===REFERRAL_PROFIT_PROFILE){
+  if(profile===REFERRAL_PROFIT_PROFILE||profile===MANUAL_REINVEST_PROFILE){
    // Preserve the incumbent wallet route for existing accounts and invitations.
-   const previous=path.join(root,'single-capital-test');
-   execFileSync('curl',[...https,'https://globaldroptrade.com/single-capital-test/','-o',path.join(work,'previous.html')]);
+   const previousProfile=profile===MANUAL_REINVEST_PROFILE?REFERRAL_PROFIT_PROFILE:SINGLE_CAPITAL_PROFILE;
+   const previous=path.join(root,previousProfile.route.slice(1));
+   execFileSync('curl',[...https,'https://globaldroptrade.com'+previousProfile.route,'-o',path.join(work,'previous.html')]);
    if(!fs.readFileSync(path.join(previous,'index.html')).equals(fs.readFileSync(path.join(work,'previous.html'))))
     throw Error('GLOBAL_PRIMARY_PREVIOUS_ACCOUNT_UNAVAILABLE');
-   run(['python3','scripts/check-v3-unified-route.py',previous,work,'--single-capital']);
+   run(['python3','scripts/check-v3-unified-route.py',previous,work,'--'+previousProfile.mode.replace('-testnet','')]);
    run(['bash','scripts/install-v3-unified-test-site.sh',flag,'--install-built',sha,
     proofPath,digest,rpc,'--enable-testnet-wallets'],env);
    run(['bash','ubuntu-global-v2-site.sh','--install'],env);

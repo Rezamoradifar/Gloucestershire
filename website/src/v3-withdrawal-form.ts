@@ -6,6 +6,11 @@ import type {V3Snapshot} from './v3-chain';
 export type V3WithdrawalKind='profit'|'principal'|'referral'|'network';
 type V3WithdrawalAction=Extract<V3Action,{kind:'requestProfit'|'requestPrincipal'|'requestReferral'|'requestNetworkReward'}>;
 
+export function v3ProfitFeeBps(manualReinvest=false){return manualReinvest?200n:300n;}
+export function v3WithdrawalFee(amount:bigint,principal:boolean,manualReinvest=false){
+ return amount*(principal?3000n:v3ProfitFeeBps(manualReinvest))/10000n;
+}
+
 export function parseV3Amount(input:string){
  const value=normalizeAmount(input);
  if(!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value))throw Error('Enter a positive decimal USDT amount.');
