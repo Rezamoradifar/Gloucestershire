@@ -216,3 +216,16 @@
 .gv3-team-directory li{display:grid;gap:.4rem;min-width:0;overflow-wrap:anywhere}
 .gv3-team-directory li a{color:#a9d9ed;text-decoration:underline;text-underline-offset:.16em}
 .gv3-team-directory li b{font-size:.9rem}.gv3-team-directory .gv3-team-active{color:#9fe5bf}
+
+.gv3-referral-schedule table {
+ width:100%; border-collapse:collapse; table-layout:fixed;
+ font-size:clamp(.78rem,2.6vw,.96rem); font-variant-numeric:tabular-nums;
+}
+.gv3-referral-schedule th,.gv3-referral-schedule td {
+ padding:.65rem .22rem; border-bottom:1px solid #374352; text-align:center;
+}
+.gv3-referral-schedule th:first-child { width:38%; text-align:left; }
+.gv3-referral-schedule thead { color:#ecd099; }
+.gv3-referral-schedule tbody td { color:#b3e9ce; font-weight:650; }
+.gv3-referral-example { border-inline-start:3px solid #87cbb5; padding-inline-start:.75rem; }
+.gv3-referral-example strong,.gv3-referral-example span { display:block; }

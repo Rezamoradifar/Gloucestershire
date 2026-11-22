@@ -1,7 +1,7 @@
 // Read-only identity check for an operator-pinned, actual chain-97 deployment.
 // This is not a deployer, a migration mechanism or a financial/security audit.
 import {Contract,getAddress,isAddress,keccak256,toQuantity,ZeroAddress} from 'ethers';
-import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
@@ -60,7 +60,7 @@ export async function recheckUnifiedBlock(provider,block){
 }
 
 export function validateUnifiedProof(raw){
- if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status].includes(raw.status)||raw.chainId!==97||
+ if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status,REFERRAL_PROFIT_PROFILE.status].includes(raw.status)||raw.chainId!==97||
     !Number.isSafeInteger(raw.deploymentBlock)||raw.deploymentBlock<1||
     ![raw.vaultRuntimeHash,raw.bookRuntimeHash,raw.networkRuntimeHash,raw.deploymentTx].every(x=>typeof x==='string'&&pattern.test(x)))
   throw Error('INVALID_UNIFIED_DEPLOYMENT_PROOF');
@@ -106,6 +106,8 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  }
  if(proof.status===SINGLE_CAPITAL_PROFILE.status&&BigInt(await vault.SINGLE_CAPITAL_VERSION(at))!==1n)
   throw Error('UNIFIED_SINGLE_CAPITAL_VERSION_MISMATCH');
+ if(proof.status===REFERRAL_PROFIT_PROFILE.status&&BigInt(await vault.SINGLE_CAPITAL_VERSION(at))!==3n)
+  throw Error('UNIFIED_REFERRAL_PROFIT_VERSION_MISMATCH');
  const [token,fee,bookAddress,networkAddress,period,activity,fee1,fee2,operations,bps,role,bookVault,networkVault]=await Promise.all([
   vault.asset(at),vault.feeReceiver(at),vault.reinvestmentBook(at),vault.networkPlan(at),
   vault.ACCRUAL_PERIOD(at),vault.ONE_DAY(at),vault.FEE_WALLET_1(at),vault.FEE_WALLET_2(at),

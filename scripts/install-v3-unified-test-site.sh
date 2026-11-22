@@ -7,7 +7,7 @@ umask 077
 profile=()
 route_name=unified-test
 expected_proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
-if [[ ${1:-} == --single-capital || ${1:-} == --daily-capital ]]; then
+if [[ ${1:-} == --single-capital || ${1:-} == --daily-capital || ${1:-} == --referral-profit ]]; then
   name=${1#--}
   profile=("$1")
   shift
@@ -24,7 +24,7 @@ case "$mode" in
   ;;
  --install|--install-prepared|--install-built)
   if [[ $# == 6 && (($mode != --install-prepared && $mode != --install-built) || $6 != --enable-testnet-wallets) ]]; then echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; fi
-  [[ $mode != --install-built || ($route_name == single-capital-test && ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == single-capital-testnet) ]] ||
+  [[ $mode != --install-built || (($route_name == single-capital-test || $route_name == referral-profit-test) && ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == "${route_name}net") ]] ||
    { echo UNIFIED_SITE_PREBUILT_PROFILE_INVALID; exit 1; }
   [[ ($# == 5 || $# == 6) && $3 == "$expected_proof" && $4 =~ ^[a-f0-9]{64}$ ]] || { echo UNIFIED_SITE_ARGUMENTS_INVALID; exit 1; }
   proof=$3 digest=$4 rpc=$5
@@ -86,7 +86,7 @@ cmp -s "$hourly/index.html" "$work/hourly-before.html" || { echo UNIFIED_SITE_HO
 if [[ $route_name != unified-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-before.html"
 fi
-if [[ $route_name == daily-capital-test ]]; then
+if [[ $route_name == daily-capital-test || $route_name == referral-profit-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/single-capital-test/ -o "$work/single-before.html"
 fi
 target="$site_root/$route_name"
@@ -127,7 +127,7 @@ process.stdout.write([...ids][0] || 'disabled');
 JS
 )
 if [[ $mode == --install-built ]]; then
- node scripts/publish-v3-single-capital-primary.mjs --check-build "$sha" "$digest" "$rpc"
+ node scripts/publish-v3-single-capital-primary.mjs --check-build "$sha" "$digest" "$rpc" "${profile[@]}"
 else
 if [[ $mode == --install-prepared ]]; then
  python3 scripts/verify-v3-prepared-checkout.py
@@ -179,7 +179,7 @@ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.
 cmp -s "$work/main-before.html" "$work/main-after.html" && cmp -s "$work/hourly-before.html" "$work/hourly-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 if [[ $route_name != unified-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-after.html"
- if [[ $route_name == daily-capital-test ]]; then
+ if [[ $route_name == daily-capital-test || $route_name == referral-profit-test ]]; then
   curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/single-capital-test/ -o "$work/single-after.html"
   cmp -s "$work/single-before.html" "$work/single-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
  fi

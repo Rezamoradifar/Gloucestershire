@@ -20,6 +20,9 @@ source "$SOURCE"
 if [[ ${SINGLE_CAPITAL:-0} == 1 ]]; then
   profile=(--single-capital)
   route_name=single-capital-test
+elif [[ ${REFERRAL_PROFIT:-0} == 1 ]]; then
+  profile=(--referral-profit)
+  route_name=referral-profit-test
 fi
 node() {
   printf '%s\n' "${*:2}" >> "$TRACE"
@@ -164,11 +167,22 @@ class ApplyTestnet(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(calls, [f"--verify-existing {READ_RPC} --single-capital",
                                 f"worker {REVISION} --single-capital",
-                                f"--install {REVISION} {DIGEST} {SIGN_RPC}"])
+                                f"--install {REVISION} {DIGEST} {SIGN_RPC} --single-capital"])
         self.assertIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", result.stdout)
         failure, calls = self.apply(**options, PRIMARY_RESULT="7")
         self.assertEqual(failure.returncode, 7)
         self.assertNotIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", failure.stdout)
+
+    def test_referral_profit_requires_its_own_deployment_before_primary(self):
+        result, calls = self.apply(REFERRAL_PROFIT="1", DEPLOY_OPTION="--primary")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+        self.proof.write_bytes(PROOF)
+        result, calls = self.apply(REFERRAL_PROFIT="1", DEPLOY_OPTION="--primary")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [f"--verify-existing {READ_RPC} --referral-profit",
+                                 f"worker {REVISION} --referral-profit",
+                                 f"--install {REVISION} {DIGEST} {SIGN_RPC} --referral-profit"])
 
 
 class InodeWorkspace(unittest.TestCase):

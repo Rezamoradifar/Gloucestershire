@@ -92,7 +92,7 @@ apply_release() {
   esac
   if [[ ${3:-} == --primary ]]; then
     (( worker_status == 0 )) || return "$worker_status"
-    node scripts/publish-v3-single-capital-primary.mjs --install "$sha" "$digest" "$deployment_rpc" || return $?
+    node scripts/publish-v3-single-capital-primary.mjs --install "$sha" "$digest" "$deployment_rpc" "${profile[@]}" || return $?
     echo 'GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE=https://globaldroptrade.com/#dashboard'
     return 0
   fi
@@ -110,6 +110,7 @@ install_and_apply() {
   case $route_name in
     single-capital-test) profile=(--single-capital) ;;
     daily-capital-test) profile=(--daily-capital) ;;
+    referral-profit-test) profile=(--referral-profit) ;;
   esac
   # Both locked dependency trees, the fresh npm cache and build output use this filesystem.
   check_capacity "$work" "$build_inodes" 2097152
@@ -172,11 +173,14 @@ main() {
         [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
       fi
       ;;
-    2:--daily-capital:|3:--daily-capital:--deploy-testnet)
-      route_name=daily-capital-test
-      deployment_proof=/var/lib/globaldroptrade/v3-daily-capital-testnet/deployment-proof.json
+    2:--daily-capital:|3:--daily-capital:--deploy-testnet|2:--referral-profit:|3:--referral-profit:--deploy-testnet|3:--referral-profit:--primary)
+      route_name=${2#--}-test
+      deployment_proof=/var/lib/globaldroptrade/v3-${2#--}-testnet/deployment-proof.json
       if [[ ${3:-} != --deploy-testnet ]]; then
-        [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail DAILY_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+        [[ -s $deployment_proof && ! -L $deployment_proof ]] || {
+          [[ $route_name != daily-capital-test ]] || fail DAILY_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+          fail REFERRAL_PROFIT_VERIFIED_DEPLOYMENT_REQUIRED
+        }
       fi
       ;;
     *) fail UNIFIED_APPLY_EXPECTED_PINNED_SHA ;;

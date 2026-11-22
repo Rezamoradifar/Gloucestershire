@@ -24,10 +24,11 @@ nginx -t
 # Frontend regression tests also import the repository's root test dependencies.
 # Install dependencies only inside the isolated checkout, never in the running API.
 single_capital_primary=0
-if [ "${GLOBAL_V3_MAIN_PREPARED_BUILD:-}" = single-capital-testnet ]; then
+if [[ ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == single-capital-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == referral-profit-testnet ]]; then
  single_capital_primary=1
+ primary_profile="--${GLOBAL_V3_MAIN_PREPARED_BUILD%-testnet}"
  node scripts/publish-v3-single-capital-primary.mjs --check-build "$actual_sha" \
-  "${GLOBAL_V3_PRIMARY_PROOF_SHA256:-}" "${GLOBAL_V3_PRIMARY_RPC:-}"
+  "${GLOBAL_V3_PRIMARY_PROOF_SHA256:-}" "${GLOBAL_V3_PRIMARY_RPC:-}" "$primary_profile"
 elif [ "${GLOBAL_V3_MAIN_REUSE_TESTED_DEPS:-}" = 1 ]; then
  python3 scripts/prepare-v3-primary-dependencies.py validate --target "$PWD"
 else
@@ -60,9 +61,9 @@ if [ "${VITE_V3_HOURLY_TEST:-}" = isolated-1h ]; then
  [ "${VITE_V3_LANDING_AT_ROOT:-}" = true ] || { echo V3_HOURLY_MAIN_LANDING_REQUIRED; exit 1; }
  bundle_profile=()
  if [ "$single_capital_primary" = 1 ]; then
-  [[ ${VITE_V3_UNIFIED_MODE:-} == single-capital-testnet && ${VITE_V3_UNIFIED_PRIMARY:-} == single-capital-testnet ]] ||
+  [[ ${VITE_V3_UNIFIED_MODE:-} == "$GLOBAL_V3_MAIN_PREPARED_BUILD" && ${VITE_V3_UNIFIED_PRIMARY:-} == "$GLOBAL_V3_MAIN_PREPARED_BUILD" ]] ||
    { echo GLOBAL_PRIMARY_PROFILE_MISMATCH; exit 1; }
-  bundle_profile=(--single-capital)
+  bundle_profile=("$primary_profile")
  else
   [ "${VITE_V3_CONTRACT_ADDRESS,,}" = 0x4f2777861cc5bdd0d6aed86014ce1370bf823884 ] || { echo V3_HOURLY_MAIN_CONTRACT_MISMATCH; exit 1; }
  fi
@@ -115,7 +116,7 @@ if [ "${VITE_V3_HOURLY_TEST:-}" = isolated-1h ]; then
  flock -n 8 || { echo V3_HOURLY_SITE_INSTALL_LOCKED; exit 1; }
  if [ "$single_capital_primary" = 1 ]; then
   node scripts/publish-v3-single-capital-primary.mjs --check-build "$actual_sha" \
-   "$GLOBAL_V3_PRIMARY_PROOF_SHA256" "$GLOBAL_V3_PRIMARY_RPC"
+   "$GLOBAL_V3_PRIMARY_PROOF_SHA256" "$GLOBAL_V3_PRIMARY_RPC" "$primary_profile"
  else
  site_vars_again=$(node scripts/verify-v3-hourly-testnet.mjs --emit-site-env)
  grep -Fx "export VITE_V3_CONTRACT_ADDRESS=$VITE_V3_CONTRACT_ADDRESS" <<< "$site_vars_again" >/dev/null && \

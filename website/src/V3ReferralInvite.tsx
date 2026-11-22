@@ -8,10 +8,12 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
  const address=view.registered?view.wallet:'';
  const link=useMemo(()=>{
   if(!address||typeof window==='undefined')return '';
-  const publishedAtRoot=!view.dailyPlan&&view.singleCapital&&import.meta.env.VITE_V3_UNIFIED_PRIMARY==='single-capital-testnet';
+  const primary=import.meta.env.VITE_V3_UNIFIED_PRIMARY;
+  const publishedAtRoot=!view.dailyPlan&&view.singleCapital&&(view.baseProfitReferrals?primary==='referral-profit-testnet':
+   primary==='single-capital-testnet'&&['/','/index.html','/hourly-test','/hourly-test/'].includes(window.location.pathname));
   try{return referralLink(address,window.location.origin,publishedAtRoot?'/':window.location.pathname);}
   catch{return '';}
- },[address,view.singleCapital,view.dailyPlan]);
+ },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals]);
  async function copy(value:string){
   if(!value)return;
   try{

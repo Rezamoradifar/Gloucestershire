@@ -199,7 +199,7 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
- singleCapital?:true;dailyPlan?:true;
+ singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;
  unifiedWithdrawalPages?:UnifiedPositionPage[];
  withdrawalCoverageError?:string;
  withdrawalPage?:UnifiedPositionPage;
@@ -265,7 +265,8 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    throw Error('The test contract accrual period was not verified.');
   let network=vault,book:Contract|null=null;
   if(config.unified){
-   if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==(daily?2n:1n))
+   const expectedVersion=daily?2n:config.unified.baseProfitReferrals?3n:1n;
+   if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==expectedVersion)
     throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
     vault.reinvestmentBook(options),vault.networkPlan(options),
@@ -503,7 +504,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   canManage:Boolean(canManage),canFund:Boolean(canFund),
   positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,
    withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,
-   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   ...(config!.unified?.keeper?{keeper:{operator:config!.unified.keeper,gasWei:keeperGasWei}}:{}),
