@@ -16,7 +16,7 @@ const amount=(value,name)=>{
 const copy=cursor=>({member:cursor.member,position:cursor.position,lot:cursor.lot});
 
 export async function scanUnifiedAccrual({vault,book,blockNumber,blockTimestamp,cursor,
- maxWork=20,maxResults=10,lotPageSize=8}){
+ maxWork=20,maxResults=10,lotPageSize=8,dailyPlan=false}){
  integer(blockNumber,'BLOCK');integer(blockTimestamp,'BLOCK_TIME');
  if(!cursor||typeof cursor!=='object')throw Error('INVALID_UNIFIED_CURSOR');
  const at={blockTag:blockNumber};
@@ -39,7 +39,7 @@ export async function scanUnifiedAccrual({vault,book,blockNumber,blockTimestamp,
  while(current.member<members&&work<maxWork&&selected.length<maxResults){
   const user=getAddress(await vault.memberAt(current.member,at));
   if(user===ZeroAddress)throw Error('INVALID_UNIFIED_MEMBER');
-  const eligible=await vault.isEligible(user,at);
+  const eligible=dailyPlan?await vault.canSettleEarnedDays(user,at):await vault.isEligible(user,at);
   if(typeof eligible!=='boolean')throw Error('INVALID_UNIFIED_ELIGIBILITY');
   if(!eligible){current.member++;current.position=0;current.lot=0;work++;continue;}
   const count=integer(await vault.positionCount(user,at),'POSITION_COUNT');
@@ -73,16 +73,18 @@ export async function scanUnifiedAccrual({vault,book,blockNumber,blockTimestamp,
    const startLot=current.lot,length=Math.min(lotPageSize,totalLots-startLot);
    const lots=await Promise.all(Array.from({length},async(_,offset)=>{
     const lot=await book.lot(user,startLot+offset,at);
-    return {id:startLot+offset,principal:amount(lot.principal,'LOT_PRINCIPAL'),
+    const info=dailyPlan?await vault.nextAccrual(user,lot.lastAccruedAt,at):null;
+    return {id:startLot+offset,...(info?{due:integer(info.due,'DUE'),bps:integer(info.bps,'RATE')}:{}),principal:amount(lot.principal,'LOT_PRINCIPAL'),
      basis:amount(lot.basis,'LOT_BASIS'),lastAccruedAt:integer(lot.lastAccruedAt,'LOT_TIME')};
    }));
    const plan=planUnifiedLotPage({wallet:user,start:startLot,totalLots,lots,
-    now:blockTimestamp,rateBps:bps,eligible:true,paused:false,limit:lotPageSize});
+    now:blockTimestamp,rateBps:bps,eligible:true,paused:false,limit:lotPageSize,dailyPlan});
    current.lot=plan.next;if(current.lot===totalLots)advancePosition();
    if(plan.proposal)selected.push({member:user,positionId:id,method:plan.proposal.method,
     args:plan.proposal.args,dueLots:plan.dueLots,daily:plan.daily,compound:plan.compound,
     retryCursor:retry,nextCursor:copy(current)});
   }else{
+   if(dailyPlan)throw Error('UNIFIED_DAILY_EXPECTED_SINGLE_ACCOUNT');
    if(current.lot!==0)throw Error('INVALID_UNIFIED_LOT_CURSOR');
    const last=integer(p.lastAccruedAt,'POSITION_TIME');
    if(last>Number.MAX_SAFE_INTEGER-3600)throw Error('INVALID_UNIFIED_POSITION_TIME');

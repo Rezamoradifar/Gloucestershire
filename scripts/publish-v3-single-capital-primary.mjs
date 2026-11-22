@@ -5,20 +5,20 @@ import {hostname} from 'node:os';
 import {createHash} from 'node:crypto';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {SINGLE_CAPITAL_PROFILE,UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
+import {SINGLE_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
 import {readPinnedProof} from './v3-unified-site-preview-preflight.mjs';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 import {withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
 import {verifyActiveWorker} from './v3-unified-worker-readiness.mjs';
 import {readWalletConfig} from './read-v3-wallet-config.mjs';
 
-export function primaryReleaseEnv(proof,operator,wallet){
+export function primaryReleaseEnv(proof,operator,wallet,profile=SINGLE_CAPITAL_PROFILE){
  if(wallet!=='disabled'&&!/^[a-f0-9]{32}$/.test(wallet))throw Error('GLOBAL_PRIMARY_WALLET_CONFIG_INVALID');
  return {
   VITE_V3_PRIMARY_DASHBOARD:'verified-testnet',VITE_V3_HOURLY_TEST:'isolated-1h',
-  VITE_V3_LANDING_AT_ROOT:'true',VITE_V3_UNIFIED_PRIMARY:'single-capital-testnet',
+  VITE_V3_LANDING_AT_ROOT:'true',VITE_V3_UNIFIED_PRIMARY:profile.mode,
   VITE_V3_CONTRACT_ADDRESS:proof.vault,VITE_V3_RUNTIME_HASH:proof.vaultRuntimeHash,
-  VITE_V3_DEPLOYMENT_TX:proof.deploymentTx,VITE_V3_UNIFIED_MODE:'single-capital-testnet',
+  VITE_V3_DEPLOYMENT_TX:proof.deploymentTx,VITE_V3_UNIFIED_MODE:profile.mode,
   VITE_V3_UNIFIED_BOOK:proof.book,VITE_V3_UNIFIED_BOOK_HASH:proof.bookRuntimeHash,
   VITE_V3_UNIFIED_NETWORK:proof.network,VITE_V3_UNIFIED_NETWORK_HASH:proof.networkRuntimeHash,
   VITE_V3_UNIFIED_WALLET_ACTIONS:'verified-isolated-testnet',VITE_V3_UNIFIED_KEEPER:operator,
@@ -34,8 +34,8 @@ function run(args,env=process.env){
 }
 
 async function main(){
- const [mode,sha,digest,rpc,...extra]=process.argv.slice(2);
- if(extra.length||!['--install','--check-build'].includes(mode)||!/^[a-f0-9]{40}$/.test(sha??'')||
+ const [mode,sha,digest,rpc,flag='--single-capital',...extra]=process.argv.slice(2);
+ if(extra.length||!['--single-capital','--referral-profit'].includes(flag)||!['--install','--check-build'].includes(mode)||!/^[a-f0-9]{40}$/.test(sha??'')||
   !/^[a-f0-9]{64}$/.test(digest??'')||
   !['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com'].includes(rpc))
   throw Error('GLOBAL_PRIMARY_ARGUMENTS_INVALID');
@@ -43,14 +43,16 @@ async function main(){
   throw Error('GLOBAL_PRIMARY_WRONG_SERVER');
  if(capture('git',['rev-parse','HEAD'])!==sha)throw Error('GLOBAL_PRIMARY_SOURCE_MISMATCH');
  execFileSync('git',['diff','--quiet','HEAD','--']);
- const proofPath=path.join(SINGLE_CAPITAL_PROFILE.stateDirectory,'deployment-proof.json');
+ const profile=flag==='--referral-profit'?REFERRAL_PROFIT_PROFILE:SINGLE_CAPITAL_PROFILE;
+ const proofPath=path.join(profile.stateDirectory,'deployment-proof.json');
  const proof=readPinnedProof(proofPath,digest);
- const ready=verifyActiveWorker({sha,digest,vault:proof.vault},SINGLE_CAPITAL_PROFILE);
+ const ready=verifyActiveWorker({sha,digest,vault:proof.vault},profile);
+ if(profile===REFERRAL_PROFIT_PROFILE&&ready.gasReady!==true)throw Error('GLOBAL_PRIMARY_REFERRAL_KEEPER_NEEDS_TEST_GAS');
 
  if(mode==='--check-build'){
-  await withUnifiedReadRpc(rpc,'primary-build',provider=>verifyUnifiedRelease(provider,proof,UNIFIED_DEPLOYER,SINGLE_CAPITAL_PROFILE));
+  await withUnifiedReadRpc(rpc,'primary-build',provider=>verifyUnifiedRelease(provider,proof,UNIFIED_DEPLOYER,profile));
   const wallet=readWalletConfig('website/dist',undefined,true);
-  for(const [name,value] of Object.entries(primaryReleaseEnv(proof,ready.operator,wallet)))
+  for(const [name,value] of Object.entries(primaryReleaseEnv(proof,ready.operator,wallet,profile)))
    if(process.env[name]!==value)throw Error('GLOBAL_PRIMARY_BUILD_ENV_MISMATCH');
   const scripts=fs.readdirSync('website/dist/assets').filter(name=>/^V3Dashboard-[\w-]+\.js$/.test(name));
   if(scripts.length!==1)throw Error('GLOBAL_PRIMARY_DASHBOARD_ASSET_INVALID');
@@ -81,15 +83,28 @@ async function main(){
   const hourlyIndex=createHash('sha256').update(fs.readFileSync(path.join(work,'hourly.html'))).digest('hex');
   console.log('GLOBAL_PRIMARY_STAGE=BUILDING');
   run(['node','scripts/build-v3-unified-site.mjs',proofPath,digest,sha,rpc,wallet,
-   '--enable-testnet-wallets','--primary','--single-capital']);
+   '--enable-testnet-wallets','--primary',flag]);
   const env={...process.env};
   for(const name of Object.keys(env))if(name.startsWith('VITE_'))delete env[name];
-  Object.assign(env,primaryReleaseEnv(proof,ready.operator,wallet),{
-   GLOBAL_V2_EXPECTED_SHA:sha,GLOBAL_V3_MAIN_PREPARED_BUILD:'single-capital-testnet',
+  Object.assign(env,primaryReleaseEnv(proof,ready.operator,wallet,profile),{
+   GLOBAL_V2_EXPECTED_SHA:sha,GLOBAL_V3_MAIN_PREPARED_BUILD:profile.mode,
    GLOBAL_V3_PRIMARY_PROOF_SHA256:digest,GLOBAL_V3_PRIMARY_RPC:rpc,
    GLOBAL_V3_RELEASE_PROFILE:'',GLOBAL_V3_MAIN_REUSE_TESTED_DEPS:'',
    V3_EXPECTED_WALLET_CONFIG:wallet
   });
+  if(profile===REFERRAL_PROFIT_PROFILE){
+   // Preserve the incumbent wallet route for existing accounts and invitations.
+   const previous=path.join(root,'single-capital-test');
+   execFileSync('curl',[...https,'https://globaldroptrade.com/single-capital-test/','-o',path.join(work,'previous.html')]);
+   if(!fs.readFileSync(path.join(previous,'index.html')).equals(fs.readFileSync(path.join(work,'previous.html'))))
+    throw Error('GLOBAL_PRIMARY_PREVIOUS_ACCOUNT_UNAVAILABLE');
+   run(['python3','scripts/check-v3-unified-route.py',previous,work,'--single-capital']);
+   run(['bash','scripts/install-v3-unified-test-site.sh',flag,'--install-built',sha,
+    proofPath,digest,rpc,'--enable-testnet-wallets'],env);
+   run(['bash','ubuntu-global-v2-site.sh','--install'],env);
+   console.log('GLOBAL_PRIMARY_STAGE=COMPLETE');
+   return;
+  }
   console.log('GLOBAL_PRIMARY_STAGE=PUBLISHING_DOMAIN');
   run(['bash','ubuntu-global-v2-site.sh','--install'],env);
   console.log('GLOBAL_PRIMARY_STAGE=PUBLISHING_ACCOUNT_ROUTE');

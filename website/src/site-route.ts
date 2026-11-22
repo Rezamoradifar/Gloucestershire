@@ -1,9 +1,9 @@
 export type SiteRoute='landing'|'v2'|'v3';
 
-type RouteOptions={v3Only:boolean;hourlyTest:boolean;landingAtRoot:boolean};
+type RouteOptions={v3Only:boolean;hourlyTest:boolean;dailyTest?:boolean;landingAtRoot:boolean};
 
-export function siteRoute(hash:string,{v3Only,hourlyTest,landingAtRoot}:RouteOptions):SiteRoute{
- if(hourlyTest&&!landingAtRoot&&(!hash||hash==='#'))return 'v3';
+export function siteRoute(hash:string,{v3Only,hourlyTest,dailyTest,landingAtRoot}:RouteOptions):SiteRoute{
+ if((hourlyTest||dailyTest)&&!landingAtRoot&&(!hash||hash==='#'))return 'v3';
  if(hash==='#v2-dashboard')return v3Only?'v3':'v2';
  if(hash==='#v3-dashboard')return 'v3';
  if(hash==='#dashboard')return v3Only?'v3':'v2';

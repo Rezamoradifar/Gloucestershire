@@ -8,10 +8,12 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
  const address=view.registered?view.wallet:'';
  const link=useMemo(()=>{
   if(!address||typeof window==='undefined')return '';
-  const publishedAtRoot=view.singleCapital&&import.meta.env.VITE_V3_UNIFIED_PRIMARY==='single-capital-testnet';
+  const primary=import.meta.env.VITE_V3_UNIFIED_PRIMARY;
+  const publishedAtRoot=!view.dailyPlan&&view.singleCapital&&(view.baseProfitReferrals?primary==='referral-profit-testnet':
+   primary==='single-capital-testnet'&&['/','/index.html','/hourly-test','/hourly-test/'].includes(window.location.pathname));
   try{return referralLink(address,window.location.origin,publishedAtRoot?'/':window.location.pathname);}
   catch{return '';}
- },[address,view.singleCapital]);
+ },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals]);
  async function copy(value:string){
   if(!value)return;
   try{
@@ -24,7 +26,9 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
    <p>New members can use your public wallet address when they register on this contract.</p></div><Users size={20}/></div>
   {!view.registered&&<p className="gv1-inline-warning">Register this wallet before sharing an invitation.</p>}
   {view.registered&&!view.eligible&&<p className="gv1-inline-warning">Your link is available; referral eligibility also requires a current check-in and the contract conditions.</p>}
-  <p className="gv2-small">The account must be eligible when a referral claim is recorded. Referral claims skipped while ineligible are not automatically added later.</p>
+  <p className="gv2-small">{view.dailyPlan
+   ? "Referral commission uses the member's base daily profit. Eligibility is checked when that daily cycle ends. A later posting keeps the same shares. An inactive level earns zero, and higher levels keep their usual percentages."
+   : 'The account must be eligible when a referral claim is recorded. Referral claims skipped while ineligible are not automatically added later.'}</p>
   <label htmlFor="gv1-referral-address">Your wallet address</label>
   <div className="gv1-copy-field"><input id="gv1-referral-address" value={address} readOnly placeholder="Register your wallet first" onFocus={event=>event.currentTarget.select()}/>
    <button type="button" disabled={!address} onClick={()=>void copy(address)} aria-label="Copy referral address"><Copy size={16}/></button></div>

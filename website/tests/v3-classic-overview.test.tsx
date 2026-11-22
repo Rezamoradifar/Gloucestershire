@@ -63,5 +63,8 @@ describe('classic Global layout with current V3 data',()=>{
   const submit=html.match(/<button type="submit"[^>]*>/)?.[0];
   expect(submit).toBeDefined();
   expect(submit).not.toContain('disabled');
+  const refreshing=renderToStaticMarkup(<V3ClassicOverview {...actions} view={view} value="1000" unifiedRelease loading/>);
+  expect(refreshing).toMatch(/<button type="submit"[^>]*disabled/);
+  expect(refreshing.match(/<input id="gv1-amount"[^>]*>/)?.[0]).not.toContain('disabled');
  });
 });

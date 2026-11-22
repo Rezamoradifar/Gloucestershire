@@ -78,6 +78,7 @@ export default function V3ClassicOverview(props:Props){
      {requiresExistingPosition&&view&&positions.length===0&&<p className="gv1-inline-warning">Open a test position before selecting this action.</p>}
      <p className="gv1-operation-note"><LockKeyhole size={15}/>{mode==='withdraw'?'Continue to the account withdrawal form. Eligible records are selected automatically.':
       mode==='reinvest'?(unified?'Recorded profit adds to the account with a separate 90-day lock.':'Recorded profit creates a new 90-day locked position.'):'100% of a test deposit is routed to designated wallets, including fee wallets. This does not establish product spending. Minimum deposit: 10 USDT.'}</p>
+     {mode==='deposit'&&view&&typeof view.allowance==='bigint'&&<p className="gv2-small">{view.registered?'': 'Your first deposit also registers this wallet. '}{view.allowance===0n?'Approve the exact amount in your wallet, then return here to confirm the deposit.':'Your current token allowance is '+money(view.allowance)+' USDT. The wallet requests approval only if more is needed.'}</p>}
      {readOnly&&<p id="gv1-read-only" className="gv1-inline-warning">Wallet transactions are disabled in this preview.</p>}
      <button type="submit" className="gv2-primary gv1-action" disabled={!usable} aria-describedby={readOnly?'gv1-read-only':undefined}>
       {mode==='deposit'?'Review test deposit':mode==='withdraw'?'Review withdrawal request':'Review reinvestment'} <ArrowRight size={16}/></button>

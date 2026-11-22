@@ -78,3 +78,48 @@ The main account includes the hourly digital countdown and personal and
 compound estimates derived from the loaded additions. With a partially
 loaded addition list, the dashboard labels that timer and estimate coverage.
 Recorded profit changes after a confirmed eligible accrual transaction.
+
+## Referral commission on personal profit
+
+The corrected hourly vault (single-capital version 3) credits uplines only on the
+profit earned on each addition's principal. The member keeps their full
+personal profit. The member's own compound has a separate balance. Referral
+credits and network milestone credits do not generate another commission.
+
+| Earning member's capital in test USDT | Direct | Level 2 | Level 3 | Level 4 |
+| --- | ---: | ---: | ---: | ---: |
+| 10 through 500 | 8% | 4% | 2% | 0% |
+| Over 500 through 2,500 | 10% | 5% | 3% | 0% |
+| Over 2,500 through 10,000 | 12% | 6% | 4% | 0% |
+| Over 10,000 through 50,000 | 14% | 7% | 5% | 0% |
+| VIP, over 50,000 | 16% | 8% | 6% | 4% |
+
+An earning member with 1,000 principal keeps all 7 units of personal profit.
+The three eligible uplines receive 0.70, 0.35 and 0.21 units respectively. If
+level 2 is inactive its credit is zero and level 3 still receives 0.21.
+Recipients must be eligible, and VIP recipients require manager-verified KYC.
+Only a VIP earner can generate a fourth-level credit for a VIP recipient.
+Team shows the tier schedule and Account supports requests from the recorded
+referral balance. The hourly contract checks eligibility at posting. The
+separate daily account uses the active terms at cycle maturity.
+
+From a checkout of the reviewed commit on `vps-luna-2585`, publish the corrected
+hourly account on BNB Testnet with the existing release entrypoint:
+
+```bash
+release_sha=$(git rev-parse HEAD)
+bash scripts/start-v3-unified-release.sh "$release_sha" --referral-profit --deploy-testnet
+```
+
+The first command sequence verifies or creates the version 3 deployment and
+installs its worker and dashboard at `/referral-profit-test/`. The worker
+reports its public gas address if it needs test BNB. To serve this verified
+account at the main domain after the worker has gas, use the same release:
+
+```bash
+bash scripts/start-v3-unified-release.sh "$release_sha" --referral-profit --primary
+```
+
+Existing accounts and withdrawal requests stay on their original vaults.
+The prior hourly dashboard remains at `/single-capital-test/` and the daily
+account remains at `/daily-capital-test/`.

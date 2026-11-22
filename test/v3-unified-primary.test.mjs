@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {spawnSync} from 'node:child_process';
 import {primaryReleaseEnv} from '../scripts/publish-v3-single-capital-primary.mjs';
+import {REFERRAL_PROFIT_PROFILE} from '../scripts/v3-unified-release-pins.mjs';
 
 const proof={vault:'0x'+'11'.repeat(20),vaultRuntimeHash:'0x'+'aa'.repeat(32),
  deploymentTx:'0x'+'bb'.repeat(32),book:'0x'+'22'.repeat(20),bookRuntimeHash:'0x'+'cc'.repeat(32),
@@ -21,6 +22,9 @@ test('the primary build uses the same verified one-hour account, book and operat
  const project='0123456789abcdef0123456789abcdef';
  assert.equal(primaryReleaseEnv(proof,operator,project).VITE_WALLETCONNECT_PROJECT_ID,project);
  assert.throws(()=>primaryReleaseEnv(proof,operator,'unverified'),/WALLET_CONFIG/);
+ const corrected=primaryReleaseEnv(proof,operator,'disabled',REFERRAL_PROFIT_PROFILE);
+ assert.equal(corrected.VITE_V3_UNIFIED_MODE,'referral-profit-testnet');
+ assert.equal(corrected.VITE_V3_UNIFIED_PRIMARY,corrected.VITE_V3_UNIFIED_MODE);
 });
 test('publication refuses incomplete arguments before checking or changing the server',()=>{
  for(const args of [[],['--install','main'],['--deploy-testnet','a'.repeat(40),'b'.repeat(64),

@@ -36,22 +36,27 @@ export function v3AccountTotals(positions:V3WalletPosition[]){
 
 function unifiedLots(view:V3Snapshot,group:V3WalletPosition){
  if(view.withdrawalCoverageError)throw Error(view.withdrawalCoverageError);
- const pages=view.unifiedWithdrawalPages;
+ const selected=view.withdrawalPage;
+ const pages=selected?[selected]:view.unifiedWithdrawalPages;
  if(!pages?.length)throw Error('Complete withdrawal records are still loading. Refresh the account before continuing.');
  const ordered=[...pages].sort((a,b)=>a.start-b.start),first=ordered[0];
- if(!Number.isSafeInteger(first.totalLots)||first.totalLots<1||first.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS)
+ const large=first.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS;
+ if(!Number.isSafeInteger(first.totalLots)||first.totalLots<1||large!==Boolean(selected))
   throw Error('This account exceeds the supported withdrawal scan of '+MAX_UNIFIED_WITHDRAWAL_LOTS+' additions. No partial withdrawal limit is shown.');
+ const offset=selected?.start??0;
+ const size=selected?unifiedWithdrawalWindow(view.singleCapital):WINDOW;
+ if(!Number.isSafeInteger(offset)||offset<0||offset>=first.totalLots)throw Error('Invalid withdrawal page start.');
  const lots:UnifiedLot[]=[];
  for(const page of ordered){
   if(getAddress(page.wallet)!==getAddress(view.wallet)||page.block!==view.block||page.asOf!==view.asOf||
-   page.positionId!==group.id||page.totalLots!==first.totalLots||page.start!==lots.length||page.limit!==WINDOW||
-   page.lots.length!==Math.min(WINDOW,page.totalLots-page.start)||
+   page.positionId!==group.id||page.totalLots!==first.totalLots||page.start!==offset+lots.length||page.limit!==size||
+   page.lots.length!==Math.min(size,page.totalLots-page.start)||
    page.principal!==group.principal||page.daily!==group.availableDaily||page.compound!==group.availableCompound||
    page.reservedProfit!==group.reservedProfit)
    throw Error('Withdrawal records must cover the complete account at one verified block.');
   let profit=0n,matured=0n;
   for(const lot of page.lots){
-   if(lot.id!==lots.length||[lot.principal,lot.reservedPrincipal,lot.daily,lot.compound,lot.basis,lot.reservedProfit].some(value=>!units(value))||
+   if(lot.id!==offset+lots.length||[lot.principal,lot.reservedPrincipal,lot.daily,lot.compound,lot.basis,lot.reservedProfit].some(value=>!units(value))||
     lot.reservedPrincipal>lot.principal||lot.basis!==lot.daily+lot.compound||
     !validTime(lot.openedAt)||!validTime(lot.lastAccruedAt)||lot.openedAt>lot.lastAccruedAt||lot.lastAccruedAt>view.asOf||
     lot.openedAt>Number.MAX_SAFE_INTEGER-LOCK||lot.unlockAt!==lot.openedAt+LOCK)
@@ -63,12 +68,13 @@ function unifiedLots(view:V3Snapshot,group:V3WalletPosition){
   if(profit!==page.availableProfitOnPage||matured!==page.maturedPrincipalOnPage)
    throw Error('The verified withdrawal page balance is inconsistent.');
  }
- if(lots.length!==first.totalLots)throw Error('Complete withdrawal records are still loading. Refresh the account before continuing.');
+ if(!large&&lots.length!==first.totalLots)throw Error('Complete withdrawal records are still loading. Refresh the account before continuing.');
  const sum=lots.reduce((total,lot)=>({principal:total.principal+lot.principal,reservedPrincipal:total.reservedPrincipal+lot.reservedPrincipal,
   daily:total.daily+lot.daily,compound:total.compound+lot.compound,reservedProfit:total.reservedProfit+lot.reservedProfit}),
  {principal:0n,reservedPrincipal:0n,daily:0n,compound:0n,reservedProfit:0n});
- if(sum.principal!==group.principal||sum.reservedPrincipal!==group.reservedPrincipal||sum.daily!==group.availableDaily||
-  sum.compound!==group.availableCompound||sum.reservedProfit!==group.reservedProfit)
+ const reconciles=(part:bigint,total:bigint)=>large?part<=total:part===total;
+ if(!reconciles(sum.principal,group.principal)||!reconciles(sum.reservedPrincipal,group.reservedPrincipal)||
+  !reconciles(sum.daily,group.availableDaily)||!reconciles(sum.compound,group.availableCompound)||!reconciles(sum.reservedProfit,group.reservedProfit))
   throw Error('The complete withdrawal additions do not match the account totals.');
  return {lots,first};
 }
@@ -90,6 +96,10 @@ function withdrawalSources(view:V3Snapshot,unified:boolean){
   }
   const {lots,first}=unifiedLots(view,p);
   maturedPrincipal+=lots.reduce((sum,lot)=>sum+(view.asOf>=lot.unlockAt?lot.principal-lot.reservedPrincipal:0n),0n);
+  if(view.withdrawalPage){
+   sources.push({position:p,profit:first.availableProfitOnPage,principal:first.maturedPrincipalOnPage,page:first});
+   continue;
+  }
   // Inspect every start, including windows crossing the read-page boundaries.
   const windowSize=unifiedWithdrawalWindow(view.singleCapital);
   for(let start=0;start<lots.length;start++){

@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {FetchRequest, JsonRpcProvider, Wallet, getAddress, parseEther} from 'ethers';
+import {Wallet, getAddress, parseEther} from 'ethers';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
+import {createUnifiedRpcProvider} from './v3-unified-verification-rpc.mjs';
 import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 import {UNIFIED_DEPLOYER,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 import {isV3SystemdCredential} from './global-v3-auto-compound-keeper.mjs';
@@ -76,9 +77,7 @@ async function checkOperator(provider, proof, operator, profile) {
 async function selectProvider(proof, operator, profile) {
   let cause;
   for (const url of endpoints) {
-    const request = new FetchRequest(url);
-    request.timeout = 12000;
-    const provider = new JsonRpcProvider(request, undefined, {batchMaxCount:1, cacheTimeout:-1});
+    const provider = createUnifiedRpcProvider(url, 12000);
     try {
       const check = await checkOperator(provider, proof, operator, profile);
       return {provider, ...check};
@@ -124,7 +123,7 @@ async function tick(provider, signer, proof, directory) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const profile = unifiedProfileForFlag(args.at(-1)==='--single-capital'?args.pop():undefined);
+  const profile = unifiedProfileForFlag(['--single-capital','--daily-capital','--referral-profit'].includes(args.at(-1))?args.pop():undefined);
   const [command, sha, ...extra] = args;
   if (extra.length || !['--init-key','--check','--tick'].includes(command) ||
       (command === '--check' ? !/^[a-f0-9]{40}$/.test(sha ?? '') : sha !== undefined))

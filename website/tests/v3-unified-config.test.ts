@@ -74,3 +74,25 @@ describe('unified testnet release identity',()=>{
   expect(request).not.toHaveBeenCalled();
  });
 });
+
+it('locks the daily profile to its verified daily test route and period',()=>{
+ const daily=v3ParseReleaseConfig({...unified,unifiedMode:'daily-capital-testnet'});
+ const enabled=(path:string,hourly=false)=>unifiedWalletEnabled(daily,path,hourly,
+  'verified-testnet','verified-isolated-testnet','single-capital-testnet');
+ expect(daily?.unified).toMatchObject({dailyPlan:true,singleCapital:true});
+ expect(enabled('/daily-capital-test/')).toBe(true);
+ expect(enabled('/daily-capital-test/',true)).toBe(false);
+ for(const route of ['/','/unified-test/','/hourly-test/','/single-capital-test/'])expect(enabled(route)).toBe(false);
+});
+
+it('binds the corrected referral account to its own route or explicitly verified root',()=>{
+ const config=v3ParseReleaseConfig({...unified,unifiedMode:'referral-profit-testnet'});
+ expect(config?.unified?.baseProfitReferrals).toBe(true);
+ const enabled=(path:string,rootMode='')=>unifiedWalletEnabled(config,path,true,'verified-testnet','verified-isolated-testnet',rootMode);
+ expect(enabled('/referral-profit-test/')).toBe(true);
+ expect(enabled('/')).toBe(false);
+ expect(enabled('/','single-capital-testnet')).toBe(false);
+ expect(enabled('/','referral-profit-testnet')).toBe(true);
+ for(const path of ['/hourly-test/','/single-capital-test/','/daily-capital-test/','/unified-test/'])
+  expect(enabled(path,'referral-profit-testnet')).toBe(false);
+});

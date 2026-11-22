@@ -21,7 +21,7 @@ function replaceOnce(text,before,after){
 // hourly profile, compile a separate testnet profile from the reviewed base.
 // Both additions use the existing grouped ledger, which retains independent
 // accrual and principal-lock times and reconciles with the vault totals.
-function singleCapitalSources(){
+function singleCapitalSources(baseProfitReferrals=false){
  let vault=replaceOnce(source(FILE),'contract GlobalV3UnifiedTestnet is','contract GlobalV3SingleCapitalTestnet is');
  vault=replaceOnce(vault,'import {UnifiedReinvestmentBook} from "./UnifiedReinvestmentBook.sol";',
   'import {SingleCapitalBook} from "./SingleCapitalBook.sol";');
@@ -78,10 +78,23 @@ function singleCapitalSources(){
  book=replaceOnce(book,
   '/// @dev Parent must atomically debit an existing verified claim first.',
   '/// @dev Parent must atomically receive a test deposit or debit a verified claim.');
+ if(baseProfitReferrals){
+  // Version 1 is live. Keep its creation code reproducible and publish the
+  // corrected hourly account under a distinct version and deployment proof.
+  vault=replaceOnce(vault,'SINGLE_CAPITAL_VERSION = 1','SINGLE_CAPITAL_VERSION = 3');
+  vault=replaceOnce(vault,'_creditReferrals(who,gross);','_creditReferrals(who,personal);');
+  vault=replaceOnce(vault,'_creditReferrals(address who,uint256 gross)','_creditReferrals(address who,uint256 personal)');
+  vault=replaceOnce(vault,'Math.mulDiv(gross,referralBps','Math.mulDiv(personal,referralBps');
+  vault=vault.replaceAll('grosses','personalByLot');
+  book=replaceOnce(book,'grossByLot[next-start]=d+c;','grossByLot[next-start]=d;');
+  book=book.replaceAll('grossByLot','personalByLot');
+  book=replaceOnce(book,'Per-lot grosses allow a future parent to apply referral rounding per lot.',
+   'Only profit on principal earns referral commission. Round each mature lot independently.');
+ }
  return {[SINGLE_CAPITAL_FILE]:{content:vault},[SINGLE_CAPITAL_BOOK]:{content:book}};
 }
 
-function compile(sources,vaultFile,vaultName,bookFile,bookName){
+function compile(sources,vaultFile,vaultName,bookFile,bookName,networkFile='contracts/v3/UnifiedNetworkPlan.sol',networkName='UnifiedNetworkPlan'){
  if(!solc.version().startsWith('0.8.30+commit.73712a01.'))throw Error('GLOBAL_V3_SOLC_0_8_30_REQUIRED');
  const input={language:'Solidity',sources,settings:{
   optimizer:{enabled:true,runs:1},viaIR:true,evmVersion:'shanghai',
@@ -94,7 +107,7 @@ function compile(sources,vaultFile,vaultName,bookFile,bookName){
  const errors=(out.errors||[]).filter(item=>item.severity==='error');
  if(errors.length)throw Error(errors.map(item=>item.formattedMessage).join('\n'));
  const artifacts={};
- for(const [file,name] of [[vaultFile,vaultName],['contracts/v3/UnifiedNetworkPlan.sol','UnifiedNetworkPlan'],[bookFile,bookName]]){
+ for(const [file,name] of [[vaultFile,vaultName],[networkFile,networkName],[bookFile,bookName]]){
   const a=out.contracts[file]?.[name];
   if(!a?.evm?.bytecode?.object||!a?.evm?.deployedBytecode?.object)throw Error('UNIFIED_COMPONENT_MISSING_'+name);
   const runtimeBytes=a.evm.deployedBytecode.object.length/2,creationBytes=a.evm.bytecode.object.length/2;
@@ -112,11 +125,23 @@ export function compileSingleCapitalTestnet(){
  return compile(singleCapitalSources(),SINGLE_CAPITAL_FILE,'GlobalV3SingleCapitalTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
+export function compileReferralProfitTestnet(){
+ return compile(singleCapitalSources(true),SINGLE_CAPITAL_FILE,'GlobalV3SingleCapitalTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+}
+
+export function compileDailyCapitalTestnet(){
+ const dir='contracts/v3/daily/';
+ const vault=dir+'GlobalV3DailyCapitalTestnet.sol';
+ return compile({[vault]:{content:source(vault)}},vault,'GlobalV3DailyCapitalTestnet',
+  dir+'DailyCapitalBook.sol','DailyCapitalBook',dir+'DailyCapitalNetwork.sol','DailyCapitalNetwork');
+}
+
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
  try{
   const args=process.argv.slice(2);
-  if(args.length>1||args.length===1&&args[0]!=='--single-capital')throw Error('INVALID_V3_UNIFIED_COMPILE_ARGUMENT');
-  const artifacts=args.length?compileSingleCapitalTestnet():compileUnifiedTestnet();
+  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet};
+  if(args.length>1||args.length===1&&!Object.hasOwn(profiles,args[0]))throw Error('INVALID_V3_UNIFIED_COMPILE_ARGUMENT');
+  const artifacts=(args.length?profiles[args[0]]:compileUnifiedTestnet)();
   const sizes=Object.fromEntries(Object.entries(artifacts).map(([name,a])=>[name,{
    runtimeBytes:a.evm.deployedBytecode.object.length/2,creationBytes:a.evm.bytecode.object.length/2
   }]));

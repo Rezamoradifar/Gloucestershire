@@ -16,7 +16,7 @@ const units=(value,name)=>{
  return value;
 };
 
-export function planUnifiedLotPage({wallet,start,totalLots,lots,now,rateBps,eligible,paused,limit=PAGE_LIMIT}){
+export function planUnifiedLotPage({wallet,start,totalLots,lots,now,rateBps,eligible,paused,limit=PAGE_LIMIT,dailyPlan=false}){
  const who=getAddress(wallet);
  integer(start,'LOT_START');integer(totalLots,'LOT_COUNT');integer(now,'BLOCK_TIME');integer(rateBps,'RATE');
  if(who===ZeroAddress||rateBps>10000||typeof eligible!=='boolean'||typeof paused!=='boolean'||
@@ -31,9 +31,12 @@ export function planUnifiedLotPage({wallet,start,totalLots,lots,now,rateBps,elig
   const principal=units(lot.principal,'LOT_PRINCIPAL');
   const basis=units(lot.basis,'LOT_BASIS');
   const last=integer(lot.lastAccruedAt,'LOT_TIME');
-  if(last>Number.MAX_SAFE_INTEGER-PERIOD)throw Error('INVALID_LOT_TIME');
-  if(!paused&&eligible&&principal>0n&&now>=last+PERIOD){
-   const d=principal*BigInt(rateBps)/BPS,c=basis*BigInt(rateBps)/BPS;
+  if(last>Number.MAX_SAFE_INTEGER-(dailyPlan?86400:PERIOD))throw Error('INVALID_LOT_TIME');
+  const due=dailyPlan?integer(lot.due,'DAILY_DUE'):last+PERIOD;
+  const rate=dailyPlan?integer(lot.bps,'DAILY_RATE'):rateBps;
+  if(dailyPlan&&(due<last+86400||rate>10000))throw Error('INVALID_DAILY_TERMS');
+  if(!paused&&eligible&&principal>0n&&now>=due){
+   const d=principal*BigInt(rate)/BPS,c=basis*BigInt(rate)/BPS;
    if(d+c>0n){daily+=d;compound+=c;dueLots++;}
   }
  }

@@ -6,18 +6,19 @@ import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 
 type Request=Extract<V3Action,{kind:'requestProfit'|'requestPrincipal'|'requestReferral'|'requestNetworkReward'}>;
 type Settlement=Extract<V3Action,{kind:'approveWithdrawal'|'rejectWithdrawal'|'reserveExistingCash'|'payWithdrawal'}>|
- {kind:'cancelWithdrawal';id:number}|{kind:'fundWithdrawal';id:number;gross:bigint;beneficiary:string};
+ {kind:'fundPlanReserve';gross:bigint}|{kind:'cancelWithdrawal';id:number}|{kind:'fundWithdrawal';id:number;gross:bigint;beneficiary:string};
 export type UnifiedWithdrawal=Request|Settlement;
 const requestKind={requestProfit:0,requestPrincipal:1,requestReferral:2,requestNetworkReward:3} as const;
 
 export function isUnifiedWithdrawal(action:V3Action|UnifiedWithdrawal):action is UnifiedWithdrawal{
  return Object.hasOwn(requestKind,action.kind)||['approveWithdrawal','rejectWithdrawal','reserveExistingCash',
-  'fundWithdrawal','payWithdrawal','cancelWithdrawal'].includes(action.kind);
+  'fundWithdrawal','payWithdrawal','cancelWithdrawal','fundPlanReserve'].includes(action.kind);
 }
 export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:string,action:UnifiedWithdrawal,
  config:V3SiteReleaseConfig|null,options:{enabled:boolean;onProgress?:V3TransactionProgressCallback}){
  if(!options.enabled||!config?.unified)throw Error('The unified testnet preview is read-only.');
  const who=getAddress(wallet);
+ if(action.kind==='fundPlanReserve'&&(!config.unified.dailyPlan||action.gross<=0n))throw Error('A positive amount and a verified daily plan are required.');
  if('id' in action&&(!Number.isSafeInteger(action.id)||action.id<0))throw Error('Invalid withdrawal request ID.');
  if('amount' in action&&action.amount<=0n)throw Error('Enter a positive USDT amount.');
  if('positionId' in action&&(!Number.isSafeInteger(action.positionId)||action.positionId<0))throw Error('Invalid position ID.');
@@ -35,15 +36,19 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
     contract.interface.encodeFunctionData(name,args),gas,label,operation,options.onProgress);
   }
   const token=()=>new Contract(V3_TEST_TOKEN,V3_TEST_TOKEN_ABI,session.provider);
-  if(action.kind==='fundWithdrawal'){
-   const {id,gross,beneficiary}=action;
+  if(action.kind==='fundWithdrawal'||action.kind==='fundPlanReserve'){
+   const funding=action,gross=funding.gross;
    async function checkFunding(){
     const {vault,options:at}=session;
-    const [row,role,balance,allowance]=await Promise.all([vault.withdrawalOf(id,at),vault.FUNDER_ROLE(at),
+    const [role,balance,allowance]=await Promise.all([vault.FUNDER_ROLE(at),
      token().balanceOf(who,at),token().allowance(who,config!.address,at)]);
     if(!await vault.hasRole(role,who,at))throw Error('This wallet does not hold the test funding role.');
-    if(Number(row.status)!==1||BigInt(row.gross)!==gross||getAddress(row.beneficiary)!==getAddress(beneficiary)||
-       gross<=0n||BigInt(balance)<gross)throw Error('Funding balance, approved request or beneficiary does not match the review.');
+    if(gross<=0n||BigInt(balance)<gross)throw Error('The funding wallet has insufficient test tokens.');
+    if(funding.kind==='fundWithdrawal'){
+     const row=await vault.withdrawalOf(funding.id,at);
+     if(Number(row.status)!==1||BigInt(row.gross)!==gross||getAddress(row.beneficiary)!==getAddress(funding.beneficiary))
+      throw Error('The approved request or beneficiary does not match the review.');
+    }
     return BigInt(allowance);
    }
    let allowance=await checkFunding();
@@ -62,8 +67,8 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
   if('positionId' in action&&BigInt(await vault.reinvestmentPositionPlusOne(who,session.options))===BigInt(action.positionId)+1n)
    throw Error('Select the reinvestment additions page to request profit or principal from that position.');
   const row='id' in action?await vault.withdrawalOf(action.id,session.options):null;
-  const args='id' in action?[action.id]:'positionId' in action?[action.positionId,action.amount]:[action.amount];
-  const receipt=await submit(vault,action.kind,args,'Test withdrawal');
+  const args=action.kind==='fundPlanReserve'?[action.gross]:'id' in action?[action.id]:'positionId' in action?[action.positionId,action.amount]:[action.amount];
+  const receipt=await submit(vault,action.kind,args,action.kind==='fundPlanReserve'?'Fund plan reserve':'Test withdrawal');
   try{
    const logs=receipt.logs.flatMap(log=>{
     if(getAddress(log.address)!==config.address)return [];
@@ -72,7 +77,9 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
    function find(name:string,match:(event:LogDescription)=>boolean){
     if(logs.filter(event=>event.name===name&&match(event)).length!==1)throw Error('Withdrawal event mismatch.');
    }
-   if('amount' in action){
+   if(action.kind==='fundPlanReserve'){
+    find('PlanReserveFunded',({args:a})=>getAddress(a.funder)===who&&a.amount===action.gross);
+   }else if('amount' in action){
     const kind=requestKind[action.kind],fee=action.amount*(kind===1?3000n:300n)/10000n;
     find('WithdrawalRequested',({args:a})=>getAddress(a.user)===who&&Number(a.kind)===kind&&a.gross===action.amount&&a.fee===fee);
     // The canonical transaction, including its exact position, was checked by submitVerified.

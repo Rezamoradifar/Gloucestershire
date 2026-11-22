@@ -40,7 +40,7 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
  it('V3 money reads require verified bytecode and do not import old V2 contract state',()=>{
   const code=file('v3-chain.ts');
   for(const required of [
-   'v3ParseReleaseConfig','v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified),startReader,deadlineAt)',
+   'v3ParseReleaseConfig','v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified),startReader,deadlineAt,minimumBlock)',
    'readVerifiedV3Snapshot(session,wallet,config!',
    'const selection=readWalletSelection(walletProvider)',
    'Number(BigInt(String(chain)))!==V3_TESTNET_CHAIN_ID',

@@ -47,6 +47,16 @@ describe('unified reinvestment position',()=>{
   expect(html).toContain('Addition #1');expect(html).toContain('Addition #2');
   expect(html).not.toContain('separate on-chain positions');
  });
+ it('reads daily maturity from the same verified block and skips inactive days',async()=>{
+  const f=fixture();
+  f.vault.nextAccrual=async(owner,last,options)=>{
+   expect(owner).toBe(wallet);expect(options.blockTag).toBe(50);return {due:last+3n*86400n};
+  };
+  const page=await readUnifiedPositionPage(f.vault,f.book,wallet,1,50,time,0,2,86400);
+  expect(page.lots.every(lot=>lot.nextAccrualAt===lot.lastAccruedAt+3*86400)).toBe(true);
+  f.vault.nextAccrual=async(_owner,last)=>({due:last+1n});
+  await expect(readUnifiedPositionPage(f.vault,f.book,wallet,1,50,time,0,2,86400)).rejects.toThrow(/maturity/);
+ });
  it('prepares only page-backed amounts and enforces cooldown and the profit cap',async()=>{
   const f=fixture(),page=await readUnifiedPositionPage(f.vault,f.book,wallet,1,50,time,0,2);
   expect(prepareUnifiedPageAction(page,account,'reinvest',E('4'))).toEqual({method:'reinvestFromPage',args:[1,E('4'),0,2]});

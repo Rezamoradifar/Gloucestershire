@@ -205,3 +205,28 @@
 .gv3-transaction-review dl {font-size:.9rem}
 .gv3-transaction-review dt {font-weight:700}
 .gv3-transaction-review dd {margin:0 0 .65rem}
+
+.gv3-team-directory h2{margin:0;font-size:clamp(1.3rem,3vw,1.65rem)}
+.gv3-team-directory .gv2-panel-head,.gv3-team-directory li>div{display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap}
+.gv3-team-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem;margin:1rem 0}
+.gv3-team-totals div,.gv3-team-directory li{padding:.85rem;border:1px solid #37444c;border-radius:.85rem;background:#11191f}
+.gv3-team-totals dt,.gv3-team-directory small{color:#bdcbce;font-size:.85rem}
+.gv3-team-totals dd{margin:.3rem 0 0;font-size:1.3rem;font-weight:700;color:#f1dba8;font-variant-numeric:tabular-nums}
+.gv3-team-directory ul{list-style:none;padding:0;display:grid;gap:.65rem}
+.gv3-team-directory li{display:grid;gap:.4rem;min-width:0;overflow-wrap:anywhere}
+.gv3-team-directory li a{color:#a9d9ed;text-decoration:underline;text-underline-offset:.16em}
+.gv3-team-directory li b{font-size:.9rem}.gv3-team-directory .gv3-team-active{color:#9fe5bf}
+
+.gv3-referral-schedule table {
+ width:100%; border-collapse:collapse; table-layout:fixed; white-space:normal;
+ font-size:clamp(.78rem,2.6vw,.96rem); font-variant-numeric:tabular-nums;
+}
+.gv3-referral-schedule th,.gv3-referral-schedule td {
+ padding:.65rem .22rem; border-bottom:1px solid #374352; text-align:center;
+}
+.gv3-referral-schedule th:first-child { width:38%; text-align:left; }
+.gv3-referral-schedule th { background:transparent; color:#e2eaf2; font-weight:600; }
+.gv3-referral-schedule thead th { color:#ecd099; }
+.gv3-referral-schedule tbody td { color:#b3e9ce; font-weight:650; }
+.gv3-referral-example { border-inline-start:3px solid #87cbb5; padding-inline-start:.75rem; }
+.gv3-referral-example strong,.gv3-referral-example span { display:block; }

@@ -37,11 +37,17 @@ describe('wallet-specific confirmed V3 activity',()=>{
   const page=await queryV3HistoryWindow(src.provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);
   expect(page.items.map(item=>item.title)).toEqual(['Withdrawal paid','Daily claim recorded','Test-token deposit']);
   expect(page.items[0].value).toBe('0.97 USDT');
-  expect(page.items[1].detail).toContain('Profit-on-profit 0.02 USDT');
+  expect(page.items[1].detail).toContain('Personal compound 0.02 USDT');
   expect(page.items[1].value).toBe('1.02 USDT');
   expect(page.items[2].detail).toContain('Routed to designated wallets');
   expect(src.getLogs.mock.calls[0][0].topics[1]).toBe(zeroPadValue(wallet,32));
   expect(src.getLogs.mock.calls[1][0].topics[2]).toBe(zeroPadValue(wallet,32));
+ });
+
+ it('identifies the member and referral level for each commission credit',async()=>{
+  const referral=log('ReferralClaimAccrued',[wallet,other,2,to('0.35')],4000,0);
+  const page=await queryV3HistoryWindow(source([referral]).provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);
+  expect(page.items[0]).toMatchObject({title:'Referral commission recorded',value:'0.35 USDT',detail:'Level 2 · Member 0x333333…333333'});
  });
 
  it('records only approvals to this contract and separates network details from claims',async()=>{

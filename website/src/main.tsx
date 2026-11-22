@@ -9,9 +9,9 @@ import ThemeSwitch from './ThemeSwitch';
 import Root from './Root';
 import {migrateGlobalV2BrowserOnce} from './v2-cache-cleanup';
 import {migrateGlobalV3BrowserOnce} from './v3-browser-cleanup';
-import {V3_HOURLY_TEST} from './v3-site-config';
+import {V3_DAILY_PLAN,V3_HOURLY_TEST} from './v3-site-config';
 document.documentElement.dataset.appStarted='true';
-if(!V3_HOURLY_TEST){
+if(!V3_HOURLY_TEST&&!V3_DAILY_PLAN){
  if(import.meta.env.VITE_V3_PRIMARY_DASHBOARD==='verified-testnet')void migrateGlobalV3BrowserOnce();
  else void migrateGlobalV2BrowserOnce();
 }

@@ -6,9 +6,9 @@ import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 const events=new Interface(V3_ABI);
 const firstAccount=['DepositRouted','DailyClaimAccrued','ReferralClaimAccrued',
  'NetworkClaimAccrued','ProfitReinvested','CheckIn','StatusChanged',
- 'RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned'];
+ 'RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned','CyclePrepared','CycleEarned'];
 const secondAccount=['WithdrawalRequested','WithdrawalPaid','NetworkVolumeQueued'];
-const networkFirst=['RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned'];
+const networkFirst=['RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned','CyclePrepared','CycleEarned'];
 const networkSecond=['NetworkVolumeQueued'];
 const tokenEvents=new Interface(['event Approval(address indexed owner,address indexed spender,uint256 value)']);
 const windowSize=2000;
@@ -130,9 +130,14 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
    case 'DailyClaimAccrued':{
     const daily=BigInt(a.personal),compound=BigInt(a.compounded),total=BigInt(a.total);
     if(daily+compound!==total)throw Error('V3 daily claim does not reconcile.');
-    category='earnings';title='Daily claim recorded';detail='Position #'+number(BigInt(a.positionId))+' · Daily '+amount(daily)+' · Profit-on-profit '+amount(compound);value=amount(total);break;
+    category='earnings';title='Daily claim recorded';detail='Position #'+number(BigInt(a.positionId))+' · Daily '+amount(daily)+' · Personal compound '+amount(compound);value=amount(total);break;
    }
-   case 'ReferralClaimAccrued':category='earnings';title='Referral claim recorded';detail='Level '+a.level.toString()+' · Claim, not a wallet payment';value=amount(BigInt(a.amount));break;
+   case 'ReferralClaimAccrued':{
+    const source=getAddress(a.source);
+    category='earnings';title='Referral commission recorded';
+    detail='Level '+a.level.toString()+' · Member '+source.slice(0,8)+'…'+source.slice(-6);
+    value=amount(BigInt(a.amount));break;
+   }
    case 'NetworkClaimAccrued':category='earnings';title='Network claim recorded';detail='Group #'+number(BigInt(a.group))+' · Claim, not a wallet payment';value=amount(BigInt(a.amount));break;
    case 'ProfitReinvested':category='earnings';title='Profit reinvested';detail='Position #'+number(BigInt(a.fromPosition))+' to #'+number(BigInt(a.newPositionId));value=amount(BigInt(a.amount));break;
    case 'CheckIn':title='Account check-in';detail='Confirmed eligibility action';break;
@@ -141,6 +146,8 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
    case 'NetworkVolumeQueued':title='Network volume queued';detail='Network job #'+number(BigInt(a.job))+' · Processing can continue separately';value=formatV3Amount(BigInt(a.usd))+' test USD';break;
    case 'RewardGroupCreated':title='Network reward group created';detail='Group #'+number(BigInt(a.group))+' · '+a.branches.length+' branches';break;
    case 'RewardBranchesAdded':title='Network branches added';detail='Group #'+number(BigInt(a.group))+' · '+a.branches.length+' branches';break;
+   case 'CyclePrepared':title='Reward cycle prepared';detail='Group #'+number(BigInt(a.group))+' · Cycle '+number(BigInt(a.cycle));value=formatV3Amount(BigInt(a.preparedUsd))+' test USD volume';break;
+   case 'CycleEarned':category='earnings';title='Reward cycle completed';detail='Group #'+number(BigInt(a.group))+' · Cycle '+number(BigInt(a.cycle));value=amount(BigInt(a.rewardUsd));break;
    case 'NetworkRewardPrepared':title='Network reward prepared';detail='Group #'+number(BigInt(a.group))+' · Stage '+number(BigInt(a.stage))+' · Not a wallet payment';value=formatV3Amount(BigInt(a.preparedUsd))+' test USD volume';break;
    case 'NetworkRewardEarned':category='earnings';title='Network milestone completed';detail='Group #'+number(BigInt(a.group))+' · Stage '+number(BigInt(a.stage))+' · Included in the network claim';value=formatV3Amount(BigInt(a.rewardUsd))+' test USD';break;
    case 'WithdrawalRequested':category='withdrawals';title='Withdrawal requested';detail='Request #'+number(BigInt(a.id))+' · Approval and funding are separate';value=amount(BigInt(a.gross));break;

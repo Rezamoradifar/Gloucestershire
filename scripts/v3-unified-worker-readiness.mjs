@@ -3,7 +3,7 @@ import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {getAddress, ZeroAddress} from 'ethers';
 
-import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_PROFILE} from './v3-unified-release-pins.mjs';
 
 export function checkWorkerIdentity(ready, {sha, digest, vault}) {
   if (ready?.chainId !== 97 || ready.sourceSha !== sha || ready.proofSha256 !== digest ||
@@ -29,7 +29,7 @@ export function verifyActiveWorker(expected,profile=UNIFIED_PROFILE) {
   } finally {
     fs.closeSync(fd);
   }
-  if (ready.gasReady === false && profile !== SINGLE_CAPITAL_PROFILE)
+  if (ready.gasReady === false && profile === UNIFIED_PROFILE)
     throw Error('UNIFIED_SITE_WORKER_NEEDS_TEST_GAS');
   execFileSync('systemctl', ['is-active', '--quiet', profile.timer], {stdio: 'ignore'});
   return ready;

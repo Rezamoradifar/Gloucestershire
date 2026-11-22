@@ -1,5 +1,6 @@
 // Read-only snapshot measurement. This does not enable a keeper, predict future
 // demand, guarantee completion time, or recover periods missed during outages.
+import {DAILY_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
 import {scanUnifiedAccrual} from './scan-v3-unified-accrual.mjs';
 import {verifyUnifiedDeployment,recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 
@@ -9,7 +10,7 @@ const isStart=c=>c.member===0&&c.position===0&&c.lot===0;
 // The caller must pin vault/book reads to one validated canonical block and
 // recheck that block after this function. Partial scans are never extrapolated.
 export async function measureUnifiedSweepSnapshot({vault,book,blockNumber,blockTimestamp,
- maxTotalWork=10000,lotPageSize=8}){
+ maxTotalWork=10000,lotPageSize=8,dailyPlan=false}){
  if(!Number.isSafeInteger(maxTotalWork)||maxTotalWork<1||maxTotalWork>100000||
     !Number.isSafeInteger(lotPageSize)||lotPageSize<1||lotPageSize>8)
   throw Error('INVALID_UNIFIED_SWEEP_LIMIT');
@@ -19,7 +20,7 @@ export async function measureUnifiedSweepSnapshot({vault,book,blockNumber,blockT
   if(budget===0)return {state:'SCAN_LIMIT_REACHED',work,proposals,pages,members,
    complete:false,transactionSent:false};
   const plan=await scanUnifiedAccrual({vault,book,blockNumber,blockTimestamp,cursor,
-   maxWork:budget,maxResults:budget,lotPageSize});
+   maxWork:budget,maxResults:budget,lotPageSize,dailyPlan});
   pages++;
   if(plan.paused)return {state:'PAUSED',work,proposals,pages,complete:false,transactionSent:false};
   if(members!==undefined&&plan.members!==members)throw Error('UNIFIED_SWEEP_SNAPSHOT_INCONSISTENT');
@@ -35,10 +36,11 @@ export async function measureUnifiedSweepSnapshot({vault,book,blockNumber,blockT
 // Independent deployment proof and canonical-block verification are mandatory.
 export async function inspectUnifiedSweepCapacity({provider,proof,maxTotalWork=10000,lotPageSize=8,makeContract}){
  const verified=await verifyUnifiedDeployment(provider,proof,makeContract?{makeContract}:{});
+ const dailyPlan=verified.proof.status===DAILY_CAPITAL_PROFILE.status;
  const snapshot=await measureUnifiedSweepSnapshot({vault:verified.vault,book:verified.book,
-  blockNumber:verified.block.number,blockTimestamp:verified.block.timestamp,maxTotalWork,lotPageSize});
+  blockNumber:verified.block.number,blockTimestamp:verified.block.timestamp,maxTotalWork,lotPageSize,dailyPlan});
  await recheckUnifiedBlock(provider,verified.block);
  return {...snapshot,chainId:97,vault:verified.proof.vault,block:verified.block,
-  periodSeconds:3600,keeperReady:false,canGuaranteeTimelyCredits:false,
-  reason:'Snapshot demand is not a future capacity guarantee; missed periods are not backfilled.'};
+  periodSeconds:dailyPlan?86400:3600,keeperReady:false,canGuaranteeTimelyCredits:false,
+  reason:dailyPlan?'Eligible daily periods can be recorded after delays. A snapshot cannot guarantee future keeper capacity.':'Snapshot demand is not a future capacity guarantee; missed periods are not backfilled.'};
 }

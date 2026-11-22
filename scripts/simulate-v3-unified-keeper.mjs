@@ -2,6 +2,7 @@
 // The future sender must repeat every check at send time, persist its nonce and
 // any returned hash, and stop if a broadcast or receipt is unresolved.
 import {getAddress,parseEther,ZeroAddress} from 'ethers';
+import {DAILY_CAPITAL_PROFILE} from './v3-unified-release-pins.mjs';
 import {verifyUnifiedDeployment,recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 
 const MAX_GAS=1500000n,MAX_GAS_PRICE=100000000000n;
@@ -28,7 +29,8 @@ export async function simulateUnifiedAccrual({provider,proof,candidate,operator,
  if((await Promise.all(roles.map(role=>vault.hasRole(role,who)))).some(Boolean))
   throw Error('USE_UNPRIVILEGED_TESTNET_KEEPER');
  const [paused,eligible,groupPlusOne]=await Promise.all([
-  vault.paused(),vault.isEligible(member),vault.reinvestmentPositionPlusOne(member)
+  vault.paused(),verified.proof.status===DAILY_CAPITAL_PROFILE.status?
+   vault.canSettleEarnedDays(member):vault.isEligible(member),vault.reinvestmentPositionPlusOne(member)
  ]);
  if(paused||!eligible)throw Error('UNIFIED_ACCOUNT_NOT_READY');
  const group=BigInt(groupPlusOne)===BigInt(candidate.positionId)+1n;

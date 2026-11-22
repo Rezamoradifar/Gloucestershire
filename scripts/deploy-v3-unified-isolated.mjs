@@ -5,18 +5,17 @@ import path from 'node:path';
 import {hostname} from 'node:os';
 import {createHash,randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {Contract,ContractFactory,JsonRpcProvider,Transaction,Wallet,getAddress,getCreateAddress,keccak256} from 'ethers';
-import {compileUnifiedTestnet,compileSingleCapitalTestnet} from './compile-global-v3-unified-testnet.mjs';
-import {planUnifiedDeployment} from './v3-unified-deploy-preflight.mjs';
+import {Contract,ContractFactory,Transaction,Wallet,getAddress,getCreateAddress,keccak256} from 'ethers';
+import {planUnifiedDeployment,deploymentArtifact} from './v3-unified-deploy-preflight.mjs';
 import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {waitV3DeploymentReceipt} from './v3-deploy-receipt-poll.mjs';
 import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
-import {withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
+import {createUnifiedRpcProvider,withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
 export {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 
 import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_DEPLOYER,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER,
- UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
+ UNIFIED_PROFILE,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 
 const DEPLOYER=getAddress(UNIFIED_DEPLOYER);
 const RPCS=new Set(['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com']);
@@ -54,7 +53,7 @@ async function verifyPrivateProofFile(provider,profile) {
 }
 
 export async function deployUnifiedIsolated({provider,signer,directory,expectedDeployer=DEPLOYER,
- profile=UNIFIED_PROFILE,compile=profile===SINGLE_CAPITAL_PROFILE?compileSingleCapitalTestnet:compileUnifiedTestnet,
+ profile=UNIFIED_PROFILE,compile=deploymentArtifact(profile).compile,
  waitReceipt=waitV3DeploymentReceipt}){
  if(!(signer instanceof Wallet)||signer.provider!==provider||
     getAddress(await signer.getAddress())!==getAddress(expectedDeployer))
@@ -63,7 +62,7 @@ export async function deployUnifiedIsolated({provider,signer,directory,expectedD
  try{
   if(journal.read()||fs.existsSync(path.join(directory,'deployment-proof.json')))
    throw Error('UNIFIED_PREVIOUS_DEPLOYMENT_NEEDS_REVIEW');
-  const artifacts=compile(),artifact=artifacts[profile===SINGLE_CAPITAL_PROFILE?'GlobalV3SingleCapitalTestnet':'GlobalV3UnifiedTestnet'];
+  const artifacts=compile(),artifact=artifacts[deploymentArtifact(profile).name];
   const plan=await planUnifiedDeployment({provider,from:expectedDeployer,profile,compile:()=>artifacts});
   if(plan.initcodeHash.toLowerCase()!==profile.initcodeHash)
    throw Error('UNIFIED_REVIEWED_INITCODE_HASH_MISMATCH');
@@ -186,12 +185,14 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1
    throw Error('UNIFIED_ARGUMENTS_EXPECT_MODE_AND_ALLOWED_RPC');
   }
   const profile=unifiedProfileForFlag(flag),directory=profile.stateDirectory;
-  if(mode!=='--verify-existing')provider=new JsonRpcProvider(rpc,undefined,{batchMaxCount:1,cacheTimeout:-1});
+  if(mode==='--deploy-testnet'||mode==='--recover-existing')provider=createUnifiedRpcProvider(rpc);
   if(mode==='--verify-existing') {
    const digest=await withUnifiedReadRpc(rpc,'existing-proof',reader=>verifyPrivateProofFile(reader,profile));
    console.log('UNIFIED_DEPLOYMENT_PROOF_SHA256='+digest);
   } else if(mode==='--check') {
-   const plan=await planUnifiedDeployment({provider,from:DEPLOYER,profile});
+   const artifacts=deploymentArtifact(profile).compile();
+   const plan=await withUnifiedReadRpc(rpc,'pre-deploy-check',reader=>
+    planUnifiedDeployment({provider:reader,from:DEPLOYER,profile,compile:()=>artifacts}));
    if(plan.initcodeHash!==profile.initcodeHash||!plan.tokenRuntimeIndependentlyVerified) {
     throw Error('UNIFIED_RELEASE_PIN_MISMATCH');
    }
@@ -204,7 +205,7 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1
    if(process.getuid()!==0||hostname().split('.')[0]!=='vps-luna-2585') {
     throw Error('UNIFIED_SERVER_SIGNER_REQUIRES_GLOBAL_VPS');
    }
-   // The two profiles may use the same dedicated TESTNET gas signer.
+   // The testnet profiles share a dedicated gas signer.
    const lock=openUnifiedJournal('/var/lib/globaldroptrade/v3-testnet-deploy-lock');
    try{
     const result=await deployUnifiedIsolated({provider,signer:readServerSigner(provider),directory,profile});

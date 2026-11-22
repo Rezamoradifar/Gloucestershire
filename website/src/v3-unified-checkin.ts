@@ -23,7 +23,9 @@ export async function sendV3UnifiedCheckIn(walletProvider:Eip1193Provider,wallet
    vault.users(who,session.options),vault.paused(session.options),vault.ACCRUAL_PERIOD(session.options)
   ]);
   if(!user.registered||user.suspended||paused)throw Error('This test account cannot check in.');
-  if(BigInt(period)!==3600n||!Number.isSafeInteger(block.timestamp)||block.timestamp<0)
+  if(config.unified.dailyPlan&&(user.capital<10n*10n**18n||(user.capital>50000n*10n**18n&&!user.vipKyc)))
+   throw Error('Check-in requires 10 test USDT of principal and VIP verification above 50,000.');
+  if(BigInt(period)!==(config.unified.dailyPlan?86400n:3600n)||!Number.isSafeInteger(block.timestamp)||block.timestamp<0)
    throw Error('The verified check-in period is invalid.');
   const previous=BigInt(user.lastCheckIn);
   if(previous!==0n&&BigInt(block.timestamp)<previous+3600n)

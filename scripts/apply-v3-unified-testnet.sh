@@ -68,7 +68,7 @@ apply_release() {
   local -a publish=(bash scripts/install-v3-unified-test-site.sh "${profile[@]}" --install-prepared "$sha" "$proof")
   if [[ -e $proof || -L $proof ]]; then
     echo UNIFIED_RECHECKING_EXISTING_DEPLOYMENT
-  elif [[ $route_name == single-capital-test && ${3:-} != --deploy-testnet ]]; then
+  elif [[ $route_name != unified-test && ${3:-} != --deploy-testnet ]]; then
     fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
   elif [[ -e $journal || -L $journal ]]; then
     echo UNIFIED_RECOVERING_PREVIOUS_DEPLOYMENT
@@ -92,7 +92,7 @@ apply_release() {
   esac
   if [[ ${3:-} == --primary ]]; then
     (( worker_status == 0 )) || return "$worker_status"
-    node scripts/publish-v3-single-capital-primary.mjs --install "$sha" "$digest" "$deployment_rpc" || return $?
+    node scripts/publish-v3-single-capital-primary.mjs --install "$sha" "$digest" "$deployment_rpc" "${profile[@]}" || return $?
     echo 'GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE=https://globaldroptrade.com/#dashboard'
     return 0
   fi
@@ -107,7 +107,11 @@ apply_release() {
 install_and_apply() {
   local work=$1 sha=$2 route_name=$3 proof=$4 option=$5
   local -a profile=()
-  if [[ $route_name == single-capital-test ]]; then profile=(--single-capital); fi
+  case $route_name in
+    single-capital-test) profile=(--single-capital) ;;
+    daily-capital-test) profile=(--daily-capital) ;;
+    referral-profit-test) profile=(--referral-profit) ;;
+  esac
   # Both locked dependency trees, the fresh npm cache and build output use this filesystem.
   check_capacity "$work" "$build_inodes" 2097152
   check_capacity /var/lib 2000 65536
@@ -167,6 +171,16 @@ main() {
       deployment_proof=/var/lib/globaldroptrade/v3-single-capital-testnet/deployment-proof.json
       if [[ ${3:-} != --deploy-testnet ]]; then
         [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+      fi
+      ;;
+    2:--daily-capital:|3:--daily-capital:--deploy-testnet|2:--referral-profit:|3:--referral-profit:--deploy-testnet|3:--referral-profit:--primary)
+      route_name=${2#--}-test
+      deployment_proof=/var/lib/globaldroptrade/v3-${2#--}-testnet/deployment-proof.json
+      if [[ ${3:-} != --deploy-testnet ]]; then
+        [[ -s $deployment_proof && ! -L $deployment_proof ]] || {
+          [[ $route_name != daily-capital-test ]] || fail DAILY_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+          fail REFERRAL_PROFIT_VERIFIED_DEPLOYMENT_REQUIRED
+        }
       fi
       ;;
     *) fail UNIFIED_APPLY_EXPECTED_PINNED_SHA ;;

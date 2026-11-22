@@ -29,8 +29,26 @@ export const SINGLE_CAPITAL_PROFILE = Object.freeze({
  initcodeHash:'0xff83d9ff867e0c683d44ad1949cbf430871f612c232ef2a881ec9d24ac548c5b'
 });
 
+export const DAILY_CAPITAL_PROFILE = Object.freeze({
+ status:'VERIFIED_DAILY_CAPITAL_TESTNET_ONLY', mode:'daily-capital-testnet', route:'/daily-capital-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-daily-capital-testnet',
+ gasKey:'/etc/globaldroptrade/v3-daily-capital-keeper-testnet-gas-only.key',
+ timer:'global-v3-daily-capital-keeper-testnet.timer',
+ initcodeHash:'0x0ea45b0a8db193a745cb7ac79a30698bfc9c65d5806d049d04a23a790c96db00'
+});
+
+export const REFERRAL_PROFIT_PROFILE = Object.freeze({
+ status:'VERIFIED_REFERRAL_PROFIT_TESTNET_ONLY', mode:'referral-profit-testnet', route:'/referral-profit-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-referral-profit-testnet',
+ gasKey:'/etc/globaldroptrade/v3-referral-profit-keeper-testnet-gas-only.key',
+ timer:'global-v3-referral-profit-keeper-testnet.timer',
+ initcodeHash:'0x460436d40acf99db439a1fe592ae6ccf26d6eca7a04c934122f77e39e2ecf05f'
+});
+
 export function unifiedProfileForFlag(flag) {
  if(flag===undefined)return UNIFIED_PROFILE;
+ if(flag==='--referral-profit')return REFERRAL_PROFIT_PROFILE;
+ if(flag==='--daily-capital')return DAILY_CAPITAL_PROFILE;
  if(flag==='--single-capital')return SINGLE_CAPITAL_PROFILE;
  throw Error('UNIFIED_RELEASE_PROFILE_INVALID');
 }

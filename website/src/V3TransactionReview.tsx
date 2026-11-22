@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 
-type Review={title:string;description:string;wallet:string;contract:string};
+type Review={title:string;description:string;wallet:string;contract:string;confirmLabel?:string};
 
 export function useV3TransactionReview(){
  const [review,setReview]=useState<Review|null>(null);
@@ -37,7 +37,7 @@ export function V3TransactionReview({review,onFinish}:{review:Review;onFinish:(a
   <dl><dt>Connected wallet</dt><dd>{review.wallet}</dd><dt>Test contract</dt><dd>{review.contract}</dd></dl>
   <div className="dialog-actions">
    <button type="button" className="small-button" autoFocus onClick={()=>onFinish(false)}>Cancel</button>
-   <button type="button" className="primary-button" onClick={()=>onFinish(true)}>Continue to wallet</button>
+   <button type="button" className="primary-button" onClick={()=>onFinish(true)}>{review.confirmLabel??'Continue to wallet'}</button>
   </div>
  </dialog>;
 }

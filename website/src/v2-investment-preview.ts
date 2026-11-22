@@ -3,18 +3,13 @@
 // repayment of gross user principal. These calculations are an isolated demo,
 // not an authorization to solicit funds or a promise of daily returns.
 import {parseUnits} from 'ethers';
+import {REFERRAL_BPS} from './referral-rates';
 
 export type V2PreviewAsset='USDT'|'BNB';
 export type V2Plan='Starter'|'Basic'|'Growth'|'Pro'|'VIP';
 export const V2_PLAN_NAMES=['Starter','Basic','Growth','Pro','VIP'] as const;
 export const V2_PLAN_DAILY_BPS=[50n,70n,90n,110n,130n] as const;
-export const V2_REFERRAL_BPS=[
- [800n,400n,200n,0n],
- [1000n,500n,300n,0n],
- [1200n,600n,400n,0n],
- [1400n,700n,500n,0n],
- [1600n,800n,600n,400n]
-] as const;
+export const V2_REFERRAL_BPS=REFERRAL_BPS;
 export const V2_LOCK_DAYS=90;
 export const V2_MINIMUM_USD=10n*10n**18n;
 export const V2_VIP_THRESHOLD=50_000n*10n**18n;

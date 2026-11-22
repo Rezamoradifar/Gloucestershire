@@ -13,7 +13,7 @@ TX = '0x' + 'b' * 64
 SHA = '1' * 40
 
 
-def exercise(fail_asset=False, mode='--install', single_capital=False, bad_proof=False):
+def exercise(fail_asset=False, mode='--install', primary_profile=None, bad_proof=False):
     with tempfile.TemporaryDirectory(prefix='v3-primary-test-') as temp:
         tmp = Path(temp)
         repo, tools, site = tmp / 'repo', tmp / 'bin', tmp / 'site'
@@ -29,10 +29,10 @@ def exercise(fail_asset=False, mode='--install', single_capital=False, bad_proof
         html = '<script type="module" crossorigin src="./assets/index-new12345.js"></script>'
         (repo / 'website/dist/index.html').write_text(html)
         (repo / 'website/dist/assets/index-new12345.js').write_text('V3Dashboard-new12345.js Follow your one-hour test cycle')
-        address = '0x' + '3' * 40 if single_capital else ADDR
+        address = '0x' + '3' * 40 if primary_profile else ADDR
         (repo / 'website/dist/assets/V3Dashboard-new12345.js').write_text(
             f'{address} {RUNTIME} {TX} 0xA98D8d3709f5D3730BAD5d76C334731784e7CF07 '
-            'ONE-HOUR BNB TESTNET CONTRACT. Test tokens only. single-capital-testnet')
+            f"ONE-HOUR BNB TESTNET CONTRACT. Test tokens only. {primary_profile or ''}")
         shutil.copy(HERE / 'scripts/check-v3-hourly-primary-bundle.py', repo / 'scripts')
         shutil.copy(HERE / 'scripts/check-v3-publish-paths.py', repo / 'scripts')
         shutil.copy(HERE / 'scripts/check-v3-unified-route.py', repo / 'scripts')
@@ -56,11 +56,11 @@ esac
 ''',
             'node': '''#!/bin/bash
 if [[ "$1" == scripts/publish-v3-single-capital-primary.mjs ]]; then
- [[ "$2" == --check-build && "${TEST_BAD_PRIMARY_PROOF:-}" != 1 ]] || exit 7
+ [[ "$2" == --check-build && "${6:-}" == "--${GLOBAL_V3_MAIN_PREPARED_BUILD%-testnet}" && "${TEST_BAD_PRIMARY_PROOF:-}" != 1 ]] || exit 7
  exit 0
 fi
 if [[ "$1" == scripts/verify-v3-hourly-testnet.mjs ]]; then
- [[ "${GLOBAL_V3_MAIN_PREPARED_BUILD:-}" != single-capital-testnet ]] || exit 8
+ [[ -z "${GLOBAL_V3_MAIN_PREPARED_BUILD:-}" ]] || exit 8
  echo "export VITE_V3_CONTRACT_ADDRESS=$VITE_V3_CONTRACT_ADDRESS"
  echo "export VITE_V3_RUNTIME_HASH=$VITE_V3_RUNTIME_HASH"
  echo "export VITE_V3_DEPLOYMENT_TX=$VITE_V3_DEPLOYMENT_TX"
@@ -101,10 +101,10 @@ if [[ "$mime" == 1 ]]; then printf text/javascript; fi
                'VITE_V3_CONTRACT_ADDRESS': address, 'VITE_V3_RUNTIME_HASH': RUNTIME,
                'VITE_V3_DEPLOYMENT_TX': TX, 'TEST_FAIL_ASSET': '1' if fail_asset else '0',
                'TEST_BAD_PRIMARY_PROOF': '1' if bad_proof else '0'}
-        if single_capital:
-            env.update(GLOBAL_V3_MAIN_PREPARED_BUILD='single-capital-testnet',
-                       VITE_V3_UNIFIED_MODE='single-capital-testnet',
-                       VITE_V3_UNIFIED_PRIMARY='single-capital-testnet',
+        if primary_profile:
+            env.update(GLOBAL_V3_MAIN_PREPARED_BUILD=primary_profile,
+                       VITE_V3_UNIFIED_MODE=primary_profile,
+                       VITE_V3_UNIFIED_PRIMARY=primary_profile,
                        GLOBAL_V3_PRIMARY_PROOF_SHA256='c' * 64,
                        GLOBAL_V3_PRIMARY_RPC='https://bsc-testnet-rpc.publicnode.com')
         result = subprocess.run(['/bin/bash', str(repo / 'ubuntu-global-v2-site.sh'), mode],
@@ -135,8 +135,11 @@ if [[ "$mime" == 1 ]]; then printf text/javascript; fi
 exercise(mode='--check')
 exercise(fail_asset=True)
 exercise()
-exercise(mode='--check', single_capital=True)
-exercise(fail_asset=True, single_capital=True)
-exercise(single_capital=True, bad_proof=True)
-exercise(single_capital=True)
+exercise(mode='--check', primary_profile='single-capital-testnet')
+exercise(fail_asset=True, primary_profile='single-capital-testnet')
+exercise(primary_profile='single-capital-testnet', bad_proof=True)
+exercise(primary_profile='single-capital-testnet')
+exercise(primary_profile='referral-profit-testnet', bad_proof=True)
+exercise(primary_profile='referral-profit-testnet', fail_asset=True)
+exercise(primary_profile='referral-profit-testnet')
 print('PASS main-site preflight, asset failure rollback and hourly-test preservation')
