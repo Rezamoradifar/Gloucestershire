@@ -11,7 +11,7 @@ ADDRESS = re.compile(r'^0x[0-9a-fA-F]{40}$')
 HASH = re.compile(r'^0x[0-9a-fA-F]{64}$')
 
 
-def inspect(dist, address, runtime_hash, deployment_tx, single_capital=False, referral_profit=False, manual_reinvest=False):
+def inspect(dist, address, runtime_hash, deployment_tx, single_capital=False, referral_profit=False, manual_reinvest=False, upline_rates=False):
     if not ADDRESS.fullmatch(address) or not HASH.fullmatch(runtime_hash) or not HASH.fullmatch(deployment_tx):
         raise ValueError('INVALID_EXPECTED_CONTRACT_IDENTITY')
     index = (dist / 'index.html').read_text(encoding='utf-8')
@@ -31,6 +31,8 @@ def inspect(dist, address, runtime_hash, deployment_tx, single_capital=False, re
         raise ValueError('HOURLY_TESTNET_DISCLOSURE_MISSING')
     if single_capital and 'single-capital-testnet' not in js:
         raise ValueError('SINGLE_CAPITAL_PROFILE_MISSING')
+    if upline_rates and 'upline-rates-testnet' not in js:
+        raise ValueError('UPLINE_RATES_PROFILE_MISSING')
     if manual_reinvest and 'manual-reinvest-testnet' not in js:
         raise ValueError('MANUAL_REINVEST_PROFILE_MISSING')
     if referral_profit and 'referral-profit-testnet' not in js:
@@ -49,11 +51,12 @@ def main():
     parser.add_argument('--runtime-hash', required=True)
     parser.add_argument('--deployment-tx', required=True)
     parser.add_argument('--single-capital', action='store_true')
+    parser.add_argument('--upline-rates', action='store_true')
     parser.add_argument('--manual-reinvest', action='store_true')
     parser.add_argument('--referral-profit', action='store_true')
     args = parser.parse_args()
     try:
-        print('\n'.join(inspect(args.dist, args.address, args.runtime_hash, args.deployment_tx, args.single_capital, args.referral_profit, args.manual_reinvest)))
+        print('\n'.join(inspect(args.dist, args.address, args.runtime_hash, args.deployment_tx, args.single_capital, args.referral_profit, args.manual_reinvest, args.upline_rates)))
     except (OSError, ValueError) as exc:
         print('V3_HOURLY_PRIMARY_BUNDLE_INVALID=' + str(exc), file=sys.stderr)
         return 1

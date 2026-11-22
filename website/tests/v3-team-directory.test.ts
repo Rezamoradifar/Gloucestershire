@@ -43,6 +43,24 @@ describe('confirmed referral directory',()=>{
   await expect(readV3TeamDirectory(provider,config,root,new AbortController().signal,progress)).rejects.toThrow('block changed');
   expect(progress.mock.calls.every(([chunk])=>chunk.scanned===0&&chunk.members.length===0)).toBe(true);
  });
+ it('quotes each actual relationship on the recipient-rate contract at the directory block',async()=>{
+  const s=source(0);
+  const quote=vi.fn(async(earner:string,depth:number,at:{blockTag:number})=>{
+   expect(at.blockTag).toBe(block);
+   if(earner===addr(17))throw Error('Rate read failed');
+   return earner===addr(16)&&depth===1?1200n:0n;
+  });
+  Object.assign(s.vault,{currentReferralBps:quote});
+  vi.mocked(v3ReadSession).mockResolvedValue(s as never);
+  const unified={uplineRates:true,book:addr(21),network:addr(22),bookRuntimeHash:hash,networkRuntimeHash:hash} as const;
+  const members:TeamMember[]=[];
+  await readV3TeamDirectory(provider,{...config,unified},root,new AbortController().signal,chunk=>members.push(...chunk.members));
+  expect(members.find(m=>m.wallet===addr(16))?.rateBps).toBe(1200);
+  expect(members.find(m=>m.wallet===addr(3))?.rateBps).toBe(0);
+  expect(members.find(m=>m.wallet===addr(17))?.rateBps).toBeNull();
+  expect(quote.mock.calls.map(([,depth])=>depth)).toEqual([1,2,3,4,1,2]);
+  expect(s.vault.referralBps).not.toHaveBeenCalled();
+ });
  it('stops background reads as soon as the wallet view changes',async()=>{
   const controller=new AbortController();controller.abort();
   await expect(readV3TeamDirectory(provider,config,root,controller.signal,vi.fn())).rejects.toThrow();

@@ -50,7 +50,7 @@ export const V3_ABI=[
  'function isEligible(address) view returns(bool)',
  'function nextAccrual(address,uint256) view returns(uint256 due,uint16 bps,uint8 tier)',
  'function tierOf(address) view returns(uint8)',
- 'function referralBps(uint8,uint8) pure returns(uint16)',
+ 'function referralBps(uint8,uint8) pure returns(uint16)','function currentReferralBps(address,uint8) view returns(uint16)',
  'function dailyBps(uint8) view returns(uint16)',
  'function effectiveDailyBps(address) view returns(uint16)',
  'function qualifiedDirects(address) view returns(uint256)',
@@ -199,7 +199,7 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
- singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;
+ singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;
  unifiedWithdrawalPages?:UnifiedPositionPage[];
  withdrawalCoverageError?:string;
  withdrawalPage?:UnifiedPositionPage;
@@ -265,7 +265,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    throw Error('The test contract accrual period was not verified.');
   let network=vault,book:Contract|null=null;
   if(config.unified){
-   const expectedVersion=config.unified.manualReinvest?4n:daily?2n:config.unified.baseProfitReferrals?3n:1n;
+   const expectedVersion=config.unified.uplineRates?5n:config.unified.manualReinvest?4n:daily?2n:config.unified.baseProfitReferrals?3n:1n;
    if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==expectedVersion)
     throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
@@ -509,7 +509,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   canManage:Boolean(canManage),canFund:Boolean(canFund),
   positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,
    withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,
-   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest,uplineRates:config!.unified.uplineRates}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   ...(config!.unified?.keeper?{keeper:{operator:config!.unified.keeper,gasWei:keeperGasWei}}:{}),

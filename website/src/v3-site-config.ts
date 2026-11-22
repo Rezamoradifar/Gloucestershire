@@ -13,8 +13,10 @@ export const V3_DAILY_PLAN=import.meta.env.VITE_V3_UNIFIED_MODE==='daily-capital
 export const V3_SINGLE_CAPITAL_PATH='/single-capital-test/';
 export const V3_REFERRAL_PROFIT_PATH='/referral-profit-test/';
 export const V3_MANUAL_REINVEST_PATH='/manual-reinvest-test/';
-export const V3_MANUAL_REINVEST=import.meta.env.VITE_V3_UNIFIED_MODE==='manual-reinvest-testnet';
-export type V3UnifiedConfig={book:string;bookRuntimeHash:string;network:string;networkRuntimeHash:string;singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;keeper?:string};
+export const V3_UPLINE_RATES_PATH='/upline-rates-test/';
+export const V3_UPLINE_RATES=import.meta.env.VITE_V3_UNIFIED_MODE==='upline-rates-testnet';
+export const V3_MANUAL_REINVEST=V3_UPLINE_RATES||import.meta.env.VITE_V3_UNIFIED_MODE==='manual-reinvest-testnet';
+export type V3UnifiedConfig={book:string;bookRuntimeHash:string;network:string;networkRuntimeHash:string;singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;keeper?:string};
 export type V3SiteReleaseConfig={address:string;runtimeHash:string;deploymentTx:string;unified?:V3UnifiedConfig};
 const hash=(v:unknown):v is string=>typeof v==='string'&&/^0x[a-fA-F0-9]{64}$/.test(v);
 export function v3ParseReleaseConfig(raw:{
@@ -27,7 +29,7 @@ export function v3ParseReleaseConfig(raw:{
  if(address===ZeroAddress||address===V3_OLD_V2_ADDRESS)return null;
  let unified:V3UnifiedConfig|undefined;
  if(raw.unifiedMode!==undefined&&raw.unifiedMode!==''){
-  if((raw.unifiedMode!=='unified-testnet'&&raw.unifiedMode!=='single-capital-testnet'&&raw.unifiedMode!=='daily-capital-testnet'&&raw.unifiedMode!=='referral-profit-testnet'&&raw.unifiedMode!=='manual-reinvest-testnet')||
+  if((raw.unifiedMode!=='unified-testnet'&&raw.unifiedMode!=='single-capital-testnet'&&raw.unifiedMode!=='daily-capital-testnet'&&raw.unifiedMode!=='referral-profit-testnet'&&raw.unifiedMode!=='manual-reinvest-testnet'&&raw.unifiedMode!=='upline-rates-testnet')||
     typeof raw.book!=='string'||!isAddress(raw.book)||
     typeof raw.network!=='string'||!isAddress(raw.network)||!hash(raw.bookRuntimeHash)||!hash(raw.networkRuntimeHash))return null;
   const book=getAddress(raw.book),network=getAddress(raw.network);
@@ -42,7 +44,8 @@ export function v3ParseReleaseConfig(raw:{
    networkRuntimeHash:raw.networkRuntimeHash.toLowerCase(),
    ...(keeper?{keeper}:{}),
    ...(raw.unifiedMode==='daily-capital-testnet'?{singleCapital:true as const,dailyPlan:true as const}:
-    raw.unifiedMode==='manual-reinvest-testnet'?{singleCapital:true as const,baseProfitReferrals:true as const,manualReinvest:true as const}:
+    (raw.unifiedMode==='manual-reinvest-testnet'||raw.unifiedMode==='upline-rates-testnet')?{singleCapital:true as const,baseProfitReferrals:true as const,manualReinvest:true as const,
+     ...(raw.unifiedMode==='upline-rates-testnet'?{uplineRates:true as const}:{})}:
     raw.unifiedMode==='referral-profit-testnet'?{singleCapital:true as const,baseProfitReferrals:true as const}:
     raw.unifiedMode==='single-capital-testnet'?{singleCapital:true as const}:{})});
  }
@@ -50,6 +53,11 @@ export function v3ParseReleaseConfig(raw:{
   address,runtimeHash:raw.runtimeHash.toLowerCase(),deploymentTx:raw.deploymentTx.toLowerCase(),
   ...(unified?{unified}:{})
  });
+}
+
+export function referralReleaseMode(account:Pick<V3UnifiedConfig,'uplineRates'|'manualReinvest'>){
+ if(account.uplineRates)return 'upline-rates-testnet';
+ return account.manualReinvest?'manual-reinvest-testnet':'referral-profit-testnet';
 }
 
 // Wallet writes are restricted to the separately built, verified hourly release.
@@ -60,9 +68,9 @@ export function unifiedWalletEnabled(config:V3SiteReleaseConfig|null,path:string
  const daily=config?.unified?.dailyPlan===true;
  const corrected=config?.unified?.baseProfitReferrals===true;
  const manual=config?.unified?.manualReinvest===true;
- const route=manual?V3_MANUAL_REINVEST_PATH:daily?V3_DAILY_CAPITAL_PATH:corrected?V3_REFERRAL_PROFIT_PATH:config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
+ const route=config?.unified?.uplineRates?V3_UPLINE_RATES_PATH:manual?V3_MANUAL_REINVEST_PATH:daily?V3_DAILY_CAPITAL_PATH:corrected?V3_REFERRAL_PROFIT_PATH:config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
  const root=!daily&&config?.unified?.singleCapital&&(corrected
-  ?unifiedPrimary===(manual?'manual-reinvest-testnet':'referral-profit-testnet')&&page==='/'
+  ?unifiedPrimary===referralReleaseMode(config.unified)&&page==='/'
   :unifiedPrimary==='single-capital-testnet'&&(page==='/'||page==='/hourly-test/'||page==='/hourly-test'));
  return Boolean(config?.unified)&&(daily?!hourly:hourly)&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&
   (root||page===route||page===route.slice(0,-1));

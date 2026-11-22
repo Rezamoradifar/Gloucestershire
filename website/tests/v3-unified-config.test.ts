@@ -112,3 +112,14 @@ it('binds the manual-reinvestment account to its own verified route and rejects 
  expect(()=>networkActionTarget(config,{kind:'createRewardGroup',branches:[base.address]})).toThrow('automatically');
  expect(networkActionTarget(config,{kind:'claimNetworkRewards',group:0,stage:0,count:1})).toBe(base.address);
 });
+
+it('enables recipient-rate wallet actions only on the matching test route or verified primary',()=>{
+ const mode='upline-rates-testnet';
+ const config=v3ParseReleaseConfig({...unified,unifiedMode:mode})!;
+ expect(config.unified).toMatchObject({singleCapital:true,baseProfitReferrals:true,manualReinvest:true,uplineRates:true});
+ const enabled=(path:string,primary='')=>unifiedWalletEnabled(config,path,true,'verified-testnet','verified-isolated-testnet',primary);
+ expect(enabled('/upline-rates-test/')).toBe(true);
+ expect(enabled('/',mode)).toBe(true);
+ expect(enabled('/','manual-reinvest-testnet')).toBe(false);
+ expect(enabled('/manual-reinvest-test/',mode)).toBe(false);
+});

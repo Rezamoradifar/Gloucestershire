@@ -15,7 +15,7 @@ key=$config/v3-unified-keeper-testnet-gas-only.key
 profile=()
 case $#:${2:-} in
   1:) ;;
-  2:--single-capital|2:--daily-capital|2:--referral-profit|2:--manual-reinvest)
+  2:--single-capital|2:--daily-capital|2:--referral-profit|2:--manual-reinvest|2:--upline-rates)
     name=${2#--}
     root=/opt/global-v3-$name-worker
     proof=/var/lib/globaldroptrade/v3-$name-testnet/deployment-proof.json

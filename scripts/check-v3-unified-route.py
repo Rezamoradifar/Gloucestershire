@@ -57,7 +57,7 @@ def check(dist, tmpdir, base_url=ROUTE, resolver=("globaldroptrade.com:443:127.0
 if __name__ == "__main__":
     try:
         args = sys.argv[3:]
-        if args not in ([], ["--single-capital"], ["--daily-capital"], ["--referral-profit"], ["--manual-reinvest"], ["--primary"]):
+        if args not in ([], ["--single-capital"], ["--daily-capital"], ["--referral-profit"], ["--manual-reinvest"], ["--upline-rates"], ["--primary"]):
             raise ValueError("UNIFIED_SITE_ROUTE_INVALID")
         route = "https://globaldroptrade.com/" if args == ["--primary"] else (
             "https://globaldroptrade.com/" + args[0][2:] + "-test/" if args else ROUTE)

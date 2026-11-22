@@ -53,7 +53,16 @@ export const MANUAL_REINVEST_PROFILE = Object.freeze({
  initcodeHash:'0xf79ccaf9274da7d2a04039ab85a17053be3ef6207da2296a7fac722ad9af0b8a'
 });
 
+export const UPLINE_RATES_PROFILE = Object.freeze({
+ status:'VERIFIED_UPLINE_RATES_TESTNET_ONLY', mode:'upline-rates-testnet', route:'/upline-rates-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-upline-rates-testnet',
+ gasKey:'/etc/globaldroptrade/v3-upline-rates-keeper-testnet-gas-only.key',
+ timer:'global-v3-upline-rates-keeper-testnet.timer',
+ initcodeHash:'0x8e89c48076c1b1e7c9bcdde76f37eda12efe5534183e34d97592f32e92b7590a'
+});
+
 export function unifiedProfileForFlag(flag) {
+ if(flag==='--upline-rates')return UPLINE_RATES_PROFILE;
  if(flag===undefined)return UNIFIED_PROFILE;
  if(flag==='--manual-reinvest')return MANUAL_REINVEST_PROFILE;
  if(flag==='--referral-profit')return REFERRAL_PROFIT_PROFILE;

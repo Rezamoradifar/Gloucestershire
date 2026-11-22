@@ -174,6 +174,21 @@ export function compileManualReinvestTestnet(){
  return compile(manualReinvestSources(),SINGLE_CAPITAL_FILE,'GlobalV3SingleCapitalTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
+export function compileUplineRatesTestnet(){
+ const sources=manualReinvestSources();
+ let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'contract GlobalV3SingleCapitalTestnet is','abstract contract GlobalV3SingleCapitalTestnet is');
+ vault=replaceOnce(vault,'SINGLE_CAPITAL_VERSION = 4','SINGLE_CAPITAL_VERSION = 5');
+ vault=replaceOnce(vault,'    function _creditReferrals(address who,uint256 personal) private {',
+  '    function _uplineRate(address earner,address recipient,uint8 level) internal view virtual returns(uint16);\n\n    function _creditReferrals(address who,uint256 personal) private {');
+ vault=replaceOnce(vault,'        uint8 sourceTier=tierOf(who);\n','');
+ vault=replaceOnce(vault,'referralBps(sourceTier,i)','_uplineRate(who,parent,i)');
+ vault=replaceOnce(vault,'if(amount>0&&isEligible(parent)&&(i!=3||tierOf(parent)==4)){','if(amount>0){');
+ sources[SINGLE_CAPITAL_FILE]={content:vault};
+ const file='contracts/v3/GlobalV3UplineRatesTestnet.sol';
+ sources[file]={content:source(file)};
+ return compile(sources,file,'GlobalV3UplineRatesTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+}
+
 export function compileDailyCapitalTestnet(){
  const dir='contracts/v3/daily/';
  const vault=dir+'GlobalV3DailyCapitalTestnet.sol';
@@ -184,7 +199,7 @@ export function compileDailyCapitalTestnet(){
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
  try{
   const args=process.argv.slice(2);
-  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet};
+  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet,'--upline-rates':compileUplineRatesTestnet};
   if(args.length>1||args.length===1&&!Object.hasOwn(profiles,args[0]))throw Error('INVALID_V3_UNIFIED_COMPILE_ARGUMENT');
   const artifacts=(args.length?profiles[args[0]]:compileUnifiedTestnet)();
   const sizes=Object.fromEntries(Object.entries(artifacts).map(([name,a])=>[name,{

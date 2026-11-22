@@ -7,11 +7,11 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {BrowserProvider,Contract,ContractFactory,ZeroAddress,formatUnits,keccak256,parseEther} from 'ethers';
 // The worker and deployer share the root ethers package instance.
 import {Wallet as RootWallet} from '../../node_modules/ethers/lib.esm/index.js';
-import {compileSingleCapitalTestnet,compileManualReinvestTestnet} from '../../scripts/compile-global-v3-unified-testnet.mjs';
+import {compileSingleCapitalTestnet,compileManualReinvestTestnet,compileUplineRatesTestnet} from '../../scripts/compile-global-v3-unified-testnet.mjs';
 import {runUnifiedKeeperCycle} from '../../scripts/run-v3-unified-keeper-cycle.mjs';
 import {deployUnifiedIsolated,verifyUnifiedRelease} from '../../scripts/deploy-v3-unified-isolated.mjs';
 import {planUnifiedPreviewSite} from '../../scripts/v3-unified-site-preview-preflight.mjs';
-import {SINGLE_CAPITAL_PROFILE,MANUAL_REINVEST_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../../scripts/v3-unified-release-pins.mjs';
+import {SINGLE_CAPITAL_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../../scripts/v3-unified-release-pins.mjs';
 import V3AccountWithdrawalForm from '../src/V3AccountWithdrawalForm';
 import V3UnifiedPositionPage from '../src/V3UnifiedPositionPage';
 import {primaryReleaseEnv} from '../../scripts/publish-v3-single-capital-primary.mjs';
@@ -28,7 +28,8 @@ vi.mock('ethers',async importOriginal=>{
 describe('one verified capital account on chain 97',()=>{
  it.each([
   {label:'original',profile:SINGLE_CAPITAL_PROFILE,compile:compileSingleCapitalTestnet,accrued:'34.063',withdrawable:'30.063'},
-  {label:'manual reinvestment',profile:MANUAL_REINVEST_PROFILE,compile:compileManualReinvestTestnet,accrued:'34',withdrawable:'30.0'}
+  {label:'manual reinvestment',profile:MANUAL_REINVEST_PROFILE,compile:compileManualReinvestTestnet,accrued:'34',withdrawable:'30.0'},
+  {label:'upline capital rates',profile:UPLINE_RATES_PROFILE,compile:compileUplineRatesTestnet,accrued:'34',withdrawable:'30.0'}
  ])('$label account deposits, records profit with its keeper, reinvests manually, requests withdrawal and pays the member',
  async({profile,compile,accrued,withdrawable})=>{
   vi.stubEnv('VITE_V3_HOURLY_TEST','isolated-1h');
@@ -63,7 +64,7 @@ describe('one verified capital account on chain 97',()=>{
    await mock.waitForDeployment();
    await eip.request({method:'evm_setAccountCode',params:[UNIFIED_TOKEN,await rpc.getCode(mock.target)]});
    const token=new Contract(UNIFIED_TOKEN,tokenArtifact.abi,deployer);
-   const contract=artifacts.GlobalV3SingleCapitalTestnet;
+   const contract=profile===UPLINE_RATES_PROFILE?artifacts.GlobalV3UplineRatesTestnet:artifacts.GlobalV3SingleCapitalTestnet;
    const waitReceipt=async(provider:any,hash:string)=>{await mine();return provider.getTransactionReceipt(hash);};
    await mine();
    const proof=await deployUnifiedIsolated({provider:rpc,signer:deploySigner,
@@ -176,7 +177,7 @@ describe('one verified capital account on chain 97',()=>{
     value="" kind="profit" onKind={()=>{}} onValue={()=>{}} onSubmit={()=>{}}/>);
    expect(cooldown).toContain('Withdrawal cooldown ends at 2026-11-04 01:40:01 UTC');
    expect(withdrawal.gross).toBe(totals.profit);
-   expect(withdrawal.fee).toBe(totals.profit*(profile===MANUAL_REINVEST_PROFILE?2n:3n)/100n);
+   expect(withdrawal.fee).toBe(totals.profit*(profile===SINGLE_CAPITAL_PROFILE?3n:2n)/100n);
    expect(requested.fee).toBe(withdrawal.fee);
    expect(withdrawal.positionId).toBe(0n);
    expect((await vault.positionOf(wallet,0)).availableProfit).toBe(0n);

@@ -1,7 +1,7 @@
 // Read-only identity check for an operator-pinned, actual chain-97 deployment.
 // This is not a deployer, a migration mechanism or a financial/security audit.
 import {Contract,getAddress,isAddress,keccak256,toQuantity,ZeroAddress} from 'ethers';
-import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
@@ -61,7 +61,7 @@ export async function recheckUnifiedBlock(provider,block){
 }
 
 export function validateUnifiedProof(raw){
- if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status,REFERRAL_PROFIT_PROFILE.status,MANUAL_REINVEST_PROFILE.status].includes(raw.status)||raw.chainId!==97||
+ if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status,REFERRAL_PROFIT_PROFILE.status,MANUAL_REINVEST_PROFILE.status,UPLINE_RATES_PROFILE.status].includes(raw.status)||raw.chainId!==97||
     !Number.isSafeInteger(raw.deploymentBlock)||raw.deploymentBlock<1||
     ![raw.vaultRuntimeHash,raw.bookRuntimeHash,raw.networkRuntimeHash,raw.deploymentTx].every(x=>typeof x==='string'&&pattern.test(x)))
   throw Error('INVALID_UNIFIED_DEPLOYMENT_PROOF');
@@ -100,10 +100,11 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  const vault=makeContract(proof.vault,VAULT_ABI),book=makeContract(proof.book,BOOK_ABI);
  const network=makeContract(proof.network,CHILD_ABI),at={blockTag:number};
  const daily=proof.status===DAILY_CAPITAL_PROFILE.status;
- if(proof.status===MANUAL_REINVEST_PROFILE.status){
+ const uplineRates=proof.status===UPLINE_RATES_PROFILE.status;
+ if(uplineRates||proof.status===MANUAL_REINVEST_PROFILE.status){
   const [version,fee,principalFee,autoGroup]=await Promise.all([vault.SINGLE_CAPITAL_VERSION(at),vault.PROFIT_FEE_BPS(at),
    vault.PRINCIPAL_PENALTY_BPS(at),network.AUTO_REWARD_GROUP_VERSION(at)]);
-  if(version!==4n||fee!==200n||principalFee!==3000n||autoGroup!==1n)throw Error('MANUAL_REINVEST_TERMS_MISMATCH');
+  if(version!==(uplineRates?5n:4n)||fee!==200n||principalFee!==3000n||autoGroup!==1n)throw Error('MANUAL_REINVEST_TERMS_MISMATCH');
  }
  if(daily){
   const [version,bookPeriod,volume,reward]=await Promise.all([vault.SINGLE_CAPITAL_VERSION(at),book.PERIOD(at),network.CYCLE_VOLUME(at),network.CYCLE_REWARD(at)]);

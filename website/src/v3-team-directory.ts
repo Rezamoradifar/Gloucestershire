@@ -58,10 +58,16 @@ export async function readV3TeamDirectory(walletProvider:Eip1193Provider,config:
      let rateBps:number|null=0;
      if(row.level<=4){
       try{
-       const tier=Number(await session.vault.tierOf(row.wallet,options)),key=tier+':'+row.level;
-       rateBps=rateTable.get(key)??Number(await session.vault.referralBps(tier,row.level-1,options));
+       let tableKey:string|undefined;
+       if(config.unified?.uplineRates){
+        rateBps=Number(await session.vault.currentReferralBps(row.wallet,row.level,options));
+       }else{
+        const tier=Number(await session.vault.tierOf(row.wallet,options));
+        tableKey=tier+':'+row.level;
+        rateBps=rateTable.get(tableKey)??Number(await session.vault.referralBps(tier,row.level-1,options));
+       }
        if(!Number.isInteger(rateBps)||rateBps<0||rateBps>10000)throw Error('Invalid referral rate.');
-       rateTable.set(key,rateBps);
+       if(tableKey)rateTable.set(tableKey,rateBps);
       }catch{rateBps=null;}
      }
      return {...row,eligible,rateBps};
