@@ -130,9 +130,14 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
    case 'DailyClaimAccrued':{
     const daily=BigInt(a.personal),compound=BigInt(a.compounded),total=BigInt(a.total);
     if(daily+compound!==total)throw Error('V3 daily claim does not reconcile.');
-    category='earnings';title='Daily claim recorded';detail='Position #'+number(BigInt(a.positionId))+' · Daily '+amount(daily)+' · Profit-on-profit '+amount(compound);value=amount(total);break;
+    category='earnings';title='Daily claim recorded';detail='Position #'+number(BigInt(a.positionId))+' · Daily '+amount(daily)+' · Personal compound '+amount(compound);value=amount(total);break;
    }
-   case 'ReferralClaimAccrued':category='earnings';title='Referral claim recorded';detail='Level '+a.level.toString()+' · Claim, not a wallet payment';value=amount(BigInt(a.amount));break;
+   case 'ReferralClaimAccrued':{
+    const source=getAddress(a.source);
+    category='earnings';title='Referral commission recorded';
+    detail='Level '+a.level.toString()+' · Member '+source.slice(0,8)+'…'+source.slice(-6);
+    value=amount(BigInt(a.amount));break;
+   }
    case 'NetworkClaimAccrued':category='earnings';title='Network claim recorded';detail='Group #'+number(BigInt(a.group))+' · Claim, not a wallet payment';value=amount(BigInt(a.amount));break;
    case 'ProfitReinvested':category='earnings';title='Profit reinvested';detail='Position #'+number(BigInt(a.fromPosition))+' to #'+number(BigInt(a.newPositionId));value=amount(BigInt(a.amount));break;
    case 'CheckIn':title='Account check-in';detail='Confirmed eligibility action';break;

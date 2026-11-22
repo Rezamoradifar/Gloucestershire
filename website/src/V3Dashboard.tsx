@@ -568,7 +568,7 @@ export default function V3Dashboard(){
       {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger}/>}
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
-       <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="USDT"/></strong><span>Including profit-on-profit</span></div>
+       <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="USDT"/></strong><span>Includes personal compound earnings</span></div>
        <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="USDT"/></strong><span>Includes cash reserved for requests</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="USDT"/></strong><span>Not guaranteed to be paid</span></div>
       </div>
@@ -596,7 +596,7 @@ export default function V3Dashboard(){
         <small>Wallet balance: {show(view.walletTestTokenBalance)} MOCK USDT</small>
         <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||unifiedReadOnly} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
-      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>Automatic profit-on-profit does not require this action. {config.unified?'Reinvestment adds recorded claims to one position; each addition keeps its own lock.':'Manual reinvestment moves already accrued claims to a new locked principal position, without creating new cash.'}</p>
+      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>{config.unified?'Reinvestment adds recorded earnings to the same account. Each addition has its own lock.':'Manual reinvestment moves recorded earnings into a new locked position.'} Personal compound earnings accrue separately.</p>
        <div className="gv3-input-row">{config.unified?<V3UnifiedReinvestSummary positions={view.positions}/>:<><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
         {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} USDT profit</option>)}</select></>}
         <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
@@ -645,7 +645,7 @@ export default function V3Dashboard(){
        <input id="reserve-funding" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" disabled={busy}/>
        <button type="button" disabled={busy||loading||reviewRequired||unifiedReadOnly} onClick={fundReserve}>Review reserve funding</button>
       </div>}
-      <p>Daily accrual and automatic profit-on-profit require NO manager approval. Only here can management approve withdrawals, reserve available cash, or authorize exact USDT-token funding. Funding does NOT automatically pay.</p>
+      <p>Daily earnings and personal compound can be recorded automatically. Managers use this panel to approve withdrawals, reserve test tokens and authorize payouts.</p>
       <div className="gv2-detail"><span>Total recorded V3 principal claims</span><b>{show(view.ledger.principalLiability)} USDT</b></div>
       <div className="gv2-detail"><span>Accrued test-profit liabilities</span><b>{show(view.ledger.profitLiability)} USDT</b></div>
       <div className="gv2-detail"><span>V3 test-token cash</span><b>{show(view.ledger.cash)} USDT</b></div>

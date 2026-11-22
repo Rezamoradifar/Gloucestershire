@@ -74,7 +74,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
      <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="USDT"/></strong>
      <p>{active?'A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.':'Progress is hidden while eligibility is not confirmed. Refresh or check in as needed.'}</p>
      <div className="gv3-forecast-row gv3-forecast-row--daily"><span>{hourly?'Cycle base estimate so far':'Daily estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressDaily):'—'}/></b></div>
-     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>{view.dailyPlan?'Personal compound estimate so far':'Profit-on-profit estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>
+     <div className="gv3-forecast-row gv3-forecast-row--compound"><span>Personal compound estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>
      <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="USDT"/></b></div>
      <small>At the verified {view.dailyRateBps/100}% test rate, if each {unified?'addition':'position'} becomes eligible. {hourly&&'The full daily test rate is applied once per eligible one-hour test cycle; this is accelerated test accounting. '}Estimates are not recorded claims, cash or guaranteed profit.</small>
     </div>

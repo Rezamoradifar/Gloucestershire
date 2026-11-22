@@ -24,9 +24,9 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
   <div className="gv3-claim-grid">
    <div><small>Daily claims available</small>
     <strong><V3ClaimValue value={claims.outstandingDaily} block={claims.block}/></strong></div>
-   <div><small>Profit-on-profit claims available</small>
+   <div><small>Available personal compound earnings</small>
     <strong><V3ClaimValue value={claims.outstandingCompound} block={claims.block}/></strong></div>
-   <div><small>Referral claims available</small>
+   <div><small>Available referral commission</small>
     <strong><V3ClaimValue value={claims.outstandingReferral} block={claims.block}/></strong></div>
    <div><small>Network milestone claims available</small>
     <strong><V3ClaimValue value={claims.outstandingNetwork} block={claims.block}/></strong></div>

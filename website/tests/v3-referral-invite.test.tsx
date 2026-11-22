@@ -22,6 +22,13 @@ describe('V3 referral invitation',()=>{
   vi.stubEnv('VITE_V3_UNIFIED_PRIMARY','');
   expect(renderToStaticMarkup(<V3ReferralInvite view={view}/>)).toContain('/hourly-test/?ref='+wallet+'#dashboard');
  });
+ it('explains daily referral eligibility at maturity even if posting is delayed',()=>{
+  const view={wallet,registered:true,eligible:true,dailyPlan:true} as V3Snapshot;
+  const html=renderToStaticMarkup(<V3ReferralInvite view={view}/>);
+  expect(html).toContain('when that daily cycle ends');
+  expect(html).toContain('An inactive level earns zero');
+  expect(html).not.toContain('when a referral claim is recorded');
+ });
  it('does not offer an invitation for an unregistered wallet',()=>{
   vi.stubGlobal('window',{location:{origin:'https://globaldroptrade.com',pathname:'/'}});
   const view={wallet,registered:false,eligible:false} as V3Snapshot;
