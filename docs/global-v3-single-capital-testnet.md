@@ -12,6 +12,42 @@ forms, transaction reviews and history. The network remains explicitly labeled
 BNB Testnet. This presentation change does not replace the pinned mock token,
 change the chain, convert any balance to real assets or enable a mainnet release.
 
+## Referral rates by the upline's own principal (hourly version 5)
+
+At each eligible posting the earning member keeps their full personal profit
+on principal. For each permanent upline, use that recipient's recorded
+principal at posting to choose a row, then their actual depth above the earner
+to choose a column. Multiply the member's posted personal profit by that rate.
+
+| Recipient's principal (test USDT) | Direct | Level 2 | Level 3 | Level 4 |
+| --- | ---: | ---: | ---: | ---: |
+| 10 through 500 | 8% | 4% | 2% | 0% |
+| Over 500 through 2,500 | 10% | 5% | 3% | 0% |
+| Over 2,500 through 10,000 | 12% | 6% | 4% | 0% |
+| Over 10,000 through 50,000 | 14% | 7% | 5% | 0% |
+| VIP, over 50,000 | 16% | 8% | 6% | 4% |
+
+For a member with 1,000 principal earning 7, an active direct referrer
+holding 100 receives 0.56. An active second-level referrer holding 5,000
+receives 0.42. An active third-level referrer holding 1,000 receives 0.21.
+An ineligible level receives zero and higher ancestors keep their original
+depths. The fourth level requires an eligible VIP earner and an eligible VIP
+recipient, both with manager-verified KYC. Other eligible recipients use their
+own band even when it is higher than the earner's.
+
+Deposits and completed manual reinvestments count toward recorded principal.
+Crossing a threshold affects subsequent postings. Team displays the connected
+recipient's capital band and reads each member's current rate from the same
+contract logic that credits commissions. History contains the amounts already
+recorded. The 2% earnings withdrawal fee applies when withdrawing.
+
+From the pinned checkout on `vps-luna-2585`, the existing installer accepts
+`--upline-rates --deploy-testnet` for the separate chain-97 account at
+`/upline-rates-test/`, followed by `--upline-rates --primary` for the main
+site. Existing test accounts and accrued claims stay in their original vaults.
+
+## Account timing and withdrawals
+
 All account deadlines use the confirmed block's Unix timestamp. The dashboard
 shows these times in UTC to the second. Each addition earns its first eligible
 hour 3,600 seconds after it is recorded. For example, an addition at 23:40 UTC
@@ -79,7 +115,7 @@ compound estimates derived from the loaded additions. With a partially
 loaded addition list, the dashboard labels that timer and estimate coverage.
 Recorded profit changes after a confirmed eligible accrual transaction.
 
-## Referral commission on personal profit
+## Referral commission on personal profit (hourly versions 3 and 4)
 
 The corrected hourly vault (single-capital version 3) credits uplines only on the
 profit earned on each addition's principal. The member keeps their full

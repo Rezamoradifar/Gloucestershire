@@ -1,5 +1,5 @@
-// Rows use the profit earner's capital tier. Columns count permanent uplines
-// from the direct referrer, including inactive levels.
+// Columns count permanent uplines, starting with the direct referrer.
+// Version 5 selects the row from each recipient's principal; earlier releases use the earner's.
 export const REFERRAL_BPS=[
  [800n,400n,200n,0n],
  [1000n,500n,300n,0n],

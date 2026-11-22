@@ -84,11 +84,12 @@ esac''')
         self.assertNotEqual(self.invoke(PIN, "--primary").returncode, 0)
         self.assertFalse(self.log.exists())
 
-    def test_referral_profit_keeps_deployment_and_promotion_explicit(self):
-        for options in [(), ("--deploy-testnet",), ("--primary",)]:
-            result = self.invoke(PIN, "--referral-profit", *options)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(self.log.read_text().split()[2:], ["--referral-profit", *options])
+    def test_referral_profiles_keep_deployment_and_promotion_explicit(self):
+        for profile in ["--referral-profit", "--manual-reinvest", "--upline-rates"]:
+            for options in [(), ("--deploy-testnet",), ("--primary",)]:
+                result = self.invoke(PIN, profile, *options)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.log.read_text().split()[2:], [profile, *options])
 
 
 if __name__ == "__main__":
