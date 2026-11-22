@@ -1,11 +1,11 @@
 import {ArrowUpRight,Clock3,Layers,ShieldCheck,Wallet} from 'lucide-react';
-import {V3_HOURLY_TEST} from './v3-site-config';
+import {V3_HOURLY_TEST,V3_MANUAL_REINVEST} from './v3-site-config';
 import './v3-account-steps.css';
 
 const steps=[
  {Icon:Wallet,title:'Connect your wallet',copy:'Select BNB Testnet and connect the wallet you want to use with the verified V3 contract.'},
  {Icon:Layers,title:'Open a position',copy:'Approve and deposit actual test tokens from that wallet. The contract records the position and its routing on chain.'},
- {Icon:Clock3,title:V3_HOURLY_TEST?'Follow your one-hour test cycle':'Follow your daily cycle',copy:'Check in on chain. A user or a funded keeper can record eligible daily earnings and personal compound.'},
+ {Icon:Clock3,title:V3_HOURLY_TEST?'Follow your one-hour test cycle':'Follow your daily cycle',copy:V3_MANUAL_REINVEST?'Check in to earn on principal. You choose when to add available earnings to your account.':'Check in on chain. A user or a funded keeper can record eligible daily earnings and personal compound.'},
  {Icon:ShieldCheck,title:'Request and verify payment',copy:'Request an available claim. Approval, test-token funding and the confirmed payment are separate steps.'}
 ];
 

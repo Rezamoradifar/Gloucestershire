@@ -12,7 +12,7 @@ const DashboardV3=lazy(()=>import('./V3Dashboard'));
 // than falling back to a retired contract. The release installer validates all
 // three values before publishing the site.
 function currentRoute(){
- const primarySingle=['single-capital-testnet','referral-profit-testnet'].includes(import.meta.env.VITE_V3_UNIFIED_PRIMARY);
+ const primarySingle=['single-capital-testnet','referral-profit-testnet','manual-reinvest-testnet'].includes(import.meta.env.VITE_V3_UNIFIED_PRIMARY);
  return siteRoute(location.hash,{v3Only,hourlyTest:V3_HOURLY_TEST,dailyTest:V3_DAILY_PLAN,
   landingAtRoot:import.meta.env.VITE_V3_LANDING_AT_ROOT==='true'&&
    (!primarySingle||location.pathname==='/'||location.pathname==='/index.html')});

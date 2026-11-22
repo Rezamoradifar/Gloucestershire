@@ -28,6 +28,7 @@ export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWith
   });
  },[view.networkBranches]);
  const toggle=(address:string)=>setSelected(current=>current.includes(address)?current.filter(x=>x!==address):[...current,address]);
+ const BranchRow=view.manualReinvest?'div':'label';
  const visibleGroup=view.networkGroups.find(g=>String(g.id)===group)?.id??view.networkGroups[0]?.id;
  return <div className="gv3-network">
   <section className="gv3-network-hero"><div><span className="gv3-kicker">NETWORK & REFERRALS</span>
@@ -53,19 +54,19 @@ export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWith
   </section>
   {groupsStatus!=='ready'?<section className="gv2-panel" role="status">{groupsStatus==='error'?<>Branch and milestone data could not be read. <button type="button" onClick={onRetry}>Retry network data</button></>:'Loading verified network branches and groups…'}</section>:<>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Direct branches</h3><span>Page {view.networkBranchPage+1} · {view.networkBranchCount} total</span></div>
-   <p>Select available direct branches to create a group or add them to an existing group. Each branch can belong to only one group. Volume is in test-token units.</p>
-   <div className="gv3-branch-list">{view.networkBranches.map(branch=><label className={branch.grouped?'gv3-branch-assigned':undefined} key={branch.address}>
-    <input type="checkbox" checked={!branch.grouped&&selected.includes(branch.address)} disabled={busy||readOnly||branch.grouped||(!selected.includes(branch.address)&&selected.length>=64)} onChange={()=>toggle(branch.address)}/>
+   <p>{view.manualReinvest?'Your first branch with volume creates a reward group automatically. New branches join the current group. After stage 14, the next new branch opens another group.':'Select available direct branches to create a group or add them to an existing group. Each branch can belong to only one group. Volume is in test-token units.'}</p>
+   <div className="gv3-branch-list">{view.networkBranches.map(branch=><BranchRow className={branch.grouped?'gv3-branch-assigned':undefined} key={branch.address}>
+    {!view.manualReinvest&&<input type="checkbox" checked={!branch.grouped&&selected.includes(branch.address)} disabled={busy||readOnly||branch.grouped||(!selected.includes(branch.address)&&selected.length>=64)} onChange={()=>toggle(branch.address)}/>}
     <span><strong>{short(branch.address)}</strong><small>{branch.address}</small>
-     <small className="gv3-branch-status">{branch.grouped?'Already in a reward group':'Available to add'}</small></span><b>{money(branch.volume)} USDT</b>
-   </label>)}</div>
+     <small className="gv3-branch-status">{view.manualReinvest?(branch.grouped?'Assigned automatically':'Assignment not verified'):(branch.grouped?'Already in a reward group':'Available to add')}</small></span><b>{money(branch.volume)} USDT</b>
+   </BranchRow>)}</div>
    {!view.networkBranches.length&&<p>No verified direct branch volume is recorded yet.</p>}
    <div className="gv2-buttons"><button disabled={busy||view.networkBranchPage===0} onClick={()=>onBranchPage(view.networkBranchPage-1)}>Previous branches</button>
     <button disabled={busy||(view.networkBranchPage+1)*20>=view.networkBranchCount} onClick={()=>onBranchPage(view.networkBranchPage+1)}>Next branches</button></div>
-   <p className="gv2-small">{selected.length} of 64 branches selected for this transaction.</p>
+   {!view.manualReinvest&&<><p className="gv2-small">{selected.length} of 64 branches selected for this transaction.</p>
    <div className="gv2-buttons"><button disabled={busy||readOnly||view.paused||!selected.length} onClick={()=>onAction({kind:'createRewardGroup',branches:selected},'Create a new network reward group with the selected direct branches?')}>Create reward group</button>
     {visibleGroup!==undefined&&<><select aria-label="Reward group to extend" value={String(visibleGroup)} onChange={e=>setGroup(e.target.value)}>{view.networkGroups.map(g=><option key={g.id} value={g.id}>Group #{g.id+1}</option>)}</select>
-     <button disabled={busy||readOnly||view.paused||!selected.length} onClick={()=>onAction({kind:'addRewardBranches',group:visibleGroup,branches:selected},'Add selected direct branches to this reward group?')}>Add to group</button></>}</div>
+     <button disabled={busy||readOnly||view.paused||!selected.length} onClick={()=>onAction({kind:'addRewardBranches',group:visibleGroup,branches:selected},'Add selected direct branches to this reward group?')}>Add to group</button></>}</div></>}
   </section>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Milestone groups</h3><span>Page {view.networkGroupPage+1} · {view.networkGroupCount} total</span></div>
    {view.networkGroups.map(g=>{const directClaim=g.prepared>=g.target||(g.branches<=64&&Boolean(g.preview?.eligible));
@@ -78,7 +79,7 @@ export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWith
      <div className="gv3-queue-actions"><button disabled={busy||readOnly||view.paused||g.prepared>=g.target} onClick={()=>onAction({kind:'prepareNetworkReward',group:g.id,stage:g.stage,steps:64},'Prepare eligible volume for group '+(g.id+1)+', stage '+(g.stage+1)+'?')}>Prepare volume</button>
       <button disabled={busy||readOnly||view.paused||!view.eligible||!directClaim} onClick={()=>onAction({kind:'claimNetworkRewards',group:g.id,stage:g.stage,count:1},'Prepare any remaining eligible volume and record '+(view.dailyPlan?'cycle ':'stage ')+(g.stage+1)+' test claim? This is not a cash payment.')}>{view.dailyPlan?'Record cycle claim':'Record stage claim'}</button></div></>}
    </article>})}
-   {!view.networkGroups.length&&<p>No reward group has been created for this V3 wallet.</p>}
+   {!view.networkGroups.length&&<p>{view.manualReinvest?'Your first group appears when a direct branch records volume.':'No reward group has been created for this V3 wallet.'}</p>}
    <div className="gv2-buttons"><button disabled={busy||view.networkGroupPage===0} onClick={()=>onGroupPage(view.networkGroupPage-1)}>Previous groups</button>
     <button disabled={busy||(view.networkGroupPage+1)*20>=view.networkGroupCount} onClick={()=>onGroupPage(view.networkGroupPage+1)}>Next groups</button></div>
    {view.dailyPlan?<p>Each 500 USDT of new eligible deposit volume earns 35 test USDT. One branch can contribute up to 300 USDT per cycle. Used volume is deducted and the cycle repeats. Reinvestments do not add branch volume.</p>:<details><summary>Review the 14-stage test schedule</summary><div className="gv3-stage-grid">{stages.map((target,index)=>{

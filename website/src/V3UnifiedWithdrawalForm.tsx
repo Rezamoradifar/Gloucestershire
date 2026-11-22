@@ -1,11 +1,11 @@
 import {useId,useState,type FormEvent} from 'react';
 import {formatUnits} from 'ethers';
-import {parseV3Amount} from './v3-withdrawal-form';
+import {parseV3Amount,v3WithdrawalFee,v3ProfitFeeBps} from './v3-withdrawal-form';
 import {prepareUnifiedPageAction,type UnifiedPositionPage} from './v3-unified-position';
 
 type WithdrawalKind='profit'|'principal';
 export type V3UnifiedWithdrawalFormProps={
- page:UnifiedPositionPage;busy:boolean;readOnly:boolean;disabledReason?:string;registered:boolean;suspended:boolean;
+ page:UnifiedPositionPage;manualReinvest?:boolean;busy:boolean;readOnly:boolean;disabledReason?:string;registered:boolean;suspended:boolean;
  paused:boolean;pendingWithdrawal:boolean;nextRequestAt:number;requestCap:bigint;
  value:string;onValue:(value:string)=>void;onSubmit:(kind:WithdrawalKind)=>void;
  onPrevious:()=>void;onNext:()=>void;
@@ -30,7 +30,7 @@ export function unifiedWithdrawalFormState(props:V3UnifiedWithdrawalFormProps,ki
  }
  const active=registered&&!suspended&&!paused&&!pendingWithdrawal&&
   Number.isSafeInteger(nextRequestAt)&&nextRequestAt>=0&&page.asOf>=nextRequestAt;
- const fee=amount===null?null:amount*(kind==='profit'?300n:3000n)/10000n;
+ const fee=amount===null?null:v3WithdrawalFee(amount,kind==='principal',props.manualReinvest);
  return {amount,fee,net:fee===null||amount===null?null:amount-fee,error,
   canSubmit:pageValid&&active&&!busy&&!readOnly&&amount!==null&&!error};
 }
@@ -64,7 +64,7 @@ export default function V3UnifiedWithdrawalForm(props:V3UnifiedWithdrawalFormPro
    <label htmlFor={id+'-amount'}>Gross amount in USDT</label>
    <input id={id+'-amount'} disabled={busy} value={value} onChange={event=>onValue(event.target.value)}
     inputMode="decimal" autoComplete="off" placeholder="0.00"/>
-   <p>Profit request fee: 3%. Principal request penalty: 30%.</p>
+   <p>Profit request fee: {Number(v3ProfitFeeBps(props.manualReinvest))/100}%. Principal request penalty: 30%.</p>
    <p>{kind==='profit'?'The verified profit request cap also applies.':
     'Each addition must be past its own 90-day lock.'}</p>
    {state.amount!==null&&state.fee!==null&&state.net!==null&&<p aria-live="polite">

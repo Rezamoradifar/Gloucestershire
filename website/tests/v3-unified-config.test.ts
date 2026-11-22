@@ -1,6 +1,7 @@
 import {describe,expect,it,vi} from 'vitest';
 import {ZeroAddress} from 'ethers';
 import {v3ParseReleaseConfig,unifiedWalletEnabled} from '../src/v3-site-config';
+import {networkActionTarget} from '../src/v3-unified-network';
 import {sendV3Action,sendV3FundWithdrawal,sendV3TestTokenDeposit} from '../src/v3-actions';
 
 const base={address:'0x1111111111111111111111111111111111111111',
@@ -95,4 +96,19 @@ it('binds the corrected referral account to its own route or explicitly verified
  expect(enabled('/','referral-profit-testnet')).toBe(true);
  for(const path of ['/hourly-test/','/single-capital-test/','/daily-capital-test/','/unified-test/'])
   expect(enabled(path,'referral-profit-testnet')).toBe(false);
+});
+
+
+it('binds the manual-reinvestment account to its own verified route and rejects manual group writes',()=>{
+ const mode='manual-reinvest-testnet';
+ const config=v3ParseReleaseConfig({...unified,unifiedMode:mode})!;
+ expect(config.unified).toMatchObject({singleCapital:true,baseProfitReferrals:true,manualReinvest:true});
+ const enabled=(path:string,primary='')=>unifiedWalletEnabled(config,path,true,'verified-testnet','verified-isolated-testnet',primary);
+ expect(enabled('/manual-reinvest-test/')).toBe(true);
+ expect(enabled('/',mode)).toBe(true);
+ expect(enabled('/','referral-profit-testnet')).toBe(false);
+ for(const path of ['/hourly-test/','/single-capital-test/','/referral-profit-test/','/daily-capital-test/'])
+  expect(enabled(path,mode)).toBe(false);
+ expect(()=>networkActionTarget(config,{kind:'createRewardGroup',branches:[base.address]})).toThrow('automatically');
+ expect(networkActionTarget(config,{kind:'claimNetworkRewards',group:0,stage:0,count:1})).toBe(base.address);
 });

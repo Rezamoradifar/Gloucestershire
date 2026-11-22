@@ -45,8 +45,17 @@ export const REFERRAL_PROFIT_PROFILE = Object.freeze({
  initcodeHash:'0x460436d40acf99db439a1fe592ae6ccf26d6eca7a04c934122f77e39e2ecf05f'
 });
 
+export const MANUAL_REINVEST_PROFILE = Object.freeze({
+ status:'VERIFIED_MANUAL_REINVEST_TESTNET_ONLY', mode:'manual-reinvest-testnet', route:'/manual-reinvest-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-manual-reinvest-testnet',
+ gasKey:'/etc/globaldroptrade/v3-manual-reinvest-keeper-testnet-gas-only.key',
+ timer:'global-v3-manual-reinvest-keeper-testnet.timer',
+ initcodeHash:'0xf79ccaf9274da7d2a04039ab85a17053be3ef6207da2296a7fac722ad9af0b8a'
+});
+
 export function unifiedProfileForFlag(flag) {
  if(flag===undefined)return UNIFIED_PROFILE;
+ if(flag==='--manual-reinvest')return MANUAL_REINVEST_PROFILE;
  if(flag==='--referral-profit')return REFERRAL_PROFIT_PROFILE;
  if(flag==='--daily-capital')return DAILY_CAPITAL_PROFILE;
  if(flag==='--single-capital')return SINGLE_CAPITAL_PROFILE;

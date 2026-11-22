@@ -23,6 +23,9 @@ if [[ ${SINGLE_CAPITAL:-0} == 1 ]]; then
 elif [[ ${REFERRAL_PROFIT:-0} == 1 ]]; then
   profile=(--referral-profit)
   route_name=referral-profit-test
+elif [[ ${MANUAL_REINVEST:-0} == 1 ]]; then
+  profile=(--manual-reinvest)
+  route_name=manual-reinvest-test
 fi
 node() {
   printf '%s\n' "${*:2}" >> "$TRACE"
@@ -183,6 +186,18 @@ class ApplyTestnet(unittest.TestCase):
         self.assertEqual(calls, [f"--verify-existing {READ_RPC} --referral-profit",
                                  f"worker {REVISION} --referral-profit",
                                  f"--install {REVISION} {DIGEST} {SIGN_RPC} --referral-profit"])
+
+
+    def test_manual_reinvest_reuses_its_own_proof_and_worker_for_primary(self):
+        result, calls = self.apply(MANUAL_REINVEST="1", DEPLOY_OPTION="--primary")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+        self.proof.write_bytes(PROOF)
+        result, calls = self.apply(MANUAL_REINVEST="1", DEPLOY_OPTION="--primary")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [f"--verify-existing {READ_RPC} --manual-reinvest",
+                                 f"worker {REVISION} --manual-reinvest",
+                                 f"--install {REVISION} {DIGEST} {SIGN_RPC} --manual-reinvest"])
 
 
 class InodeWorkspace(unittest.TestCase):

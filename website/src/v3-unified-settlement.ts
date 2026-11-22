@@ -3,6 +3,7 @@ import {BrowserProvider,Contract,getAddress,type Eip1193Provider,type LogDescrip
 import {checkedGas,submitVerified,type V3Action,type V3TransactionProgressCallback} from './v3-actions';
 import {v3ReadSession,V3_TEST_TOKEN_ABI} from './v3-chain';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
+import {v3WithdrawalFee} from './v3-withdrawal-form';
 
 type Request=Extract<V3Action,{kind:'requestProfit'|'requestPrincipal'|'requestReferral'|'requestNetworkReward'}>;
 type Settlement=Extract<V3Action,{kind:'approveWithdrawal'|'rejectWithdrawal'|'reserveExistingCash'|'payWithdrawal'}>|
@@ -80,7 +81,7 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
    if(action.kind==='fundPlanReserve'){
     find('PlanReserveFunded',({args:a})=>getAddress(a.funder)===who&&a.amount===action.gross);
    }else if('amount' in action){
-    const kind=requestKind[action.kind],fee=action.amount*(kind===1?3000n:300n)/10000n;
+    const kind=requestKind[action.kind],fee=v3WithdrawalFee(action.amount,kind===1,config.unified.manualReinvest);
     find('WithdrawalRequested',({args:a})=>getAddress(a.user)===who&&Number(a.kind)===kind&&a.gross===action.amount&&a.fee===fee);
     // The canonical transaction, including its exact position, was checked by submitVerified.
    }else{

@@ -56,6 +56,11 @@ describe('V3 team group validation',()=>{
   expect(assigned).toContain('disabled');expect(assigned).toContain('Already in a reward group');
   expect(available).toContain('Available to add');expect(available).not.toContain('disabled');
   expect(html).toContain('Add to group');
+  const automatic=renderToStaticMarkup(<V3NetworkPanel view={{...view,manualReinvest:true}} busy={false}
+   onAction={()=>{}} onWithdraw={()=>{}} onBranchPage={()=>{}} onGroupPage={()=>{}}/>);
+  expect(automatic).toContain('Assigned automatically');
+  expect(automatic).toContain('Record stage claim');
+  expect(automatic).not.toMatch(/type="checkbox"|Create reward group|Add to group|branches selected for this transaction/);
  });
  it('enables one-step recording only when bounded preview confirms the stage',()=>{
   const base={wallet,registered:true,eligible:true,qualifiedDirects:2,requiredDirects:8,qualifiedVolume:0n,requiredVolume:0n,

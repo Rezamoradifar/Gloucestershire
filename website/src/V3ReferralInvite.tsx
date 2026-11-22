@@ -9,11 +9,11 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
  const link=useMemo(()=>{
   if(!address||typeof window==='undefined')return '';
   const primary=import.meta.env.VITE_V3_UNIFIED_PRIMARY;
-  const publishedAtRoot=!view.dailyPlan&&view.singleCapital&&(view.baseProfitReferrals?primary==='referral-profit-testnet':
+  const publishedAtRoot=!view.dailyPlan&&view.singleCapital&&(view.baseProfitReferrals?primary===(view.manualReinvest?'manual-reinvest-testnet':'referral-profit-testnet'):
    primary==='single-capital-testnet'&&['/','/index.html','/hourly-test','/hourly-test/'].includes(window.location.pathname));
   try{return referralLink(address,window.location.origin,publishedAtRoot?'/':window.location.pathname);}
   catch{return '';}
- },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals]);
+ },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals,view.manualReinvest]);
  async function copy(value:string){
   if(!value)return;
   try{

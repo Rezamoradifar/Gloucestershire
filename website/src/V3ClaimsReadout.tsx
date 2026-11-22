@@ -8,7 +8,7 @@ import {formatV3Amount} from './v3-format';
 import V3ClaimValue from './V3ClaimValue';
 import './v3-claims-readout.css';
 
-export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3ClaimLedger}){
+export default function V3ClaimsReadout({verifiedLedger,manualReinvest=false}:{verifiedLedger:V3ClaimLedger;manualReinvest?:boolean}){
  let claims:ReturnType<typeof v3PrepareUserClaims>;
  try{claims=v3PrepareUserClaims(verifiedLedger);}
  catch{return <section className="gv3-claims-readout gv3-claims-error" role="alert">
@@ -24,8 +24,8 @@ export default function V3ClaimsReadout({verifiedLedger}:{verifiedLedger:V3Claim
   <div className="gv3-claim-grid">
    <div><small>Daily claims available</small>
     <strong><V3ClaimValue value={claims.outstandingDaily} block={claims.block}/></strong></div>
-   <div><small>Available personal compound earnings</small>
-    <strong><V3ClaimValue value={claims.outstandingCompound} block={claims.block}/></strong></div>
+   {!manualReinvest&&<div><small>Available personal compound earnings</small>
+    <strong><V3ClaimValue value={claims.outstandingCompound} block={claims.block}/></strong></div>}
    <div><small>Available referral commission</small>
     <strong><V3ClaimValue value={claims.outstandingReferral} block={claims.block}/></strong></div>
    <div><small>Network milestone claims available</small>

@@ -94,6 +94,47 @@ function singleCapitalSources(baseProfitReferrals=false){
  return {[SINGLE_CAPITAL_FILE]:{content:vault},[SINGLE_CAPITAL_BOOK]:{content:book}};
 }
 
+// Build V4 from the pinned referral profile without changing the published V1-V3 bytecode.
+// The basis still tracks spendable claims for withdrawals, reservations and manual reinvestment.
+function manualReinvestSources(){
+ const sources=singleCapitalSources(true);
+ let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'SINGLE_CAPITAL_VERSION = 3','SINGLE_CAPITAL_VERSION = 4');
+ vault=replaceOnce(vault,'PROFIT_FEE_BPS = 300;','PROFIT_FEE_BPS = 200;');
+ vault=replaceOnce(vault,'uint256 compound=Math.mulDiv(p.compoundedBasis,bps,BPS);','uint256 compound=0;');
+ sources[SINGLE_CAPITAL_FILE]={content:vault};
+ sources[SINGLE_CAPITAL_BOOK]={content:replaceOnce(sources[SINGLE_CAPITAL_BOOK].content,
+  'uint256 c=Math.mulDiv(l.basis,bps,BPS);','uint256 c=0;')};
+
+ const planFile='contracts/v3/V3NetworkPlan.sol';
+ let plan=replaceOnce(source(planFile),'if(beforeVolume==0) networkBranches[parent].push(child);',
+  'if(beforeVolume==0) _assignRewardGroup(parent,child);');
+ const begin=plan.indexOf('    /// @notice Disjoint groups');
+ const end=plan.indexOf('    function rewardGroupCount(');
+ if(begin<0||end<=begin)throw Error('V3_NETWORK_MEMBERSHIP_SOURCE_CHANGED');
+ plan=replaceOnce(plan,plan.slice(begin,end),`    uint256 public constant AUTO_REWARD_GROUP_VERSION = 1;
+    event RewardBranchAutoAssigned(address indexed user,address indexed branch);
+
+    function _assignRewardGroup(address parent,address child) private {
+        networkBranches[parent].push(child);
+        RewardGroup[] storage groups=rewardGroups[parent];
+        bool create=groups.length==0 || groups[groups.length-1].stage==14;
+        if(create) groups.push();
+        uint256 index=groups.length-1;
+        RewardGroup storage group=groups[index];
+        group.branches.push(child);
+        group.consumedUsd.push(0);
+        groupedBranch[parent][child]=true;
+        address[] memory added=new address[](1);
+        added[0]=child;
+        if(create) emit RewardGroupCreated(parent,index,added);
+        else emit RewardBranchesAdded(parent,index,added);
+        emit RewardBranchAutoAssigned(parent,child);
+    }
+`);
+ sources[planFile]={content:plan};
+ return sources;
+}
+
 function compile(sources,vaultFile,vaultName,bookFile,bookName,networkFile='contracts/v3/UnifiedNetworkPlan.sol',networkName='UnifiedNetworkPlan'){
  if(!solc.version().startsWith('0.8.30+commit.73712a01.'))throw Error('GLOBAL_V3_SOLC_0_8_30_REQUIRED');
  const input={language:'Solidity',sources,settings:{
@@ -129,6 +170,10 @@ export function compileReferralProfitTestnet(){
  return compile(singleCapitalSources(true),SINGLE_CAPITAL_FILE,'GlobalV3SingleCapitalTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
+export function compileManualReinvestTestnet(){
+ return compile(manualReinvestSources(),SINGLE_CAPITAL_FILE,'GlobalV3SingleCapitalTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+}
+
 export function compileDailyCapitalTestnet(){
  const dir='contracts/v3/daily/';
  const vault=dir+'GlobalV3DailyCapitalTestnet.sol';
@@ -139,7 +184,7 @@ export function compileDailyCapitalTestnet(){
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
  try{
   const args=process.argv.slice(2);
-  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet};
+  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet};
   if(args.length>1||args.length===1&&!Object.hasOwn(profiles,args[0]))throw Error('INVALID_V3_UNIFIED_COMPILE_ARGUMENT');
   const artifacts=(args.length?profiles[args[0]]:compileUnifiedTestnet)();
   const sizes=Object.fromEntries(Object.entries(artifacts).map(([name,a])=>[name,{
