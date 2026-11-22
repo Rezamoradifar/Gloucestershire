@@ -2,7 +2,7 @@
 // The caller must independently maintain its wallet-review and in-flight guard.
 import {getAddress,isAddress,type Eip1193Provider} from 'ethers';
 import {sendV3Action,sendV3TestTokenDeposit,sendV3UnifiedRegistration,sendV3UnifiedTestTokenDeposit,
- type V3TransactionProgressCallback} from './v3-actions';
+ type ReviewApprovedDeposit,type V3TransactionProgressCallback} from './v3-actions';
 import type {V3SiteReleaseConfig} from './v3-site-config';
 
 type Input={provider:Eip1193Provider;wallet:string;referrer:string;config:V3SiteReleaseConfig|null;
@@ -23,10 +23,10 @@ export async function runV3Registration(input:Input,deps:Dependencies=dependenci
   {enabled:true,onProgress:input.onProgress});
  return deps.register(input.provider,wallet,{kind:'register',referrer},config,input.onProgress);
 }
-export async function runV3Deposit(input:Input&{amount:bigint},deps:Dependencies=dependencies){
+export async function runV3Deposit(input:Input&{amount:bigint;reviewApprovedDeposit?:ReviewApprovedDeposit},deps:Dependencies=dependencies){
  const {wallet,referrer,config}=validate(input);
  if(typeof input.amount!=='bigint'||input.amount<=0n)throw Error('Enter a positive USDT amount.');
  if(config.unified)return deps.unifiedDeposit(input.provider,wallet,input.amount,referrer,config,
-  {enabled:true,onProgress:input.onProgress});
+  {enabled:true,onProgress:input.onProgress,...(input.reviewApprovedDeposit?{reviewApprovedDeposit:input.reviewApprovedDeposit}:{})});
  return deps.deposit(input.provider,wallet,input.amount,referrer,config,input.onProgress);
 }

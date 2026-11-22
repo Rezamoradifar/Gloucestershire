@@ -11,7 +11,12 @@ export default function V3UnifiedActivity({view,busy,readOnly,onCheckIn}:{
  const needsCapital=view.dailyPlan&&(view.capital<10n*10n**18n||(view.capital>50000n*10n**18n&&!view.vipKyc));
  const disabled=needsCapital||busy||readOnly||!view.registered||view.suspended||view.paused||cooldown;
  return <section className="gv3-cycle" aria-label="Unified test account activity">
-  <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>Check in to qualify</strong>
+  <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{view.eligible?'Account active':'Activate account'}</strong>
+   {view.eligible&&<small>Activity expires at {formatUtcTime(view.lastCheckIn+86400)}.</small>}
+   {!view.registered&&<small>Make your first deposit to register this wallet, then check in.</small>}
+   {view.paused&&<small>The contract is paused.</small>}
+   {view.suspended&&<small>This account is suspended.</small>}
+   {view.registered&&!view.dailyPlan&&view.capital<10n*10n**18n&&<small>At least 10 test USDT of principal is required for activity to qualify.</small>}
    <small>Check-in records activity only. Eligible claims need a verified keeper.</small>
    {needsCapital&&<small>Check-in requires at least 10 test USDT of principal and VIP verification above 50,000.</small>}
    {cooldown&&<small>Check-in cooldown ends at {formatUtcTime(view.lastCheckIn+3600)}.</small>}

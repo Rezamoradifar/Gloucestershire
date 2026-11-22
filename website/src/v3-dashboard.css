@@ -205,3 +205,14 @@
 .gv3-transaction-review dl {font-size:.9rem}
 .gv3-transaction-review dt {font-weight:700}
 .gv3-transaction-review dd {margin:0 0 .65rem}
+
+.gv3-team-directory h2{margin:0;font-size:clamp(1.3rem,3vw,1.65rem)}
+.gv3-team-directory .gv2-panel-head,.gv3-team-directory li>div{display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap}
+.gv3-team-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem;margin:1rem 0}
+.gv3-team-totals div,.gv3-team-directory li{padding:.85rem;border:1px solid #37444c;border-radius:.85rem;background:#11191f}
+.gv3-team-totals dt,.gv3-team-directory small{color:#bdcbce;font-size:.85rem}
+.gv3-team-totals dd{margin:.3rem 0 0;font-size:1.3rem;font-weight:700;color:#f1dba8;font-variant-numeric:tabular-nums}
+.gv3-team-directory ul{list-style:none;padding:0;display:grid;gap:.65rem}
+.gv3-team-directory li{display:grid;gap:.4rem;min-width:0;overflow-wrap:anywhere}
+.gv3-team-directory li a{color:#a9d9ed;text-decoration:underline;text-underline-offset:.16em}
+.gv3-team-directory li b{font-size:.9rem}.gv3-team-directory .gv3-team-active{color:#9fe5bf}

@@ -50,6 +50,7 @@ export const V3_ABI=[
  'function isEligible(address) view returns(bool)',
  'function nextAccrual(address,uint256) view returns(uint256 due,uint16 bps,uint8 tier)',
  'function tierOf(address) view returns(uint8)',
+ 'function referralBps(uint8,uint8) pure returns(uint16)',
  'function dailyBps(uint8) view returns(uint16)',
  'function effectiveDailyBps(address) view returns(uint16)',
  'function qualifiedDirects(address) view returns(uint256)',
@@ -189,12 +190,12 @@ export type V3Snapshot={
  suspended:boolean;vipKyc:boolean;eligible:boolean;
  referrer:string;lastCheckIn:number;nextRequestAt:number;
  pendingWithdrawal:boolean;capital:bigint;originalDeposits:bigint;
- reinvestments:bigint;referralAvailable:bigint;referralReserved:bigint;
+ reinvestments:bigint;referralAvailable:bigint;referralReserved:bigint;cumulativeReferral:bigint;
  tier:number;dailyRateBps:number;paused:boolean;canManage:boolean;canFund:boolean;
  qualifiedDirects:number;qualifiedVolume:bigint;requiredDirects:number;requiredVolume:bigint;maximumRateBps:number;
  networkAvailable:bigint;networkReserved:bigint;cumulativeNetwork:bigint;
  networkBranches:V3NetworkBranch[];networkBranchCount:number;
- networkGroups:V3NetworkGroup[];networkGroupCount:number;networkLoaded:boolean;
+ networkGroups:V3NetworkGroup[];networkGroupCount:number;networkLoaded:boolean;networkLoadError?:true;
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
@@ -213,7 +214,7 @@ const toSafeCount=(raw:bigint,label:string)=>{
  return n;
 };
 export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig,requireIndependent=false,startReader=0,deadlineAt?:number){
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,requireIndependent=false,startReader=0,deadlineAt?:number,minimumBlock=0){
  if(!Number.isInteger(startReader)||startReader<0||startReader>endpoints.length)throw Error('Invalid V3 reader index.');
  if(deadlineAt!==undefined&&!Number.isFinite(deadlineAt))throw Error('Invalid V3 account read deadline.');
  if(!config)throw Error('The V3 testnet contract has not been deployed and verified for this site.');
@@ -231,7 +232,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    checkChain?provider.send('eth_chainId',[]):chain,provider.getBlockNumber()
   ]);
   if(Number(BigInt(String(chainId)))!==97)throw Error('V3 source returned a different chain.');
-  if(height<4)throw Error('BNB Testnet has no confirmed V3 blocks.');
+  if(height<4||height-3<minimumBlock)throw Error('The confirmed BNB Testnet block is behind the transaction receipt.');
   const [block,code,receipt]=await Promise.all([
    provider.getBlock(height-3),provider.getCode(config.address,'latest'),
    provider.getTransactionReceipt(config.deploymentTx)
@@ -318,14 +319,14 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
 }
 export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:string,
  config:V3SiteReleaseConfig|null=v3ReleaseConfig,
- networkPage:{branches:number;groups:number}|null=null,unifiedPageStart=0,withdrawalCoverage=false):Promise<V3Snapshot>{
+ networkPage:{branches:number;groups:number}|null=null,unifiedPageStart=0,withdrawalCoverage=false,minimumBlock=0):Promise<V3Snapshot>{
  // Verification can succeed before an RPC starts throttling account reads.
  // Retry the complete snapshot on the next independently verified source. Each
  // attempt gets its own confirmed block; partial balances are never combined.
  const deadlineAt=Date.now()+accountSnapshotTimeoutMs;
  let startReader=0;
  while(startReader<=endpoints.length){
-  const session=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified),startReader,deadlineAt);
+  const session=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified),startReader,deadlineAt,minimumBlock);
   try{
    const timeout=remainingTimeout(accountSnapshotTimeoutMs,deadlineAt);
    const result=await withTimeout(
@@ -341,6 +342,44 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
  }
  throw Error('Verified V3 account reads unavailable. Retry using a healthy BNB Testnet RPC.');
 }
+async function readNetworkGroups(network:Contract,wallet:string,options:{blockTag:number},page:{branches:number;groups:number},daily:boolean){
+ const [rawBranches,rawGroups]=await Promise.all([network.networkBranchCount(wallet,options),network.rewardGroupCount(wallet,options)]);
+ const branchCount=toSafeCount(rawBranches,'network branch');
+ const groupCount=toSafeCount(rawGroups,'network group');
+ const branchRange=v3PageRange(branchCount,page.branches,20);
+ const groupRange=v3PageRange(groupCount,page.groups,20);
+ const networkBranches:V3NetworkBranch[]=[];
+ // Keep public RPC concurrency bounded while reading the extra assignment flag.
+ for(let start=0;start<branchRange.length;start+=5){
+  const count=Math.min(5,branchRange.length-start);
+  const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
+   const address=getAddress(await network.networkBranch(wallet,branchRange.start+start+offset,options));
+   const [volume,grouped]=await Promise.all([
+    network.branchVolumeUsd(wallet,address,options),network.groupedBranch(wallet,address,options)
+   ]);
+   return {address,volume:BigInt(volume),grouped:Boolean(grouped)};
+  }));
+  networkBranches.push(...page);
+ }
+ const networkGroups:V3NetworkGroup[]=[];
+ for(let start=0;start<groupRange.length;start+=5){
+  const count=Math.min(5,groupRange.length-start);
+  const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
+   const id=groupRange.start+start+offset;
+   const progress=daily?await network.cycleProgress(wallet,id,options):await network.rewardProgress(wallet,id,options);
+   const stage=Number(progress.stage);
+   if(!Number.isSafeInteger(stage)||stage<0||(!daily&&stage>14))throw Error('Invalid V3 network stage.');
+   const terms=daily?{volumeUsd:500n*10n**18n,rewardUsd:35n*10n**18n}:stage<14?await network.rewardStage(stage,options):null;
+   const branches=toSafeCount(progress.branches,'group branch');
+   const target=terms?BigInt(terms.volumeUsd):0n,reward=terms?BigInt(terms.rewardUsd):0n;
+   const preview=await readV3NetworkPreview(network,wallet,id,branches,target,reward,options,daily);
+   return {id,stage,prepared:BigInt(progress.preparedUsd),branches,target,reward,preview};
+  }));
+  networkGroups.push(...page);
+ }
+ return {networkBranches,networkGroups,branchCount,groupCount,branchPage:branchRange.page,groupPage:groupRange.page};
+}
+
 async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSession>>,wallet:string,
  config:V3SiteReleaseConfig,networkPage:{branches:number;groups:number}|null,
  unifiedPageStart:number,withdrawalCoverage:boolean):Promise<V3Snapshot>{
@@ -364,42 +403,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   network.qualifiedDirects(wallet,options),
   config!.unified?.keeper?provider.getBalance(config!.unified.keeper,block.number).catch(()=>null):null
  ]);
- const [rawBranches,rawGroups]=networkPage?
-  await Promise.all([network.networkBranchCount(wallet,options),network.rewardGroupCount(wallet,options)]):[0n,0n];
- const branchCount=toSafeCount(rawBranches,'network branch');
- const groupCount=toSafeCount(rawGroups,'network group');
- const branchRange=v3PageRange(branchCount,networkPage?.branches??0,20);
- const groupRange=v3PageRange(groupCount,networkPage?.groups??0,20);
- const networkBranches:V3NetworkBranch[]=[];
- // Keep public RPC concurrency bounded while reading the extra assignment flag.
- for(let start=0;start<branchRange.length;start+=5){
-  const count=Math.min(5,branchRange.length-start);
-  const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
-   const address=getAddress(await network.networkBranch(wallet,branchRange.start+start+offset,options));
-   const [volume,grouped]=await Promise.all([
-    network.branchVolumeUsd(wallet,address,options),network.groupedBranch(wallet,address,options)
-   ]);
-   return {address,volume:BigInt(volume),grouped:Boolean(grouped)};
-  }));
-  networkBranches.push(...page);
- }
- const networkGroups:V3NetworkGroup[]=[];
- for(let start=0;start<groupRange.length;start+=5){
-  const count=Math.min(5,groupRange.length-start);
-  const page=await Promise.all(Array.from({length:count},async(_,offset)=>{
-   const id=groupRange.start+start+offset;
-   const daily=config?.unified?.dailyPlan===true;
-   const progress=daily?await network.cycleProgress(wallet,id,options):await network.rewardProgress(wallet,id,options);
-   const stage=Number(progress.stage);
-   if(!Number.isSafeInteger(stage)||stage<0||(!daily&&stage>14))throw Error('Invalid V3 network stage.');
-   const terms=daily?{volumeUsd:500n*10n**18n,rewardUsd:35n*10n**18n}:stage<14?await network.rewardStage(stage,options):null;
-   const branches=toSafeCount(progress.branches,'group branch');
-   const target=terms?BigInt(terms.volumeUsd):0n,reward=terms?BigInt(terms.rewardUsd):0n;
-   const preview=await readV3NetworkPreview(network,wallet,id,branches,target,reward,options,daily);
-   return {id,stage,prepared:BigInt(progress.preparedUsd),branches,target,reward,preview};
-  }));
-  networkGroups.push(...page);
- }
+ const groups=networkPage?await readNetworkGroups(network,wallet,options,networkPage,Boolean(config.unified?.dailyPlan)).catch(()=>null):null;
  const count=toSafeCount(nPosition,'position');
  if(count>100)throw Error('V3 account has more than 100 positions; load a verified paginated indexer before displaying incomplete claims.');
  const positions=await Promise.all(Array.from({length:count},async(_,id)=>{
@@ -486,14 +490,16 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   capital:BigInt(user.capital),originalDeposits:BigInt(user.originalDeposits),
   reinvestments:BigInt(user.reinvestments),
   referralAvailable:BigInt(user.referralAvailable),
-  referralReserved:BigInt(user.referralReserved),
+  referralReserved:BigInt(user.referralReserved),cumulativeReferral:BigInt(user.cumulativeReferral),
   tier:t,dailyRateBps,paused:Boolean(paused),
   qualifiedDirects:toSafeCount(rawDirects,'qualified directs'),qualifiedVolume:BigInt(eligibleVolume),
   requiredDirects:toSafeCount(terms.directs,'required directs'),requiredVolume:BigInt(terms.target),
   maximumRateBps:Number(terms.maximumBps),networkAvailable:BigInt(netAvailable),
   networkReserved:BigInt(netReserved),cumulativeNetwork:BigInt(netCumulative),
-  networkBranches,networkBranchCount:branchCount,networkGroups,networkGroupCount:groupCount,networkLoaded:Boolean(networkPage),
-  networkBranchPage:branchRange.page,networkGroupPage:groupRange.page,
+  networkBranches:groups?.networkBranches??[],networkBranchCount:groups?.branchCount??0,
+  networkGroups:groups?.networkGroups??[],networkGroupCount:groups?.groupCount??0,networkLoaded:Boolean(groups),
+  ...(networkPage&&!groups?{networkLoadError:true as const}:{}),
+  networkBranchPage:groups?.branchPage??0,networkGroupPage:groups?.groupPage??0,
   canManage:Boolean(canManage),canFund:Boolean(canFund),
   positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,
    withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,

@@ -5,6 +5,7 @@ import {
  BrowserProvider,Contract,Interface,ZeroAddress,getAddress,isAddress,toQuantity,
  type Eip1193Provider,type Log,type JsonRpcSigner,type TransactionReceipt
 } from 'ethers';
+import {readWalletSelection} from './wallet-read';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession,v3ReleaseConfig,type V3Withdrawal} from './v3-chain';
 import {readUnifiedReinvestmentPlan} from './v3-reinvest-batch';
@@ -32,7 +33,7 @@ export type V3Action=
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
  action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in';
- hash?:string;
+ hash?:string;blockNumber?:number;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
 // Presentation must not affect any transaction or receipt decision.
@@ -76,9 +77,7 @@ export async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession
  return {gasLimit:limit,gasPrice};
 }
 async function checkWalletStillSelected(provider:Eip1193Provider,wallet:string){
- const [chain,accounts]=await Promise.all([
-  provider.request({method:'eth_chainId'}),provider.request({method:'eth_accounts'})
- ]);
+ const {chainId:chain,accounts}=await readWalletSelection(provider);
  if(Number(BigInt(String(chain)))!==97||!Array.isArray(accounts)||
   !accounts.some(a=>typeof a==='string'&&a.toLowerCase()===wallet.toLowerCase()))
   throw Error('Wallet account or BNB Testnet changed. Reconnect before continuing.');
@@ -160,7 +159,7 @@ export async function submitVerified(walletProvider:Eip1193Provider,wallet:strin
   const finalHeight=await p.getBlockNumber();
   if(!finalBlock?.hash||finalBlock.hash.toLowerCase()!==receipt.blockHash.toLowerCase()||
      finalHeight<receipt.blockNumber+4)throw Error('TRANSACTION_CONFIRMATIONS_CHANGED');
-  progress(onProgress,{step:'confirmed',action,hash});
+  progress(onProgress,{step:'confirmed',action,hash,blockNumber:again.blockNumber});
   return again;
  }catch{
   throw Error(label+' transaction '+hash+' could not be independently confirmed. Check its receipt before retrying.');
@@ -509,8 +508,10 @@ export async function sendV3TestTokenDeposit(walletProvider:Eip1193Provider,wall
  requireActionReady(config);
  return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,onProgress);
 }
+export type ReviewApprovedDeposit=(hash:string)=>Promise<boolean>;
 async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:string,
- amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback){
+ amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,onProgress?:V3TransactionProgressCallback,
+ reviewApprovedDeposit?:ReviewApprovedDeposit){
  if(!config||amount<10n**19n||!isAddress(referrer)||
   getAddress(referrer)===getAddress(wallet))
   throw Error('Invalid V3 TESTNET deposit, referrer, or unverified contract.');
@@ -536,7 +537,8 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
  let allowance:bigint;
  try{allowance=(await state(s)).allowance;}finally{s.provider.destroy();}
  const provider=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
- let lastApprovalHash='';
+ let lastApprovalHash='',minimumBlock=0;
+ const freshState=()=>v3ReadSession(walletProvider,wallet,config,true,0,undefined,minimumBlock);
  let depositSent=false;
  try{
   const signer=await provider.getSigner(wallet);
@@ -552,12 +554,12 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
     }finally{s.provider.destroy();}
     const reset=await submitVerified(walletProvider,wallet,signer,config,V3_TEST_TOKEN,
      TOKEN_METHODS.encodeFunctionData('approve',[config.address,0n]),resetGas,'Allowance reset','allowance_reset',onProgress);
-    lastApprovalHash=reset.hash;
-    s=await v3ReadSession(walletProvider,wallet,config,true);
+    lastApprovalHash=reset.hash;minimumBlock=reset.blockNumber;
+    s=await freshState();
     try{allowance=(await state(s)).allowance;}finally{s.provider.destroy();}
     if(allowance!==0n)throw Error('Allowance reset was not confirmed. Check the transaction before retrying.');
    }
-   s=await v3ReadSession(walletProvider,wallet,config,true);
+   s=await freshState();
    let approvalGas:CheckedTestGas;
    try{
     const current=await state(s);
@@ -567,9 +569,14 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
    }finally{s.provider.destroy();}
    const approval=await submitVerified(walletProvider,wallet,signer,config,V3_TEST_TOKEN,
     TOKEN_METHODS.encodeFunctionData('approve',[config.address,amount]),approvalGas,'USDT token approval','token_approval',onProgress);
-   lastApprovalHash=approval.hash;
+   lastApprovalHash=approval.hash;minimumBlock=approval.blockNumber;
+   if(reviewApprovedDeposit&&!await reviewApprovedDeposit(approval.hash)){
+    // A confirmed allowance survives cancelling the separate deposit.
+    lastApprovalHash='';
+    throw Error('Token approval confirmed. Deposit not submitted. Review the deposit when ready.');
+   }
   }
-  const check=await v3ReadSession(walletProvider,wallet,config,true);
+  const check=await freshState();
   let depositGas:CheckedTestGas;
   try{
    const confirmedAllowance=(await state(check)).allowance;
@@ -608,10 +615,10 @@ async function sendV3TestTokenDepositCore(walletProvider:Eip1193Provider,wallet:
 // The separate unified profile opts in explicitly to test-token deposits.
 export async function sendV3UnifiedTestTokenDeposit(walletProvider:Eip1193Provider,wallet:string,
  amount:bigint,referrer:string,config:V3SiteReleaseConfig|null,
- options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
+ options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback;reviewApprovedDeposit?:ReviewApprovedDeposit}={}){
  if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
  if(!config?.unified)throw Error('The verified unified testnet contract is required.');
- return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,options.onProgress);
+ return sendV3TestTokenDepositCore(walletProvider,wallet,amount,referrer,config,options.onProgress,options.reviewApprovedDeposit);
 }
 export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet:string,
  id:number,config:V3SiteReleaseConfig|null=v3ReleaseConfig){

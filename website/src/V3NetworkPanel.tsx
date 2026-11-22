@@ -9,8 +9,9 @@ import V3ReferralInvite from './V3ReferralInvite';
 const short=(address:string)=>address.slice(0,9)+'…'+address.slice(-6);
 const stages=[500,1000,3000,5000,10000,30000,50000,100000,300000,500000,1000000,3000000,5000000,10000000];
 
-export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWithdraw,onBranchPage,onGroupPage}:{
+export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWithdraw,onBranchPage,onGroupPage,groupsStatus='ready',onRetry}:{
  view:V3Snapshot;busy:boolean;readOnly?:boolean;onAction:(action:V3Action,description:string)=>void;onWithdraw:()=>void;
+ groupsStatus?:'loading'|'ready'|'error';onRetry?:()=>void;
  onBranchPage:(page:number)=>void;onGroupPage:(page:number)=>void;
 }){
  const [selected,setSelected]=useState<string[]>([]);
@@ -29,7 +30,7 @@ export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWith
  const visibleGroup=view.networkGroups.find(g=>String(g.id)===group)?.id??view.networkGroups[0]?.id;
  return <div className="gv3-network">
   <section className="gv3-network-hero"><div><span className="gv3-kicker">NETWORK & REFERRALS</span>
-   <h2>Progress with a clear view</h2><p>Qualification, referral claims and milestone rewards come from the verified V3 test contract.</p></div><Network size={27}/>
+   <h2>Network qualification</h2><p>Qualification, referral claims and milestone rewards come from the verified V3 test contract.</p></div><Network size={27}/>
    <div className="gv3-network-stats">
     <div><small>Qualified directs</small><strong><DigitalValue value={String(view.qualifiedDirects)}/><em>/ {view.requiredDirects}</em></strong><span>Each direct holds at least 100 USDT principal</span></div>
     <div><small>Balanced qualifying volume</small><strong><DigitalValue value={money(view.qualifiedVolume)}/><em>/ {money(view.requiredVolume)}</em></strong><span>Branch caps apply to the upgrade</span></div>
@@ -40,12 +41,15 @@ export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWith
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Recorded team claims</h3><Users size={18}/></div>
    <div className="gv2-detail"><span>Referrer</span><b>{/^0x0{40}$/i.test(view.referrer)?'None':view.referrer}</b></div>
    <div className="gv2-detail"><span>Available referral claim</span><b><DigitalValue value={money(view.referralAvailable)} unit="USDT"/></b></div>
+   {view.referralReserved!==undefined&&<div className="gv2-detail"><span>Referral claims reserved for withdrawals</span><b>{money(view.referralReserved)} USDT</b></div>}
+   {view.cumulativeReferral!==undefined&&<div className="gv2-detail"><span>Lifetime referral commissions</span><b>{money(view.cumulativeReferral)} USDT</b></div>}
    <div className="gv2-detail"><span>Available network milestone claim</span><b><DigitalValue value={money(view.networkAvailable)} unit="USDT"/></b></div>
    <div className="gv2-detail"><span>Reserved milestone claim</span><b>{money(view.networkReserved)} USDT</b></div>
    <div className="gv2-detail"><span>Lifetime recorded milestone claims</span><b>{money(view.cumulativeNetwork)} USDT</b></div>
    <p>These are test claims. Manager approval, actual test-token funding and a confirmed payout remain separate steps.</p>
    <button onClick={onWithdraw} className="gv2-primary">Open withdrawal requests <ArrowUpRight size={15}/></button>
   </section>
+  {groupsStatus!=='ready'?<section className="gv2-panel" role="status">{groupsStatus==='error'?<>Branch and milestone data could not be read. <button type="button" onClick={onRetry}>Retry network data</button></>:'Loading verified network branches and groups…'}</section>:<>
   <section className="gv2-panel"><div className="gv2-panel-head"><h3>Direct branches</h3><span>Page {view.networkBranchPage+1} · {view.networkBranchCount} total</span></div>
    <p>Select available direct branches to create a group or add them to an existing group. Each branch can belong to only one group. Volume is in test-token units.</p>
    <div className="gv3-branch-list">{view.networkBranches.map(branch=><label className={branch.grouped?'gv3-branch-assigned':undefined} key={branch.address}>
@@ -80,5 +84,6 @@ export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWith
     return <div key={target}><span>Stage {index+1}</span><b>{target.toLocaleString('en-US')} USDT</b><small>{rate}% · {Math.floor(target*rate/100).toLocaleString('en-US')} USDT claim</small></div>;
    })}</div><p>Each stage uses fresh unused group volume. At stage 1, no more than 300 of the 500 USDT target can come from one branch; the remaining 200 must come from other grouped branches. Stage 2 requires 1,000 new USDT of eligible volume. Figures are test claims, not cash payouts.</p></details>}
   </section>
+  </>}
  </div>;
 }

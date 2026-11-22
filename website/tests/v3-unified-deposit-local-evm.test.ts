@@ -74,6 +74,12 @@ describe('explicitly enabled unified testnet registration and deposit adapters',
    expect(await token.allowance(wallet,address)).toBe(0n);
    expect(sent).toHaveLength(4); // register, reset, exact approval, deposit
    selected=secondWallet;
+   const cancelAfterApproval=vi.fn(async()=>false);
+   await expect(sendV3UnifiedTestTokenDeposit(walletProvider as any,secondWallet,parseEther('10'),wallet,config,
+    {enabled:true,reviewApprovedDeposit:cancelAfterApproval})).rejects.toThrow('Deposit not submitted');
+   expect(cancelAfterApproval).toHaveBeenCalledWith(expect.stringMatching(/^0x[0-9a-f]{64}$/i));
+   expect(await token.allowance(secondWallet,address)).toBe(parseEther('10'));
+   expect(await vault.positionCount(secondWallet)).toBe(0n);expect(sent).toHaveLength(5);
    const secondDeposit=await sendV3UnifiedTestTokenDeposit(walletProvider as any,secondWallet,parseEther('10'),wallet,config,{enabled:true});
    expect(secondDeposit).toMatch(/^0x[0-9a-f]{64}$/i);
    expect((await vault.users(secondWallet)).registered).toBe(true);
