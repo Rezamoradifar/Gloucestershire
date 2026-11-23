@@ -8,7 +8,7 @@ import {BrowserProvider,Contract,ContractFactory,Wallet,ZeroAddress,parseEther,t
 import {deploymentArtifact} from '../scripts/v3-unified-deploy-preflight.mjs';
 import {deployUnifiedIsolated} from '../scripts/deploy-v3-unified-isolated.mjs';
 import {planUnifiedPreviewSite} from '../scripts/v3-unified-site-preview-preflight.mjs';
-import {MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../scripts/v3-unified-release-pins.mjs';
+import {MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE,UNIFIED_MANAGER,UNIFIED_TOKEN} from '../scripts/v3-unified-release-pins.mjs';
 
 const units=value=>parseEther(String(value));
 const mined=async pending=>{
@@ -17,9 +17,10 @@ const mined=async pending=>{
  return receipt;
 };
 
-for(const profile of [MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE]){
+for(const profile of [MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE]){
 test(profile.mode+': manual reinvestment, referral rates and funded withdrawals',{timeout:300000},async t=>{
- const uplineRates=profile===UPLINE_RATES_PROFILE;
+ const pooled=profile===ACCOUNT_REINVEST_PROFILE;
+ const uplineRates=pooled||profile===UPLINE_RATES_PROFILE;
  const {name,compile}=deploymentArtifact(profile);
  const artifacts=compile();
  const rpc=ganache.provider({logging:{quiet:true},chain:{chainId:97,hardfork:'shanghai'},
@@ -126,6 +127,86 @@ test(profile.mode+': manual reinvestment, referral rates and funded withdrawals'
    assert.equal((await network.rewardProgress(root.address,0)).branches,1n);
    await pay(parent,()=>vault.connect(parent).requestNetworkReward(units(100)),100,2);
   });
+  if(pooled){
+   const accrueAllSources=async()=>{
+    await deposit(second,200,parent.address);
+    await mined(vault.connect(parent).claimNetworkRewards(0,0,1,{gasLimit:3000000}));
+    await advance();await accrue();
+    await mined(vault.accrueDaily(parent.address,0,{gasLimit:3000000}));
+   };
+   await scenario('one signed addition consumes three ledgers and preserves the outstanding liability total',async()=>{
+    await accrueAllSources();
+    const {address}=parent;
+    const before=await vault.users(address),position=await book.position(address);
+    const liability=await vault.profitLiability(),principal=await vault.principalLiability();
+    const cash=await token.balanceOf(vault.target);
+    const pages=[[0,units(7),0,1]];
+    const full=()=>vault.connect(parent).reinvestAccountEarnings(pages,units('.7'),units(35),{gasLimit:2500000});
+    const receipt=await mined(full());
+    const events=receipt.logs.filter(log=>log.address.toLowerCase()===vault.target.toLowerCase())
+     .map(log=>vault.interface.parseLog(log)).filter(event=>event?.name==='AccountEarningsReinvested');
+    const total=units('42.7');
+    assert.equal(events.length,1);
+    assert.deepEqual([...events[0].args],[address,0n,units(7),units('.7'),units(35),total]);
+    const after=await vault.users(address);
+    assert.equal(after.capital,before.capital+total);
+    assert.equal(after.reinvestments,before.reinvestments+total);
+    assert.equal(after.originalDeposits,before.originalDeposits);
+    assert.equal(after.referralAvailable,0n);assert.equal(await vault.networkAvailable(address),0n);
+    assert.equal(after.cumulativeReferral,before.cumulativeReferral);
+    assert.equal(await vault.cumulativeNetwork(address),units(35));
+    assert.equal((await book.lot(address,0)).daily,0n);assert.equal(await vault.claimableDaily(address,0),0n);
+    assert.equal(await vault.positionCount(address),1n);assert.equal((await book.position(address)).lots,position.lots+1n);
+    const addition=await book.lot(address,position.lots);
+    assert.equal(addition.principal,total);assert.equal(addition.openedAt,BigInt((await provider.getBlock(receipt.blockNumber)).timestamp));
+    assert.equal(await vault.profitLiability(),liability-total);assert.equal(await vault.principalLiability(),principal+total);
+    assert.equal(await token.balanceOf(vault.target),cash);
+    await assert.rejects(mined(full()));
+    assert.equal((await vault.users(address)).capital,after.capital);
+   });
+   await scenario('rewards alone can be partially reinvested without touching personal profit',async()=>{
+    await accrueAllSources();
+    await mined(vault.connect(parent).reinvestAccountEarnings([],units('.3'),units(12),{gasLimit:2200000}));
+    const user=await vault.users(parent.address);
+    assert.equal(user.capital,units('1012.3'));assert.equal(user.referralAvailable,units('.4'));
+    assert.equal(await vault.networkAvailable(parent.address),units(23));
+    assert.equal(await vault.claimableDaily(parent.address,0),units(7));
+    await assert.rejects(vault.connect(parent).reinvestAccountEarnings.staticCall([],0,0),{code:'CALL_EXCEPTION'});
+    await mined(vault.setSuspended(parent.address,true));
+    await assert.rejects(vault.connect(parent).reinvestAccountEarnings.staticCall([],0,1),{code:'CALL_EXCEPTION'});
+   });
+   await scenario('malformed personal pages and a capital limit revert leave the whole account spendable',async()=>{
+    await accrueAllSources();
+    const account=vault.connect(parent);
+    const overlaps=[[0,units(1),0,1],[0,units(1),0,1]];
+    await assert.rejects(mined(account.reinvestAccountEarnings(overlaps,units('.7'),units(35),{gasLimit:2500000})));
+    await deposit(parent,49000,root.address);
+    await assert.rejects(mined(account.reinvestAccountEarnings([[0,units(7),0,1]],units('.7'),units(35),{gasLimit:2500000})));
+    assert.equal((await vault.users(parent.address)).capital,units(50000));
+    assert.equal(await vault.claimableDaily(parent.address,0),units(7));
+    assert.equal((await vault.users(parent.address)).referralAvailable,units('.7'));
+    assert.equal(await vault.networkAvailable(parent.address),units(35));
+   });
+   for(const kind of ['personal','referral','network']){
+    await scenario('a pending '+kind+' withdrawal excludes exactly its reserved amount from reinvestment',async()=>{
+     await accrueAllSources();
+     const id=await vault.withdrawalCount(),account=vault.connect(parent),address=parent.address;
+     const reserve=kind==='personal'?account.requestProfit(0,units(3)):kind==='referral'?
+      account.requestReferral(units('.2')):account.requestNetworkReward(units(10));
+     await mined(reserve);
+     const pages=[[0,units(7),0,1]];
+     await assert.rejects(mined(account.reinvestAccountEarnings(pages,units('.7'),units(35),{gasLimit:2500000})));
+     assert.equal((await vault.users(address)).capital,units(1000));
+     const personal=units(kind==='personal'?4:7),referral=units(kind==='referral'?'.5':'.7'),network=units(kind==='network'?25:35);
+     await mined(account.reinvestAccountEarnings([[0,personal,0,1]],referral,network,{gasLimit:2500000}));
+     assert.equal((await vault.withdrawalOf(id)).status,0n);
+     await mined(vault.rejectWithdrawal(id));
+     assert.equal(await vault.claimableDaily(address,0),units(7)-personal);
+     assert.equal((await vault.users(address)).referralAvailable,units('.7')-referral);
+     assert.equal(await vault.networkAvailable(address),units(35)-network);
+    });
+   }
+  }
   await scenario('after stage 14 only a new direct branch opens a new group',async()=>{
    for(const who of [member,second,third]){
     if(who!==member)await mined(vault.connect(who).register(parent.address));

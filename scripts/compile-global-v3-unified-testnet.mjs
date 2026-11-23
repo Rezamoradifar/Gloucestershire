@@ -174,7 +174,7 @@ export function compileManualReinvestTestnet(){
  return compile(manualReinvestSources(),SINGLE_CAPITAL_FILE,'GlobalV3SingleCapitalTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
-export function compileUplineRatesTestnet(){
+function uplineRatesSources(){
  const sources=manualReinvestSources();
  let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'contract GlobalV3SingleCapitalTestnet is','abstract contract GlobalV3SingleCapitalTestnet is');
  vault=replaceOnce(vault,'SINGLE_CAPITAL_VERSION = 4','SINGLE_CAPITAL_VERSION = 5');
@@ -186,7 +186,22 @@ export function compileUplineRatesTestnet(){
  sources[SINGLE_CAPITAL_FILE]={content:vault};
  const file='contracts/v3/GlobalV3UplineRatesTestnet.sol';
  sources[file]={content:source(file)};
- return compile(sources,file,'GlobalV3UplineRatesTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+ return sources;
+}
+
+export function compileUplineRatesTestnet(){
+ return compile(uplineRatesSources(),'contracts/v3/GlobalV3UplineRatesTestnet.sol','GlobalV3UplineRatesTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+}
+
+export function compileAccountReinvestTestnet(){
+ const sources=uplineRatesSources();
+ let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'SINGLE_CAPITAL_VERSION = 5','SINGLE_CAPITAL_VERSION = 6');
+ vault=replaceOnce(vault,'uint256 limit,uint256 group) private {','uint256 limit,uint256 group) internal {');
+ vault=replaceOnce(vault,'_recordReinvestment(User storage u,uint256 amount) private','_recordReinvestment(User storage u,uint256 amount) internal');
+ sources[SINGLE_CAPITAL_FILE]={content:vault};
+ const file='contracts/v3/GlobalV3AccountReinvestTestnet.sol';
+ sources[file]={content:source(file)};
+ return compile(sources,file,'GlobalV3AccountReinvestTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
 export function compileDailyCapitalTestnet(){
@@ -199,7 +214,7 @@ export function compileDailyCapitalTestnet(){
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
  try{
   const args=process.argv.slice(2);
-  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet,'--upline-rates':compileUplineRatesTestnet};
+  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet,'--upline-rates':compileUplineRatesTestnet,'--account-reinvest':compileAccountReinvestTestnet};
   if(args.length>1||args.length===1&&!Object.hasOwn(profiles,args[0]))throw Error('INVALID_V3_UNIFIED_COMPILE_ARGUMENT');
   const artifacts=(args.length?profiles[args[0]]:compileUnifiedTestnet)();
   const sizes=Object.fromEntries(Object.entries(artifacts).map(([name,a])=>[name,{

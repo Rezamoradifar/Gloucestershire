@@ -91,6 +91,7 @@ export const V3_ABI=[
  'function checkInAndAccrue(uint256[])',
  'function deposit(uint256,address)',
  'function reinvest(uint256,uint256)',
+ 'function reinvestAccountEarnings(tuple(uint256 positionId,uint256 amount,uint256 start,uint256 limit)[] pages,uint256 referral,uint256 network)',
  'function reinvestMany(tuple(uint256 positionId,uint256 amount,uint256 start,uint256 limit)[])',
  'function requestProfit(uint256,uint256)',
  'function requestProfitFromPage(uint256,uint256,uint256,uint256)',
@@ -112,6 +113,7 @@ export const V3_ABI=[
  'event DepositRouted(address indexed user,uint256 indexed positionId,uint256 amount,uint256 fee1,uint256 fee2,uint256 operations)',
  'event ReferralClaimAccrued(address indexed upline,address indexed source,uint8 level,uint256 amount)',
  'event NetworkClaimAccrued(address indexed user,uint256 indexed group,uint256 amount,uint8 stages)',
+ 'event AccountEarningsReinvested(address indexed user,uint256 indexed positionId,uint256 personal,uint256 referral,uint256 network,uint256 total)',
  'event ProfitReinvested(address indexed user,uint256 indexed fromPosition,uint256 newPositionId,uint256 amount)',
  'event CheckIn(address indexed user,uint256 at)',
  'event StatusChanged(address indexed user,bool suspended)',
@@ -199,7 +201,7 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
- singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;
+ singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;accountReinvest?:true;
  unifiedWithdrawalPages?:UnifiedPositionPage[];
  withdrawalCoverageError?:string;
  withdrawalPage?:UnifiedPositionPage;
@@ -265,7 +267,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    throw Error('The test contract accrual period was not verified.');
   let network=vault,book:Contract|null=null;
   if(config.unified){
-   const expectedVersion=config.unified.uplineRates?5n:config.unified.manualReinvest?4n:daily?2n:config.unified.baseProfitReferrals?3n:1n;
+   const expectedVersion=config.unified.accountReinvest?6n:config.unified.uplineRates?5n:config.unified.manualReinvest?4n:daily?2n:config.unified.baseProfitReferrals?3n:1n;
    if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==expectedVersion)
     throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
@@ -509,7 +511,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   canManage:Boolean(canManage),canFund:Boolean(canFund),
   positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,
    withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,
-   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest,uplineRates:config!.unified.uplineRates}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest,uplineRates:config!.unified.uplineRates,accountReinvest:config!.unified.accountReinvest}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   ...(config!.unified?.keeper?{keeper:{operator:config!.unified.keeper,gasWei:keeperGasWei}}:{}),

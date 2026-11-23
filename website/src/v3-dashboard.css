@@ -231,3 +231,12 @@
 .gv3-referral-schedule tr[aria-current="true"] > * { background:#203a35; color:#d1f8df; }
 .gv3-referral-example { border-inline-start:3px solid #87cbb5; padding-inline-start:.75rem; }
 .gv3-referral-example strong,.gv3-referral-example span { display:block; }
+
+.gv3-account-earnings .gv3-earnings-total{display:grid;gap:.35rem;margin:1rem 0}
+.gv3-earnings-total strong{font-size:clamp(1.6rem,5vw,2.25rem);line-height:1.12;color:#a3eac8;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.gv3-earnings-total small{font-size:.85rem;font-weight:600}
+.gv3-account-earnings dl{display:grid;gap:.5rem;margin:.75rem 0 1rem}
+.gv3-account-earnings dl>div{display:flex;align-items:baseline;justify-content:space-between;gap:1rem}
+.gv3-account-earnings dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-width:0}
+.gv3-earnings-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem}
+.gv3-earnings-input input{width:100%}

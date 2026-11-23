@@ -13,13 +13,13 @@ type Props={
  value:string;onValue:(value:string)=>void;
  referrer:string;onReferrer:(value:string)=>void;invalidInvite:boolean;
  selectedPosition:string;onPosition:(value:string)=>void;
- onDeposit:()=>void;onWithdraw:()=>void;onReinvest:()=>void;
+ onDeposit:()=>void;onWithdraw:()=>void;onReinvest:()=>void;onAccountReinvest?:()=>void;
  onNetwork:()=>void;onConnect:()=>void;onWalletConnect:()=>void;
 };
 
 export default function V3ClassicOverview(props:Props){
  const {view,connected,busy,loading,connecting,readOnly=false,unifiedRelease,value,onValue,referrer,onReferrer,invalidInvite,
-  selectedPosition,onPosition,onDeposit,onWithdraw,onReinvest,onNetwork,onConnect,onWalletConnect}=props;
+  selectedPosition,onPosition,onDeposit,onWithdraw,onReinvest,onAccountReinvest,onNetwork,onConnect,onWalletConnect}=props;
  const [mode,setMode]=useState<Mode>('deposit');
  const claims=view?v3PrepareUserClaims(view.ledger):null;
  const ready=Boolean(view&&!view.paused&&!view.suspended&&!busy&&!loading&&!readOnly);
@@ -55,7 +55,7 @@ export default function V3ClassicOverview(props:Props){
     <div className="gv1-panel-title"><div><h2 id="gv1-manage-title">Manage capital</h2><p>Selected asset: USDT</p></div><span className="gv1-round-icon"><ArrowDownLeft size={20}/></span></div>
     <div className="gv1-operation-tabs" role="group" aria-label="Choose account operation">
      {([{id:'deposit',label:'Deposit'},{id:'withdraw',label:'Withdraw profit'},{id:'reinvest',label:'Reinvest'}] as const).map(item=>
-      <button key={item.id} type="button" aria-pressed={mode===item.id} disabled={busy} onClick={()=>setMode(item.id)}>{item.label}</button>)}
+      <button key={item.id} type="button" aria-pressed={mode===item.id} disabled={busy} onClick={()=>{if(item.id==='reinvest'&&onAccountReinvest)onAccountReinvest();else setMode(item.id);}}>{item.label}</button>)}
     </div>
     <form onSubmit={submit}>
      {mode==='reinvest'&&view&&<p className="gv2-small">{view.singleCapital?'Total reinvested':'Combined reinvested principal'}: {money(reinvested)} USDT.

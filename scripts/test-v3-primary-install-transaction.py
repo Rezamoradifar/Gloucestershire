@@ -32,7 +32,8 @@ def exercise(fail_asset=False, mode='--install', primary_profile=None, bad_proof
         address = '0x' + '3' * 40 if primary_profile else ADDR
         (repo / 'website/dist/assets/V3Dashboard-new12345.js').write_text(
             f'{address} {RUNTIME} {TX} 0xA98D8d3709f5D3730BAD5d76C334731784e7CF07 '
-            f"ONE-HOUR BNB TESTNET CONTRACT. Test tokens only. {primary_profile or ''}")
+            f"ONE-HOUR BNB TESTNET CONTRACT. Test tokens only. {primary_profile or ''}"
+            + (' reinvestAccountEarnings' if primary_profile == 'account-reinvest-testnet' else ''))
         shutil.copy(HERE / 'scripts/check-v3-hourly-primary-bundle.py', repo / 'scripts')
         shutil.copy(HERE / 'scripts/check-v3-publish-paths.py', repo / 'scripts')
         shutil.copy(HERE / 'scripts/check-v3-unified-route.py', repo / 'scripts')
@@ -148,4 +149,7 @@ exercise(primary_profile='manual-reinvest-testnet')
 exercise(primary_profile='upline-rates-testnet', bad_proof=True)
 exercise(primary_profile='upline-rates-testnet', fail_asset=True)
 exercise(primary_profile='upline-rates-testnet')
+exercise(primary_profile='account-reinvest-testnet', bad_proof=True)
+exercise(primary_profile='account-reinvest-testnet', fail_asset=True)
+exercise(primary_profile='account-reinvest-testnet')
 print('PASS main-site preflight, asset failure rollback and hourly-test preservation')

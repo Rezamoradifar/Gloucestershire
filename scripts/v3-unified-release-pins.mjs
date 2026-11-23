@@ -61,7 +61,16 @@ export const UPLINE_RATES_PROFILE = Object.freeze({
  initcodeHash:'0x8e89c48076c1b1e7c9bcdde76f37eda12efe5534183e34d97592f32e92b7590a'
 });
 
+export const ACCOUNT_REINVEST_PROFILE = Object.freeze({
+ status:'VERIFIED_ACCOUNT_REINVEST_TESTNET_ONLY', mode:'account-reinvest-testnet', route:'/account-reinvest-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-account-reinvest-testnet',
+ gasKey:'/etc/globaldroptrade/v3-account-reinvest-keeper-testnet-gas-only.key',
+ timer:'global-v3-account-reinvest-keeper-testnet.timer',
+ initcodeHash:'0xbf92c75741fffe3f2d5df3efc4d36ea168824f3f4c2c9c46e9b7fe68ff3b2d03'
+});
+
 export function unifiedProfileForFlag(flag) {
+ if(flag==='--account-reinvest')return ACCOUNT_REINVEST_PROFILE;
  if(flag==='--upline-rates')return UPLINE_RATES_PROFILE;
  if(flag===undefined)return UNIFIED_PROFILE;
  if(flag==='--manual-reinvest')return MANUAL_REINVEST_PROFILE;

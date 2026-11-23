@@ -1,5 +1,6 @@
 // Plan a bounded, atomic testnet reinvestment from independently verified
 // position balances and group pages. This module never requests a signature.
+import {allocateAccountEarnings,type AccountEarnings} from './v3-account-earnings';
 import {formatUnits,getAddress,toQuantity} from 'ethers';
 import type {V3WalletPosition,v3ReadSession} from './v3-chain';
 import {readUnifiedPositionPage,type UnifiedBookReader,type UnifiedPositionPage,type UnifiedVaultReader} from './v3-unified-position';
@@ -8,7 +9,7 @@ export type ReinvestmentSource={positionId:number;amount:bigint;start:number;lim
 const MAX_SOURCES=16,MAX_GROUP_SPAN=128;
 const validIndex=(value:number)=>Number.isSafeInteger(value)&&value>=0;
 
-export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:UnifiedPositionPage[],amount:bigint){
+export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:UnifiedPositionPage[],amount:bigint,otherEarnings=0n){
  if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive USDT amount.');
  if(positions.length>100)throw Error('The complete position list is required.');
  const ids=new Set<number>();let group:V3WalletPosition|undefined,total=0n;
@@ -48,7 +49,7 @@ export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:Unifi
  const add=(positionId:number,available:bigint,start:number,limit:number)=>{
   if(remaining===0n||available===0n)return;
   if(sources.length===MAX_SOURCES||span+limit>MAX_GROUP_SPAN)
-   throw Error('This amount requires more than one transaction. Reinvest up to '+formatUnits(amount-remaining,18)+' USDT in this transaction, then refresh the remaining recorded profit.');
+   throw Error('This amount requires more than one transaction. Reinvest up to '+formatUnits(amount-remaining+otherEarnings,18)+' USDT in this transaction, then refresh the remaining recorded profit.');
   const take=available<remaining?available:remaining;
   sources.push({positionId,amount:take,start,limit});remaining-=take;span+=limit;
  };
@@ -60,7 +61,7 @@ export function planUnifiedReinvestment(positions:V3WalletPosition[],pages:Unifi
 
 // Read all ordinary sources and only as many bounded group pages as needed,
 // all at the verified block belonging to the caller's independent session.
-export async function readUnifiedReinvestmentPlan(session:Awaited<ReturnType<typeof v3ReadSession>>,wallet:string,amount:bigint){
+export async function readUnifiedReinvestmentPlan(session:Awaited<ReturnType<typeof v3ReadSession>>,wallet:string,amount:bigint,otherEarnings=0n){
  if(!session.config.unified||!session.book)throw Error('A verified unified testnet deployment is required.');
  if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive USDT amount.');
  const who=getAddress(wallet),{vault,book,options,block,provider}=session;
@@ -103,9 +104,25 @@ export async function readUnifiedReinvestmentPlan(session:Awaited<ReturnType<typ
    if(pages.length>MAX_SOURCES)break;
   }
  }
- const plan=planUnifiedReinvestment(positions,pages,amount);
+ const plan=planUnifiedReinvestment(positions,pages,amount,otherEarnings);
  const canonical=await provider.send('eth_getBlockByNumber',[toQuantity(block.number),false]);
  if(!block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==block.hash.toLowerCase())
   throw Error('The verified reinvestment block changed; refresh before continuing.');
  return {...plan,block:block.number,destination:groupPlusOne===0?count:groupPlusOne-1};
+}
+
+export async function readAccountReinvestmentPlan(session:Awaited<ReturnType<typeof v3ReadSession>>,
+ wallet:string,amount:bigint,reviewed?:AccountEarnings){
+ if(!session.config.unified?.accountReinvest)throw Error('A verified account-earnings vault is required.');
+ const {vault,options}=session;
+ const [member,daily,network]=await Promise.all([
+  vault.users(wallet,options),vault.claimableDaily(wallet,0,options),vault.networkAvailable(wallet,options)
+ ]);
+ const split=allocateAccountEarnings({personal:BigInt(daily),referral:BigInt(member.referralAvailable),network:BigInt(network)},amount);
+ if(reviewed&&(split.personal!==reviewed.personal||split.referral!==reviewed.referral||split.network!==reviewed.network))
+  throw Error('Available earnings changed. Refresh your account and review the new amounts.');
+ const personalPlan=split.personal>0n
+  ?await readUnifiedReinvestmentPlan(session,wallet,split.personal,split.referral+split.network):null;
+ if(personalPlan&&personalPlan.destination!==0)throw Error('The verified investment account is inconsistent.');
+ return {sources:personalPlan?.sources??[],destination:0,split};
 }

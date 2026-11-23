@@ -31,6 +31,8 @@ import V3TeamDirectory from './V3TeamDirectory';
 import {isUnifiedNetworkAction,sendUnifiedNetworkAction,networkActionTarget} from './v3-unified-network';
 import V3PositionsList from './V3PositionsList';
 import V3UnifiedPositionPage from './V3UnifiedPositionPage';
+import V3AccountReinvestment from './V3AccountReinvestment';
+import {allocateAccountEarnings,availableAccountEarnings,type AccountEarnings} from './v3-account-earnings';
 import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
 import V3AccountWithdrawalForm from './V3AccountWithdrawalForm';
 import {planV3AccountWithdrawal} from './v3-account-withdrawal';
@@ -486,24 +488,46 @@ export default function V3Dashboard(){
   finally{inFlight.current=false;setBusy(false);}
  }
  async function reinvestUnified(n:bigint){
-  if(busy||inFlight.current)return;
+  if(busy||loading||inFlight.current)return;
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
-  if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your BNB Testnet account.');return;}
+  if(!wallet||!config?.unified||chain!==97||!view||view.wallet.toLowerCase()!==wallet.toLowerCase()){setError('Connect and verify your BNB Testnet account.');return;}
   if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   if(!view.registered||view.suspended||view.paused){setError('This test account cannot reinvest.');return;}
-  const total=view.positions.reduce((sum,position)=>sum+position.availableProfit,0n);
-  if(n>total){setError('The amount exceeds recorded position profit.');return;}
-  if(!await confirmAction('Review reinvestment','Reinvest '+formatUnits(n,18)+' USDT of recorded position profit into the unified position?'+
-   '\nThe addition has a separate 90-day principal lock. The wallet must sign one blockchain transaction.'))return;
+  let split:AccountEarnings|undefined;
+  let description='Reinvest '+formatUnits(n,18)+' USDT of recorded position profit into the unified position?';
+  if(config.unified.accountReinvest){
+   try{split=allocateAccountEarnings(availableAccountEarnings(view),n);}
+   catch(e){setError((e as Error).message);return;}
+   description='Add '+formatUnits(n,18)+' test USDT to this account.\nPersonal profit: '+formatUnits(split.personal,18)+
+    ' · Referral commission: '+formatUnits(split.referral,18)+' · Network rewards: '+formatUnits(split.network,18)+'.';
+  }else if(n>view.positions.reduce((sum,position)=>sum+position.availableProfit,0n)){
+   setError('The amount exceeds recorded position profit.');return;
+  }
+  if(!await confirmAction('Review reinvestment',description+'\nThe addition has a separate 90-day principal lock. Sign one testnet transaction in your wallet.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setNotice('Checking the test reinvestment…');setTxHash('');setTransactionProgress(null);
   const tracker=new V3PersistentTransactionTracker(reviewScope!);let progressHash:string|undefined;
-  const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
+  const report=(detail:V3TransactionProgress)=>{
+   tracker.record(detail);
+   if(currentReviewKey.current!==reviewKey)return;
+   if(detail.step==='confirmed'&&detail.blockNumber)confirmedBlock.current=Math.max(confirmedBlock.current,detail.blockNumber);
+   if(detail.step==='wallet_request')progressHash=undefined;
+   if(detail.hash)progressHash=detail.hash;
+   setTransactionProgress(detail);
+  };
   try{
-   const result=await runUnifiedReinvestment({enabled:unifiedEnabled,provider:p,wallet,amount:n,config,onProgress:report});
-   tracker.complete();setTxHash(result.hash);setNotice('Test reinvestment confirmed on-chain.');setValue('');await refresh();
-  }catch(e){const message=e instanceof Error?e.message:'V3 reinvestment not confirmed.';setNotice('');setError(message);
-   if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
+   const result=await runUnifiedReinvestment({enabled:unifiedEnabled,provider:p,wallet,amount:n,config,onProgress:report,reviewed:split});
+   tracker.complete();
+   if(currentReviewKey.current===reviewKey){setTxHash(result.hash);setNotice('Test reinvestment confirmed on-chain.');setValue('');await refresh();}
+   return true;
+  }catch(e){
+   const message=e instanceof Error?e.message:'V3 reinvestment not confirmed.';
+   const needsReview=tracker.needsReview(message);
+   if(currentReviewKey.current===reviewKey){
+    setNotice('');setError(message);
+    if(needsReview)showPendingReview(reviewScope,{message,hash:progressHash});
+   }
+  }
   finally{inFlight.current=false;setBusy(false);}
  }
  const reinvest=()=>{
@@ -612,7 +636,7 @@ export default function V3Dashboard(){
     {tab==='overview'&&<V3ClassicOverview view={view} connected={Boolean(wallet)} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
-     onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest}
+     onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest} onAccountReinvest={config?.unified?.accountReinvest?()=>navigate('positions'):undefined}
      onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}/>}
     {tab==='overview'&&<V3CommercePanel/>}
     {view&&<div className="gv2-content">
@@ -630,6 +654,9 @@ export default function V3Dashboard(){
        {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
+      {config.unified?.accountReinvest&&view.wallet.toLowerCase()===wallet.toLowerCase()&&
+       <V3AccountReinvestment key={config.address+':'+wallet} view={view} busy={busy||loading||reviewRequired}
+        readOnly={unifiedReadOnly} onSubmit={reinvestUnified}/>}
       {config.unified&&<V3UnifiedActivity view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} onCheckIn={checkIn}/>}
       {singleCapital&&<section className="gv2-panel">
        {openAccountWithdrawal&&withdrawItem(openAccountWithdrawal)}
@@ -651,11 +678,11 @@ export default function V3Dashboard(){
         <small>Wallet balance: {show(view.walletTestTokenBalance)} test USDT · Minimum deposit: 10 USDT</small>
         <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||unifiedReadOnly} onClick={()=>void deposit()}>Review & sign test deposit</button></div>
       </section>
-      <section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>{config.unified?'Reinvestment adds recorded earnings to the same account. Each addition has its own lock.':'Manual reinvestment moves recorded earnings into a new locked position.'}{view.manualReinvest?' Unreinvested earnings earn no additional profit.':' Personal compound earnings accrue separately.'}</p>
+      {!config.unified?.accountReinvest&&<section className="gv2-panel"><h3>Optional manual reinvestment</h3><p>{config.unified?'Reinvestment adds recorded earnings to the same account. Each addition has its own lock.':'Manual reinvestment moves recorded earnings into a new locked position.'}{view.manualReinvest?' Unreinvested earnings earn no additional profit.':' Personal compound earnings accrue separately.'}</p>
        <div className="gv3-input-row">{config.unified?<V3UnifiedReinvestSummary positions={view.positions}/>:<><label htmlFor="v3-reinvest-id">Source position for recorded profit</label><select id="v3-reinvest-id" value={selectedPosition} onChange={e=>setSelectedPosition(e.target.value)}>
         {view.positions.map(p=><option key={p.id} value={p.id}>Position #{p.id+1} · {p.fromReinvestment?'Reinvestment':'Deposit'} · {show(p.availableProfit)} USDT profit</option>)}</select></>}
         <label htmlFor="v3-reinvest-value">Recorded profit to reinvest</label><input id="v3-reinvest-value" value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal"/>
-        <button disabled={busy||reviewRequired||!view.positions.length||unifiedReadOnly} onClick={reinvest}>Reinvest recorded USDT claim</button></div></section>
+        <button disabled={busy||reviewRequired||!view.positions.length||unifiedReadOnly} onClick={reinvest}>Reinvest recorded USDT claim</button></div></section>}
      </>}
      {tab==='team'&&<>
       {walletSession.provider&&<V3TeamDirectory key={wallet+':'+config.address} view={view} provider={walletSession.provider} config={config}/>}
