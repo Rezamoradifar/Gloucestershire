@@ -5,6 +5,7 @@ import type {V3Snapshot,V3WalletPosition} from '../src/v3-chain';
 import type {UnifiedLot,UnifiedPositionPage} from '../src/v3-unified-position';
 import {readUnifiedWithdrawalPages,type UnifiedVaultReader,type UnifiedBookReader} from '../src/v3-unified-position';
 import {planV3AccountWithdrawal,summarizeV3AccountWithdrawal} from '../src/v3-account-withdrawal';
+import V3EarningsWithdrawal from '../src/V3EarningsWithdrawal';
 import V3AccountWithdrawalForm,{accountWithdrawalFormState,type V3AccountWithdrawalFormProps} from '../src/V3AccountWithdrawalForm';
 
 const E=(value:string)=>parseEther(value),now=200*86400,lock=90*86400;
@@ -68,6 +69,25 @@ describe('one account withdrawal',()=>{
   }
   for(const stop of [{busy:true},{readOnly:true}]){
    expect(accountWithdrawalFormState({...input,...stop,value:'0.1'}).canSubmit).toBe(false);
+  }
+ });
+ it('shows all three available balances, separates reservations, and limits the selected source',()=>{
+  const view=account([position(0,'7',{reservedProfit:E('1')})]);
+  Object.assign(view,{referralAvailable:E('0.7'),networkAvailable:E('35'),referralReserved:E('2'),networkReserved:E('3'),manualReinvest:true});
+  const form={...props(view),kind:'network' as const,onKind:vi.fn(),onPage:vi.fn(),value:'20'};
+  expect(accountWithdrawalFormState(form)).toMatchObject({maximum:E('20'),fee:E('0.4'),net:E('19.6'),canSubmit:true});
+  const html=renderToStaticMarkup(<V3EarningsWithdrawal {...form}/>);
+  for(const text of ['Withdraw earnings','Personal profit','Referral commission','Network rewards','42.7','6.00 test USDT','19.6 test USDT','Choose one source per request'])expect(html).toContain(text);
+  expect(accountWithdrawalFormState({...form,value:'42.7'}).canSubmit).toBe(false);
+  expect(accountWithdrawalFormState({...form,view:{...view,pendingWithdrawal:true}})).toMatchObject({maximum:0n,canSubmit:false});
+ });
+ it('allows reward sources when extra position pages are unavailable and keeps principal separate',()=>{
+  const view=unifiedAccount(['5']);view.withdrawalCoverageError='Withdrawal addition records are unavailable. Refresh to retry.';
+  for(const kind of ['referral','network'] as const){
+   expect(accountWithdrawalFormState({...props(view,true),kind,value:'1'})).toMatchObject({canSubmit:true,coverageError:''});
+  }
+  for(const kind of ['profit','principal'] as const){
+   expect(accountWithdrawalFormState({...props(view,true),kind,value:'1'})).toMatchObject({canSubmit:false,maximum:null});
   }
  });
  it('automatically chooses one eligible deposit and keeps the exact amount',()=>{

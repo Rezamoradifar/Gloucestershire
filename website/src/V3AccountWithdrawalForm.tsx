@@ -14,7 +14,8 @@ export function accountWithdrawalFormState(props:V3AccountWithdrawalFormProps){
  const {view,unified,kind,value}=props;
  let totals:ReturnType<typeof v3AccountTotals>|null=null;
  let summary:ReturnType<typeof summarizeV3AccountWithdrawal>|null=null,balanceError='',coverageError='',error='';
- if(kind!=='referral'){
+ const needsPositions=kind==='profit'||kind==='principal';
+ if(needsPositions){
   try{totals=v3AccountTotals(view.positions);}
   catch(e){balanceError=e instanceof Error?e.message:'The account balances could not be verified.';}
   try{summary=summarizeV3AccountWithdrawal(view,unified);}
@@ -32,7 +33,7 @@ export function accountWithdrawalFormState(props:V3AccountWithdrawalFormProps){
   ready?(balance<cap?balance:cap):0n;
  return {totals,summary,balanceError,coverageError:(kind==='profit'||kind==='principal')?coverageError:'',error,
   amount,fee,net:amount===null||fee===null?null:amount-fee,maximum,
-  canSubmit:(kind==='referral'||totals!==null)&&!props.busy&&!props.readOnly&&plan!==null&&!error};
+  canSubmit:ready&&(!needsPositions||totals!==null)&&!props.busy&&!props.readOnly&&plan!==null&&!error};
 }
 
 export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormProps){
@@ -41,7 +42,7 @@ export default function V3AccountWithdrawalForm(props:V3AccountWithdrawalFormPro
  const view=props.view;
  const maximum=state.maximum;
  function submit(event:FormEvent){event.preventDefault();if(state.canSubmit)props.onSubmit();}
- if(!referral&&!totals)return <section aria-label="Account withdrawal"><h3>Withdraw from your account</h3>
+ if((props.kind==='profit'||props.kind==='principal')&&!totals)return <section aria-label="Account withdrawal"><h3>Withdraw from your account</h3>
   <p role="alert">{state.balanceError}</p><p>Refresh the verified account before requesting a withdrawal.</p></section>;
  return <section aria-label={props.onKind?'Account withdrawal':'Referral earnings withdrawal'}>
   <h3>{props.onKind?'Withdraw from your account':'Withdraw referral earnings'}</h3>

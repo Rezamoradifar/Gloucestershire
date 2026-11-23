@@ -2,6 +2,7 @@ import {Contract,ZeroAddress,parseEther} from 'ethers';
 import {describe,expect,it,vi} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import V3NetworkPanel from '../src/V3NetworkPanel';
+import V3MilestoneProgress from '../src/V3MilestoneProgress';
 import {checkV3GroupBranches} from '../src/v3-actions';
 
 const wallet='0x1000000000000000000000000000000000000001';
@@ -76,6 +77,19 @@ describe('V3 team group validation',()=>{
   expect(ready).toContain('One wallet transaction can prepare this volume and record the stage claim');
   expect(button(markup(null))).toContain('disabled');
   expect(button(markup({eligible:false,volume:parseEther('300')}))).toContain('disabled');
+ });
+ it('draws confirmed branch contributions and the exact stage deficit; partial scans stay labelled',()=>{
+  const target=parseEther('500'),reward=parseEther('35'),counted=parseEther('300');
+  const group={id:0,stage:0,branches:2,target,reward,prepared:parseEther('100'),branchAddresses:[first,second],
+   preview:{volume:counted,eligible:false,byBranch:[counted,0n]}};
+  const chart=renderToStaticMarkup(<V3MilestoneProgress group={group}/>);
+  expect(chart).toContain('200.00 test USDT');
+  expect(chart).toContain('100.00 already prepared');
+  expect(chart).toContain('300.00 test USDT (60%)');
+  expect(chart).toContain(first);expect(chart).toContain(second);
+  const partial=renderToStaticMarkup(<V3MilestoneProgress group={{...group,branches:65,preview:null}}/>);
+  expect(partial).toContain('Confirmed prepared volume');expect(partial).toContain('Partial view');
+  expect(partial).not.toContain('Still needed');
  });
  it('keeps network pagination available while preview actions are read-only',()=>{
   const view={wallet,registered:true,eligible:true,qualifiedDirects:2,requiredDirects:8,qualifiedVolume:0n,requiredVolume:0n,
