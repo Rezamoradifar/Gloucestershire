@@ -44,6 +44,14 @@ describe('wallet-specific confirmed V3 activity',()=>{
   expect(src.getLogs.mock.calls[1][0].topics[2]).toBe(zeroPadValue(wallet,32));
  });
 
+ it('shows a pooled reinvestment once with the exact sources',async()=>{
+  const reinvest=log('AccountEarningsReinvested',[wallet,0n,to('7'),to('.7'),to('35'),to('42.7')],4001,0);
+  const page=await queryV3HistoryWindow(source([reinvest]).provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);
+  expect(page.items).toHaveLength(1);
+  expect(page.items[0]).toMatchObject({title:'Account earnings reinvested',value:'42.7 USDT',
+   detail:'Personal profit 7.00 USDT · Referral commission 0.7 USDT · Network rewards 35.00 USDT'});
+ });
+
  it('identifies the member and referral level for each commission credit',async()=>{
   const referral=log('ReferralClaimAccrued',[wallet,other,2,to('0.35')],4000,0);
   const page=await queryV3HistoryWindow(source([referral]).provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);

@@ -26,6 +26,9 @@ elif [[ ${REFERRAL_PROFIT:-0} == 1 ]]; then
 elif [[ ${MANUAL_REINVEST:-0} == 1 ]]; then
   profile=(--manual-reinvest)
   route_name=manual-reinvest-test
+elif [[ ${ACCOUNT_REINVEST:-0} == 1 ]]; then
+  profile=(--account-reinvest)
+  route_name=account-reinvest-test
 elif [[ ${UPLINE_RATES:-0} == 1 ]]; then
   profile=(--upline-rates)
   route_name=upline-rates-test
@@ -200,6 +203,16 @@ class ApplyTestnet(unittest.TestCase):
         self.assertEqual(calls, [f"--verify-existing {READ_RPC} --upline-rates",
                                  f"worker {REVISION} --upline-rates",
                                  f"--install {REVISION} {DIGEST} {SIGN_RPC} --upline-rates"])
+
+    def test_account_reinvest_deploys_once_and_reuses_its_own_proof_for_primary(self):
+        first, calls = self.apply(ACCOUNT_REINVEST="1", DEPLOY_OPTION="--deploy-testnet")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn(f"--deploy-testnet {SIGN_RPC} --account-reinvest", calls)
+        second, calls = self.apply(ACCOUNT_REINVEST="1", DEPLOY_OPTION="--primary")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(calls, [f"--verify-existing {READ_RPC} --account-reinvest",
+                                 f"worker {REVISION} --account-reinvest",
+                                 f"--install {REVISION} {DIGEST} {SIGN_RPC} --account-reinvest"])
 
     def test_manual_reinvest_reuses_its_own_proof_and_worker_for_primary(self):
         result, calls = self.apply(MANUAL_REINVEST="1", DEPLOY_OPTION="--primary")

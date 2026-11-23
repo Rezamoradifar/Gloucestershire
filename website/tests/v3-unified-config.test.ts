@@ -123,3 +123,15 @@ it('enables recipient-rate wallet actions only on the matching test route or ver
  expect(enabled('/','manual-reinvest-testnet')).toBe(false);
  expect(enabled('/manual-reinvest-test/',mode)).toBe(false);
 });
+
+it('gates pooled earnings on the matching version and route',()=>{
+ const mode='account-reinvest-testnet';
+ const config=v3ParseReleaseConfig({...unified,unifiedMode:mode})!;
+ expect(config.unified).toMatchObject({singleCapital:true,manualReinvest:true,uplineRates:true,accountReinvest:true});
+ const enabled=(path:string,primary='')=>unifiedWalletEnabled(config,path,true,'verified-testnet','verified-isolated-testnet',primary);
+ expect(enabled('/account-reinvest-test/')).toBe(true);
+ expect(enabled('/',mode)).toBe(true);
+ expect(enabled('/','upline-rates-testnet')).toBe(false);
+ expect(enabled('/upline-rates-test/',mode)).toBe(false);
+ expect(v3ParseReleaseConfig({...unified,unifiedMode:'upline-rates-testnet'})?.unified?.accountReinvest).toBeUndefined();
+});

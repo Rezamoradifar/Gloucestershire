@@ -5,7 +5,7 @@ import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 
 const events=new Interface(V3_ABI);
 const firstAccount=['DepositRouted','DailyClaimAccrued','ReferralClaimAccrued',
- 'NetworkClaimAccrued','ProfitReinvested','CheckIn','StatusChanged',
+ 'NetworkClaimAccrued','AccountEarningsReinvested','ProfitReinvested','CheckIn','StatusChanged',
  'RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned','CyclePrepared','CycleEarned'];
 const secondAccount=['WithdrawalRequested','WithdrawalPaid','NetworkVolumeQueued'];
 const networkFirst=['RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned','CyclePrepared','CycleEarned'];
@@ -139,6 +139,11 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
     value=amount(BigInt(a.amount));break;
    }
    case 'NetworkClaimAccrued':category='earnings';title='Network claim recorded';detail='Group #'+number(BigInt(a.group))+' · Claim, not a wallet payment';value=amount(BigInt(a.amount));break;
+   case 'AccountEarningsReinvested':
+    if(a.personal+a.referral+a.network!==a.total||a.positionId!==0n||a.total<=0n)throw Error('Account reinvestment does not reconcile.');
+    category='earnings';title='Account earnings reinvested';value=amount(a.total);
+    detail='Personal profit '+amount(a.personal)+' · Referral commission '+amount(a.referral)+' · Network rewards '+amount(a.network);
+    break;
    case 'ProfitReinvested':category='earnings';title='Profit reinvested';detail='Position #'+number(BigInt(a.fromPosition))+' to #'+number(BigInt(a.newPositionId));value=amount(BigInt(a.amount));break;
    case 'CheckIn':title='Account check-in';detail='Confirmed eligibility action';break;
    case 'StatusChanged':title=Boolean(a.suspended)?'Account suspended':'Account suspension lifted';detail='Contract account status changed';break;

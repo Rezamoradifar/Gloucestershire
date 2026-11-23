@@ -9,7 +9,8 @@ import {
 import {readWalletSelection} from './wallet-read';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession,v3ReleaseConfig,type V3Withdrawal} from './v3-chain';
-import {readUnifiedReinvestmentPlan} from './v3-reinvest-batch';
+import type {AccountEarnings} from './v3-account-earnings';
+import {readAccountReinvestmentPlan,readUnifiedReinvestmentPlan} from './v3-reinvest-batch';
 import {prepareUnifiedPageAction,readUnifiedPositionPage,unifiedWithdrawalWindow,
  type UnifiedBookReader,type UnifiedVaultReader} from './v3-unified-position';
 const EVENTS=new Interface(V3_ABI);
@@ -408,7 +409,7 @@ export async function sendV3UnifiedRegistration(walletProvider:Eip1193Provider,w
 }
 // The unified flow plans exact sources and verifies their common destination.
 export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,wallet:string,amount:bigint,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback){
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,onProgress?:V3TransactionProgressCallback,reviewed?:AccountEarnings){
  if(!config?.unified)throw Error('The verified unified testnet contract is required.');
  if(typeof amount!=='bigint'||amount<=0n)throw Error('Enter a positive USDT amount.');
  const who=getAddress(wallet);
@@ -416,13 +417,16 @@ export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,w
  const session=await v3ReadSession(walletProvider,who,config,true);
  let browser:BrowserProvider|undefined;
  try{
-  const plan=await readUnifiedReinvestmentPlan(session,who,amount);
+  const plan=config.unified.accountReinvest?await readAccountReinvestmentPlan(session,who,amount,reviewed)
+   :{...await readUnifiedReinvestmentPlan(session,who,amount),split:null};
+  const method=plan.split?'reinvestAccountEarnings':'reinvestMany';
+  const args=plan.split?[plan.sources,plan.split.referral,plan.split.network]:[plan.sources];
   progress(onProgress,{step:'simulation',action:'reinvestment'});
-  const gas=await checkedGas(session,session.vault,'reinvestMany',[plan.sources],who);
+  const gas=await checkedGas(session,session.vault,method,args,who);
   const canonical=await session.provider.send('eth_getBlockByNumber',[toQuantity(session.block.number),false]);
   if(!session.block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==session.block.hash.toLowerCase())
    throw Error('The verified reinvestment block changed; refresh before continuing.');
-  const data=EVENTS.encodeFunctionData('reinvestMany',[plan.sources]);
+  const data=EVENTS.encodeFunctionData(method,args);
   browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
   const signer=await browser.getSigner(who);
   const receipt=await submitVerified(walletProvider,who,signer,config,config.address,data,gas,
@@ -430,14 +434,18 @@ export async function sendV3UnifiedReinvestment(walletProvider:Eip1193Provider,w
   const observed=receipt.logs.flatMap(log=>{
    if(log.address.toLowerCase()!==config.address.toLowerCase())return [];
    try{const event=EVENTS.parseLog({topics:log.topics,data:log.data});
-    return event?.name==='ProfitReinvested'&&getAddress(event.args.user)===who?[event]:[];
+    return event?.name===(plan.split?'AccountEarningsReinvested':'ProfitReinvested')&&getAddress(event.args.user)===who?[event]:[];
    }catch{return [];}
   });
-  if(observed.length!==plan.sources.length||observed.some((event,index)=>{
+  const split=plan.split;
+  const matched=split?observed.length===1&&observed[0].args.positionId===0n&&observed[0].args.total===amount&&
+   observed[0].args.personal===split.personal&&observed[0].args.referral===split.referral&&observed[0].args.network===split.network:
+   observed.length===plan.sources.length&&observed.every((event,index)=>{
    const expected=plan.sources[index];
-   return BigInt(event.args.fromPosition)!==BigInt(expected.positionId)||
-    BigInt(event.args.newPositionId)!==BigInt(plan.destination)||BigInt(event.args.amount)!==expected.amount;
-  }))throw Error('Reinvestment transaction '+receipt.hash+' was confirmed but its events did not match. Check wallet history before retrying.');
+   return BigInt(event.args.fromPosition)===BigInt(expected.positionId)&&
+    BigInt(event.args.newPositionId)===BigInt(plan.destination)&&BigInt(event.args.amount)===expected.amount;
+  });
+  if(!matched)throw Error('Reinvestment transaction '+receipt.hash+' was confirmed but its events did not match. Check wallet history before retrying.');
   return {hash:receipt.hash,destination:plan.destination,amount};
  }finally{browser?.destroy();session.provider.destroy();}
 }

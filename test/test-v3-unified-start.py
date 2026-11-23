@@ -85,7 +85,7 @@ esac''')
         self.assertFalse(self.log.exists())
 
     def test_referral_profiles_keep_deployment_and_promotion_explicit(self):
-        for profile in ["--referral-profit", "--manual-reinvest", "--upline-rates"]:
+        for profile in ["--referral-profit", "--manual-reinvest", "--upline-rates", "--account-reinvest"]:
             for options in [(), ("--deploy-testnet",), ("--primary",)]:
                 result = self.invoke(PIN, profile, *options)
                 self.assertEqual(result.returncode, 0, result.stderr)

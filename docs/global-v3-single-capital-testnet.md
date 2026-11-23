@@ -12,6 +12,37 @@ forms, transaction reviews and history. The network remains explicitly labeled
 BNB Testnet. This presentation change does not replace the pinned mock token,
 change the chain, convert any balance to real assets or enable a mainnet release.
 
+## Reinvest account earnings (hourly version 6)
+
+In **Account → Reinvest account earnings**, enter an amount or choose **Use max**.
+The wallet review lists the exact amounts taken from posted referral commission,
+posted network rewards and available personal profit. Partial reinvestments use those
+sources in that order. Signing adds the sum to the same position as one new
+90-day lot. Pending withdrawal reservations are already excluded from each source.
+
+For example, 7 personal profit, 0.70 referral commission and 35 network rewards
+can add 42.70 test USDT to principal. The transaction creates one History entry
+with all three amounts. The contract also supports reinvesting rewards alone.
+The existing principal limit still applies. If personal earnings span more than
+128 contributing lot slots, the form reports the amount that fits in the first
+transaction. Refresh the account before reinvesting the remainder.
+
+Version 5 only consumes personal profit. Version 6 uses a separate chain-97
+deployment, proof, keeper and account ledger. Use the release launcher on
+`vps-luna-2585` with the reviewed commit:
+
+```bash
+bash scripts/start-v3-unified-release.sh "$release_sha" --account-reinvest --deploy-testnet
+```
+
+This installs `/account-reinvest-test/`. The installer prints the test gas
+address if its new keeper needs funding. Running the same command again
+reuses the deployment proof. The separate `--account-reinvest --primary`
+operation publishes a verified, wallet-enabled build at the root after the
+keeper has test gas. Existing version 5 members continue to access their
+balances and withdrawals through `/upline-rates-test/`. Publishing the new
+version does not move their capital or earnings.
+
 ## Referral rates by the upline's own principal (hourly version 5)
 
 At each eligible posting the earning member keeps their full personal profit
