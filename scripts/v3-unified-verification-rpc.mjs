@@ -23,7 +23,7 @@ function transportReason(error) {
   if (transportCodes.has(error.code)) return error.code;
   if (error.code === 'SERVER_ERROR') {
     const status = error.response?.statusCode;
-    if (Number.isInteger(status) && (status === 408 || status === 429 || (status >= 500 && status < 600))) {
+    if (Number.isInteger(status) && (status === 403 || status === 408 || status === 429 || (status >= 500 && status < 600))) {
       return 'HTTP_' + status;
     }
   }
