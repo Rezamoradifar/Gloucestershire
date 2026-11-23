@@ -35,6 +35,7 @@ import V3AccountReinvestment from './V3AccountReinvestment';
 import {allocateAccountEarnings,availableAccountEarnings,type AccountEarnings} from './v3-account-earnings';
 import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
 import V3AccountWithdrawalForm from './V3AccountWithdrawalForm';
+import V3EarningsWithdrawal from './V3EarningsWithdrawal';
 import {planV3AccountWithdrawal} from './v3-account-withdrawal';
 import {prepareUnifiedPageAction,unifiedWithdrawalWindow,type UnifiedPositionPage} from './v3-unified-position';
 import V3ClassicOverview from './V3ClassicOverview';
@@ -58,6 +59,7 @@ import './v2-premium-experience.css';
 import './v2-signature-dashboard.css';
 import './v3-dashboard.css';
 import './v1-v3-dashboard.css';
+import './v3-account-and-team.css';
 
 type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'admin';
 const menus=[
@@ -93,7 +95,8 @@ export default function V3Dashboard(){
  const [walletDiagnostic,setWalletDiagnostic]=useState<V3WalletDiagnostic|null>(null),[diagnosing,setDiagnosing]=useState(false);
  const diagnosticVersion=useRef(0);
  const [value,setValue]=useState(''),[selectedPosition,setSelectedPosition]=useState('0');
- const [referralAmount,setReferralAmount]=useState('');
+ const [withdrawalAmount,setWithdrawalAmount]=useState('');
+ const [accountTarget,setAccountTarget]=useState<'withdraw'|'reinvest'|null>(null);
  const [referrer,setReferrer]=useState(()=>{
   const invite=readReferralInvite(typeof window==='undefined'?'':window.location.search);
   return invite.status==='valid'?invite.address:'';
@@ -116,7 +119,7 @@ export default function V3Dashboard(){
  const unifiedEnabled=unifiedWalletEnabled(config,typeof window==='undefined'?'':window.location.pathname);
  const unifiedReadOnly=Boolean(config?.unified)&&!unifiedEnabled;
  const operatorAccess=Boolean(view?.canManage||(config?.unified&&view?.canFund));
- useEffect(()=>{setUnifiedPageStart(0);setReferralAmount('');},[wallet,chain,config?.address]);
+ useEffect(()=>{setUnifiedPageStart(0);setWithdrawalAmount('');setRequestKind('profit');},[wallet,chain,config?.address]);
  const actionError=useRef<HTMLParagraphElement>(null);
  useEffect(()=>{if(error)actionError.current?.scrollIntoView({block:'center'});},[error]);
  const invalidInvite=typeof window!=='undefined'&&readReferralInvite(window.location.search).status==='invalid';
@@ -188,6 +191,12 @@ export default function V3Dashboard(){
    document.removeEventListener('visibilitychange',resume);
   };
  },[finishReview]);
+ const withdrawalCoverage=tab==='withdrawals'||(tab==='positions'&&singleCapital&&(requestKind==='profit'||requestKind==='principal'));
+ useEffect(()=>{
+  if(tab!=='positions'||!accountTarget||view?.wallet.toLowerCase()!==wallet.toLowerCase())return;
+  const heading=document.getElementById(accountTarget==='withdraw'?'account-withdraw-heading':'account-earnings-title');
+  if(heading){heading.focus();heading.scrollIntoView({block:'start'});setAccountTarget(null);}
+ },[tab,accountTarget,view,wallet]);
  const refresh=useCallback(async(background=false)=>{
   const provider=walletSession.provider;
   if(walletSession.version!==walletVersion.current||provider!==getWalletProvider())return;
@@ -195,7 +204,7 @@ export default function V3Dashboard(){
   if(!provider||!wallet||chain!==97||!config){setView(null);setReadError(walletSession.error??'');setLoading(false);return;}
   if(!background)setLoading(true);
   try{
-   const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null,unifiedPageStart,tab==='withdrawals',confirmedBlock.current);
+   const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null,unifiedPageStart,withdrawalCoverage,confirmedBlock.current);
    if(id===revision.current&&getWalletProvider()===provider){setView(result);setReadError('');}
   }catch(e){
    if(id===revision.current){
@@ -203,7 +212,7 @@ export default function V3Dashboard(){
     setReadError(background?'Refresh unavailable. Values shown are from the last verified block.':'Unable to load verified account data. Retry or use the wallet connection check.');
    }
   }finally{if(id===revision.current)setLoading(false);}
- },[walletSession,wallet,chain,config,tab,branchPage,groupPage,unifiedPageStart]);
+ },[walletSession,wallet,chain,config,tab,branchPage,groupPage,unifiedPageStart,withdrawalCoverage]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
   if(loading||!config||!wallet||chain!==97)return;
@@ -308,8 +317,8 @@ export default function V3Dashboard(){
     hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    }else throw Error('Select the verified unified withdrawal profile.');
    tracker.complete();setTxHash(hash);
-   if(action.kind==='requestReferral'){
-    setReferralAmount('');setNotice('Referral withdrawal requested. Manager approval and funding are pending.');
+   if(['requestProfit','requestReferral','requestNetworkReward','requestPrincipal'].includes(action.kind)){
+    setWithdrawalAmount('');setValue('');setNotice('Withdrawal requested. Manager approval and funding are pending.');
    }else setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(operatorAccess)await readQueue(adminQueue?.page??0);
   }catch(e){const message=e instanceof Error?e.message:'V3 action not confirmed.';setNotice('');setError(message);
@@ -482,7 +491,7 @@ export default function V3Dashboard(){
   try{
    const result=await sendV3UnifiedPageWithdrawal(p,wallet,kind,page.positionId,page.start,n,config,
     {enabled:unifiedEnabled,onProgress:report});
-   tracker.complete();setTxHash(result.hash);setNotice('Test withdrawal requested. Approval and funding are separate.');setValue('');await refresh();
+   tracker.complete();setTxHash(result.hash);setNotice('Test withdrawal requested. Approval and funding are separate.');setValue('');setWithdrawalAmount('');await refresh();
   }catch(e){const message=e instanceof Error?e.message:'V3 withdrawal request not confirmed.';setNotice('');setError(message);
    if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
   finally{inFlight.current=false;setBusy(false);}
@@ -566,10 +575,13 @@ export default function V3Dashboard(){
     </div>}
    </div>
   </article>;
- const navigate=(to:Tab,nextValue='')=>{setTab(to);setMenuOpen(false);setError('');setValue(nextValue);};
- const recentReferralRequest=view?.withdrawals.find(row=>row.kind===2);
- const openAccountWithdrawal=view?.pendingWithdrawal
-  ?view.withdrawals.find(row=>row.status>=0&&row.status<=2):undefined;
+ const navigate=(to:Tab,nextValue='',target:'withdraw'|'reinvest'|null=null)=>{
+  const accountWithdrawal=singleCapital&&to==='withdrawals';
+  setTab(accountWithdrawal?'positions':to);
+  setAccountTarget(accountWithdrawal?'withdraw':target);
+  setMenuOpen(false);setError('');setValue(accountWithdrawal?'':nextValue);
+  if(accountWithdrawal)setWithdrawalAmount(nextValue);
+ };
  return <div className="gv2 shell gv2-classic gv3-workspace" dir="ltr">
   <aside id="v3-dashboard-menu" className={'sidebar gv2-sidebar '+(menuOpen?'open':'')} aria-label="Global V3 testnet navigation" inert={smallScreen&&!menuOpen}>
    <button className="gv2-sidebar-close" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"><X size={18}/></button>
@@ -636,7 +648,7 @@ export default function V3Dashboard(){
     {tab==='overview'&&<V3ClassicOverview view={view} connected={Boolean(wallet)} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
-     onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest} onAccountReinvest={config?.unified?.accountReinvest?()=>navigate('positions'):undefined}
+     onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest} onAccountWithdraw={singleCapital?()=>{setRequestKind('profit');navigate('withdrawals');}:undefined} onAccountReinvest={config?.unified?.accountReinvest?()=>navigate('positions','','reinvest'):undefined}
      onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}/>}
     {tab==='overview'&&<V3CommercePanel/>}
     {view&&<div className="gv2-content">
@@ -654,16 +666,19 @@ export default function V3Dashboard(){
        {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
+      {singleCapital&&view.wallet.toLowerCase()===wallet.toLowerCase()&&<>
+       <V3EarningsWithdrawal view={view} unified={true} kind={requestKind} onKind={setRequestKind}
+        value={withdrawalAmount} onValue={setWithdrawalAmount} onPage={setUnifiedPageStart}
+        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onSubmit={()=>request(requestKind,withdrawalAmount)}/>
+       {view.withdrawals.length>0&&<section className="gv2-panel gv3-account-requests" aria-label="Withdrawal requests">
+        <h3>Latest withdrawal</h3>{withdrawItem(view.withdrawals[0])}
+        {view.withdrawals.length>1&&<details><summary>Earlier requests</summary>{view.withdrawals.slice(1).map(r=>withdrawItem(r))}</details>}
+       </section>}
+      </>}
       {config.unified?.accountReinvest&&view.wallet.toLowerCase()===wallet.toLowerCase()&&
        <V3AccountReinvestment key={config.address+':'+wallet} view={view} busy={busy||loading||reviewRequired}
         readOnly={unifiedReadOnly} onSubmit={reinvestUnified}/>}
       {config.unified&&<V3UnifiedActivity view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} onCheckIn={checkIn}/>}
-      {singleCapital&&<section className="gv2-panel">
-       {openAccountWithdrawal&&withdrawItem(openAccountWithdrawal)}
-       <V3AccountWithdrawalForm view={view} unified={true} kind="referral" value={referralAmount} onValue={setReferralAmount}
-        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onSubmit={()=>request('referral',referralAmount)}/>
-       {recentReferralRequest&&recentReferralRequest.id!==openAccountWithdrawal?.id&&withdrawItem(recentReferralRequest)}
-      </section>}
       {!singleCapital&&<V3PositionsList positions={view.unifiedPage?view.positions.filter(position=>!position.fromReinvestment):view.positions}/>}
       {singleCapital&&!view.unifiedPage&&<p>This account has no verified test deposits.</p>}
       {view.unifiedPage&&<V3UnifiedPositionPage page={view.unifiedPage} singleCapital={singleCapital} manualReinvest={view.manualReinvest}
@@ -685,10 +700,10 @@ export default function V3Dashboard(){
         <button disabled={busy||reviewRequired||!view.positions.length||unifiedReadOnly} onClick={reinvest}>Reinvest recorded USDT claim</button></div></section>}
      </>}
      {tab==='team'&&<>
-      {walletSession.provider&&<V3TeamDirectory key={wallet+':'+config.address} view={view} provider={walletSession.provider} config={config}/>}
-      <V3NetworkPanel view={view} busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>navigate('withdrawals')}
+      <V3NetworkPanel view={view} busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onAction={(action,description)=>void perform(action,description)} onWithdraw={()=>{setRequestKind(view.networkAvailable>0n?'network':'referral');navigate('withdrawals');}}
        groupsStatus={view.networkLoadError?'error':view.networkLoaded?'ready':'loading'} onRetry={()=>void refresh()}
        onBranchPage={setBranchPage} onGroupPage={setGroupPage}/>
+      {walletSession.provider&&<V3TeamDirectory key={wallet+':'+config.address} view={view} provider={walletSession.provider} config={config}/>}
      </>}
      {tab==='history'&&<><V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><V3WithdrawalHistory key={'withdraw-'+view.wallet} wallet={view.wallet} config={config}/></>}
      {tab==='profile'&&<section className="gv2-panel"><h3>Verified V3 profile</h3>

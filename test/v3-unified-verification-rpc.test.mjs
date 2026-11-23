@@ -44,6 +44,34 @@ test('ethers retries the failed JSON-RPC read against the other endpoint', async
   assert.deepEqual(requests, [[primary,'eth_chainId'], [alternate,'eth_chainId']]);
 });
 
+test('a 403 during the primary build restarts verification on the next public reader', async t => {
+  const requests = [];
+  const log = t.mock.method(console, 'error', () => {});
+  t.mock.method(FetchRequest, 'createGetUrlFunc', () => async request => {
+    const {id, method} = JSON.parse(Buffer.from(request.body).toString());
+    requests.push([request.url, method]);
+    if (request.url === official && method === 'eth_blockNumber') {
+      return {statusCode:403, statusMessage:'Forbidden', headers:{'content-type':'text/html'},
+        body:toUtf8Bytes('<html><h1>403 Forbidden</h1></html>')};
+    }
+    const result = method === 'eth_chainId' ? '0x61' : '0x123';
+    return {statusCode:200, statusMessage:'OK', headers:{},
+      body:toUtf8Bytes(JSON.stringify({jsonrpc:'2.0', id, result}))};
+  });
+  const block = await withUnifiedReadRpc(official, 'pre-build', async provider => {
+    assert.equal(await provider.send('eth_chainId', []), '0x61');
+    return provider.send('eth_blockNumber', []);
+  });
+  assert.equal(block, '0x123');
+  assert.deepEqual(requests, [
+    [official, 'eth_chainId'], [official, 'eth_blockNumber'],
+    [primary, 'eth_chainId'], [primary, 'eth_blockNumber'],
+  ]);
+  assert.deepEqual(log.mock.calls.map(call => call.arguments), [
+    ['UNIFIED_VERIFICATION_RPC_UNREACHABLE phase=pre-build endpoint=' + official + ' reason=HTTP_403'],
+  ]);
+});
+
 test('a transport failure on the fixed worker provider does not replay a submission', async t => {
   const requests = [];
   t.mock.method(FetchRequest, 'createGetUrlFunc', ({agent}) => async request => {

@@ -1,0 +1,95 @@
+/* Account totals, their withdrawal sources, and confirmed network volume. */
+.gv3-workspace .gv3-withdraw-center,
+.gv3-workspace .gv3-stage-progress {
+ --mint:#a2ebcc;
+ --muted:#bac9d2;
+ color:#f2f5f5;
+ overflow-wrap:anywhere;
+ font-variant-numeric:tabular-nums;
+}
+.gv3-earnings-head,.gv3-withdraw-limit,.gv3-held-amount,.gv3-withdraw-receipt div {
+ display:flex;align-items:baseline;justify-content:space-between;gap:.7rem;flex-wrap:wrap;
+}
+.gv3-earnings-head h2,.gv3-stage-progress h5 {margin:0}
+.gv3-earnings-head h2 {font-size:clamp(1.3rem,3.3vw,1.85rem);letter-spacing:-.035em}
+.gv3-earnings-head svg {color:var(--mint);flex:none}
+.gv3-earnings-head p,.gv3-stage-progress p,.gv3-withdraw-center p,.gv3-withdraw-limit span {
+ color:var(--muted);line-height:1.5;font-size:.91rem;
+}
+.gv3-earnings-head p {margin:.4rem 0 0}
+.gv3-pool-total,.gv3-stage-total {display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem}
+.gv3-pool-total {margin:.15rem 0 1.2rem}
+.gv3-pool-total strong {color:var(--mint);font-size:clamp(2rem,7vw,3rem);line-height:1.1;letter-spacing:-.045em;max-width:100%}
+.gv3-pool-total span,.gv3-stage-total span {color:var(--muted);font-size:.9rem}
+.gv3-earnings-sources {
+ display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;
+ margin:0;padding:0;border:0;min-inline-size:0;
+}
+.gv3-earnings-sources legend {padding:0;margin-bottom:.55rem;color:#e2e9ed;font-size:.96rem;font-weight:650}
+.gv3-source {--accent:#9ce1bf;position:relative;display:grid;grid-template-columns:auto 1fr;align-items:start;gap:.55rem;
+ min-width:0;min-height:58px;padding:.8rem;border:1px solid #45515c;border-radius:.75rem;background:#141b24;cursor:pointer}
+.gv3-source-referral {--accent:#c0b1fb}
+.gv3-source-network {--accent:#9ccfee}
+.gv3-source svg:first-of-type {color:var(--accent)}
+.gv3-source>span {min-width:0;color:#e4e9ef;font-size:.9rem;line-height:1.3}
+.gv3-source strong {display:block;margin-top:.33rem;color:var(--accent);font-size:1.12rem;line-height:1.15}
+.gv3-source input {position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.gv3-source-check {display:none}
+.gv3-source:has(input:checked) {border-color:var(--accent);background:#1b2930}
+.gv3-source:has(input:checked) .gv3-source-check {display:block;position:absolute;right:.4rem;bottom:.4rem;color:var(--accent)}
+.gv3-source:has(input:checked)>span {padding-right:.6rem}
+.gv3-source:focus-within,.gv3-workspace .gv3-withdraw-center :is(button,summary):focus-visible,
+.gv3-workspace .gv3-auto-group :is(button,summary):focus-visible {outline:2px solid #f1cf89;outline-offset:3px}
+.gv3-principal-source {grid-column:1/-1;display:flex;align-items:center;gap:.55rem;min-height:44px;font-size:.87rem;color:var(--muted);cursor:pointer}
+.gv3-principal-source input {accent-color:#e7ca90;width:1.05rem;height:1.05rem;margin:0}
+.gv3-withdraw-editor {display:grid;gap:.65rem;padding-top:.8rem;border-top:1px solid #39434a}
+.gv3-withdraw-editor p,.gv3-withdraw-note,.gv3-held-amount {margin:.35rem 0}
+.gv3-withdraw-editor label,.gv3-withdraw-limit strong {font-size:.94rem;font-weight:650}
+.gv3-withdraw-input {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem}
+.gv3-withdraw-input input {min-width:0;width:100%;font-size:1rem}
+.gv3-withdraw-input :is(input,button),.gv3-withdraw-editor button,.gv3-workspace .gv3-auto-group button {min-height:44px}
+.gv3-withdraw-editor .gv3-field-error {color:#ffc3be}
+.gv3-withdraw-receipt {display:grid;gap:.35rem;margin:0;color:var(--muted);font-size:.9rem}
+.gv3-withdraw-receipt dd {margin:0;color:#f4f4ea;font-weight:650}
+.gv3-withdraw-center p.gv3-withdraw-note {margin-top:.8rem}
+.gv3-window {display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.gv3-account-requests h3 {margin-top:0}
+#account-withdraw-heading,#account-earnings-title {scroll-margin-block-start:5rem}
+.gv3-workspace .gv3-network-group.gv3-auto-group {display:grid;grid-template-columns:minmax(0,1fr);gap:.85rem}
+.gv3-auto-group .gv3-kicker {font-size:.76rem;letter-spacing:.08em}
+.gv3-workspace .gv3-auto-group h4 {font-size:1.22rem;margin:0}
+.gv3-stage-progress {margin:0;padding:clamp(.8rem,2.5vw,1.25rem);border:1px solid #384950;border-radius:14px;background:#111b20}
+.gv3-stage-progress figcaption,.gv3-stage-progress h5 {color:#e6efea;font-size:.94rem;font-weight:650}
+.gv2-classic.gv3-workspace .gv3-stage-total strong {font-size:clamp(1.75rem,5.5vw,2.65rem);letter-spacing:-.045em;color:var(--mint)}
+.gv3-stage-progress progress,.gv3-stage-branches meter {appearance:none;background:#324147;border:0;border-radius:10px;overflow:hidden;width:100%}
+.gv3-stage-progress progress {display:block;height:.55rem;margin:.6rem 0 1rem;color:var(--mint)}
+.gv3-stage-progress progress::-webkit-progress-bar,.gv3-stage-branches meter::-webkit-meter-bar {background:#324147;border:0;border-radius:10px}
+.gv3-stage-progress progress::-webkit-progress-value,.gv3-stage-branches meter::-webkit-meter-optimum-value {background:#83cdb2;border-radius:10px}
+.gv3-stage-progress progress::-moz-progress-bar,.gv3-stage-branches meter::-moz-meter-bar {background:#83cdb2;border-radius:10px}
+.gv3-stage-outlook {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.9rem;padding-bottom:.8rem}
+.gv3-stage-outlook div {display:grid;gap:.22rem}
+.gv3-stage-outlook span,.gv3-stage-branches small {color:var(--muted);font-size:.83rem}
+.gv3-stage-outlook b {color:#f2d49c;font-size:1rem}
+.gv3-stage-outlook div:first-child b {color:#d8eae9}
+.gv3-stage-progress h5 {padding-top:.7rem;border-top:1px solid #384950}
+.gv3-stage-branches {display:grid;gap:.55rem;margin:.65rem 0;padding:0;list-style:none}
+.gv3-stage-branches li {display:grid;align-items:center;grid-template-columns:minmax(0,1.3fr) minmax(25px,1fr) minmax(4.3rem,.8fr);gap:.65rem}
+.gv3-stage-branches li>span {display:grid;font-size:.92rem;line-height:1.3}
+.gv3-stage-branches meter {height:.4rem}
+.gv3-stage-branches b {font-size:.94rem;color:#e0ece8;text-align:end}
+.gv3-stage-progress p {margin:.75rem 0 0}
+.gv3-stage-progress summary,.gv3-account-requests summary {padding:.7rem 0;cursor:pointer}
+.gv3-workspace .gv3-auto-group .gv3-queue-actions {flex-wrap:wrap}
+@media(max-width:680px) {
+ .gv3-earnings-sources {grid-template-columns:minmax(0,1fr)}
+ .gv3-source {grid-template-columns:auto minmax(0,1fr) 1rem;align-items:center;min-height:46px;padding:.66rem .75rem}
+ .gv3-source>span {display:flex;align-items:baseline;justify-content:space-between;gap:.45rem}
+ .gv3-source strong {margin:0;text-align:right}
+ .gv3-source:has(input:checked) .gv3-source-check {position:static}
+ .gv3-source:has(input:checked)>span {padding-right:0}
+ .gv3-workspace .gv3-auto-group .gv3-queue-actions button {flex:1 1 8.5rem}
+ .gv3-workspace .gv2-wrap :is(.gv2-detail b,.gv2-panel-head h3) {min-width:0;overflow-wrap:anywhere}
+}
+@media(max-width:960px) {
+ .gv2-classic.gv3-workspace .gv2-wrap {padding-bottom:calc(6.5rem + env(safe-area-inset-bottom,0px))}
+}

@@ -20,7 +20,7 @@ export default function V3AccountReinvestment({view,busy,readOnly,onSubmit}:Prop
   if(amount>max)error='Maximum available for this account is '+formatUnits(max,18)+' test USDT.';
  }
  return <section className="gv2-panel gv3-account-earnings" aria-labelledby="account-earnings-title">
-  <h3 id="account-earnings-title">Reinvest account earnings</h3>
+  <h3 id="account-earnings-title" tabIndex={-1}>Reinvest account earnings</h3>
   <div className="gv3-earnings-total"><span>Available to reinvest</span>
    <strong>{formatV3Amount(max)} <small>test USDT</small></strong></div>
   <dl>{([['Personal profit',earnings.personal],['Referral commission',earnings.referral],['Network rewards',earnings.network]] as const)

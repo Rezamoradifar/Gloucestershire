@@ -8,7 +8,7 @@ import {V3_HOURLY_TEST,V3_TEST_TOKEN,V3_TESTNET_CHAIN_ID,v3ParseReleaseConfig,
  type V3SiteReleaseConfig} from './v3-site-config';
 import type {V3ClaimLedger,V3ClaimPosition} from './v3-claim-balance';
 import {v3PageRange} from './v3-pagination';
-import {readV3NetworkPreview,type V3NetworkPreview} from './v3-network-preview';
+import {readGroupAddresses,readV3NetworkPreview,type V3NetworkPreview} from './v3-network-preview';
 import {readWalletSelection} from './wallet-read';
 import {readUnifiedPositionPage,readUnifiedWithdrawalPages,MAX_UNIFIED_WITHDRAWAL_LOTS,
  type UnifiedBookReader,type UnifiedPositionPage,type UnifiedVaultReader} from './v3-unified-position';
@@ -65,6 +65,7 @@ export const V3_ABI=[
  'function groupedBranch(address,address) view returns(bool)',
  'function rewardGroupCount(address) view returns(uint256)',
  'function rewardProgress(address,uint256) view returns(uint8 stage,uint256 preparedUsd,uint256 cursor,uint256 branches)',
+ 'function rewardGroup(address,uint256) view returns(tuple(address[] branches,uint256[] consumedUsd,uint8 stage,uint256 preparedUsd,uint256 cursor))',
  'function rewardStage(uint256) pure returns(uint256 volumeUsd,uint256 rewardUsd)',
  'function rewardPreview(address,uint256) view returns(bool eligible,uint256 volumeUsd,uint256 rewardUsd,uint256[] consume)',
  'function principalLiability() view returns(uint256)',
@@ -186,7 +187,7 @@ export type V3Withdrawal={
  requestedAt:number;status:number;kind:number
 };
 export type V3NetworkBranch={address:string;volume:bigint;grouped:boolean};
-export type V3NetworkGroup={id:number;stage:number;prepared:bigint;branches:number;target:bigint;reward:bigint;preview:V3NetworkPreview|null};
+export type V3NetworkGroup={id:number;stage:number;prepared:bigint;branches:number;target:bigint;reward:bigint;preview:V3NetworkPreview|null;branchAddresses?:string[]};
 export type V3Snapshot={
  wallet:string;block:number;asOf:number;hash:string;registered:boolean;
  suspended:boolean;vipKyc:boolean;eligible:boolean;
@@ -350,7 +351,7 @@ export async function readV3Snapshot(walletProvider:Eip1193Provider,wallet:strin
  }
  throw Error('Verified V3 account reads unavailable. Retry using a healthy BNB Testnet RPC.');
 }
-async function readNetworkGroups(network:Contract,wallet:string,options:{blockTag:number},page:{branches:number;groups:number},daily:boolean){
+async function readNetworkGroups(network:Contract,wallet:string,options:{blockTag:number},page:{branches:number;groups:number},daily:boolean,automatic:boolean){
  const [rawBranches,rawGroups]=await Promise.all([network.networkBranchCount(wallet,options),network.rewardGroupCount(wallet,options)]);
  const branchCount=toSafeCount(rawBranches,'network branch');
  const groupCount=toSafeCount(rawGroups,'network group');
@@ -380,8 +381,13 @@ async function readNetworkGroups(network:Contract,wallet:string,options:{blockTa
    const terms=daily?{volumeUsd:500n*10n**18n,rewardUsd:35n*10n**18n}:stage<14?await network.rewardStage(stage,options):null;
    const branches=toSafeCount(progress.branches,'group branch');
    const target=terms?BigInt(terms.volumeUsd):0n,reward=terms?BigInt(terms.rewardUsd):0n;
-   const preview=await readV3NetworkPreview(network,wallet,id,branches,target,reward,options,daily);
-   return {id,stage,prepared:BigInt(progress.preparedUsd),branches,target,reward,preview};
+   const prepared=BigInt(progress.preparedUsd);
+   if(prepared<0n||prepared>target)throw Error('Invalid prepared group volume.');
+   const [preview,branchAddresses]=await Promise.all([
+    readV3NetworkPreview(network,wallet,id,branches,target,reward,options,daily,prepared),
+    automatic&&id===groupCount-1?readGroupAddresses(network,wallet,id,stage,branches,prepared,options):undefined
+   ]);
+   return {id,stage,prepared,branches,target,reward,preview,branchAddresses};
   }));
   networkGroups.push(...page);
  }
@@ -411,7 +417,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   network.qualifiedDirects(wallet,options),
   config!.unified?.keeper?provider.getBalance(config!.unified.keeper,block.number).catch(()=>null):null
  ]);
- const groups=networkPage?await readNetworkGroups(network,wallet,options,networkPage,Boolean(config.unified?.dailyPlan)).catch(()=>null):null;
+ const groups=networkPage?await readNetworkGroups(network,wallet,options,networkPage,Boolean(config.unified?.dailyPlan),Boolean(config.unified?.manualReinvest)).catch(()=>null):null;
  const count=toSafeCount(nPosition,'position');
  if(count>100)throw Error('V3 account has more than 100 positions; load a verified paginated indexer before displaying incomplete claims.');
  const positions=await Promise.all(Array.from({length:count},async(_,id)=>{
@@ -433,6 +439,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
  }));
  let unifiedPage:UnifiedPositionPage|null=null;
  let unifiedWithdrawalPages:UnifiedPositionPage[]|undefined;
+ let withdrawalCoverageError:string|undefined;
  if(config!.unified){
   if(!book)throw Error('The verified reinvestment book is unavailable.');
   const plusOne=toSafeCount(await vault.reinvestmentPositionPlusOne(wallet,options),'unified position');
@@ -446,9 +453,10 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   if(plusOne!==0){
    unifiedPage=await readUnifiedPositionPage(vault as unknown as UnifiedVaultReader,
     book as unknown as UnifiedBookReader,wallet,plusOne-1,block.number,block.timestamp,unifiedPageStart,withdrawalCoverage&&config!.unified.singleCapital?16:8,config!.unified.dailyPlan?86400:3600);
-   if(withdrawalCoverage){
-    if(unifiedPage.totalLots<=MAX_UNIFIED_WITHDRAWAL_LOTS)unifiedWithdrawalPages=await readUnifiedWithdrawalPages(vault as unknown as UnifiedVaultReader,
-     book as unknown as UnifiedBookReader,unifiedPage);
+   if(withdrawalCoverage&&unifiedPage.totalLots<=MAX_UNIFIED_WITHDRAWAL_LOTS){
+    try{unifiedWithdrawalPages=await readUnifiedWithdrawalPages(vault as unknown as UnifiedVaultReader,
+     book as unknown as UnifiedBookReader,unifiedPage);}
+    catch{withdrawalCoverageError='Withdrawal addition records are unavailable. Refresh to retry.';}
    }
   }
  }
@@ -509,7 +517,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   ...(networkPage&&!groups?{networkLoadError:true as const}:{}),
   networkBranchPage:groups?.branchPage??0,networkGroupPage:groups?.groupPage??0,
   canManage:Boolean(canManage),canFund:Boolean(canFund),
-  positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,
+  positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,withdrawalCoverageError,
    withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,
    singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest,uplineRates:config!.unified.uplineRates,accountReinvest:config!.unified.accountReinvest}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
