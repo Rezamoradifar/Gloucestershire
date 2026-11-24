@@ -4,7 +4,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {Wallet, getAddress, parseEther} from 'ethers';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
-import {createUnifiedRpcProvider} from './v3-unified-verification-rpc.mjs';
+import {createUnifiedRpcProvider, transportReason, withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
 import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
 import {UNIFIED_DEPLOYER,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 import {isV3SystemdCredential} from './global-v3-auto-compound-keeper.mjs';
@@ -12,7 +12,10 @@ import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {runUnifiedKeeperCycle} from './run-v3-unified-keeper-cycle.mjs';
 import {runUnifiedNetworkVolume, reconcileUnifiedNetworkVolume} from './process-v3-unified-network-volume.mjs';
 
-const endpoints = ['https://bsc-testnet-dataseed.bnbchain.org', 'https://bsc-testnet-rpc.publicnode.com'];
+const endpoints = [
+  'https://bsc-testnet-dataseed.bnbchain.org', 'https://bsc-testnet-rpc.publicnode.com',
+  'https://bsc-testnet.bnbchain.org', 'https://bsc-prebsc-dataseed.bnbchain.org'
+];
 const minimum = parseEther('0.001');
 const {O_RDONLY, O_NOFOLLOW} = fs.constants;
 
@@ -74,14 +77,23 @@ async function checkOperator(provider, proof, operator, profile) {
 }
 
 // Once an RPC is selected, a failed write is recovered from its journal on the next timer tick.
-async function selectProvider(proof, operator, profile) {
+export async function selectWorkerProvider(command, proof, operator, profile, {
+  readOnly = withUnifiedReadRpc, createProvider = createUnifiedRpcProvider, verifyOperator = checkOperator
+} = {}) {
+  const verify = provider => verifyOperator(provider, proof, operator, profile);
+  if (command === '--check') return readOnly(endpoints[0], 'worker-check', verify);
+  if (command !== '--tick') throw Error('UNIFIED_WORKER_INVALID_ARGUMENTS');
   let cause;
   for (const url of endpoints) {
-    const provider = createUnifiedRpcProvider(url, 12000);
+    const provider = createProvider(url, 12000);
     try {
-      const check = await checkOperator(provider, proof, operator, profile);
+      const check = await verify(provider);
       return {provider, ...check};
-    } catch (error) { cause = error; provider.destroy(); }
+    } catch (error) {
+      provider.destroy();
+      if (!transportReason(error)) throw error;
+      cause = error;
+    }
   }
   throw cause ?? Error('UNIFIED_WORKER_RPC_UNAVAILABLE');
 }
@@ -140,7 +152,7 @@ async function main() {
   const signer = new Wallet(readPrivate(command === '--tick' ? path.join(creds,'keeper-key') : keyPath,128,command === '--tick' ? 'keeper-key' : undefined).trim());
   const raw = readPrivate(command === '--tick' ? path.join(creds,'deployment-proof') : proofPath,65536,command === '--tick' ? 'deployment-proof' : undefined);
   const proof = JSON.parse(raw);
-  const {provider, balance, block} = await selectProvider(proof, signer.address, profile);
+  const {provider, balance, block} = await selectWorkerProvider(command, proof, signer.address, profile);
   try {
     if (command === '--check') {
       const ready = {sourceSha:sha, proofSha256:createHash('sha256').update(raw).digest('hex'),
@@ -155,7 +167,7 @@ async function main() {
     if (command === '--tick') {
       console.log('UNIFIED_WORKER_RESULT', JSON.stringify(await tick(provider, signer.connect(provider), proof, process.env.STATE_DIRECTORY)));
     }
-  } finally { provider.destroy(); }
+  } finally { provider?.destroy(); }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)

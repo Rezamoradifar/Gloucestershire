@@ -3,7 +3,63 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {combinedCycle, initializeWorkerKey} from '../scripts/run-v3-unified-worker.mjs';
+import {combinedCycle, initializeWorkerKey, selectWorkerProvider} from '../scripts/run-v3-unified-worker.mjs';
+
+test('worker installation reads verified balance without retaining its RPC', async () => {
+  const check = {balance:10n, block:123};
+  const result = await selectWorkerProvider('--check', 'proof', 'operator', 'profile', {
+    createProvider:() => assert.fail('Installation selected a transaction provider'),
+    async readOnly(preferred, phase, verify) {
+      assert.equal(preferred, 'https://bsc-testnet-dataseed.bnbchain.org');
+      assert.equal(phase, 'worker-check');
+      return verify('read-only provider');
+    },
+    async verifyOperator(...args) {
+      assert.deepEqual(args, ['read-only provider', 'proof', 'operator', 'profile']);
+      return check;
+    }
+  });
+  assert.deepEqual(result, check);
+  assert.equal(result.provider, undefined);
+});
+
+test('timer selects one live public provider after completing its pre-signature checks', async () => {
+  const opened = [], checked = [], closed = [];
+  const result = await selectWorkerProvider('--tick', 'proof', 'operator', 'profile', {
+    readOnly:() => assert.fail('A timer attempted to read private RPC settings'),
+    createProvider(url, timeout) {
+      assert.equal(timeout, 12000);
+      opened.push(url);
+      return {url, destroy:() => closed.push(url)};
+    },
+    async verifyOperator(provider, ...args) {
+      assert.deepEqual(args, ['proof', 'operator', 'profile']);
+      checked.push(provider.url);
+      if (checked.length <= 3) throw Object.assign(new Error('throttled'), {code:'SERVER_ERROR', response:{statusCode:429}});
+      return {balance:10n, block:123};
+    }
+  });
+  assert.deepEqual(opened, ['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com',
+    'https://bsc-testnet.bnbchain.org','https://bsc-prebsc-dataseed.bnbchain.org']);
+  assert.deepEqual(checked, opened);
+  assert.deepEqual(closed, opened.slice(0,-1));
+  assert.equal(result.provider.url, opened.at(-1));
+  assert.equal(result.balance, 10n);
+  result.provider.destroy();
+  assert.deepEqual(closed, opened);
+});
+
+test('invalid contract proof, paused vault or privileged worker stops timer provider selection', async () => {
+  for (const reason of ['UNIFIED_COMPONENT_RUNTIME_MISMATCH','UNIFIED_WORKER_VAULT_PAUSED','UNIFIED_WORKER_PRIVILEGED_OPERATOR']) {
+    let calls = 0, closed = 0;
+    await assert.rejects(selectWorkerProvider('--tick', {}, 'operator', {}, {
+      createProvider() { calls++; return {destroy:() => { closed++; }}; },
+      async verifyOperator() { throw Error(reason); }
+    }), error => error.message === reason);
+    assert.equal(calls, 1);
+    assert.equal(closed, 1);
+  }
+});
 
 function hooks(options = {}) {
   const events = [];
