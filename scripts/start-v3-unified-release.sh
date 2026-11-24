@@ -33,6 +33,7 @@ main() {
     return 1
   fi
   case "$#:${2:-}:${3:-}" in
+    3:--account-reinvest:--primary-with-commerce) ;;
     1::|2:--single-capital:|3:--single-capital:--deploy-testnet|3:--single-capital:--primary|2:--daily-capital:|3:--daily-capital:--deploy-testnet|2:--referral-profit:|3:--referral-profit:--deploy-testnet|3:--referral-profit:--primary|2:--manual-reinvest:|3:--manual-reinvest:--deploy-testnet|3:--manual-reinvest:--primary|2:--upline-rates:|3:--upline-rates:--deploy-testnet|3:--upline-rates:--primary|2:--account-reinvest:|3:--account-reinvest:--deploy-testnet|3:--account-reinvest:--primary) ;;
     *) echo UNIFIED_START_INVALID_PROFILE >&2; return 1 ;;
   esac

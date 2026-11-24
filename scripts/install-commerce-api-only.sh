@@ -41,17 +41,34 @@ for commerce_path in "$commerce_releases" "$commerce_previous" "$commerce_previo
  [[ "$commerce_mode" =~ ^[0-7]{3,4}$ && "$((8#$commerce_mode & 0022))" -eq 0 ]] || { echo COMMERCE_API_PERMISSIONS_UNSAFE; exit 1; }
 done
 [[ -d "$commerce_previous/node_modules" && ! -L "$commerce_previous/node_modules" ]] || { echo COMMERCE_API_DEPENDENCIES_MISSING; exit 1; }
-commerce_known_release(){
- local api="$commerce_previous/server/trades-api.mjs" seller="$commerce_previous/server/commerce-ebay.mjs" activity="$commerce_previous/server/trading-activity.mjs"
- [[ ! -L "$seller" && ! -L "$activity" ]] || return 1
- case "$(git hash-object "$api")" in
-  5cae7c3c414386fecb82a0226b43237c3445001d) [[ ! -e "$seller" && ! -e "$activity" ]];;
-  3455a60264a754cc6a558737ded964391d517109)
-   [[ -f "$seller" && ! -e "$activity" && "$(git hash-object "$seller")" == 317ae1adc05081ee2e0ee3f6cc36e8d6535918ec ]];;
-  *) cmp -s server/trades-api.mjs "$api" && cmp -s server/commerce-ebay.mjs "$seller" && cmp -s server/trading-activity.mjs "$activity";;
- esac
+commerce_fingerprint(){
+ local dir=$1 name file hash
+ local -a hashes=()
+ for name in trades-api commerce-ebay trading-activity; do
+  file="$dir/$name.mjs"
+  if [[ -L "$file" ]]; then hash=symlink
+  elif [[ -f "$file" ]]; then hash=$(git hash-object --no-filters -- "$file") || return 1
+  elif [[ -e "$file" ]]; then hash=not-regular
+  else hash=missing; fi
+  hashes+=("$hash")
+ done
+ local IFS=/
+ echo "${hashes[*]}"
 }
-commerce_known_release || { echo COMMERCE_LIVE_API_VERSION_REVIEW_REQUIRED; exit 1; }
+commerce_target=$(commerce_fingerprint server)
+commerce_before=$(commerce_fingerprint "$commerce_previous/server")
+# Released combinations only: pre-commerce, the original and revised seller
+# summaries, and the first glass-panel release before the startup fix.
+case "$commerce_before" in
+ "$commerce_target"|\
+ 5cae7c3c414386fecb82a0226b43237c3445001d/missing/missing|\
+ 3455a60264a754cc6a558737ded964391d517109/967e427df79f212b956e11724c331ac26326e426/missing|\
+ 3455a60264a754cc6a558737ded964391d517109/317ae1adc05081ee2e0ee3f6cc36e8d6535918ec/missing|\
+ e786a10d90a6918f95187ff1cdf982b0e4490a40/d8ebad0e2f064bd4c7ac0ad177da17b32b51e124/cbe54780136ea3fc4afc21c3ee6bfca7588474ee) ;;
+ *) echo COMMERCE_LIVE_API_VERSION_REVIEW_REQUIRED
+    echo "COMMERCE_MODULE_FINGERPRINT=$commerce_before"
+    exit 1 ;;
+esac
 # A release-directory switch must not redirect a relative customer-data path.
 node --env-file="$commerce_env" --input-type=module - <<'JS'
 import path from 'node:path';
@@ -76,10 +93,9 @@ if [[ "$1" == --check ]]; then echo COMMERCE_API_NOT_INSTALLED; exit 0; fi
 install -d -m 700 /var/lib/globaldroptrade/commerce-api-install
 exec 9>/var/lib/globaldroptrade/commerce-api-install/installer.lock
 flock -n 9 || { echo COMMERCE_API_INSTALL_LOCKED; exit 1; }
-[[ "$(readlink -f "$commerce_current")" == "$commerce_previous" ]] && commerce_known_release || { echo COMMERCE_API_CHANGED_DURING_PREFLIGHT; exit 1; }
-if cmp -s server/trading-activity.mjs "$commerce_previous/server/trading-activity.mjs" &&
- cmp -s server/trades-api.mjs "$commerce_previous/server/trades-api.mjs" &&
- cmp -s server/commerce-ebay.mjs "$commerce_previous/server/commerce-ebay.mjs"; then
+[[ "$(readlink -f "$commerce_current")" == "$commerce_previous" &&
+   "$(commerce_fingerprint "$commerce_previous/server")" == "$commerce_before" ]] || { echo COMMERCE_API_CHANGED_DURING_PREFLIGHT; exit 1; }
+if [[ "$commerce_before" == "$commerce_target" ]]; then
  echo "COMMERCE_API_ALREADY_INSTALLED=$GLOBAL_COMMERCE_EXPECTED_SHA"; exit 0
 fi
 commerce_release=$(mktemp -d "$commerce_releases/commerce.XXXXXX")
