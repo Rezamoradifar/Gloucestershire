@@ -24,7 +24,7 @@ nginx -t
 # Frontend regression tests also import the repository's root test dependencies.
 # Install dependencies only inside the isolated checkout, never in the running API.
 single_capital_primary=0
-if [[ ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == single-capital-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == referral-profit-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == manual-reinvest-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == upline-rates-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == account-reinvest-testnet ]]; then
+if [[ ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == single-capital-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == referral-profit-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == manual-reinvest-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == upline-rates-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == account-reinvest-testnet || ${GLOBAL_V3_MAIN_PREPARED_BUILD:-} == portfolio-testnet ]]; then
  single_capital_primary=1
  primary_profile="--${GLOBAL_V3_MAIN_PREPARED_BUILD%-testnet}"
  node scripts/publish-v3-single-capital-primary.mjs --check-build "$actual_sha" \

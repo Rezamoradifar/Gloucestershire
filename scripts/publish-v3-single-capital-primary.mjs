@@ -5,7 +5,7 @@ import {hostname} from 'node:os';
 import {createHash} from 'node:crypto';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {SINGLE_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE,unifiedProfileForFlag,UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
+import {SINGLE_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE,PORTFOLIO_PROFILE,unifiedProfileForFlag,UNIFIED_DEPLOYER} from './v3-unified-release-pins.mjs';
 import {readPinnedProof} from './v3-unified-site-preview-preflight.mjs';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 import {withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
@@ -35,7 +35,7 @@ function run(args,env=process.env){
 
 async function main(){
  const [mode,sha,digest,rpc,flag='--single-capital',...extra]=process.argv.slice(2);
- if(extra.length||!['--single-capital','--referral-profit','--manual-reinvest','--upline-rates','--account-reinvest'].includes(flag)||!['--install','--check-build'].includes(mode)||!/^[a-f0-9]{40}$/.test(sha??'')||
+ if(extra.length||!['--single-capital','--referral-profit','--manual-reinvest','--upline-rates','--account-reinvest','--portfolio'].includes(flag)||!['--install','--check-build'].includes(mode)||!/^[a-f0-9]{40}$/.test(sha??'')||
   !/^[a-f0-9]{64}$/.test(digest??'')||
   !['https://bsc-testnet-dataseed.bnbchain.org','https://bsc-testnet-rpc.publicnode.com'].includes(rpc))
   throw Error('GLOBAL_PRIMARY_ARGUMENTS_INVALID');
@@ -47,6 +47,7 @@ async function main(){
  const proofPath=path.join(profile.stateDirectory,'deployment-proof.json');
  const proof=readPinnedProof(proofPath,digest);
  const ready=verifyActiveWorker({sha,digest,vault:proof.vault},profile);
+ if(profile===PORTFOLIO_PROFILE&&ready.gasReady!==true)throw Error('GLOBAL_PRIMARY_PORTFOLIO_KEEPER_NEEDS_TEST_GAS');
  if(profile===ACCOUNT_REINVEST_PROFILE&&ready.gasReady!==true)throw Error('GLOBAL_PRIMARY_ACCOUNT_REINVEST_KEEPER_NEEDS_TEST_GAS');
  if(profile===UPLINE_RATES_PROFILE&&ready.gasReady!==true)throw Error('GLOBAL_PRIMARY_UPLINE_RATES_KEEPER_NEEDS_TEST_GAS');
  if(profile===MANUAL_REINVEST_PROFILE&&ready.gasReady!==true)throw Error('GLOBAL_PRIMARY_MANUAL_REINVEST_KEEPER_NEEDS_TEST_GAS');
@@ -84,7 +85,7 @@ async function main(){
   if(!fs.readFileSync(path.join(hourly,'index.html')).equals(fs.readFileSync(path.join(work,'hourly.html'))))
    throw Error('GLOBAL_PRIMARY_HOURLY_ROUTE_MISMATCH');
   const hourlyIndex=createHash('sha256').update(fs.readFileSync(path.join(work,'hourly.html'))).digest('hex');
-  const manualArchive=[UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE].includes(profile)&&fs.existsSync(path.join(root,MANUAL_REINVEST_PROFILE.route.slice(1),'index.html'));
+  const manualArchive=[UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE,PORTFOLIO_PROFILE].includes(profile)&&fs.existsSync(path.join(root,MANUAL_REINVEST_PROFILE.route.slice(1),'index.html'));
   console.log('GLOBAL_PRIMARY_STAGE=BUILDING');
   run(['node','scripts/build-v3-unified-site.mjs',proofPath,digest,sha,rpc,wallet,
    '--enable-testnet-wallets','--primary',flag],{...process.env,GLOBAL_V3_MANUAL_ARCHIVE:manualArchive?'1':'0'});
@@ -98,7 +99,8 @@ async function main(){
   });
   if(profile!==SINGLE_CAPITAL_PROFILE){
    const previousProfiles=profile===REFERRAL_PROFIT_PROFILE?[SINGLE_CAPITAL_PROFILE]:[REFERRAL_PROFIT_PROFILE];
-   if(profile===ACCOUNT_REINVEST_PROFILE)previousProfiles.push(UPLINE_RATES_PROFILE);
+   if(profile===PORTFOLIO_PROFILE)previousProfiles.push(ACCOUNT_REINVEST_PROFILE);
+   if(profile===PORTFOLIO_PROFILE||profile===ACCOUNT_REINVEST_PROFILE)previousProfiles.push(UPLINE_RATES_PROFILE);
    if(manualArchive)previousProfiles.push(MANUAL_REINVEST_PROFILE);
    for(const previousProfile of previousProfiles){
     const previous=path.join(root,previousProfile.route.slice(1));

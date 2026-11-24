@@ -34,7 +34,7 @@ export function v3AccountTotals(positions:V3WalletPosition[]){
  return {principal,daily,compound,profit:daily+compound,pendingProfit};
 }
 
-function unifiedLots(view:V3Snapshot,group:V3WalletPosition){
+export function unifiedLots(view:V3Snapshot,group:V3WalletPosition){
  if(view.withdrawalCoverageError)throw Error(view.withdrawalCoverageError);
  const selected=view.withdrawalPage;
  const pages=selected?[selected]:view.unifiedWithdrawalPages;

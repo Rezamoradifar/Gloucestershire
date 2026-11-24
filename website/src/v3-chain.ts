@@ -94,6 +94,9 @@ export const V3_ABI=[
  'function reinvest(uint256,uint256)',
  'function reinvestAccountEarnings(tuple(uint256 positionId,uint256 amount,uint256 start,uint256 limit)[] pages,uint256 referral,uint256 network)',
  'function reinvestMany(tuple(uint256 positionId,uint256 amount,uint256 start,uint256 limit)[])',
+ 'function withdrawalAllocation(uint256) view returns(uint256 personal,uint256 referral,uint256 network,uint256 principal)',
+ 'function requestAccountWithdrawal((uint256 personal,uint256 referral,uint256 network,uint256 principal),uint256,uint256)',
+ 'event AccountWithdrawalAllocated(uint256 indexed id,address indexed user,uint256 personal,uint256 referral,uint256 network,uint256 principal)',
  'function requestProfit(uint256,uint256)',
  'function requestProfitFromPage(uint256,uint256,uint256,uint256)',
  'function requestReferral(uint256)',
@@ -184,7 +187,7 @@ export type V3WalletPosition=V3ClaimPosition&{
 };
 export type V3Withdrawal={
  id:number;beneficiary:string;positionId:number;gross:bigint;fee:bigint;
- requestedAt:number;status:number;kind:number
+ requestedAt:number;status:number;kind:number;allocation?:{personal:bigint;referral:bigint;network:bigint;principal:bigint}
 };
 export type V3NetworkBranch={address:string;volume:bigint;grouped:boolean};
 export type V3NetworkGroup={id:number;stage:number;prepared:bigint;branches:number;target:bigint;reward:bigint;preview:V3NetworkPreview|null;branchAddresses?:string[]};
@@ -202,7 +205,7 @@ export type V3Snapshot={
  networkBranchPage:number;networkGroupPage:number;
  positions:V3WalletPosition[];withdrawals:V3Withdrawal[];
  unifiedPage?:UnifiedPositionPage|null;
- singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;accountReinvest?:true;
+ singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;accountReinvest?:true;portfolio?:true;
  unifiedWithdrawalPages?:UnifiedPositionPage[];
  withdrawalCoverageError?:string;
  withdrawalPage?:UnifiedPositionPage;
@@ -268,7 +271,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
    throw Error('The test contract accrual period was not verified.');
   let network=vault,book:Contract|null=null;
   if(config.unified){
-   const expectedVersion=config.unified.accountReinvest?6n:config.unified.uplineRates?5n:config.unified.manualReinvest?4n:daily?2n:config.unified.baseProfitReferrals?3n:1n;
+   const expectedVersion=config.unified.portfolio?7n:config.unified.accountReinvest?6n:config.unified.uplineRates?5n:config.unified.manualReinvest?4n:daily?2n:config.unified.baseProfitReferrals?3n:1n;
    if(config.unified.singleCapital&&BigInt(singleCapitalVersion)!==expectedVersion)
     throw Error('The verified contract does not support a single investment account.');
    const [bookAddress,networkAddress,bookCode,networkCode]=await Promise.all([
@@ -519,7 +522,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
   canManage:Boolean(canManage),canFund:Boolean(canFund),
   positions,withdrawals,...(config!.unified?{unifiedPage,unifiedWithdrawalPages,withdrawalCoverageError,
    withdrawalPage:withdrawalCoverage&&unifiedPage&&unifiedPage.totalLots>MAX_UNIFIED_WITHDRAWAL_LOTS?unifiedPage:undefined,
-   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest,uplineRates:config!.unified.uplineRates,accountReinvest:config!.unified.accountReinvest}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
+   singleCapital:config!.unified.singleCapital,dailyPlan:config!.unified.dailyPlan,baseProfitReferrals:config!.unified.baseProfitReferrals,manualReinvest:config!.unified.manualReinvest,uplineRates:config!.unified.uplineRates,accountReinvest:config!.unified.accountReinvest,portfolio:config!.unified.portfolio}:{}),withdrawCount,memberCount:toSafeCount(nMember,'member'),
   totalWithdrawalCount:toSafeCount(tWithdraw,'global withdrawal'),
   walletTestTokenBalance:BigInt(tokenBalance),allowance:BigInt(allowance),
   ...(config!.unified?.keeper?{keeper:{operator:config!.unified.keeper,gasWei:keeperGasWei}}:{}),

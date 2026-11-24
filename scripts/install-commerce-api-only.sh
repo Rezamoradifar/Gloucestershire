@@ -64,6 +64,7 @@ case "$commerce_before" in
  5cae7c3c414386fecb82a0226b43237c3445001d/missing/missing|\
  3455a60264a754cc6a558737ded964391d517109/967e427df79f212b956e11724c331ac26326e426/missing|\
  3455a60264a754cc6a558737ded964391d517109/317ae1adc05081ee2e0ee3f6cc36e8d6535918ec/missing|\
+ c94269f994a19dbb641f30430441df776d78e065/d8ebad0e2f064bd4c7ac0ad177da17b32b51e124/cbe54780136ea3fc4afc21c3ee6bfca7588474ee|\
  e786a10d90a6918f95187ff1cdf982b0e4490a40/d8ebad0e2f064bd4c7ac0ad177da17b32b51e124/cbe54780136ea3fc4afc21c3ee6bfca7588474ee) ;;
  *) echo COMMERCE_LIVE_API_VERSION_REVIEW_REQUIRED
     echo "COMMERCE_MODULE_FINGERPRINT=$commerce_before"
@@ -72,7 +73,7 @@ esac
 # A release-directory switch must not redirect a relative customer-data path.
 node --env-file="$commerce_env" --input-type=module - <<'JS'
 import path from 'node:path';
-for(const key of ['COMMUNITY_DATA_FILE','V2_COMMUNITY_DATA_FILE','DAILY_ACTIVITY_FILE','GLOBAL_AUTOMATION_PUBLIC_STATUS']){
+for(const key of ['COMMUNITY_DATA_FILE','V2_COMMUNITY_DATA_FILE','DAILY_ACTIVITY_FILE','GLOBAL_AUTOMATION_PUBLIC_STATUS','EBAY_SELLER_RECONCILIATION_FILE']){
  if(process.env[key]&&!path.isAbsolute(process.env[key])){
   console.error('COMMERCE_RELATIVE_DATA_PATH_REVIEW_REQUIRED='+key);process.exitCode=1;
  }

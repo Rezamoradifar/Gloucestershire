@@ -42,7 +42,16 @@ export async function readV3WithdrawalPage(walletProvider:Eip1193Provider,wallet
    const requestedAt=Number(w.requestedAt);
    if(!Number.isSafeInteger(requestedAt)||requestedAt<0||requestedAt>8640000000000)throw Error('Invalid withdrawal timestamp.');
    if(beneficiary!==who||gross<0n||fee<0n||fee>gross)throw Error('Withdrawal request does not match this wallet.');
-   return {id,beneficiary,positionId:safe(BigInt(w.positionId),'position'),gross,fee,
+   let allocation:V3Withdrawal['allocation'];
+   if(config.unified?.portfolio&&Number(w.kind)===4){
+    const a=await session.vault.withdrawalAllocation(raw,options);
+    const personal=BigInt(a.personal),referral=BigInt(a.referral),network=BigInt(a.network),principal=BigInt(a.principal);
+    const earnings=personal+referral+network;
+    if(earnings+principal!==gross||earnings*200n/10000n+principal*3000n/10000n!==fee)
+     throw Error('Withdrawal sources do not match the recorded amount.');
+    allocation={personal,referral,network,principal};
+   }
+   return {id,beneficiary,...(allocation?{allocation}:{}),positionId:safe(BigInt(w.positionId),'position'),gross,fee,
     requestedAt,
     status:safe(BigInt(w.status),'status'),kind:safe(BigInt(w.kind),'kind')};
   }));

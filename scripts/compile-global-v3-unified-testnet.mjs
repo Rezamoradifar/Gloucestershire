@@ -152,7 +152,7 @@ function compile(sources,vaultFile,vaultName,bookFile,bookName,networkFile='cont
   const a=out.contracts[file]?.[name];
   if(!a?.evm?.bytecode?.object||!a?.evm?.deployedBytecode?.object)throw Error('UNIFIED_COMPONENT_MISSING_'+name);
   const runtimeBytes=a.evm.deployedBytecode.object.length/2,creationBytes=a.evm.bytecode.object.length/2;
-  if(runtimeBytes>24576||creationBytes>49152)throw Error('UNIFIED_EVM_SIZE_LIMIT_'+name);
+  if(runtimeBytes>24576||creationBytes>49152)throw Error('UNIFIED_EVM_SIZE_LIMIT_'+name+' runtime='+runtimeBytes+' creation='+creationBytes);
   artifacts[name]=a;
  }
  return Object.freeze(artifacts);
@@ -193,7 +193,7 @@ export function compileUplineRatesTestnet(){
  return compile(uplineRatesSources(),'contracts/v3/GlobalV3UplineRatesTestnet.sol','GlobalV3UplineRatesTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
-export function compileAccountReinvestTestnet(){
+function accountReinvestSources(){
  const sources=uplineRatesSources();
  let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'SINGLE_CAPITAL_VERSION = 5','SINGLE_CAPITAL_VERSION = 6');
  vault=replaceOnce(vault,'uint256 limit,uint256 group) private {','uint256 limit,uint256 group) internal {');
@@ -201,7 +201,40 @@ export function compileAccountReinvestTestnet(){
  sources[SINGLE_CAPITAL_FILE]={content:vault};
  const file='contracts/v3/GlobalV3AccountReinvestTestnet.sol';
  sources[file]={content:source(file)};
- return compile(sources,file,'GlobalV3AccountReinvestTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+ return sources;
+}
+
+export function compileAccountReinvestTestnet(){
+ const file='contracts/v3/GlobalV3AccountReinvestTestnet.sol';
+ return compile(accountReinvestSources(),file,'GlobalV3AccountReinvestTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+}
+
+// V7 replaces the V6 withdrawal lifecycle. Keep historical source inputs reproducible.
+export function compilePortfolioTestnet(){
+ const sources=accountReinvestSources();
+ let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'SINGLE_CAPITAL_VERSION = 6','SINGLE_CAPITAL_VERSION = 7');
+ const start=vault.indexOf('    function _beginRequest('),end=vault.indexOf('    function cashStatus()');
+ if(start<0||end<=start)throw Error('PORTFOLIO_WITHDRAWAL_SECTION_CHANGED');
+ vault=vault.slice(0,start)+vault.slice(end);
+ for(const field of ['positions','withdrawals','userWithdrawalIds']){
+  vault=replaceOnce(vault,'private '+field+';','internal '+field+';');
+ }
+ sources[SINGLE_CAPITAL_FILE]={content:replaceOnce(vault,'_receiveExact(uint256 amount) private','_receiveExact(uint256 amount) internal')};
+
+ // Independent lot journals let the same real request ID reserve both types.
+ let book=sources[SINGLE_CAPITAL_BOOK].content;
+ const principalStart=book.indexOf('    function reservePrincipal(');
+ const principalEnd=book.indexOf('    function reserveProfit(');
+ if(principalStart<0||principalEnd<=principalStart)throw Error('PORTFOLIO_BOOK_SECTION_CHANGED');
+ book=book.slice(0,principalStart)+book.slice(principalStart,principalEnd).replaceAll('reservations[requestId]','principalReservations[requestId]')+book.slice(principalEnd);
+ book=replaceOnce(book,'mapping(uint256 => Reservation) private reservations;',
+  'mapping(uint256 => Reservation) private reservations;\n    mapping(uint256 => Reservation) private principalReservations;');
+ book=replaceOnce(book,'r=reservations[requestId];return(r.user,',
+  'r=reservations[requestId].status!=0?reservations[requestId]:principalReservations[requestId];return(r.user,');
+ sources[SINGLE_CAPITAL_BOOK]={content:book};
+ const file='contracts/v3/GlobalV3PortfolioTestnet.sol';
+ sources[file]={content:source(file)};
+ return compile(sources,file,'GlobalV3PortfolioTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
 export function compileDailyCapitalTestnet(){
@@ -214,7 +247,7 @@ export function compileDailyCapitalTestnet(){
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
  try{
   const args=process.argv.slice(2);
-  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet,'--upline-rates':compileUplineRatesTestnet,'--account-reinvest':compileAccountReinvestTestnet};
+  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet,'--upline-rates':compileUplineRatesTestnet,'--account-reinvest':compileAccountReinvestTestnet,'--portfolio':compilePortfolioTestnet};
   if(args.length>1||args.length===1&&!Object.hasOwn(profiles,args[0]))throw Error('INVALID_V3_UNIFIED_COMPILE_ARGUMENT');
   const artifacts=(args.length?profiles[args[0]]:compileUnifiedTestnet)();
   const sizes=Object.fromEntries(Object.entries(artifacts).map(([name,a])=>[name,{

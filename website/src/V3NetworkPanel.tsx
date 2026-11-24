@@ -2,7 +2,7 @@ import {useEffect,useState} from 'react';
 import {ArrowUpRight,Network,Users} from 'lucide-react';
 import type {V3Snapshot} from './v3-chain';
 import type {V3Action} from './v3-actions';
-import {formatV3Amount as money} from './v3-format';
+import {formatShare,formatV3Amount as money} from './v3-format';
 import DigitalValue from './DigitalValue';
 import V3ReferralInvite from './V3ReferralInvite';
 import V3ReferralSchedule from './V3ReferralSchedule';
@@ -58,8 +58,8 @@ export default function V3NetworkPanel({view,busy,readOnly=false,onAction,onWith
   <section className="gv3-network-hero"><div><span className="gv3-kicker">NETWORK & REFERRALS</span>
    <h2>Network qualification</h2><p>Qualification, referral claims and milestone rewards come from the verified V3 test contract.</p></div><Network size={27}/>
    <div className="gv3-network-stats">
-    <div><small>Qualified directs</small><strong><DigitalValue value={String(view.qualifiedDirects)}/><em>/ {view.requiredDirects}</em></strong><span>Each direct holds at least 100 USDT principal</span></div>
-    <div><small>Balanced qualifying volume</small><strong><DigitalValue value={money(view.qualifiedVolume)}/><em>/ {money(view.requiredVolume)}</em></strong><span>Branch caps apply to the upgrade</span></div>
+    <div><small>Qualified directs</small><strong><DigitalValue value={String(view.qualifiedDirects)}/><em>/ {view.requiredDirects}</em></strong><span>{formatShare(BigInt(view.qualifiedDirects),BigInt(view.requiredDirects))} of required directs</span></div>
+    <div><small>Balanced qualifying volume</small><strong><DigitalValue value={money(view.qualifiedVolume)}/><em>/ {money(view.requiredVolume)}</em></strong><span>{formatShare(view.qualifiedVolume,view.requiredVolume)} of the volume target</span></div>
     <div><small>Current / maximum rate</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/><em>/ {view.maximumRateBps/100}%</em></strong><span>Both conditions must be met for the maximum</span></div>
    </div>
   </section>

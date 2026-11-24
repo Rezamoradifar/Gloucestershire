@@ -83,3 +83,25 @@ test('site API exposes only the aggregate via GET',async()=>{
  assert.equal(get.body.commercialProfit,null);assert.equal(get.headers['Cache-Control'],'no-store');
  assert.equal((await call('POST')).status,405);
 });
+
+test('publishes currency-specific volume and reconciled margins only with the separate opt-in',async()=>{
+ const {sellerPerformance}=await import('../server/commerce-ebay.mjs');
+ const revision='2026-11-12T08:00:00Z';
+ const sample=(id,currency,gross,status,created)=>({...order(id,status),creationDate:created,lastModifiedDate:revision,pricingSummary:{total:{value:gross,currency}}});
+ const orders=[sample('A','USD','100','PAID','2026-11-10T01:00:00Z'),sample('B','USD','50','FULLY_REFUNDED','2026-11-02T00:00:00Z'),
+  sample('C','EUR','80','PAID','2026-11-03T00:00:00Z')];
+ const statement=(orderId,currency,gross,refunds,supplierCost,fees)=>({orderId,currency,gross,refunds,supplierCost,fees,otherCosts:'0',orderRevision:revision});
+ const reconciled=new Map([['A',statement('A','USD','100','0','90','2')],['B',statement('B','USD','50','50','10','0')]]);
+ const metrics=sellerPerformance(orders,clock,reconciled);
+ assert.deepEqual(metrics,{orderCount:3,currencies:[
+  {currency:'EUR',gross:'80.0',recent:'0.0',netSales:null,profit:null},
+  {currency:'USD',gross:'150.0',recent:'100.0',netSales:'100.0',profit:'-2.0'}]});
+ reconciled.get('B').orderRevision='2026-11-01T00:00:00Z';
+ assert.equal(sellerPerformance(orders,clock,reconciled).currencies[1].profit,null);
+ const fetcher=async url=>url.includes('/identity/')?ok({access_token:'access',expires_in:7200}):ok({total:3,orders});
+ const summary=await createCommerceStatus({env,now:()=>clock,fetcher}).get();
+ assert.equal(summary.performance,undefined);
+ const publicResult=await createCommerceStatus({env:{...env,EBAY_SELLER_PUBLIC_PERFORMANCE:'1'},now:()=>clock,fetcher}).get();
+ assert.equal(publicResult.performance.orderCount,3);assert.equal(publicResult.performance.currencies.length,2);
+ assert.ok(publicResult.performance.currencies.every(c=>c.profit===null));
+});

@@ -44,6 +44,20 @@ describe('wallet-specific confirmed V3 activity',()=>{
   expect(src.getLogs.mock.calls[1][0].topics[2]).toBe(zeroPadValue(wallet,32));
  });
 
+ it('merges the allocation into one dated combined request and verifies all four parts',async()=>{
+  const requested=log('WithdrawalRequested',[0n,wallet,4,to('52.7'),to('3.854')],4001,1);
+  const split=log('AccountWithdrawalAllocated',[0n,wallet,to('7'),to('.7'),to('35'),to('10')],4001,2);
+  const sources=[{...requested,blockHash},{...split,blockHash,transactionHash:requested.transactionHash}] as Log[];
+  const src=source([],sources);
+  src.getBlock.mockResolvedValue({hash:blockHash,timestamp:1795500000} as never);
+  const anchor={block:5000,hash:blockHash,firstBlock:0};
+  const page=await queryV3HistoryWindow(src.provider,contract,wallet,anchor,0);
+  expect(page.items).toHaveLength(1);
+  expect(page.items[0]).toMatchObject({title:'Combined withdrawal requested',value:'52.7 USDT',timestamp:1795500000});
+  expect(page.items[0].detail).toContain('Net if paid 48.846 USDT');
+  await expect(queryV3HistoryWindow(source([],[requested]).provider,contract,wallet,anchor,0)).rejects.toThrow('reconcile');
+ });
+
  it('shows a pooled reinvestment once with the exact sources',async()=>{
   const reinvest=log('AccountEarningsReinvested',[wallet,0n,to('7'),to('.7'),to('35'),to('42.7')],4001,0);
   const page=await queryV3HistoryWindow(source([reinvest]).provider,contract,wallet,{block:5000,hash:blockHash,firstBlock:0},0);

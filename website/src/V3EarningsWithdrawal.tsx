@@ -3,7 +3,7 @@ import {formatUnits} from 'ethers';
 import {ArrowDownLeft,Check,Coins,GitBranch,Users} from 'lucide-react';
 import {availableAccountEarnings,totalAccountEarnings} from './v3-account-earnings';
 import {accountWithdrawalFormState,type V3AccountWithdrawalFormProps} from './V3AccountWithdrawalForm';
-import {formatV3Amount as money} from './v3-format';
+import {formatShare,formatV3Amount as money} from './v3-format';
 import {formatUtcTime} from './utc-time';
 import type {V3WithdrawalKind} from './v3-withdrawal-form';
 import {v3ProfitFeeBps} from './v3-withdrawal-form';
@@ -49,13 +49,14 @@ export default function V3EarningsWithdrawal(props:Props){
    <fieldset disabled={busy} className="gv3-earnings-sources"><legend>Choose one source per request</legend>
     {sources.map(({kind:source,balance,label,Icon})=><label className={'gv3-source gv3-source-'+balance} key={source}>
      <input type="radio" name={id+'-source'} checked={kind===source} value={source} onChange={()=>choose(source)}/>
-     <Icon size={18} aria-hidden="true"/><span>{label}<strong>{money(earnings[balance])}</strong></span>
+     <Icon size={18} aria-hidden="true"/><span>{label}<strong>{money(earnings[balance])} <small>{formatShare(earnings[balance],totalAccountEarnings(earnings))}</small></strong></span>
      <Check className="gv3-source-check" size={16} aria-hidden="true"/>
     </label>)}
     <label className="gv3-principal-source"><input type="radio" name={id+'-source'} checked={principal} value="principal"
      onChange={()=>choose('principal')}/> Withdraw unlocked principal separately</label>
    </fieldset>
    <div className="gv3-withdraw-editor">
+    <p>Plan earnings cap · {money(view.ledger.requestCap)} test USDT per request (10% of {view.dailyPlan?'external deposits':'deposits and reinvestments'}).</p>
     <div className="gv3-withdraw-limit"><span>{sourceName} · request limit now</span>
      <strong>{state.maximum===null?'Awaiting records':money(state.maximum)+' test USDT'}</strong></div>
     {page&&<div className="gv3-window"><span>Additions {page.start+1}–{page.start+page.lots.length} of {page.totalLots}</span>

@@ -2,7 +2,7 @@ import {getAddress,toQuantity,type Eip1193Provider} from 'ethers';
 import {v3ReadSession,V3_INDEPENDENT_READER_COUNT} from './v3-chain';
 import type {V3SiteReleaseConfig} from './v3-site-config';
 
-export type TeamMember={wallet:string;referrer:string;level:number;eligible:boolean;suspended:boolean;capital:bigint;rateBps:number|null};
+export type TeamMember={wallet:string;referrer:string;level:number;eligible:boolean;suspended:boolean;capital:bigint;rateBps:number|null;lastCheckIn:number;deposits:bigint;reinvestments:bigint};
 type TeamChunk={block:number;total:number;scanned:number;members:TeamMember[]};
 
 // The vault requires a parent to be registered before its child. Registry order
@@ -43,7 +43,8 @@ export async function readV3TeamDirectory(walletProvider:Eip1193Provider,config:
      const wallet=getAddress(await session.vault.memberAt(scanned+offset,options));
      const user=await session.vault.users(wallet,options);
      if(!user.registered)throw Error('Invalid registered team member.');
-     return {wallet,referrer:getAddress(user.referrer),capital:BigInt(user.capital),suspended:Boolean(user.suspended)};
+     return {wallet,referrer:getAddress(user.referrer),capital:BigInt(user.capital),suspended:Boolean(user.suspended),
+      lastCheckIn:Number(user.lastCheckIn),deposits:BigInt(user.originalDeposits),reinvestments:BigInt(user.reinvestments)};
     }));
     const nextDepths=new Map<string,number>();
     const descendants=rows.flatMap(row=>{

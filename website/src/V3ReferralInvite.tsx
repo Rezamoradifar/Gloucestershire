@@ -14,7 +14,7 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
    primary==='single-capital-testnet'&&['/','/index.html','/hourly-test','/hourly-test/'].includes(window.location.pathname));
   try{return referralLink(address,window.location.origin,publishedAtRoot?'/':window.location.pathname);}
   catch{return '';}
- },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals,view.manualReinvest,view.uplineRates,view.accountReinvest]);
+ },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals,view.manualReinvest,view.uplineRates,view.accountReinvest,view.portfolio]);
  async function copy(value:string){
   if(!value)return;
   try{

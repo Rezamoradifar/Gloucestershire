@@ -35,6 +35,8 @@ import V3AccountReinvestment from './V3AccountReinvestment';
 import {allocateAccountEarnings,availableAccountEarnings,type AccountEarnings} from './v3-account-earnings';
 import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
 import V3AccountWithdrawalForm from './V3AccountWithdrawalForm';
+import V3ProfileSummary from './V3ProfileSummary';
+import V3PortfolioWithdrawal from './V3PortfolioWithdrawal';
 import V3EarningsWithdrawal from './V3EarningsWithdrawal';
 import {planV3AccountWithdrawal} from './v3-account-withdrawal';
 import {prepareUnifiedPageAction,unifiedWithdrawalWindow,type UnifiedPositionPage} from './v3-unified-position';
@@ -77,7 +79,7 @@ const dock=[{id:'overview' as Tab,label:'Home',Icon:Home},{id:'positions' as Tab
  {id:'team' as Tab,label:'Team',Icon:Users},{id:'history' as Tab,label:'History',Icon:History},
  {id:'profile' as Tab,label:'Profile',Icon:UserRound}];
 const short=(s:string)=>s.slice(0,9)+'…'+s.slice(-5);
-const kinds=['Profit','Principal','Referral','Network milestone'] as const;
+const kinds=['Profit','Principal','Referral','Network milestone','Combined withdrawal'] as const;
 const statuses=['Requested','Manager approved','Cash escrowed','Paid','Rejected','Cancelled'] as const;
 export default function V3Dashboard(){
  const [tab,setTab]=useState<Tab>('overview'),[menuOpen,setMenuOpen]=useState(false),[walletOpen,setWalletOpen]=useState(false);
@@ -315,11 +317,11 @@ export default function V3Dashboard(){
     hash=await sendUnifiedNetworkAction(p,wallet,action,config,{enabled:unifiedEnabled,onProgress:report});
    }else if(config.unified&&isUnifiedWithdrawal(action)){
     hash=await sendUnifiedWithdrawal(p,wallet,action,config,{enabled:unifiedEnabled,onProgress:report});
-   }else if(action.kind!=='fundWithdrawal'&&action.kind!=='cancelWithdrawal'&&action.kind!=='fundPlanReserve'){
+   }else if(action.kind!=='fundWithdrawal'&&action.kind!=='cancelWithdrawal'&&action.kind!=='fundPlanReserve'&&action.kind!=='requestAccountWithdrawal'){
     hash=await sendV3Action(p,wallet,action,config,trackedAction?report:undefined);
    }else throw Error('Select the verified unified withdrawal profile.');
    tracker.complete();setTxHash(hash);
-   if(['requestProfit','requestReferral','requestNetworkReward','requestPrincipal'].includes(action.kind)){
+   if(['requestProfit','requestReferral','requestNetworkReward','requestPrincipal','requestAccountWithdrawal'].includes(action.kind)){
     setWithdrawalAmount('');setValue('');setNotice('Withdrawal requested. Manager approval and funding are pending.');
    }else setNotice('V3 TESTNET action confirmed on-chain.');
    await refresh();if(operatorAccess)await readQueue(adminQueue?.page??0);
@@ -654,13 +656,13 @@ export default function V3Dashboard(){
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
      onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest} onAccountWithdraw={singleCapital?()=>{setRequestKind('profit');navigate('withdrawals');}:undefined} onAccountReinvest={config?.unified?.accountReinvest?()=>navigate('positions','','reinvest'):undefined}
      onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}>
-     <V3TradingDesk/>
+     <V3TradingDesk view={view}/>
     </V3ClassicOverview>}
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly} onCheckIn={checkIn} onPositions={()=>navigate('positions')} unifiedEnabled={unifiedEnabled}/>
       {config.unified&&<V3UnifiedActivity view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} onCheckIn={checkIn}/>}
-      {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} verifiedLedger={view.ledger} manualReinvest={view.manualReinvest}/>}
+      {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} showRequestLimit={!view.portfolio} verifiedLedger={view.ledger} manualReinvest={view.manualReinvest}/>}
       <div className="gv2-summary">
        <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
        <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="USDT"/></strong><span>{view.manualReinvest?'Based on recorded principal':'Includes personal compound earnings'}</span></div>
@@ -672,9 +674,11 @@ export default function V3Dashboard(){
      </>}
      {tab==='positions'&&<>
       {singleCapital&&view.wallet.toLowerCase()===wallet.toLowerCase()&&<>
-       <V3EarningsWithdrawal view={view} unified={true} kind={requestKind} onKind={setRequestKind}
+       {view.portfolio?<V3PortfolioWithdrawal key={config.address+':'+wallet} view={view} value={withdrawalAmount}
+        onValue={setWithdrawalAmount} onPage={setUnifiedPageStart} busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly}
+        onSubmit={(action,description)=>void perform(action,description)}/>:<V3EarningsWithdrawal view={view} unified={true} kind={requestKind} onKind={setRequestKind}
         value={withdrawalAmount} onValue={setWithdrawalAmount} onPage={setUnifiedPageStart}
-        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onSubmit={()=>request(requestKind,withdrawalAmount)}/>
+        busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly} onSubmit={()=>request(requestKind,withdrawalAmount)}/>}
        {view.withdrawals.length>0&&<section className="gv2-panel gv3-account-requests" aria-label="Withdrawal requests">
         <h3>Latest withdrawal</h3>{withdrawItem(view.withdrawals[0])}
         {view.withdrawals.length>1&&<details><summary>Earlier requests</summary>{view.withdrawals.slice(1).map(r=>withdrawItem(r))}</details>}
@@ -711,23 +715,14 @@ export default function V3Dashboard(){
       {walletSession.provider&&<V3TeamDirectory key={wallet+':'+config.address} view={view} provider={walletSession.provider} config={config}/>}
      </>}
      {tab==='history'&&<><V3HistoryPanel key={view.wallet} wallet={view.wallet} config={config}/><V3WithdrawalHistory key={'withdraw-'+view.wallet} wallet={view.wallet} config={config}/></>}
-     {tab==='profile'&&<section className="gv2-panel"><h3>Verified V3 profile</h3>
-      <div className="gv2-detail"><span>Wallet</span><b>{wallet}</b></div>
-      <div className="gv2-detail"><span>Registration</span><b>{view.registered?'Registered on V3':'Not registered'}</b></div>
-      <div className="gv2-detail"><span>KYC</span><b>{view.vipKyc?'Manager verified':'Not verified'}</b></div>
-      <div className="gv2-detail"><span>Suspension</span><b>{view.suspended?'Suspended':'No suspension'}</b></div>
-      <div className="gv2-detail"><span>Last check-in</span><b>{formatUtcTime(view.lastCheckIn)}</b></div>
-      <div className="gv2-detail"><span>Next new withdrawal allowed at</span><b>{formatUtcTime(view.nextRequestAt)}</b></div>
-      <div className="gv2-detail"><span>Cumulative V3 test deposits</span><b>{show(view.originalDeposits)}</b></div>
-      <div className="gv2-detail"><span>Cumulative manual reinvestments</span><b>{show(view.reinvestments)}</b></div>
-      {!view.registered&&<div className="gv3-input-row">
+     {tab==='profile'&&<><V3ProfileSummary key={config.address+':'+wallet} view={view} contract={config.address}/>
+      {!view.registered&&<div className="gv2-panel gv3-input-row">
        <label htmlFor="v3-profile-referrer">Referrer wallet or invitation link (optional)</label>
        <input id="v3-profile-referrer" value={referrer} onChange={e=>setReferrer(e.target.value)} autoComplete="off"/>
        <small>Leave empty to register without a referrer. A selected referrer must already be registered in this test contract and cannot be changed after registration.</small>
        <button className="gv2-primary" disabled={busy||view.paused||reviewRequired||unifiedReadOnly} onClick={register}>Register V3 wallet</button>
       </div>}
-      <p>This profile shows only the current contract's confirmed account records.</p>
-     </section>}
+     </>}
      {tab==='withdrawals'&&<section className="gv2-panel"><div className="gv2-panel-head"><h3>Request a V3 testnet withdrawal</h3><Clock3 size={18}/></div>
       {view.withdrawalPage&&(requestKind==='profit'||requestKind==='principal')&&<div className="gv2-buttons">
        <span>Additions {view.withdrawalPage.start+1}–{view.withdrawalPage.start+view.withdrawalPage.lots.length} of {view.withdrawalPage.totalLots}</span>

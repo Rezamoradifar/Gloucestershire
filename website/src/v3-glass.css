@@ -132,3 +132,92 @@
   :root .gv3-workspace.gv2-classic .gv2-classic-topbar .breadcrumb {min-width:0;gap:6px}
   :root .gv3-workspace.gv2-classic .gv2-classic-topbar .breadcrumb strong {overflow:hidden;text-overflow:ellipsis}
 }
+
+/* Member portfolio, transaction ledger and account forms */
+.gv3-workspace .gdp-title {display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+.gv3-workspace .gdp-title :is(h2,p) {margin:0}
+.gv3-workspace .gdp-title p {margin-top:5px}
+.gv3-workspace .gdp-title>svg,.gv3-workspace .gdp-title>span {color:var(--glass-accent)}
+.gv3-workspace :is(.gdp-profile,.gdp-overview,.gdp-withdraw,.gdp-ledger) {font-variant-numeric:tabular-nums;min-width:0}
+.gv3-workspace :is(.gdp-profile,.gdp-overview,.gdp-withdraw,.gdp-volume) small,.gv3-workspace .gdp-caption {color:var(--glass-muted);line-height:1.55}
+.gv3-workspace .gdp-withdraw-balance,.gv3-workspace .gdp-volume,.gv3-workspace .gdp-identity {padding:clamp(14px,3vw,24px);border:1px solid var(--glass-line);border-radius:16px;background:var(--glass-tab);display:grid;gap:6px}
+.gv3-workspace .gdp-withdraw-balance strong,.gv3-workspace .gdp-large {font-size:clamp(26px,4.6vw,43px);letter-spacing:-.045em;color:var(--glass-accent);line-height:1.17;overflow-wrap:anywhere}
+.gv3-workspace .gdp-withdraw-balance strong span,.gv3-workspace .gdp-large span {font-size:clamp(12px,1.5vw,16px);font-weight:550;letter-spacing:0;white-space:nowrap;color:var(--glass-muted)}
+.gv3-workspace .gdp-sources {display:grid;gap:0}
+.gv3-workspace .gdp-sources>div {display:grid;grid-template-columns:8px minmax(0,1fr) minmax(0,auto) minmax(42px,auto);gap:9px;align-items:center;padding:11px 0;border-bottom:1px solid var(--glass-line)}
+.gv3-workspace .gdp-sources>div:last-child {border:0}
+.gv3-workspace .gdp-sources i {width:7px;height:7px;border-radius:50%;background:var(--source)}
+.gv3-workspace .gdp-sources :is(b,small) {text-align:right;overflow-wrap:anywhere}
+.gv3-workspace [data-source=personal] {--source:var(--glass-accent)}
+.gv3-workspace [data-source=referral] {--source:#bca9ef}
+.gv3-workspace [data-source=network] {--source:#89c6e7}
+:root[data-theme=light] .gv3-workspace [data-source=referral] {--source:#775bb9}
+:root[data-theme=light] .gv3-workspace [data-source=network] {--source:#26729b}
+.gv3-workspace .gdp-caption {font-size:.83rem;margin:12px 0 0}
+.gv3-workspace .gdp-withdraw form {margin-top:16px;display:grid;gap:10px}
+.gv3-workspace .gdp-withdraw form>label:not(.gdp-principal) {margin-top:4px;font-weight:650}
+.gv3-workspace .gdp-principal {display:flex;align-items:center;gap:10px;padding:13px;border-radius:12px;background:var(--glass-inset);border:1px solid var(--glass-line);cursor:pointer}
+.gv3-workspace .gdp-principal input {width:18px;height:18px;flex:0 0 auto;accent-color:var(--glass-accent)}
+.gv3-workspace .gdp-principal span {flex:1;min-width:0;font-weight:600}
+.gv3-workspace .gdp-principal small {display:block;font-weight:400}
+.gv3-workspace .gdp-principal svg {color:var(--glass-muted);flex-shrink:0}
+.gv3-workspace .gdp-amount {display:flex;align-items:center;gap:8px;background:var(--glass-inset);border:1px solid var(--glass-line);border-radius:12px;padding:4px 12px}
+.gv3-workspace .gdp-amount input {min-width:0;width:100%;border:0;background:none;color:var(--glass-ink);padding:9px 0;font-family:inherit;font-size:1.25rem;font-weight:600;line-height:1.3}
+.gv3-workspace .gdp-amount:focus-within {outline:2px solid var(--glass-accent);outline-offset:1px}
+.gv3-workspace .gdp-amount span {white-space:nowrap;color:var(--glass-muted);font-size:.8rem}
+.gv3-workspace .gdp-presets {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.gv3-workspace .gdp-presets button {min-width:0;min-height:42px;border-radius:9px}
+.gv3-workspace .gdp-receipt {display:grid;gap:8px;padding:14px;border:1px solid var(--glass-line);border-radius:12px}
+.gv3-workspace :is(.gdp-receipt,.gdp-member-more dl,.gdp-profile-grid dl)>div,.gv3-workspace .gdp-receipt details>div {display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.gv3-workspace .gdp-receipt strong {color:var(--glass-accent)}
+.gv3-workspace .gdp-receipt :is(b,strong) {text-align:right;overflow-wrap:anywhere;min-width:0}
+.gv3-workspace .gdp-receipt summary,.gv3-workspace .gdp-member-more summary {cursor:pointer;color:var(--glass-accent);padding:8px 0}
+.gv3-workspace .gdp-performance-body,.gv3-workspace .gdp-profile-grid {display:grid;grid-template-columns:1.25fr 1fr;gap:clamp(14px,3vw,30px)}
+.gv3-workspace .gdp-performance-body>* {min-width:0}
+.gv3-workspace .gdp-large {display:block;margin:4px 0 10px}
+.gv3-workspace .gdp-bar,.gv3-workspace .gdp-market-bar {display:flex;overflow:hidden;border-radius:10px;height:7px;background:var(--glass-line)}
+.gv3-workspace .gdp-bar i {background:var(--source)}
+.gv3-workspace .gdp-volume {align-content:center}
+.gv3-workspace .gdp-volume strong {font-size:clamp(22px,3vw,34px);color:var(--glass-ink)}
+.gv3-workspace .gdp-volume progress {width:100%;height:8px;accent-color:var(--glass-accent)}
+.gv3-workspace .gdp-volume span {color:var(--glass-muted);font-size:.84rem}
+.gv3-workspace .gdp-avatar {display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:var(--glass-tab)}
+.gv3-workspace .gdp-identity code,.gv3-workspace .gdp-ledger-detail code {overflow-wrap:anywhere;font-size:.82rem;line-height:1.55}
+.gv3-workspace .gdp-identity>div,.gv3-workspace .gdp-ledger-detail>div {display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.gv3-workspace :is(.gdp-identity,.gdp-ledger-detail) a {display:inline-flex;align-items:center;gap:4px;color:var(--glass-accent);min-height:38px}
+.gv3-workspace .gdp-profile-grid h3 {margin:20px 0 8px}
+.gv3-workspace :is(.gdp-profile-grid,.gdp-member-more) dl {display:grid;margin:0}
+.gv3-workspace :is(.gdp-profile-grid,.gdp-member-more) dl>div {padding:9px 0;border-bottom:1px solid var(--glass-line)}
+.gv3-workspace :is(.gdp-profile-grid,.gdp-member-more) dd {margin:0;text-align:right;min-width:0;max-width:59%;overflow-wrap:anywhere}
+.gv3-workspace :is(.gdp-profile-grid,.gdp-member-more) dt {color:var(--glass-muted)}
+.gv3-workspace .gdp-nickname,.gv3-workspace .gdp-filters {display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}
+.gv3-workspace :is(.gdp-filters,.gdp-nickname) label {display:grid;gap:5px;flex:1 1 130px;min-width:0;color:var(--glass-muted);font-size:.82rem}
+.gv3-workspace :is(.gdp-filters,.gdp-nickname) :is(select,input) {width:100%;min-width:0;min-height:43px;padding:8px 10px;background:var(--glass-inset);color:var(--glass-ink);border:1px solid var(--glass-line);border-radius:10px;font:inherit;font-size:1rem}
+.gv3-workspace .gdp-team-metrics {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.gv3-workspace .gdp-team-metrics div {display:grid;gap:4px;padding:13px;background:var(--glass-tab);border-radius:12px;overflow-wrap:anywhere}
+.gv3-workspace .gdp-team-metrics small {color:var(--glass-muted)}
+.gv3-workspace .gdp-ledger {border-top:1px solid var(--glass-line)}
+.gv3-workspace .gdp-ledger-entry {border-bottom:1px solid var(--glass-line)}
+.gv3-workspace .gdp-ledger-entry summary {list-style:none;cursor:pointer;display:grid;grid-template-columns:34px 1fr minmax(0,36%);align-items:center;gap:10px;padding:13px 0}
+.gv3-workspace .gdp-ledger-entry summary::-webkit-details-marker {display:none}
+.gv3-workspace .gdp-ledger-entry summary>i {width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:var(--glass-tab);color:var(--glass-accent)}
+.gv3-workspace .gdp-ledger-entry summary span {display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}
+.gv3-workspace .gdp-ledger-entry summary span:last-child {text-align:right}
+.gv3-workspace .gdp-ledger-entry summary small {color:var(--glass-muted);font-size:.75rem}
+.gv3-workspace .gdp-ledger-entry summary b {color:var(--glass-accent)}
+.gv3-workspace .gdp-ledger-detail {display:grid;gap:6px;padding:12px;margin-bottom:10px;border-radius:12px;background:var(--glass-inset)}
+.gv3-workspace .gdp-ledger-detail p {margin:0}
+.gv3-workspace .gdp-market-volumes {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr));gap:12px;margin:12px 0}
+.gv3-workspace .gdp-market-volumes>div {display:grid;gap:6px}
+.gv3-workspace .gdp-market-volumes span {font-size:.76rem;color:var(--glass-muted)}
+.gv3-workspace .gdp-market-volumes>div>div:not(.gdp-market-bar) {display:flex;justify-content:space-between;color:var(--glass-accent);font-size:.83rem}
+.gv3-workspace .gdp-market-volumes b:last-child {color:var(--glass-sell)}
+.gv3-workspace .gdp-market-bar {background:var(--glass-sell);height:5px}
+.gv3-workspace .gdp-market-bar i {background:var(--glass-accent)}
+@media(max-width:640px) {
+ .gv3-workspace .gdp-performance-body,.gv3-workspace .gdp-profile-grid {grid-template-columns:minmax(0,1fr);gap:10px}
+ .gv3-workspace .gdp-profile-grid dl,.gv3-workspace .gdp-sources {font-size:.85rem}
+ .gv3-workspace .gdp-sources>div {gap:6px}
+ .gv3-workspace .gdp-ledger-entry summary {grid-template-columns:25px minmax(0,1fr) minmax(0,33%);gap:7px;font-size:.85rem}
+ .gv3-workspace .gdp-ledger-entry summary>i {width:25px;height:30px}
+}

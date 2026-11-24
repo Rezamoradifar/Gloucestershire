@@ -7,7 +7,7 @@ const events=new Interface(V3_ABI);
 const firstAccount=['DepositRouted','DailyClaimAccrued','ReferralClaimAccrued',
  'NetworkClaimAccrued','AccountEarningsReinvested','ProfitReinvested','CheckIn','StatusChanged',
  'RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned','CyclePrepared','CycleEarned'];
-const secondAccount=['WithdrawalRequested','WithdrawalPaid','NetworkVolumeQueued'];
+const secondAccount=['WithdrawalRequested','WithdrawalPaid','AccountWithdrawalAllocated','NetworkVolumeQueued'];
 const networkFirst=['RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned','CyclePrepared','CycleEarned'];
 const networkSecond=['NetworkVolumeQueued'];
 const tokenEvents=new Interface(['event Approval(address indexed owner,address indexed spender,uint256 value)']);
@@ -24,7 +24,7 @@ const number=(value:bigint)=>(value+1n).toString();
 export type V3HistoryAnchor={block:number;hash:string;firstBlock:number};
 export type V3HistoryCategory='deposits'|'earnings'|'withdrawals'|'account';
 export type V3HistoryItem={key:string;block:number;transaction:string;index:number;
- title:string;detail:string;value:string|null;category:V3HistoryCategory};
+ title:string;detail:string;value:string|null;category:V3HistoryCategory;timestamp?:number};
 export type V3HistoryPage={anchor:V3HistoryAnchor;page:number;from:number;to:number;items:V3HistoryItem[]};
 
 export function v3HistoryRange(anchor:number,page:number,firstBlock=0){
@@ -101,11 +101,25 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
  if(first.length+second.length+approvals.length+networkFirstLogs.length+networkSecondLogs.length>maxEvents)
   throw Error('Too many events in this range. Open the contract explorer for this block range.');
  const seen=new Set<string>();
+ const allocations=new Map<string,ReturnType<typeof events.parseLog>>();
+ const logBlocks=new Map<number,string>();
+ for(const log of second){
+  if(log.topics[0]!==topic('AccountWithdrawalAllocated'))continue;
+  const event=events.parseLog({topics:log.topics,data:log.data});
+  if(!event||getAddress(event.args.user)!==who)throw Error('Withdrawal allocation mismatch.');
+  const key=log.transactionHash+':'+event.args.id;
+  if(allocations.has(key))throw Error('Duplicate withdrawal allocation.');
+  allocations.set(key,event);
+ }
  const items=[...first,...second,...approvals,...networkFirstLogs,...networkSecondLogs].map((log:Log):V3HistoryItem=>{
   const logAddress=getAddress(log.address);
   if(log.removed||(logAddress!==address&&logAddress!==V3_TEST_TOKEN&&logAddress!==network)||!hash(log.transactionHash)||
    !Number.isSafeInteger(log.blockNumber)||log.blockNumber<from||log.blockNumber>to||
    !Number.isSafeInteger(log.index)||log.index<0)throw Error('Invalid V3 history event.');
+  if(hash(log.blockHash??'')){
+   if(logBlocks.has(log.blockNumber)&&logBlocks.get(log.blockNumber)!==log.blockHash)throw Error('The history block changed while loading. Refresh history.');
+   logBlocks.set(log.blockNumber,log.blockHash);
+  }
   const parsed=(logAddress===V3_TEST_TOKEN?tokenEvents:events).parseLog({topics:log.topics,data:log.data});
   const allowed=logAddress===V3_TEST_TOKEN?['Approval']:logAddress===network?[...networkFirst,...networkSecond]:[...vaultFirst,...vaultSecond];
   if(!parsed||!allowed.includes(parsed.name))
@@ -155,11 +169,36 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
    case 'CycleEarned':category='earnings';title='Reward cycle completed';detail='Group #'+number(BigInt(a.group))+' · Cycle '+number(BigInt(a.cycle));value=amount(BigInt(a.rewardUsd));break;
    case 'NetworkRewardPrepared':title='Network reward prepared';detail='Group #'+number(BigInt(a.group))+' · Stage '+number(BigInt(a.stage))+' · Not a wallet payment';value=formatV3Amount(BigInt(a.preparedUsd))+' test USD volume';break;
    case 'NetworkRewardEarned':category='earnings';title='Network milestone completed';detail='Group #'+number(BigInt(a.group))+' · Stage '+number(BigInt(a.stage))+' · Included in the network claim';value=formatV3Amount(BigInt(a.rewardUsd))+' test USD';break;
-   case 'WithdrawalRequested':category='withdrawals';title='Withdrawal requested';detail='Request #'+number(BigInt(a.id))+' · Approval and funding are separate';value=amount(BigInt(a.gross));break;
+   case 'AccountWithdrawalAllocated':break;
+   case 'WithdrawalRequested':{
+    category='withdrawals';title='Withdrawal requested';detail='Request #'+number(BigInt(a.id))+' · Approval and funding are separate';value=amount(BigInt(a.gross));
+    if(a.kind===4n){
+     const entry=allocations.get(log.transactionHash+':'+a.id)?.args;
+     if(!entry||entry.personal+entry.referral+entry.network+entry.principal!==a.gross)throw Error('Combined withdrawal history does not reconcile.');
+     allocations.delete(log.transactionHash+':'+a.id);
+     title='Combined withdrawal requested';
+     detail='Request #'+number(a.id)+' · Personal '+amount(entry.personal)+' · Referral '+amount(entry.referral)+' · Network '+amount(entry.network)+
+      ' · Principal '+amount(entry.principal)+' · Fee '+amount(a.fee)+' · Net if paid '+amount(BigInt(a.gross)-BigInt(a.fee));
+    }
+    break;
+   }
    case 'WithdrawalPaid':category='withdrawals';title='Withdrawal paid';detail='Request #'+number(BigInt(a.id))+' · Net tokens transferred to this wallet';value=amount(BigInt(a.net));break;
   }
   return {key,block:log.blockNumber,transaction:log.transactionHash,index:log.index,title,detail,value,category};
- }).sort((a,b)=>b.block-a.block||b.index-a.index);
+ }).filter(item=>item.title).sort((a,b)=>b.block-a.block||b.index-a.index);
+ if(allocations.size)throw Error('Unmatched combined withdrawal allocation.');
+ // Only request times for blocks containing this wallet's events. A missing
+ // timestamp leaves the original block reference usable.
+ const blocks=[...logBlocks.keys()],times=new Map<number,number>();
+ for(let start=0;start<blocks.length;start+=4){
+  await Promise.all(blocks.slice(start,start+4).map(async height=>{
+   const block=await provider.getBlock(height).catch(()=>null);
+   if(!block)return;
+   if(block.hash?.toLowerCase()!==logBlocks.get(height)?.toLowerCase())throw Error('The history block changed while loading. Refresh history.');
+   if(Number.isSafeInteger(block.timestamp)&&block.timestamp>0)times.set(height,block.timestamp);
+  }));
+ }
+ for(const item of items)item.timestamp=times.get(item.block);
  const recheck=await blockAtAnchor();
  if(!recheck?.hash||recheck.hash.toLowerCase()!==anchor.hash.toLowerCase())
   throw Error('The history block changed while loading. Refresh history.');

@@ -1,8 +1,12 @@
 import {useEffect, useRef, useState} from 'react';
+import {formatUnits,parseUnits} from 'ethers';
+import {formatShare} from './v3-format';
 import {Activity, ArrowDownLeft, ArrowUpRight, ChevronDown, CirclePause, Radio, RefreshCw} from 'lucide-react';
 import {formatTradeAmount, loadActivity, markets, type Entry, type Feed, type Pair, type Source} from './trading-activity';
 import {formatUtcTime} from './utc-time';
 import V3CommercePanel from './V3CommercePanel';
+import V3PortfolioOverview from './V3PortfolioOverview';
+import type {V3Snapshot} from './v3-chain';
 import './v3-trading-desk.css';
 
 const labels = {market:'Kraken public market', kraken:'Global exchange account', amazon:'Global purchases', ebay:'Global sales'};
@@ -77,6 +81,12 @@ function ActivityTape({source,pair}:{source:Source;pair:Pair}) {
   },[source,pair,attempt]);
 
   const rows=feed?.rows??[], publicMarket=source==='market', latest=rows[0];
+  const volumes=new Map<string,{buy:bigint;sell:bigint;count:number}>();
+  for(const row of rows){
+    const label=source==='market'?markets[pair].base:source==='kraken'?row.item:row.unit;
+    const totals=volumes.get(label)??{buy:0n,sell:0n,count:0};
+    totals.count++;totals[row.side]+=parseUnits(row.amount,18);volumes.set(label,totals);
+  }
   const visible=expanded?rows:rows.slice(0,4);
   const heading=publicMarket?pair:source==='kraken'?'Kraken':source==='amazon'?'Amazon Business':'eBay';
   return <div className="gv3-tape">
@@ -91,7 +101,12 @@ function ActivityTape({source,pair}:{source:Source;pair:Pair}) {
         aria-label="Refresh trading activity" title="Refresh trading activity"><RefreshCw size={16}/></button>
     </div>
     <p className="gv3-tape-description">{descriptions[source]}</p>
-    {rows.length>0?<div className="gv3-tape-table" role="table" aria-label={heading+' recent trades'}>
+    {volumes.size>0&&<div className="gdp-market-volumes" aria-label="Volume by side">{[...volumes].map(([label,{buy,sell,count}])=><div key={label}>
+      <span>{formatTradeAmount(formatUnits(buy+sell,18))} {label}{source==='kraken'?' base units':''} · {count} records</span>
+      <div><b>Buy {formatShare(buy,buy+sell)}</b><b>Sell {formatShare(sell,buy+sell)}</b></div>
+      <div className="gdp-market-bar" aria-hidden="true"><i style={{width:Number(buy*10000n/(buy+sell))/100+'%'}}/></div>
+    </div>)}</div>}
+    {rows.length>0?<div className="gv3-tape-table"  role="table" aria-label={heading+' recent trades'}>
       <div className="gv3-tape-row gv3-tape-columns" role="row">
         <span role="columnheader">Side</span><span role="columnheader">{publicMarket?'Price':source==='kraken'?'Pair':'Record'}</span>
         <span role="columnheader">{publicMarket||source==='kraken'?'Quantity':'Amount'}</span><span role="columnheader">Time · UTC</span>
@@ -116,11 +131,11 @@ function ActivityTape({source,pair}:{source:Source;pair:Pair}) {
   </div>;
 }
 
-export default function V3TradingDesk() {
+export default function V3TradingDesk({view}:{view?:V3Snapshot|null}={}) {
   const [section,setSection]=useState<'market'|'exchange'|'stores'>('market');
   const [pair,setPair]=useState<Pair>('BTC/USD'), [store,setStore]=useState<'amazon'|'ebay'>('amazon');
   const source=section==='stores'?store:section==='exchange'?'kraken':'market';
-  return <section className="gv3-trading-desk" aria-labelledby="gv3-trading-title">
+  return <>{view&&section!=='stores'&&<V3PortfolioOverview view={view}/>}<section className="gv3-trading-desk" aria-labelledby="gv3-trading-title">
     <div className="gv3-desk-head"><h2 id="gv3-trading-title"><Activity size={20} aria-hidden="true"/> Trading activity</h2>
       {section==='market'?<label><span className="gv3-sr-only">Market pair</span><select value={pair} onChange={e=>setPair(e.target.value as Pair)}>
         {Object.keys(markets).map(name=><option key={name}>{name}</option>)}</select></label>:
@@ -131,6 +146,6 @@ export default function V3TradingDesk() {
         <button type="button" key={id} aria-pressed={section===id} onClick={()=>setSection(id)}>{label}</button>)}
     </div>
     <ActivityTape key={source+(section==='market'?pair:'')} source={source} pair={pair}/>
-    {section==='stores'&&<details className="gv3-seller-summary"><summary>Seller summary and product listings</summary><V3CommercePanel/></details>}
-  </section>;
+    {section==='stores'&&<details className="gv3-seller-summary"><summary>Seller summary and product listings</summary><V3CommercePanel/>{view&&<V3PortfolioOverview view={view}/>}</details>}
+  </section></>;
 }
