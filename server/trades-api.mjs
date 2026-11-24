@@ -250,5 +250,29 @@ async function configuredDailyActivity(config){
 let entrypoint;
 try{if(process.argv[1]&&process.argv[1]!=='-')entrypoint=pathToFileURL(realpathSync(process.argv[1])).href;}catch{}
 if(import.meta.url===entrypoint){
- try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);let v2Community=null;try{v2Community=await configuredV2Community(config);}catch{console.error('V2 support disabled: V2 contract or RPC not verified.');}const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const teamRelay=createTeamRelay(config);const v2ReadGateway=createV2ReadGateway();const server=createApiServer(feed,{community,v2Community,v2ReadGateway,migration,dailyActivity,historyRelay,teamRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();v2Community?.close?.();dailyActivity?.close?.();historyRelay.close();teamRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
+ try{
+  const config=readConfig(),feed=createTradeFeed(config);
+  const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);
+  // Only V2 support routes need its separate RPC and verified contract.
+  let verifiedV2;
+  async function v2Community(req,res){
+   if(!new URL(req.url,'http://localhost').pathname.startsWith('/api/v2/community/'))return false;
+   verifiedV2??=configuredV2Community(config).catch(()=>{
+    console.error('V2 support disabled: V2 contract or RPC not verified.');
+    return null;
+   });
+   const handler=await verifiedV2;
+   return handler?handler(req,res):false;
+  }
+  const {createMigrationService}=await import('./migration-service.mjs');
+  const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});
+  const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});
+  const historyRelay=createHistoryRelay(config),teamRelay=createTeamRelay(config),v2ReadGateway=createV2ReadGateway();
+  const server=createApiServer(feed,{community,v2Community,v2ReadGateway,migration,dailyActivity,historyRelay,teamRelay,automationStatus});
+  server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));
+  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{
+   feed.close();community.close?.();(await verifiedV2)?.close?.();dailyActivity?.close?.();
+   historyRelay.close();teamRelay.close();migration.close();process.exit(0);
+  }));
+ }catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }
