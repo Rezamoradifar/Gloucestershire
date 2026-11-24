@@ -1,0 +1,134 @@
+/* Colors belong to the account workspace; the public landing has its own palette. */
+:root .gv2.gv3-workspace {
+  --glass-ink:#edf6f4; --glass-muted:#aec2c8; --glass-line:#9bcdd235; --glass-accent:#91e5c8;
+  --glass-warm:#f3d696; --glass-sell:#ffb7a5; --glass-on-accent:#08241d;
+  --glass-bg:#0a1620; --glass-surface:linear-gradient(124deg,#203744da,#13242fdd 72%);
+  --glass-inset:#10232ecf; --glass-nav:#10232eea; --glass-tab:#81cfb91c; --glass-edge:#e1fffc27;
+  --glass-shadow:0 10px 34px #020b142e; --glass-aura:#1c645953; --glass-haze:#33447552;
+  --glass-hero-shade:linear-gradient(90deg,#10252afa 8%,#11282edb 44%,#14242927 84%);
+  --gv1-muted:var(--glass-muted); --gv1-border:var(--glass-line); --ink:var(--glass-ink); --muted:var(--glass-muted);
+  background:var(--glass-bg); color:var(--glass-ink); font-family:Inter,system-ui,sans-serif;
+}
+:root[data-theme='light'] .gv2.gv3-workspace {
+  --glass-ink:#152f39; --glass-muted:#455f69; --glass-line:#3c6b7238; --glass-accent:#10614e;
+  --glass-warm:#745017; --glass-sell:#943e31; --glass-on-accent:#fff;
+  --glass-bg:#e9f2f3; --glass-surface:linear-gradient(124deg,#ffffffea,#f1fbf8cc 76%);
+  --glass-inset:#f6fcfbe8; --glass-nav:#f5fbf9ed; --glass-tab:#15796415; --glass-edge:#ffffffef;
+  --glass-shadow:0 10px 32px #1c545916; --glass-aura:#83cab769; --glass-haze:#b4c4dd71;
+  --glass-hero-shade:linear-gradient(90deg,#ecf7f5 8%,#e7f3eee8 46%,#f1eee54a 86%);
+}
+:root .gv3-workspace.gv2-classic .gv2-workspace {
+  background:radial-gradient(ellipse 58rem 38rem at 5% 3%,var(--glass-aura),transparent 74%),
+    radial-gradient(ellipse 65rem 50rem at 104% 35%,var(--glass-haze),transparent 76%),var(--glass-bg);
+  color:var(--glass-ink);
+}
+:root .gv3-workspace.gv2-classic :is(.gv2-classic-topbar,.gv2-sidebar,.gv2-mobile-bottom) {
+  background:var(--glass-nav); border-color:var(--glass-line); color:var(--glass-ink);
+  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+}
+:root .gv3-workspace.gv2-classic .gv2-sidebar .brand {margin-bottom:34px;color:var(--glass-ink)}
+:root .gv3-workspace .gv2-sidebar .brand-icon {display:grid;place-items:center}
+:root .gv3-workspace .gv2-sidebar .brand-icon::before {content:none}
+:root .gv3-workspace.gv2-classic :is(.gv2-sidebar .sidebar-caption,.gv2-sidebar .brand small,.gv1-sidebar-network small,.gv1-sidebar-note small,.gv2-classic-topbar .breadcrumb,.gv2-classic-topbar .network-label) {color:var(--glass-muted)}
+:root .gv3-workspace.gv2-classic :is(.gv2-sidebar .brand strong,.gv1-sidebar-network strong,.gv2-classic-topbar .breadcrumb strong) {color:var(--glass-ink)}
+:root .gv3-workspace.gv2-classic .gv2-sidebar nav button {color:var(--glass-muted);background:transparent}
+:root .gv3-workspace.gv2-classic .gv2-sidebar nav button:is(:hover,.active),
+:root .gv3-workspace.gv2-classic .gv2-mobile-bottom button[aria-current='page'] {
+  background:var(--glass-tab);color:var(--glass-accent);box-shadow:inset 0 0 0 1px var(--glass-line)
+}
+:root .gv3-workspace.gv2-classic :is(.gv2-sidebar-bottom,.gv1-sidebar-note,.gv2-sidebar-bottom>a) {border-color:var(--glass-line);color:var(--glass-muted)}
+:root .gv3-workspace.gv2-classic .gv2-mobile-bottom button {color:var(--glass-muted)}
+:root .gv3-workspace.gv2-classic .gv2-wrap {max-width:1390px;margin-inline:auto}
+:root .gv3-workspace.gv2-classic .gv2-classic-topbar {min-height:68px;height:auto;padding-block:12px}
+:root .gv3-workspace.gv2-classic .top-actions {display:flex;align-items:center;gap:8px;min-width:0}
+:root .gv3-workspace.gv2-classic .top-actions :is(button,.network-label,.gv3-wallet-address),
+:root .gv3-workspace.gv2-classic .mobile-menu {
+  color:var(--glass-ink);background:var(--glass-inset);border:1px solid var(--glass-line);box-shadow:none;
+}
+:root .gv3-workspace.gv2-classic .top-actions button {min-height:44px}
+:root .gv3-workspace.gv2-classic .top-actions .gv3-theme-switch {
+  display:inline-flex;gap:7px;justify-content:center;align-items:center;padding:8px 12px;border-radius:12px;font-size:12px;
+}
+:root .gv3-workspace.gv2-classic .top-actions svg {color:var(--glass-accent)}
+:root .gv3-workspace.gv2-classic .gv2-heading {
+  position:relative;isolation:isolate;overflow:hidden;min-height:148px;padding:clamp(20px,3vw,42px);
+  border-radius:22px;border:1px solid var(--glass-line);background:var(--glass-bg);box-shadow:var(--glass-shadow);
+}
+:root .gv3-workspace.gv2-classic .gv2-heading::before {
+  content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;
+  background-image:var(--glass-hero-shade),url('/assets/commerce-world.webp');
+  background-size:cover;background-position:center,center 44%;
+}
+:root .gv3-workspace.gv2-classic .gv2-heading h1 {margin:.22em 0 .13em;color:var(--glass-ink);font-size:clamp(27px,3.5vw,46px);letter-spacing:-.055em;line-height:1.04}
+:root .gv3-workspace.gv2-classic .gv2-heading p {color:var(--glass-ink);font-size:12px;max-width:34em}
+:root .gv3-workspace.gv2-classic .gv2-page-label {color:var(--glass-accent);font-weight:700;font-size:10px;letter-spacing:.14em}
+:root .gv3-workspace.gv2-classic :is(.gv1-asset-card,.gv1-panel,.gv2-panel,.gv2-metric,.gv3-cycle,.gv3-payment-map,.gv3-network-hero,.gv3-claims-readout,.gv3-commerce,.gv3-trading-desk) {
+  background:var(--glass-surface);border:1px solid var(--glass-line);border-radius:18px;
+  color:var(--glass-ink);box-shadow:inset 0 1px var(--glass-edge),var(--glass-shadow);
+}
+@supports ((backdrop-filter:blur(8px)) or (-webkit-backdrop-filter:blur(8px))) {
+  :root .gv3-workspace :is(.gv1-asset-card,.gv1-panel,.gv3-trading-desk) {-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+}
+:root .gv3-workspace.gv2-classic .gv1-asset-card {min-height:125px;gap:9px;padding:18px 20px}
+:root .gv3-workspace .gv1-asset-card:first-child {background:linear-gradient(110deg,var(--glass-tab),transparent),var(--glass-surface)}
+:root .gv3-workspace .gv1-card-top {color:var(--glass-ink);font-size:13px;font-weight:650}
+:root .gv3-workspace :is(.gv1-card-top svg,.gv1-text-button,.gv1-clock-icon,.gv3-live-status,.gv1-panel-title svg,.gv3-commerce-kicker) {color:var(--glass-accent)}
+:root .gv3-workspace.gv2-classic :is(.gv1-section-head h2,.gv1-panel-title h2,.gv1-cycle-preview h3,.gv1-plan-detail b,.gv1-field,.gv1-plan-figure .gv3-digital,.gv1-asset-card .gv3-digital,.gv2-panel :is(h2,h3,h4,h5),.gv3-commerce-head h2,.gv3-history-row strong) {color:var(--glass-ink)}
+:root .gv3-workspace.gv2-classic :is(.gv1-panel-title p,.gv1-asset-card small,.gv1-plan-figure small,.gv1-plan-detail,.gv1-cycle-preview p,.gv1-field small,.gv3-sync-line,.gv3-digital-unit,.gv1-section-head p,.gv2-panel p,.gv2-panel-head>span,.gv2-metric small,.gv2-metric span,.gv3-commerce-head p,.gv3-commerce-grid small,.gv3-commerce-grid span) {color:var(--glass-muted)}
+:root .gv3-workspace.gv2-classic :is(.gv1-plan-detail,.gv2-detail,.gv2-panel-head) {border-color:var(--glass-line)}
+:root .gv3-workspace.gv2-classic :is(.gv1-operation-tabs,.gv1-asset-pill,.gv1-round-icon,.gv1-plan-tag,.gv3-commerce-head button,.gv3-commerce-grid>div) {background:var(--glass-inset);border-color:var(--glass-line);color:var(--glass-ink)}
+:root .gv3-workspace.gv2-classic :is(.gv1-connect-actions button,.gv2-buttons button:not(.gv2-primary),.gv3-queue-actions button,.gv2-panel-head button,.gv3-history-filters button,.gv3-history-row,.gv1-copy-field button,.gv3-cycle-forecast,.gv3-current-total,.gv3-claim-grid>div,.gv3-network-stats>div) {background:var(--glass-inset);border-color:var(--glass-line);color:var(--glass-ink)}
+:root .gv3-workspace.gv2-classic :is(.gv1-operation-tabs button,.gv1-text-button) {color:var(--glass-muted)}
+:root .gv3-workspace.gv2-classic :is(.gv1-operation-tabs button,.gv3-history-filters button)[aria-pressed=true] {background:var(--glass-tab);color:var(--glass-accent)}
+:root .gv3-workspace.gv2-classic :is(.gv1-field,.gv3-input-row,.gv2-panel,.gv3-withdraw-input) :is(input:not([type=radio],[type=checkbox]),select,textarea) {background:var(--glass-inset);border-color:var(--glass-line);color:var(--glass-ink)}
+:root .gv3-workspace.gv2-classic :is(.gv2-primary,.gv1-action) {background:var(--glass-accent);border-color:var(--glass-accent);color:var(--glass-on-accent)}
+:root .gv3-workspace.gv2-classic .gv1-operation-note {color:var(--glass-muted)!important}
+:root .gv3-workspace.gv2-classic .gv1-inline-warning {color:var(--glass-warm)!important}
+:root .gv3-workspace.gv2-classic :is(.gv2-panel a,.gv2-foot a,.gv1-text-button,.gv3-commerce>a,.gv3-history-row b) {color:var(--glass-accent)}
+:root .gv3-workspace.gv2-classic :is(button,a,select,summary,input):focus-visible {outline:3px solid var(--glass-accent);outline-offset:3px}
+:root[data-theme='light'] .gv3-workspace.gv2-classic :is(.gv3-withdraw-center,.gv3-stage-progress) {--mint:var(--glass-accent);--muted:var(--glass-muted);color:var(--glass-ink)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic :is(.gv3-source,.gv3-withdraw-receipt,.gv3-stage-progress,.gv3-referral-example,.gv3-referral-schedule,.gv3-team-directory,.gv3-stage-grid>div,.gv3-reinvest-group,.gv3-branch-list>div,.gv3-branch-list>article,.gv3-clock-console,.gv3-cycle-clock,.gv3-request-status,.gv3-activity,.gv3-notice,.gv3-reinvest-summary) {background:var(--glass-inset);border-color:var(--glass-line);color:var(--glass-ink)}
+:root[data-theme='light'] .gv3-workspace .gv3-source {--accent:#126551}
+:root[data-theme='light'] .gv3-workspace .gv3-source-referral {--accent:#59458c}
+:root[data-theme='light'] .gv3-workspace .gv3-source-network {--accent:#235f85}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap :is(.gv2-panel,.gv3-cycle,.gv3-payment-map,.gv3-network-hero,.gv3-claims-readout,.gv3-stage-progress,.gv3-commerce) :is(h2,h3,h4,h5,b,th,strong,label,legend) {color:var(--glass-ink)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap :is(.gv2-panel,.gv3-cycle,.gv3-payment-map,.gv3-network-hero,.gv3-claims-readout,.gv3-commerce) :is(small,p,td,dt,dd,.gv3-digital-unit) {color:var(--glass-muted)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic :is(.gv3-account-archive,.gv3-account-archive summary,.gv3-account-archive a,.gv3-current-total span,.gv3-earnings-sources legend,.gv3-source>span,.gv3-source-check,.gv3-stage-outlook span,.gv3-principal-source,.gv3-referral-schedule summary,.gv3-withdraw-receipt span,.gv3-cycle-head>span,.gv3-forecast-kicker,.gv3-clock-console-head,.gv3-clock-console-foot,.gv3-clock-console-foot span,.gv3-position-card strong,.gv3-withdrawal-row b,.gv3-commerce-status,.gv3-claims-heading small,.gv3-routing-list span,.gv3-branch-list span,.gv2-detail span) {color:var(--glass-muted)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap :is(.gv3-history-range,.gv3-history-count,.gv3-claims-warning,.gv3-cycle-note,.gv2-small) {color:var(--glass-muted)!important}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap .gv3-digital {color:var(--glass-ink)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv3-claim-value--up :is(.gv3-digital,.gv3-digital-run,.gv3-digital-mark,.gv3-claim-direction) {color:#146747}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv3-claim-value--down :is(.gv3-digital,.gv3-digital-run,.gv3-digital-mark,.gv3-claim-direction) {color:#a53945}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv3-source:has(input:checked) {border-color:var(--accent);background:var(--glass-tab)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap :is(.gv3-network-stats span,.gv3-network-stats em,.gv3-stage-grid span,.gv3-network-group small,.gv3-forecast-row span,.gv3-clock-console-head,.gv3-clock-console-foot,.gv3-network-hero .gv3-kicker) {color:var(--glass-muted)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap .gv3-digital :is(.gv3-digital-run,.gv3-digital-mark) {color:inherit}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap :is(.gv3-team-totals div,.gv3-team-directory li,.gv3-branch-list>label,.gv3-routing-list>div,.gv3-cycle-side>div,.gv3-payment-flow>div) {background:var(--glass-inset);border-color:var(--glass-line);color:var(--glass-ink)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv3-referral-schedule tr[aria-current=true]>* {background:var(--glass-tab);color:var(--glass-accent)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap .gv2-explorer {color:var(--glass-accent)!important}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap :is(.gv3-kicker,.gv3-claims-heading svg,.gv3-network-hero>svg,.gv3-reinvest-details summary,.gv3-routing-list a) {color:var(--glass-accent)}
+:root .gv3-workspace.gv2-classic .gv2-foot {color:var(--glass-muted)}
+:root .gv3-workspace :is(.gv1-asset-pill,.gv1-amount)>span {background:#187763;color:white}
+:root .gv3-workspace .gv1-plan-symbol {color:#73540c}
+:root[data-theme='light'] .gv3-workspace.gv2-classic :is(.gv3-cycle-copy button,.gv3-activity button,.gv3-cycle-note) {background:var(--glass-inset);border-color:var(--glass-line);color:var(--glass-accent)}
+:root[data-theme='light'] .gv3-workspace.gv2-classic .gv2-wrap .gv3-claims-readout :is(.gv3-current-total,.gv3-claim-grid>div) {--gv3-claim-ink:var(--glass-accent)}
+@media(max-width:600px) {
+  :root .gv3-workspace.gv2-classic .gv2-heading {min-height:114px;padding:19px 16px;border-radius:16px}
+  :root .gv3-workspace.gv2-classic .gv2-heading p {max-width:27ch}
+  :root .gv3-workspace.gv2-classic .gv2-heading::before {background-position:center,61% center}
+  :root .gv3-workspace.gv2-classic .gv2-classic-topbar {min-height:58px;padding-block:7px}
+  :root .gv3-workspace.gv2-classic .top-actions .gv3-theme-switch {width:44px;min-width:44px;padding:8px}
+  .gv3-theme-switch span {display:none}
+  :root .gv3-workspace.gv2-classic .gv1-asset-grid {gap:7px}
+  :root .gv3-workspace.gv2-classic .gv1-asset-card {position:relative;display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);align-items:center;gap:4px 10px;min-height:70px;padding:11px 13px;border-radius:12px}
+  :root .gv3-workspace .gv1-card-top {font-size:11px}
+  :root .gv3-workspace .gv1-card-top svg {display:none}
+  :root .gv3-workspace .gv1-asset-card strong {justify-self:end;margin:0;max-width:100%}
+  :root .gv3-workspace .gv1-asset-card .gv3-digital {--digit-height:20px;gap:4px}
+  :root .gv3-workspace .gv1-asset-card small {grid-column:1/-1;margin:0}
+  :root .gv3-workspace.gv2-classic .gv2-mobile-bottom {box-shadow:0 -4px 18px #03171a18}
+}
+@media(max-width:405px) {
+  :root .gv3-workspace.gv2-classic .gv2-classic-topbar .breadcrumb>span,
+  :root .gv3-workspace.gv2-classic .gv2-classic-topbar .breadcrumb>svg {display:none}
+  :root .gv3-workspace.gv2-classic .gv2-classic-topbar .breadcrumb {min-width:0;gap:6px}
+  :root .gv3-workspace.gv2-classic .gv2-classic-topbar .breadcrumb strong {overflow:hidden;text-overflow:ellipsis}
+}

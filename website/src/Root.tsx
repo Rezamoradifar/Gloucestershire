@@ -1,5 +1,6 @@
 import {lazy,Suspense,useEffect,useState} from 'react';
 import Landing from './Landing';
+import ThemeSwitch from './ThemeSwitch';
 import LoadingBoundary from './LoadingBoundary';
 import {V3_DAILY_PLAN,V3_HOURLY_TEST} from './v3-site-config';
 import {siteRoute,type SiteRoute} from './site-route';
@@ -43,5 +44,5 @@ export default function Root(){
   <Suspense fallback={<div className="dashboard-loading">Verifying existing V2 testnet wallet and contract…</div>}>
    <DashboardV2/>
   </Suspense>
-  :<Landing/>}</LoadingBoundary>;
+  :<Landing/>}{route!=='v3'&&<ThemeSwitch/>}</LoadingBoundary>;
 }

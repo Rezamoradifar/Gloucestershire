@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory() as temporary:
                  'opt/globaldroptrade-api/releases/old/node_modules', 'var/lib/globaldroptrade']:
         (root / name).mkdir(parents=True, exist_ok=True)
     for name in ['scripts/install-commerce-api-only.sh', 'server/trades-api.mjs',
-                 'server/commerce-ebay.mjs', 'test/commerce-ebay.test.mjs']:
+                 'server/commerce-ebay.mjs', 'server/trading-activity.mjs', 'test/commerce-ebay.test.mjs', 'test/trading-activity.test.mjs']:
         source = (repo / name).read_text()
         if name.endswith('.sh'):
             for prefix in ['/opt/', '/etc/', '/var/']:
@@ -55,6 +55,7 @@ case "$url" in
  */api/health) printf '{{"status":"ok"}}' > "$target" ;;
  */api/config) if [[ -f "{root}/fail" && -f "{root}/restarts" ]]; then printf '{{"vault":"changed"}}' > "$target"; else printf '{{"vault":"original"}}' > "$target"; fi ;;
  */api/marketplace*) printf '{{"providers":[{{}},{{}}]}}' > "$target" ;;
+ */api/commerce/activity*) printf '{{"source":"kraken","status":"not_configured","rows":[]}}' > "$target" ;;
  */api/commerce/status) printf '{{"version":1,"source":"ebay","status":"not_configured","commercialProfit":null,"profitStatus":"unverified_costs_and_fees"}}' > "$target" ;;
  *) exit 1 ;;
 esac''',
@@ -75,6 +76,10 @@ esac''',
     assert installed.returncode == 0, installed.stdout + installed.stderr
     assert current.resolve() != previous
     assert (current / 'server/commerce-ebay.mjs').is_file()
+    assert (current / 'server/trading-activity.mjs').is_file()
+    again = run('--install')
+    assert again.returncode == 0 and 'COMMERCE_API_ALREADY_INSTALLED' in again.stdout
+    assert (root / 'restarts').read_text().count('restart') == 1
     assert (current / 'node_modules/sentinel').read_text() == 'preserved dependency'
     assert (current / 'unrelated-code').read_text() == 'preserved'
     assert envfile.read_bytes() == original_env and unit.read_bytes() == original_unit
