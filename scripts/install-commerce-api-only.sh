@@ -41,8 +41,34 @@ for commerce_path in "$commerce_releases" "$commerce_previous" "$commerce_previo
  [[ "$commerce_mode" =~ ^[0-7]{3,4}$ && "$((8#$commerce_mode & 0022))" -eq 0 ]] || { echo COMMERCE_API_PERMISSIONS_UNSAFE; exit 1; }
 done
 [[ -d "$commerce_previous/node_modules" && ! -L "$commerce_previous/node_modules" ]] || { echo COMMERCE_API_DEPENDENCIES_MISSING; exit 1; }
-[[ "$(git hash-object "$commerce_previous/server/trades-api.mjs")" == 5cae7c3c414386fecb82a0226b43237c3445001d ]] || { echo COMMERCE_LIVE_API_VERSION_REVIEW_REQUIRED; exit 1; }
-[[ ! -e "$commerce_previous/server/commerce-ebay.mjs" && ! -L "$commerce_previous/server/commerce-ebay.mjs" ]] || { echo COMMERCE_EXISTING_MODULE_REVIEW_REQUIRED; exit 1; }
+commerce_fingerprint(){
+ local dir=$1 name file hash
+ local -a hashes=()
+ for name in trades-api commerce-ebay trading-activity; do
+  file="$dir/$name.mjs"
+  if [[ -L "$file" ]]; then hash=symlink
+  elif [[ -f "$file" ]]; then hash=$(git hash-object --no-filters -- "$file") || return 1
+  elif [[ -e "$file" ]]; then hash=not-regular
+  else hash=missing; fi
+  hashes+=("$hash")
+ done
+ local IFS=/
+ echo "${hashes[*]}"
+}
+commerce_target=$(commerce_fingerprint server)
+commerce_before=$(commerce_fingerprint "$commerce_previous/server")
+# Released combinations only: pre-commerce, the original and revised seller
+# summaries, and the first glass-panel release before the startup fix.
+case "$commerce_before" in
+ "$commerce_target"|\
+ 5cae7c3c414386fecb82a0226b43237c3445001d/missing/missing|\
+ 3455a60264a754cc6a558737ded964391d517109/967e427df79f212b956e11724c331ac26326e426/missing|\
+ 3455a60264a754cc6a558737ded964391d517109/317ae1adc05081ee2e0ee3f6cc36e8d6535918ec/missing|\
+ e786a10d90a6918f95187ff1cdf982b0e4490a40/d8ebad0e2f064bd4c7ac0ad177da17b32b51e124/cbe54780136ea3fc4afc21c3ee6bfca7588474ee) ;;
+ *) echo COMMERCE_LIVE_API_VERSION_REVIEW_REQUIRED
+    echo "COMMERCE_MODULE_FINGERPRINT=$commerce_before"
+    exit 1 ;;
+esac
 # A release-directory switch must not redirect a relative customer-data path.
 node --env-file="$commerce_env" --input-type=module - <<'JS'
 import path from 'node:path';
@@ -54,7 +80,8 @@ for(const key of ['COMMUNITY_DATA_FILE','V2_COMMUNITY_DATA_FILE','DAILY_ACTIVITY
 JS
 node --check server/trades-api.mjs
 node --check server/commerce-ebay.mjs
-node --test test/commerce-ebay.test.mjs
+node --check server/trading-activity.mjs
+node --test test/commerce-ebay.test.mjs test/trading-activity.test.mjs
 commerce_stage=$(mktemp -d /opt/global-commerce-check.XXXXXX)
 trap 'rm -rf -- "$commerce_stage"' EXIT
 cp -p -- "$commerce_env" "$commerce_stage/env-before"
@@ -67,12 +94,15 @@ install -d -m 700 /var/lib/globaldroptrade/commerce-api-install
 exec 9>/var/lib/globaldroptrade/commerce-api-install/installer.lock
 flock -n 9 || { echo COMMERCE_API_INSTALL_LOCKED; exit 1; }
 [[ "$(readlink -f "$commerce_current")" == "$commerce_previous" &&
- "$(git hash-object "$commerce_previous/server/trades-api.mjs")" == 5cae7c3c414386fecb82a0226b43237c3445001d ]] || { echo COMMERCE_API_CHANGED_DURING_PREFLIGHT; exit 1; }
+   "$(commerce_fingerprint "$commerce_previous/server")" == "$commerce_before" ]] || { echo COMMERCE_API_CHANGED_DURING_PREFLIGHT; exit 1; }
+if [[ "$commerce_before" == "$commerce_target" ]]; then
+ echo "COMMERCE_API_ALREADY_INSTALLED=$GLOBAL_COMMERCE_EXPECTED_SHA"; exit 0
+fi
 commerce_release=$(mktemp -d "$commerce_releases/commerce.XXXXXX")
 cp -a -- "$commerce_previous/." "$commerce_release/"
 chmod 755 "$commerce_release"
 install -m 644 server/trades-api.mjs "$commerce_release/server/trades-api.mjs"
-install -m 644 server/commerce-ebay.mjs "$commerce_release/server/commerce-ebay.mjs"
+install -m 644 server/commerce-ebay.mjs server/trading-activity.mjs "$commerce_release/server/"
 [[ -d "$commerce_release/node_modules" ]] || { echo COMMERCE_API_DEPENDENCIES_MISSING; exit 1; }
 node --env-file="$commerce_env" --input-type=module - "$commerce_release/server/trades-api.mjs" <<'JS'
 import {pathToFileURL} from 'node:url';
@@ -130,6 +160,12 @@ const v=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 if(v.version!==1||v.source!=='ebay'||!['live','not_configured','unavailable','rate_limited','incomplete'].includes(v.status)||
  v.commercialProfit!==null||v.profitStatus!=='unverified_costs_and_fees')throw Error('COMMERCE_API_STATUS_INVALID');
 console.log('COMMERCE_SELLER_STATUS='+v.status);
+JS
+curl -fsS --noproxy '*' --max-time 30 'http://127.0.0.1:3115/api/commerce/activity?source=kraken' -o "$commerce_stage/activity.json"
+node --input-type=module - "$commerce_stage/activity.json" <<'JS'
+import fs from 'node:fs';
+const v=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+if(v.source!=='kraken'||!Array.isArray(v.rows)||!['connected','partial','not_configured','unavailable','rate_limited'].includes(v.status))throw Error('TRADING_ACTIVITY_RESPONSE_INVALID');
 JS
 commerce_changed=0
 echo "COMMERCE_API_ONLY_INSTALLED=$GLOBAL_COMMERCE_EXPECTED_SHA"

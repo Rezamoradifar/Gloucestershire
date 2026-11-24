@@ -4,7 +4,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {flushSync} from 'react-dom';
 import {ZeroAddress,getAddress,formatUnits} from 'ethers';
-import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,History,Home,
+import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,Globe2,History,Home,
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {readWalletSelection} from './wallet-read';
@@ -42,7 +42,8 @@ import V3ClassicOverview from './V3ClassicOverview';
 import {V3TransactionReview,useV3TransactionReview} from './V3TransactionReview';
 import V3HistoryPanel from './V3HistoryPanel';
 import V3WithdrawalHistory from './V3WithdrawalHistory';
-import V3CommercePanel from './V3CommercePanel';
+import ThemeSwitch from './ThemeSwitch';
+import V3TradingDesk from './V3TradingDesk';
 import V3WalletControl from './V3WalletControl';
 import WalletPicker from './WalletPicker';
 import DigitalValue from './DigitalValue';
@@ -60,6 +61,7 @@ import './v2-signature-dashboard.css';
 import './v3-dashboard.css';
 import './v1-v3-dashboard.css';
 import './v3-account-and-team.css';
+import './v3-glass.css';
 
 type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'admin';
 const menus=[
@@ -585,7 +587,7 @@ export default function V3Dashboard(){
  return <div className="gv2 shell gv2-classic gv3-workspace" dir="ltr">
   <aside id="v3-dashboard-menu" className={'sidebar gv2-sidebar '+(menuOpen?'open':'')} aria-label="Global V3 testnet navigation" inert={smallScreen&&!menuOpen}>
    <button className="gv2-sidebar-close" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"><X size={18}/></button>
-   <a className="brand" href="#" onClick={()=>setMenuOpen(false)}><span className="brand-icon">G</span>
+   <a className="brand" href="#" onClick={()=>setMenuOpen(false)}><span className="brand-icon" aria-hidden="true"><Globe2 size={25}/></span>
     <div><strong>GLOBAL</strong><small>ARBITRAGE &amp; DROPSHIPPING</small></div></a>
    <div className="sidebar-caption">YOUR WORKSPACE</div>
    <nav>{menus.filter(x=>x.id!=='admin'||operatorAccess).map(({id,label,Icon})=>
@@ -600,6 +602,7 @@ export default function V3Dashboard(){
    <header className="topbar gv2-classic-topbar">
      <div className="breadcrumb"><button ref={menuTrigger} className="icon-button mobile-menu" aria-label="Open menu" aria-controls="v3-dashboard-menu" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19}/></button><span>Dashboard</span><ChevronRight size={14}/><strong>{activeTabLabel}</strong></div>
     <div className="top-actions"><span className="network-label">V3 · TESTNET</span>
+     <ThemeSwitch inline/>
      <V3WalletControl address={wallet} busy={connecting||busy} onConnect={openWalletPicker} onDisconnect={()=>void disconnect()}/></div>
    </header>
    <main className="gv2-wrap">
@@ -613,6 +616,7 @@ export default function V3Dashboard(){
      <p>The testnet contract must be deployed and independently verified before this dashboard can show account data.</p>
      <a href="#">Return to Global landing <ArrowUpRight size={16}/></a>
     </section>}
+    {!config&&tab==='overview'&&<V3TradingDesk/>}
     {config&&<>
     {error&&<p ref={actionError} className="gv2-error" role="alert">{error}</p>}
     {readError&&<p className="gv2-error" role="alert">{readError}</p>}
@@ -649,8 +653,9 @@ export default function V3Dashboard(){
      value={value} onValue={setValue} referrer={referrer} onReferrer={setReferrer} invalidInvite={invalidInvite}
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
      onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest} onAccountWithdraw={singleCapital?()=>{setRequestKind('profit');navigate('withdrawals');}:undefined} onAccountReinvest={config?.unified?.accountReinvest?()=>navigate('positions','','reinvest'):undefined}
-     onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}/>}
-    {tab==='overview'&&<V3CommercePanel/>}
+     onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}>
+     <V3TradingDesk/>
+    </V3ClassicOverview>}
     {view&&<div className="gv2-content">
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly} onCheckIn={checkIn} onPositions={()=>navigate('positions')} unifiedEnabled={unifiedEnabled}/>

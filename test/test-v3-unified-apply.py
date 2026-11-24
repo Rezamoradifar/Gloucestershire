@@ -50,8 +50,13 @@ bash() {
   case "$1" in
     scripts/install-v3-unified-worker.sh) echo "worker ${*:2}" >> "$TRACE"; return "$WORKER_RESULT" ;;
     scripts/install-v3-unified-test-site.sh) printf '%s\n' "$*" >> "$TRACE"; return "$SITE_RESULT" ;;
+    scripts/install-commerce-api-only.sh) echo "commerce $GLOBAL_COMMERCE_EXPECTED_SHA ${*:2}" >> "$TRACE"; return "$COMMERCE_RESULT" ;;
     *) return 99 ;;
   esac
+}
+curl() {
+  echo "https ${!#}" >> "$TRACE"
+  printf '%s\n' "$ACTIVITY_BODY"
 }
 sleep() { :; }
 apply_release "$REVISION" "$TEST_PROOF" "${DEPLOY_OPTION:-}"
@@ -68,7 +73,8 @@ class ApplyTestnet(unittest.TestCase):
     def apply(self, **settings):
         env = dict(os.environ, SOURCE=str(SOURCE), REVISION=REVISION, TEST_PROOF=str(self.proof),
                    TRACE=str(self.trace), DIGEST=DIGEST, WORKER_RESULT="0", VERIFY_RESULT="0",
-                   CHECK_RESULT="0", SITE_RESULT="0", DEPLOY_RESULT="0", RECOVER_RESULT="0", PRIMARY_RESULT="0")
+                   CHECK_RESULT="0", SITE_RESULT="0", DEPLOY_RESULT="0", RECOVER_RESULT="0", PRIMARY_RESULT="0",
+                   COMMERCE_RESULT="0", ACTIVITY_BODY='{"source":"kraken","status":"not_configured","rows":[]}')
         env.update(settings)
         self.trace.write_text("")
         proc = subprocess.run(["bash", "-c", HARNESS], env=env, capture_output=True, text=True)
@@ -213,6 +219,28 @@ class ApplyTestnet(unittest.TestCase):
         self.assertEqual(calls, [f"--verify-existing {READ_RPC} --account-reinvest",
                                  f"worker {REVISION} --account-reinvest",
                                  f"--install {REVISION} {DIGEST} {SIGN_RPC} --account-reinvest"])
+
+    def test_primary_with_commerce_publishes_then_checks_the_served_activity_route(self):
+        options = dict(ACCOUNT_REINVEST="1", DEPLOY_OPTION="--primary-with-commerce")
+        missing, calls = self.apply(**options)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertEqual(calls, [])
+        self.proof.write_bytes(PROOF)
+        good, calls = self.apply(**options)
+        self.assertEqual(good.returncode, 0, good.stderr)
+        self.assertEqual(calls[-3:], [f"--install {REVISION} {DIGEST} {SIGN_RPC} --account-reinvest",
+                                      f"commerce {REVISION} --install",
+                                      "https https://globaldroptrade.com/api/commerce/activity?source=kraken"])
+        self.assertIn("GLOBAL_GLASS_PANEL_INSTALLED", good.stdout)
+        bad_site, calls = self.apply(**options, PRIMARY_RESULT="7")
+        self.assertEqual(bad_site.returncode, 7)
+        self.assertFalse(any(call.startswith("commerce") for call in calls))
+        for settings in [dict(COMMERCE_RESULT="23"), dict(ACTIVITY_BODY='{"error":"Not found"}')]:
+            partial, calls = self.apply(**options, **settings)
+            self.assertNotEqual(partial.returncode, 0)
+            self.assertIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", partial.stdout)
+            self.assertIn("GLOBAL_PANEL_SITE_READY_COMMERCE_PENDING", partial.stderr)
+            self.assertNotIn("GLOBAL_GLASS_PANEL_INSTALLED", partial.stdout)
 
     def test_manual_reinvest_reuses_its_own_proof_and_worker_for_primary(self):
         result, calls = self.apply(MANUAL_REINVEST="1", DEPLOY_OPTION="--primary")

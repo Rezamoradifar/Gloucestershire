@@ -1,4 +1,4 @@
-import {useState,type FormEvent} from 'react';
+import {useState,type FormEvent,type ReactNode} from 'react';
 import {V3_HOURLY_TEST} from './v3-site-config';
 import {ArrowDownLeft,ArrowRight,ArrowUpRight,Coins,Layers,LockKeyhole,Wallet} from 'lucide-react';
 import DigitalValue from './DigitalValue';
@@ -9,6 +9,7 @@ import type {V3Snapshot} from './v3-chain';
 
 type Mode='deposit'|'withdraw'|'reinvest';
 type Props={
+ children?:ReactNode;
  view:V3Snapshot|null;connected:boolean;busy:boolean;loading:boolean;connecting:boolean;readOnly?:boolean;unifiedRelease?:boolean;
  value:string;onValue:(value:string)=>void;
  referrer:string;onReferrer:(value:string)=>void;invalidInvite:boolean;
@@ -50,6 +51,7 @@ export default function V3ClassicOverview(props:Props){
    <div className="gv1-card-top"><span>{label}</span><Icon size={19}/></div>
    <strong><DigitalValue value={cardValue} unit="USDT"/></strong><small>{foot}</small>
   </article>)}</div>
+  {props.children}
   <div className="gv1-home-grid">
    <section className="gv1-panel gv1-operation" aria-labelledby="gv1-manage-title">
     <div className="gv1-panel-title"><div><h2 id="gv1-manage-title">Manage capital</h2><p>Selected asset: USDT</p></div><span className="gv1-round-icon"><ArrowDownLeft size={20}/></span></div>

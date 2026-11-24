@@ -5,7 +5,7 @@ import './landing.css';
 import './international.css';
 import './theme.css';
 import './refinement.css';
-import ThemeSwitch from './ThemeSwitch';
+import {ThemeProvider} from './ThemeSwitch';
 import Root from './Root';
 import {migrateGlobalV2BrowserOnce} from './v2-cache-cleanup';
 import {migrateGlobalV3BrowserOnce} from './v3-browser-cleanup';
@@ -15,4 +15,4 @@ if(!V3_HOURLY_TEST&&!V3_DAILY_PLAN){
  if(import.meta.env.VITE_V3_PRIMARY_DASHBOARD==='verified-testnet')void migrateGlobalV3BrowserOnce();
  else void migrateGlobalV2BrowserOnce();
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><><Root/><ThemeSwitch/></></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><ThemeProvider><Root/></ThemeProvider></React.StrictMode>);

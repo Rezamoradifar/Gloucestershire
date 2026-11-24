@@ -91,6 +91,14 @@ esac''')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(self.log.read_text().split()[2:], [profile, *options])
 
+    def test_primary_with_commerce_only_accepts_the_existing_account_profile(self):
+        result = self.invoke(PIN, "--account-reinvest", "--primary-with-commerce")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log.read_text().split()[2:], ["--account-reinvest", "--primary-with-commerce"])
+        self.log.unlink()
+        self.assertNotEqual(self.invoke(PIN, "--single-capital", "--primary-with-commerce").returncode, 0)
+        self.assertFalse(self.log.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

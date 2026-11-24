@@ -62,8 +62,23 @@ verify_proof() {
   fail UNIFIED_INDEPENDENT_VERIFICATION_FAILED
 }
 
+install_panel_commerce() {
+  GLOBAL_COMMERCE_EXPECTED_SHA="$1" bash scripts/install-commerce-api-only.sh --install || return $?
+  curl -fsS --noproxy '*' --max-time 30 --resolve globaldroptrade.com:443:127.0.0.1 \
+    'https://globaldroptrade.com/api/commerce/activity?source=kraken' | python3 -c '
+import json, sys
+try:
+    feed = json.load(sys.stdin)
+except ValueError:
+    sys.exit("GLOBAL_PANEL_COMMERCE_ROUTE_INVALID")
+valid = (isinstance(feed, dict) and feed.get("source") == "kraken" and isinstance(feed.get("rows"), list)
+         and feed.get("status") in {"connected", "partial", "not_configured", "unavailable", "rate_limited"})
+sys.exit(0 if valid else "GLOBAL_PANEL_COMMERCE_ROUTE_INVALID")
+'
+}
+
 apply_release() {
-  local sha=$1 proof=$2 digest on_disk worker_status=0
+  local sha=$1 proof=$2 digest on_disk worker_status=0 commerce_status=0
   local journal="${2%/*}/pending.json"
   local -a publish=(bash scripts/install-v3-unified-test-site.sh "${profile[@]}" --install-prepared "$sha" "$proof")
   if [[ -e $proof || -L $proof ]]; then
@@ -90,10 +105,18 @@ apply_release() {
     42) echo UNIFIED_WORKER_NEEDS_TEST_GAS >&2 ;;
     *) echo UNIFIED_WORKER_INSTALLATION_FAILED >&2; return "$worker_status" ;;
   esac
-  if [[ ${3:-} == --primary ]]; then
+  if [[ ${3:-} == --primary || ${3:-} == --primary-with-commerce ]]; then
     (( worker_status == 0 )) || return "$worker_status"
     node scripts/publish-v3-single-capital-primary.mjs --install "$sha" "$digest" "$deployment_rpc" "${profile[@]}" || return $?
     echo 'GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE=https://globaldroptrade.com/#dashboard'
+    if [[ ${3:-} == --primary-with-commerce ]]; then
+      install_panel_commerce "$sha" || commerce_status=$?
+      if (( commerce_status != 0 )); then
+        echo GLOBAL_PANEL_SITE_READY_COMMERCE_PENDING >&2
+        return "$commerce_status"
+      fi
+      echo GLOBAL_GLASS_PANEL_INSTALLED
+    fi
     return 0
   fi
   "${publish[@]}" || return $?
@@ -176,7 +199,7 @@ main() {
         [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
       fi
       ;;
-    2:--daily-capital:|3:--daily-capital:--deploy-testnet|2:--referral-profit:|3:--referral-profit:--deploy-testnet|3:--referral-profit:--primary|2:--manual-reinvest:|3:--manual-reinvest:--deploy-testnet|3:--manual-reinvest:--primary|2:--upline-rates:|3:--upline-rates:--deploy-testnet|3:--upline-rates:--primary|2:--account-reinvest:|3:--account-reinvest:--deploy-testnet|3:--account-reinvest:--primary)
+    2:--daily-capital:|3:--daily-capital:--deploy-testnet|2:--referral-profit:|3:--referral-profit:--deploy-testnet|3:--referral-profit:--primary|2:--manual-reinvest:|3:--manual-reinvest:--deploy-testnet|3:--manual-reinvest:--primary|2:--upline-rates:|3:--upline-rates:--deploy-testnet|3:--upline-rates:--primary|2:--account-reinvest:|3:--account-reinvest:--deploy-testnet|3:--account-reinvest:--primary|3:--account-reinvest:--primary-with-commerce)
       route_name=${2#--}-test
       deployment_proof=/var/lib/globaldroptrade/v3-${2#--}-testnet/deployment-proof.json
       if [[ ${3:-} != --deploy-testnet ]]; then

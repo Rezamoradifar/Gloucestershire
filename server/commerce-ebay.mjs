@@ -1,7 +1,7 @@
 // Read-only, opt-in public aggregate from the operator's own eBay seller.
 // It never places an order, exposes a buyer or invents business profit.
 const TOKEN_URL='https://api.ebay.com/identity/v1/oauth2/token';
-const ORDERS_URL='https://api.ebay.com/sell/fulfillment/v1/order';
+const ORDERS_URL='https://apiz.ebay.com/sell/fulfillment/v1/order';
 const SCOPE='https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly';
 const WINDOW_MS=30*24*60*60*1000;
 const PAGE_LIMIT=100;
@@ -31,15 +31,20 @@ export function createCommerceStatus({env=process.env,fetcher=fetch,now=Date.now
   access={value:payload.access_token,expires:now()+(Number(payload.expires_in)-60)*1000};
   return access.value;
  }
+ async function orderPage(start,end,offset,limit){
+  try{
+   const bearer=await token();
+   const params=new URLSearchParams({filter:`creationdate:[${new Date(start).toISOString()}..${new Date(end).toISOString()}]`,limit:String(limit),offset:String(offset)});
+   return await request(ORDERS_URL+'?'+params,{method:'GET',headers:{Authorization:'Bearer '+bearer}});
+  }catch(error){if(error?.status===401)access=null;throw error;}
+ }
  async function load(){
   if(!enabled)return blank('not_configured');
   try{
-   const bearer=await token();
    // Leave a one-minute margin against differences between server clocks.
    const end=now()-60000,start=end-WINDOW_MS;
    if(!Number.isFinite(start)||start<0)throw Error('Invalid clock');
-   const params=new URLSearchParams({filter:`creationdate:[${new Date(start).toISOString()}..${new Date(end).toISOString()}]`,limit:String(PAGE_LIMIT),offset:'0'});
-   const payload=await request(ORDERS_URL+'?'+params,{method:'GET',headers:{Authorization:'Bearer '+bearer}});
+   const payload=await orderPage(start,end,0,PAGE_LIMIT);
    if(!Number.isSafeInteger(payload.total)||payload.total<0)throw Error('Invalid order count');
    // An incomplete page must never be presented as a complete sales total.
    if(payload.total>PAGE_LIMIT)return blank('incomplete');
@@ -65,6 +70,8 @@ export function createCommerceStatus({env=process.env,fetcher=fetch,now=Date.now
   }
  }
  return Object.freeze({
+  // Detailed activity has a separate opt-in from the existing count-only summary.
+  activityOrderPage:env.EBAY_SELLER_PUBLIC_ACTIVITY==='1'&&clientId&&clientSecret&&refreshToken?orderPage:null,
   async get(){
    if(cached&&expires>now())return cached;
    if(inflight)return inflight;

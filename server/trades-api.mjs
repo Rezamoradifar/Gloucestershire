@@ -1,6 +1,7 @@
 import http from 'node:http';
 import {createMarketplace} from './marketplace.mjs';
 import {createCommerceStatus} from './commerce-ebay.mjs';
+import {createTradingActivity} from './trading-activity.mjs';
 import {realpathSync} from 'node:fs';
 import {createCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
@@ -132,7 +133,7 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),activity=createTradingActivity({seller:commerce}),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
@@ -142,6 +143,11 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Commun
   if(dailyActivity&&await dailyActivity(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
   const url=new URL(req.url,'http://localhost');
+  if(url.pathname==='/api/commerce/activity'){
+   const source=url.searchParams.get('source');
+   if(!activity.supports(source))return send(400,{error:'Unknown activity source'});
+   return send(200,await activity.get(source));
+  }
   if(url.pathname==='/api/commerce/status'){
    try{return send(200,await commerce.get());}
    catch{return send(503,{version:1,source:'ebay',status:'unavailable',paidOrders:null,commercialProfit:null,profitStatus:'unverified_costs_and_fees'});}
@@ -244,5 +250,29 @@ async function configuredDailyActivity(config){
 let entrypoint;
 try{if(process.argv[1]&&process.argv[1]!=='-')entrypoint=pathToFileURL(realpathSync(process.argv[1])).href;}catch{}
 if(import.meta.url===entrypoint){
- try{const config=readConfig();const feed=createTradeFeed(config);const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);let v2Community=null;try{v2Community=await configuredV2Community(config);}catch{console.error('V2 support disabled: V2 contract or RPC not verified.');}const {createMigrationService}=await import('./migration-service.mjs');const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});const historyRelay=createHistoryRelay(config);const teamRelay=createTeamRelay(config);const v2ReadGateway=createV2ReadGateway();const server=createApiServer(feed,{community,v2Community,v2ReadGateway,migration,dailyActivity,historyRelay,teamRelay,automationStatus});server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{server.close(()=>{feed.close();community.close?.();v2Community?.close?.();dailyActivity?.close?.();historyRelay.close();teamRelay.close();migration.close();process.exit(0);});});}catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
+ try{
+  const config=readConfig(),feed=createTradeFeed(config);
+  const [community,dailyActivity]=await Promise.all([configuredCommunity(config),configuredDailyActivity(config)]);
+  // Only V2 support routes need its separate RPC and verified contract.
+  let verifiedV2;
+  async function v2Community(req,res){
+   if(!new URL(req.url,'http://localhost').pathname.startsWith('/api/v2/community/'))return false;
+   verifiedV2??=configuredV2Community(config).catch(()=>{
+    console.error('V2 support disabled: V2 contract or RPC not verified.');
+    return null;
+   });
+   const handler=await verifiedV2;
+   return handler?handler(req,res):false;
+  }
+  const {createMigrationService}=await import('./migration-service.mjs');
+  const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});
+  const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});
+  const historyRelay=createHistoryRelay(config),teamRelay=createTeamRelay(config),v2ReadGateway=createV2ReadGateway();
+  const server=createApiServer(feed,{community,v2Community,v2ReadGateway,migration,dailyActivity,historyRelay,teamRelay,automationStatus});
+  server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));
+  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{
+   feed.close();community.close?.();(await verifiedV2)?.close?.();dailyActivity?.close?.();
+   historyRelay.close();teamRelay.close();migration.close();process.exit(0);
+  }));
+ }catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }
