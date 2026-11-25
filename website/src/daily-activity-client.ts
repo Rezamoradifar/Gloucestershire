@@ -77,7 +77,7 @@ export async function signDailyActivity(who:string,valid:()=>boolean,request=dai
 }
 
 export async function readAllocationStatus():Promise<AllocationStatus>{
- const response=await fetch('/api/automation/status',{cache:'no-store',signal:AbortSignal.timeout(20000)});
+ const response=await fetch('/api/automation/status?vault=legacy',{cache:'no-store',signal:AbortSignal.timeout(20000)});
  const value=await response.json();
  if(!value||value.version!==1||value.chainId!==chainId||!same(value.vaultAddress,vaultAddress)||!['unavailable','stale','waiting','credited','running'].includes(value.status)||typeof value.fresh!=='boolean'||value.checkedAt!==null&&(typeof value.checkedAt!=='string'||!Number.isFinite(Date.parse(value.checkedAt))))throw Error('Allocation status is unavailable.');
  if(value.lastCredit!==null&&(!Number.isSafeInteger(value.lastCredit?.epoch)||value.lastCredit.epoch<0||!Array.isArray(value.lastCredit?.batches)||!value.lastCredit.batches.every((row:{transactionHash?:unknown;block?:unknown})=>typeof row.transactionHash==='string'&&/^0x[0-9a-f]{64}$/i.test(row.transactionHash)&&Number.isSafeInteger(row.block)&&Number(row.block)>=0)))throw Error('Allocation status is incomplete.');

@@ -19,3 +19,7 @@
 .gv3-history-count small{display:block;margin-top:3px}
 .gv3-history .gdp-filters input[type=date]{min-width:0;max-width:100%;color-scheme:dark}
 [data-theme=light] .gv3-history .gdp-filters input[type=date]{color-scheme:light}
+
+.gv3-payout-proof,.gv3-payout-proof>div,.gv3-payout-proof label{display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}
+.gv3-payout-proof input{min-width:0;width:100%;box-sizing:border-box}
+.gv3-payout-proof button,.gv3-payout-proof a{min-height:44px;white-space:normal}

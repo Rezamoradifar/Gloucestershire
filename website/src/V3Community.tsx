@@ -212,6 +212,11 @@ export function V3Announcements({client,admin,initialPost}:Props&{initialPost?:s
   {(!admin||page)&&<div className="gv3-support-actions"><button disabled={busy} onClick={()=>reload(page?.page)}>{busy?'Loading…':'Refresh announcements'}</button></div>}
   {admin&&!page&&<button className="gv2-primary" disabled={busy} onClick={()=>reload()}>{busy?'Opening…':'Manage announcements'}</button>}
   {admin&&page&&<form className="gv3-support-compose" onSubmit={save}><h3>{editing?'Edit announcement':'New announcement'}</h3>
+   {editing&&<button type="button" disabled={busy} onClick={()=>{
+    setTitle('Welcome to the Global Drop Trade testnet');
+    setMessage('The dashboard runs on BNB Testnet. Use test USDT for deposits and withdrawals. Open History to check confirmed transactions. For account help, open Support tickets. Replies appear in Notifications.');
+    inputRef.current?.focus();
+   }}>Use testnet welcome text</button>}
    {!editing&&<details><summary>Channel profile and starter posts</summary><p><strong>{channelProfile.name}</strong><br/>{channelProfile.bio}</p>
     <label>Start from a post<select defaultValue="" onChange={e=>{const post=channelPosts[Number(e.target.value)];if(post){setStarterKey(post.key);setTitle(post.title);setMessage(post.message);}e.target.value='';}}>
      <option value="" disabled>Choose a draft</option>{channelPosts.map((post,i)=><option key={post.title} value={i}>{post.title}</option>)}</select></label>

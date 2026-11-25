@@ -1,4 +1,5 @@
 """Export public chain identities and check the installed history API against them."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,17 +29,50 @@ def export_profiles(root, required):
             if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or
                     info.st_mode & 0o077 or not 2 <= info.st_size <= 65536):
                 raise ValueError('V3_HISTORY_PROOF_FILE_UNSAFE')
-            raw = json.load(stream)
+            proof_bytes = stream.read()
+            raw = json.loads(proof_bytes)
         valid = (raw.get('status') == status and raw.get('chainId') == 97 and
                  type(raw.get('deploymentBlock')) is int and raw['deploymentBlock'] > 0 and
                  all(re.fullmatch('0x[0-9a-fA-F]{40}', str(raw.get(key))) for key in ADDRESSES) and
                  all(re.fullmatch('0x[0-9a-fA-F]{64}', str(raw.get(key))) for key in HASHES))
         if not valid:
             raise ValueError('V3_HISTORY_DEPLOYMENT_PROOF_INVALID')
-        exports.append({key: raw[key] for key in ('status', 'chainId', 'deploymentBlock', *ADDRESSES, *HASHES)})
+        public = {key: raw[key] for key in ('status', 'chainId', 'deploymentBlock', *ADDRESSES, *HASHES)}
+        ready_path = path.with_name('worker-ready.json')
+        if os.path.lexists(ready_path):
+            with os.fdopen(os.open(ready_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or info.st_size > 8192:
+                    raise ValueError('V3_HISTORY_WORKER_IDENTITY_INVALID')
+                ready = json.load(stream)
+            if (ready.get('chainId') != 97 or str(ready.get('vault')).lower() != raw['vault'].lower() or
+                    ready.get('proofSha256') != hashlib.sha256(proof_bytes).hexdigest() or
+                    not re.fullmatch('0x[0-9a-fA-F]{40}', str(ready.get('operator')))):
+                raise ValueError('V3_HISTORY_WORKER_IDENTITY_INVALID')
+            public['keeper'] = ready['operator']
+        exports.append(public)
     if len({entry['vault'].lower() for entry in exports}) != len(exports):
         raise ValueError('V3_HISTORY_DUPLICATE_DEPLOYMENT')
     return exports
+
+
+def check_automation(base, transport, proof, primary=False):
+    from time import sleep
+    vault = proof['vault'].lower()
+    url = base + '/api/automation/status' + ('' if primary else '?vault=' + vault)
+    for attempt in range(3 if primary else 1):
+        if attempt:
+            sleep(3)
+        payload = subprocess.check_output(['curl', '-sS', '--noproxy', '*', '--max-time', '40', *transport,
+                                           '-w', '\n%{http_code}', url])
+        body, _, code = payload.rpartition(b'\n')
+        data = json.loads(body)
+        if (code in (b'200', b'503') and data.get('version') == 2 and data.get('chainId') == 97 and
+                str(data.get('vaultAddress')).lower() == vault and data.get('deploymentTx') == proof['deploymentTx'] and
+                data.get('status') in ('running', 'waiting', 'stale', 'unavailable') and isinstance(data.get('receipts'), list) and
+                (not primary or data.get('checkedAt'))):
+            return
+    raise ValueError('V3_HISTORY_AUTOMATION_TARGET_UNVERIFIED')
 
 
 def check_route(profiles, endpoint, required='optional'):
@@ -83,6 +117,8 @@ def check_route(profiles, endpoint, required='optional'):
 
     for proof in profiles:
         check_support(proof)
+        if proof.get('keeper'):
+            check_automation(base, transport, proof)
         result = read('member-history', proof)
         anchor = result.get('anchor', {})
         window = result.get('range', {})
@@ -116,7 +152,12 @@ def check_route(profiles, endpoint, required='optional'):
 if __name__ == '__main__':
     try:
         operation, path, value, *extra = sys.argv[1:]
-        if operation == 'export' and not extra and value in ('optional', *PROFILES):
+        if operation == 'primary' and not extra and value in PROFILES:
+            profiles = [p for p in json.loads(Path(path).read_text()) if p['status'] == PROFILES[value]]
+            if len(profiles) != 1 or not profiles[0].get('keeper'):
+                raise ValueError('V3_HISTORY_WORKER_IDENTITY_INVALID')
+            check_automation('https://globaldroptrade.com', ['--resolve', 'globaldroptrade.com:443:127.0.0.1'], profiles[0], True)
+        elif operation == 'export' and not extra and value in ('optional', *PROFILES):
             print(json.dumps(export_profiles(Path(path), value), separators=(',', ':')))
         elif operation == 'probe' and (not extra or len(extra) == 1 and extra[0] in PROFILES):
             check_route(json.loads(Path(path).read_text()), value, *extra)

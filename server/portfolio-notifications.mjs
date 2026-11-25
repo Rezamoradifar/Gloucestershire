@@ -6,6 +6,23 @@ function append(state, kind, ref, audience, at) {
  return row;
 }
 
+// Upgrade only the original, unedited V7 launch-test record. Retain its ID and original copy.
+const launchTestVault='0x156a308187b1aa5897b82d617e583ad4687c8c09';
+const launchTestId='880ada50-2d73-460c-ad05-76f16efa5381';
+export function initialTestNotice(state,vault){
+ if(vault.toLowerCase()!==launchTestVault || state.launchNoticeBackup || state.telegram?.jobs?.['post/'+launchTestId] || state.telegram?.posts?.[launchTestId])return null;
+ return state.announcements.find(item=>item.id===launchTestId && item.createdAt==='2026-11-25T14:40:08.523Z' &&
+  item.published===true && !item.updatedAt && (item.revision??1)===1 && item.title==='Hi' && item.message==='Hi users test 1')??null;
+}
+export function replaceInitialTestNotice(state,vault,at){
+ const item=initialTestNotice(state,vault);if(!item)return;
+ state.launchNoticeBackup={id:item.id,title:item.title,message:item.message,createdAt:item.createdAt};
+ Object.assign(item,{title:'Welcome to the Global Drop Trade testnet',
+  message:'The dashboard runs on BNB Testnet. Use test USDT for deposits and withdrawals. Open History to check confirmed transactions. For account help, open Support tickets. Replies appear in Notifications.',
+  updatedAt:at,revision:2});
+ communityEvent(state,'announcement',item,'all',at,null);
+}
+
 export function initializeNotifications(state) {
  if (state.notifications) return;
  state.notifications = {latest: 0, events: [], read: {}};

@@ -26,7 +26,7 @@ function saveConnector(kind:WalletKind|null){
 type InjectedWalletScope={safepalProvider?:WalletProvider;ethereum?:WalletProvider&{providers?:Array<WalletProvider&{isSafePal?:boolean}>}};
 export function selectInjectedWalletProvider(scope:InjectedWalletScope):WalletProvider|undefined{
  const providers=Array.isArray(scope.ethereum?.providers)?scope.ethereum.providers:[];
- return [scope.safepalProvider,...providers.filter(provider=>provider?.isSafePal),scope.ethereum].find(provider=>typeof provider?.request==='function');
+ return [scope.safepalProvider,...providers.filter(provider=>provider?.isSafePal),scope.ethereum,...providers].find(provider=>typeof provider?.request==='function');
 }
 export const walletConnectProjectId=String(import.meta.env.VITE_WALLETCONNECT_PROJECT_ID||'').trim();
 export const walletConnectReady=/^[a-f0-9]{32}$/i.test(walletConnectProjectId);

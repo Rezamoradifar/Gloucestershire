@@ -1,8 +1,9 @@
 // Server-side reader for the isolated, verified chain-97 member portfolios.
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,getAddress,toBeHex,zeroPadValue} from 'ethers';
+import {Contract,FetchRequest,Interface,id as topicId,JsonRpcProvider,ZeroAddress,getAddress,toBeHex,zeroPadValue} from 'ethers';
 import {PLAN_PORTFOLIO_PROFILE,PORTFOLIO_PROFILE,UNIFIED_DEPLOYER} from '../scripts/v3-unified-release-pins.mjs';
+import {paidTopic,verifyPortfolioPayout} from './portfolio-payout.mjs';
 import {verifyUnifiedRelease} from '../scripts/verify-v3-unified-release.mjs';
 
 const hash = value => typeof value==='string' && /^0x[0-9a-f]{64}$/i.test(value);
@@ -48,6 +49,7 @@ const eventTypes = eventDefinitions.map(([source,position,category,signature]) =
 const vaultAbi = [
   'function MANAGER_ROLE() view returns(bytes32)',
   'function hasRole(bytes32,address) view returns(bool)',
+  'function withdrawalCount() view returns(uint256)',
   'function userWithdrawalCount(address) view returns(uint256)',
   'function userWithdrawalId(address,uint256) view returns(uint256)',
   'function withdrawalOf(uint256) view returns(tuple(address beneficiary,uint256 positionId,uint256 gross,uint256 fee,uint64 requestedAt,uint8 status,uint8 kind))',
@@ -55,9 +57,9 @@ const vaultAbi = [
 ];
 
 function queryFor(params,kind) {
-  if (!['events','withdrawals'].includes(kind)) fail(400);
+  if (!['events','withdrawals','payout'].includes(kind)) fail(400);
   const keys=[...params.keys()],allowed=['wallet','vault','anchor','hash',
-    ...(kind==='withdrawals'?['page']:['tx','start','end','from','to','category'])];
+    ...(kind==='payout'?['id','tx']:kind==='withdrawals'?['page']:['tx','start','end','from','to','category'])];
   if (keys.length!==new Set(keys).size || keys.some(k=>!allowed.includes(k))) fail(400);
   const number = name => {
     const value=params.get(name);
@@ -66,7 +68,8 @@ function queryFor(params,kind) {
     return Number(value);
   };
   const addr = name => {try {const addr=getAddress(params.get(name)); if(addr!==ZeroAddress)return addr;} catch {} fail(400);};
-  const q={kind,wallet:addr('wallet'),vault:addr('vault'),anchor:number('anchor'),hash:params.get('hash'),
+  if(kind==='payout' && number('id')===undefined)fail(400);
+  const q={kind,id:number('id'),wallet:addr('wallet'),vault:addr('vault'),anchor:number('anchor'),hash:params.get('hash'),
     tx:params.get('tx'),start:number('start'),end:number('end'),from:number('from'),to:number('to'),
     category:params.get('category')??'all',page:number('page')??0};
   if ((q.anchor===undefined)!==(q.hash===null) || (q.hash!==null && !hash(q.hash)) ||
@@ -164,6 +167,36 @@ async function withdrawalPage(vault,q,at) {
       allocation:{personal:String(personal),referral:String(referral),network:String(network),principal:String(principal)}};
   });
   return {page:q.page,total,items};
+}
+
+async function payoutReceipt(provider,vault,proof,q,anchor) {
+  const at={blockTag:anchor.block};
+  if(q.id>=safeNumber(await vault.withdrawalCount(at)))fail(400);
+  const row=await vault.withdrawalOf(q.id,at);
+  if(getAddress(row.beneficiary)!==q.wallet || Number(row.status)!==3)fail(400);
+  let tx=q.tx;
+  if(!tx){
+    // Paid is terminal. Locate the single transition without an unbounded log scan.
+    let low=proof.deploymentBlock,high=anchor.block;
+    while(low<high){
+      const mid=low+Math.floor((high-low)/2), options={blockTag:mid};
+      const exists=BigInt(await vault.withdrawalCount(options))>BigInt(q.id);
+      if(exists && Number((await vault.withdrawalOf(q.id,options)).status)===3)high=mid;
+      else low=mid+1;
+    }
+    const matches=await provider.getLogs({address:proof.vault,fromBlock:low,toBlock:low,
+      topics:[paidTopic,toBeHex(q.id,32),zeroPadValue(q.wallet,32)]});
+    check(matches.length===1 && hash(matches[0].transactionHash));
+    tx=matches[0].transactionHash;
+  }
+  const receipt=await provider.getTransactionReceipt(tx);
+  check(receipt && receipt.hash.toLowerCase()===tx.toLowerCase() && receipt.blockNumber>=proof.deploymentBlock && receipt.blockNumber<=anchor.block);
+  const block=await getBlock(provider,receipt.blockNumber);
+  check(block.hash.toLowerCase()===receipt.blockHash.toLowerCase());
+  verifyPortfolioPayout(receipt,{vault:proof.vault,token:proof.token,feeReceiver:proof.feeReceiver,
+    beneficiary:q.wallet,id:q.id,gross:row.gross,fee:row.fee});
+  return {payout:{id:q.id,beneficiary:q.wallet,transactionHash:receipt.hash,block:block.number,blockHash:block.hash,
+    net:String(row.gross-row.fee),gross:String(row.gross),fee:String(row.fee)}};
 }
 
 // Narrow an expensive window without claiming coverage of the omitted blocks.
@@ -285,7 +318,8 @@ export function createV3MemberHistory({proofs=readProfiles(),providers,env=proce
     if(cached)return cached;
     const vault=makeVault(proof.vault,provider),at={blockTag:height};
     let result;
-    if(q.kind==='withdrawals')result=await withdrawalPage(vault,q,at);
+    if(q.kind==='payout')result=await payoutReceipt(provider,vault,proof,q,anchor);
+    else if(q.kind==='withdrawals')result=await withdrawalPage(vault,q,at);
     else if(q.from===undefined)result={range:await selectRange(provider,q,anchor),logs:[],requestIds:[]};
     else{
       if(q.from<proof.deploymentBlock)fail(400);
@@ -313,6 +347,28 @@ export function createV3MemberHistory({proofs=readProfiles(),providers,env=proce
     return response;
   }
   return {
+    portfolioProfiles:[...profiles.values()],
+    async keeperReceipts(address,operator,accrual,volume){
+      const entry=profiles.get(address);
+      if(!entry?.proof.keeper || getAddress(entry.proof.keeper)!==operator)fail(503);
+      for(const provider of candidates){
+        try{
+          const proof=await session(provider,entry),head=await provider.getBlockNumber();
+          const rows=await Promise.all([[accrual,'accrual',proof.vault,'DailyClaimAccrued(address,uint256,uint256,uint256,uint256,uint256)'],
+            [volume,'volume',proof.network,'NetworkVolumeProgress(uint256,address)']].filter(([tx])=>tx).map(async ([tx,kind,target,event])=>{
+            const r=await provider.getTransactionReceipt(tx);
+            check(r?.status===1 && r.hash.toLowerCase()===tx.toLowerCase() && r.blockNumber>=proof.deploymentBlock && head>=r.blockNumber+2 &&
+              getAddress(r.from)===operator && getAddress(r.to)===getAddress(target) &&
+              r.logs.some(log=>getAddress(log.address)===getAddress(target) && log.topics[0]===topicId(event)));
+            const block=await getBlock(provider,r.blockNumber);
+            check(block.hash.toLowerCase()===r.blockHash.toLowerCase());
+            return {kind,transactionHash:r.hash,block:block.number,blockHash:block.hash,timestamp:block.timestamp};
+          }));
+          return rows.sort((a,b)=>b.block-a.block);
+        }catch{/* Try the next verified RPC. */}
+      }
+      fail(503);
+    },
     supportAuthority(address){
       const entry=profiles.get(address);
       if(!entry)return null;

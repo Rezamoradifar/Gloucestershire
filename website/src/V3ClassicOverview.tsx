@@ -92,7 +92,7 @@ export default function V3ClassicOverview(props:Props){
     <section className="gv1-panel gv1-plan" aria-labelledby="gv1-plan-title">
      <div className="gv1-panel-title"><h2 id="gv1-plan-title">Your plan</h2><span className="gv1-plan-tag">{view?(view.registered?v3TierName(view.tier):'Not registered'):connected?accountReadStatus:'Not connected'}</span></div>
      <div className="gv1-plan-figure"><span className="gv1-plan-symbol">◆</span><div>
-      <strong><DigitalValue value={view?String(view.dailyRateBps/100):'—'} unit="%"/></strong><small>Daily test rate · conditional</small></div></div>
+      <strong><DigitalValue value={view?String(view.dailyRateBps/100):'—'} unit="%"/></strong><small>{V3_HOURLY_TEST?'Rate per eligible one-hour test cycle':'Rate per eligible 24-hour cycle'}</small></div></div>
      <div className="gv1-plan-detail"><span>Recorded capital value</span><b>{view?money(view.capital):'—'} USDT</b></div>
      <div className="gv1-plan-detail"><span>Qualified directs</span><b>{view?`${view.qualifiedDirects} / ${view.requiredDirects}`:'—'}</b></div>
      <div className="gv1-plan-detail"><span>Eligible volume</span><b>{view?`${money(view.qualifiedVolume)} / ${money(view.requiredVolume)}`:'—'}</b></div>

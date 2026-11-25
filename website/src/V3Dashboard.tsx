@@ -44,6 +44,8 @@ import {prepareUnifiedPageAction,unifiedWithdrawalWindow,type UnifiedPositionPag
 import V3ClassicOverview from './V3ClassicOverview';
 import {V3TransactionReview,useV3TransactionReview} from './V3TransactionReview';
 import V3HistoryPanel from './V3HistoryPanel';
+import V3KeeperStatus from './V3KeeperStatus';
+import V3PayoutReceipt from './V3PayoutReceipt';
 import V3WithdrawalHistory from './V3WithdrawalHistory';
 import {linkedMemberTab} from './site-route';
 import ThemeSwitch from './ThemeSwitch';
@@ -598,6 +600,7 @@ export default function V3Dashboard(){
     {admin&&<V3SettlementBreakdown request={r}/>}</div>
    <div><b><DigitalValue value={show(r.gross)} unit="USDT"/></b><small>Net {show(r.gross-r.fee)} · Fee {show(r.fee)}</small></div>
    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>
+    {config?.unified?.portfolio&&r.status===3&&<V3PayoutReceipt key={config.address+r.id+r.beneficiary} vault={config.address} row={r}/>}
     {config?.unified&&!admin&&r.beneficiary.toLowerCase()===wallet.toLowerCase()&&<>
      {r.status===0&&<small>Waiting for manager approval.</small>}
      {r.status===1&&<small>Waiting for {formatUnits(r.gross,18)} test USDT to be reserved for this request.</small>}
@@ -734,7 +737,7 @@ export default function V3Dashboard(){
       {config.unified&&<V3UnifiedActivity view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} onCheckIn={checkIn}/>}
       {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} showRequestLimit={!view.portfolio} verifiedLedger={view.ledger} manualReinvest={view.manualReinvest}/>}
       <div className="gv2-summary">
-       <div className="gv2-metric"><small>Daily test-rate tier</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Conditional accounting rule</span></div>
+       <div className="gv2-metric"><small>{V3_HOURLY_TEST?'One-hour test rate':'Daily test-rate tier'}</small><strong><DigitalValue value={String(view.dailyRateBps/100)} unit="%"/></strong><span>Per eligible cycle</span></div>
        <div className="gv2-metric"><small>Personal accrued claims</small><strong><DigitalValue value={claims?show(claims.outstandingPersonal):'—'} unit="USDT"/></strong><span>{view.manualReinvest?'Based on recorded principal':'Includes personal compound earnings'}</span></div>
        <div className="gv2-metric"><small>Vault test-token cash</small><strong><DigitalValue value={show(view.ledger.cash)} unit="USDT"/></strong><span>Includes cash reserved for requests</span></div>
        <div className="gv2-metric"><small>Unfunded total obligations</small><strong><DigitalValue value={claims?show(claims.overallUnfundedLiability):'—'} unit="USDT"/></strong><span>Not guaranteed to be paid</span></div>
@@ -816,6 +819,7 @@ export default function V3Dashboard(){
      {tab==='admin'&&config.unified?.portfolio&&view.canManage&&adminSection==='members'&&walletSession.provider&&
       <V3ManagerVipPanel key={wallet+':'+config.address+':'+walletSession.version} provider={walletSession.provider} manager={wallet} config={config}
        busy={busy} readOnly={unifiedReadOnly||reviewRequired} onChange={perform}/>}
+     {tab==='admin'&&config.unified?.portfolio&&operatorAccess&&adminSection==='settlements'&&<V3KeeperStatus config={config}/>}
      {tab==='admin'&&operatorAccess&&(!support||!view.canManage||adminSection==='settlements')&&<section className="gv2-panel">
       <div className="gv2-panel-head"><h3>Funding &amp; settlement</h3></div>
       {view.dailyPlan&&view.canFund&&<div className="gv3-input-row">

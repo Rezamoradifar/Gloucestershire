@@ -21,3 +21,9 @@ Members can use **Support tickets** in the dashboard menu or open `/#dashboard/t
 Published notices are available at `/#dashboard/announcements` with or without a connected wallet. Managers use **Admin panel → Announcements** to publish, edit, unpublish or republish a notice. Unpublished notices remain in the manager archive.
 
 The API keeps threads and notices in the service state directory under `v3/<vault>/community.json`. Each portfolio has its own records and wallet sessions. The server checks the confirmed and latest manager role before opening the private inbox or moderating announcements. The primary installer checks the public notice feed and the signed-access requirement for the private inbox before switching the site.
+
+## Payout receipts and the portfolio worker
+
+A paid request in the member withdrawal history and the manager queue has **Verify payment receipt**. The API verifies the vault payment event and both test-token transfers in one canonical receipt. If historical state is unavailable, enter the payment transaction hash from History. For a gross earnings withdrawal of 70 test USDT the beneficiary receives 68.6 and the fee receiver receives 1.4. Approval, funding and payment have separate statuses. Existing cash reserved for another beneficiary cannot be used for a second payment.
+
+The **Portfolio automation** card in the manager settlement section shows the worker timer, last successful cycle and confirmed earnings or volume transaction. `GET /api/automation/status` follows the portfolio in the currently served primary index. `?vault=<address>` selects an installed portfolio and `?vault=legacy` selects the older allocation service. Missing proof, an overdue cycle, and a stopped timer are reported explicitly. Public reports contain only worker status and confirmed transaction references. The private journals remain in the worker state directory.

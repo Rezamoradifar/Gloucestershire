@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import ganache from 'ganache';
 import {BrowserProvider,Contract,ContractFactory,Wallet,ZeroAddress,parseEther,toQuantity} from 'ethers';
+import {verifyPortfolioPayout} from '../server/portfolio-payout.mjs';
+import {createV3MemberHistory} from '../server/v3-member-history.mjs';
 import {deploymentArtifact} from '../scripts/v3-unified-deploy-preflight.mjs';
 import {deployUnifiedIsolated} from '../scripts/deploy-v3-unified-isolated.mjs';
 import {planUnifiedPreviewSite} from '../scripts/v3-unified-site-preview-preflight.mjs';
@@ -94,6 +96,48 @@ test('a portfolio request reserves, releases and pays one itemized amount', {tim
    assert.equal(await token.balanceOf(who),units('41.846'));assert.equal(await token.balanceOf(UNIFIED_FEE_RECEIVER),r.fee);
    assert.equal(await vault.profitLiability(),before-r.gross);assert.equal((await user()).capital,units(1000));
    await assert.rejects(vault.payWithdrawal.staticCall(0));
+  });
+  await scenario('two concurrent approvals keep independent reserves and a 70 test USDT payment reconciles to 68.6 on both ledgers',async()=>{
+   // Eligible earnings across test cycles, without minting user claims directly.
+   for(let i=0;i<5;i++){
+    await advance(3601);await mined(account.checkIn());await mined(vault.accrueDaily(who,0,{gasLimit:3000000}));
+   }
+   await request([units(35),0n,units(35),0n]);
+   await mined(vault.connect(child).requestAccountWithdrawal([units(2),0,0,0],0,0));
+   await mined(vault.approveWithdrawal(0));await mined(vault.approveWithdrawal(1));
+   assert.equal(await token.balanceOf(vault.target),0n);
+   await assert.rejects(vault.payWithdrawal.staticCall(0));
+   await mined(token.mint(UNIFIED_MANAGER,units(72)));await mined(token.connect(manager).approve(vault.target,units(72)));
+   await mined(vault.fundWithdrawal(0));await mined(vault.fundWithdrawal(1));
+   assert.equal(await vault.reservedForPayout(),units(72));
+   const initial=await token.balanceOf(who),feeBefore=await token.balanceOf(UNIFIED_FEE_RECEIVER);
+   const receipt=await mined(vault.payWithdrawal(0));
+   const amounts={id:0,vault:vault.target,token:UNIFIED_TOKEN,feeReceiver:UNIFIED_FEE_RECEIVER,beneficiary:who,gross:units(70),fee:units('1.4')};
+   verifyPortfolioPayout(receipt,amounts);
+   const transfers=receipt.logs.filter(log=>log.address===UNIFIED_TOKEN);
+   const paid=receipt.logs.find(log=>log.address===vault.target&&vault.interface.parseLog(log)?.name==='WithdrawalPaid');
+   assert.equal(transfers.length,2);
+   for(const logs of [[paid],[transfers[0],paid],[...transfers].reverse().concat(paid),[...transfers,paid,...transfers,paid]]){
+    assert.throws(()=>verifyPortfolioPayout({status:1,logs},amounts));
+   }
+   assert.throws(()=>verifyPortfolioPayout(receipt,{...amounts,token:vault.target}));
+   assert.equal(await token.balanceOf(who)-initial,units('68.6'));
+   assert.equal(await token.balanceOf(UNIFIED_FEE_RECEIVER)-feeBefore,units('1.4'));
+   assert.equal(await vault.reservedForPayout(),units(2));
+   const queue=await vault.withdrawalOf(0);assert.equal(queue.status,3n);
+   await assert.rejects(vault.payWithdrawal.staticCall(0));
+   for(let i=0;i<5;i++)await mine();
+   const history=createV3MemberHistory({proofs:[proof],providers:[provider],verifyRelease:async()=>({proof})});
+   try{
+    const query={wallet:who,vault:vault.target};
+    const memberPage=await history.get(new URLSearchParams(query),'withdrawals');
+    assert.equal(memberPage.items[0].status,Number(queue.status));
+    for(const extra of [{},{tx:receipt.hash}]){
+     const result=await history.get(new URLSearchParams({...query,id:'0',...extra}),'payout');
+     assert.equal(result.payout.transactionHash,receipt.hash);assert.equal(result.payout.net,String(units('68.6')));
+    }
+    await assert.rejects(history.get(new URLSearchParams({...query,id:'1'}),'payout'));
+   }finally{history.close();}
   });
   await scenario('rejection and timed cancellation restore each source including mature principal',async()=>{
    await advance(90*86400);

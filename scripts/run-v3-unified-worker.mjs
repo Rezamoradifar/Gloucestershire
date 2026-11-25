@@ -5,9 +5,10 @@ import {pathToFileURL} from 'node:url';
 import {Wallet, getAddress, parseEther} from 'ethers';
 import {verifyUnifiedRelease} from './verify-v3-unified-release.mjs';
 import {createUnifiedRpcProvider, transportReason, withUnifiedReadRpc} from './v3-unified-verification-rpc.mjs';
-import {recheckUnifiedBlock} from './verify-v3-unified-deployment.mjs';
+import {recheckUnifiedBlock,validateUnifiedProof} from './verify-v3-unified-deployment.mjs';
 import {UNIFIED_DEPLOYER,unifiedProfileForFlag} from './v3-unified-release-pins.mjs';
 import {isV3SystemdCredential} from './global-v3-auto-compound-keeper.mjs';
+import {checkpointIdentity,readCheckpoint} from './checkpoint-v3-unified-idle-scan.mjs';
 import {openUnifiedJournal} from './v3-unified-keeper-journal.mjs';
 import {runUnifiedKeeperCycle} from './run-v3-unified-keeper-cycle.mjs';
 import {runUnifiedNetworkVolume, reconcileUnifiedNetworkVolume} from './process-v3-unified-network-volume.mjs';
@@ -37,12 +38,12 @@ function readPrivate(filename, limit, credentialName) {
   } finally { fs.closeSync(fd); }
 }
 
-function atomicFile(filename, contents, replace = true) {
+function atomicFile(filename, contents, replace = true, publicReport = false) {
   const directory = path.dirname(filename);
   const temp = path.join(directory, '.unified-' + randomUUID());
   const fd = fs.openSync(temp, 'wx', 0o600);
   try {
-    try { fs.writeFileSync(fd, contents); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    try { fs.writeFileSync(fd, contents); if(publicReport)fs.fchmodSync(fd,0o644); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     if (replace) fs.renameSync(temp, filename);
     else fs.linkSync(temp, filename);
     const parent = fs.openSync(directory, 'r');
@@ -109,7 +110,7 @@ export async function combinedCycle({hasAccrual, hasVolume, recoverVolume, check
   return {accrual:accrual.state, hash:accrual.hash, volume:network.status};
 }
 
-async function tick(provider, signer, proof, directory) {
+async function tick(provider, signer, proof, directory, publicDirectory) {
   if (!directory || !path.isAbsolute(directory)) throw Error('UNIFIED_WORKER_STATE_DIRECTORY_REQUIRED');
   // The common kernel lock covers both components and is released on process death.
   const outer = openUnifiedJournal(directory);
@@ -125,11 +126,31 @@ async function tick(provider, signer, proof, directory) {
     try { hasAccrual = !!accrual.read(); } finally { accrual.close(); }
     const args = {provider, proof, operator:signer.address, state,
       save:next => atomicFile(volumeFile, JSON.stringify(next) + '\n')};
-    return await combinedCycle({hasAccrual, hasVolume:!!state.pendingTransaction,
+    const result=await combinedCycle({hasAccrual, hasVolume:!!state.pendingTransaction,
       recoverVolume:() => reconcileUnifiedNetworkVolume({...args, resume:true}),
       checkVolume:() => reconcileUnifiedNetworkVolume(args),
       accrue:() => runUnifiedKeeperCycle({provider, signer, proof, journalDirectory}),
       volume:() => runUnifiedNetworkVolume({...args, signer})});
+    if(publicDirectory){
+      const checkpoint=readCheckpoint(path.join(journalDirectory,'idle-checkpoint.json'),checkpointIdentity(validateUnifiedProof(proof)),signer.address);
+      const filename=path.join(publicDirectory,'run.json');
+      const now=new Date().toISOString();
+      let lastSuccessfulAt=null;
+      if((!result.accrual||['IDLE_CHECKPOINT_RECORDED','CONFIRMED_CHECKPOINT_RECORDED'].includes(result.accrual)) &&
+         (!result.volume||['NO_DUE_VOLUME','VOLUME_CONFIRMED','VOLUME_SCAN_CONTINUES','NO_PENDING_VOLUME'].includes(result.volume))){lastSuccessfulAt=now;}
+      else{
+        try{
+          const previous=JSON.parse(fs.readFileSync(filename,'utf8'));
+          if(previous.vault===proof.vault && previous.operator===signer.address && previous.deploymentTx===proof.deploymentTx &&
+             Number.isFinite(Date.parse(previous.lastSuccessfulAt)) && Date.parse(previous.lastSuccessfulAt)<=Date.parse(now))lastSuccessfulAt=previous.lastSuccessfulAt;
+        }catch{/* A new worker has no previous successful cycle. */}
+      }
+      const report={version:1,chainId:97,vault:getAddress(proof.vault),deploymentTx:proof.deploymentTx,operator:signer.address,
+        checkedAt:now,lastSuccessfulAt,accrual:result.accrual??null,volume:result.volume??null,
+        lastAccrual:checkpoint?.lastAccrual?.hash??null,lastVolume:state.lastConfirmed?.transactionHash??null};
+      atomicFile(filename,JSON.stringify(report)+'\n',true,true);
+    }
+    return result;
   } finally { outer.close(); }
 }
 
@@ -165,7 +186,7 @@ async function main() {
       return;
     }
     if (command === '--tick') {
-      console.log('UNIFIED_WORKER_RESULT', JSON.stringify(await tick(provider, signer.connect(provider), proof, process.env.STATE_DIRECTORY)));
+      console.log('UNIFIED_WORKER_RESULT', JSON.stringify(await tick(provider, signer.connect(provider), proof, process.env.STATE_DIRECTORY, process.env.GLOBAL_PORTFOLIO_PUBLIC_RUN)));
     }
   } finally { provider?.destroy(); }
 }

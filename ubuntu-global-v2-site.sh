@@ -224,6 +224,9 @@ if [ "${VITE_V3_HOURLY_TEST:-}" = isolated-1h ]; then
  cmp -s "$stage/hourly-before.html" "$stage/hourly-after.html" || { echo V3_HOURLY_EXISTING_SITE_CHANGED; exit 1; }
 fi
 
+if [[ ${VITE_V3_UNIFIED_PRIMARY:-} == portfolio-testnet ]]; then
+ python3 scripts/v3-history-install.py primary /opt/globaldroptrade-api/current/server/v3-history-profiles.json portfolio
+fi
 changed=0
 # Once the new HTML, every current hashed JS/CSS asset and the unchanged API
 # have been verified, remove only obsolete hashed web assets from this served

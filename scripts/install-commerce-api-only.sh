@@ -24,7 +24,7 @@ credential_dir="$commerce_unit.d"
 credential_dropin="$credential_dir/40-v3-history-read-rpc.conf"
 archive_rpc=/etc/globaldroptrade/archive-rpc-url
 history_state=/var/lib/globaldroptrade
-support_modules=(server/portfolio-notifications.mjs server/portfolio-telegram.mjs scripts/configure-portfolio-telegram.py)
+support_modules=(server/portfolio-notifications.mjs server/portfolio-telegram.mjs scripts/configure-portfolio-telegram.py server/portfolio-payout.mjs server/portfolio-status.mjs)
 history_modules=(server/v3-member-history.mjs scripts/v3-unified-release-pins.mjs scripts/verify-v3-unified-release.mjs scripts/verify-v3-unified-deployment.mjs)
 [[ -L "$commerce_current" && -d "$commerce_releases" && ! -L "$commerce_releases" ]] || { echo COMMERCE_EXISTING_API_REQUIRED; exit 1; }
 [[ -f "$commerce_env" && ! -L "$commerce_env" && "$(stat -c %u "$commerce_env")" == 0 ]] || { echo COMMERCE_ENV_REQUIRED; exit 1; }
@@ -74,7 +74,7 @@ community_hash(){
 community_target=$(community_hash .)
 community_before=$(community_hash "$commerce_previous")
 case "$community_before" in
- "$community_target"|missing|76de3615106767056c040290b939c5f74ca1ef9a|b5a980ce6dfc15fdacdc44f385b162f6b5ce9276|4fa182b9f06c348824335cb838b535b8d4ff81e1) ;;
+ "$community_target"|0c8b5d1eb97c6761f51acfe191b4ad6533982721|missing|76de3615106767056c040290b939c5f74ca1ef9a|b5a980ce6dfc15fdacdc44f385b162f6b5ce9276|4fa182b9f06c348824335cb838b535b8d4ff81e1) ;;
  *) echo COMMERCE_LIVE_SUPPORT_VERSION_REVIEW_REQUIRED; exit 1 ;;
 esac
 commerce_target=$(commerce_fingerprint .)
@@ -82,6 +82,7 @@ commerce_before=$(commerce_fingerprint "$commerce_previous")
 # Legacy releases contained only the three commerce modules. New releases also fingerprint their history reader and verification code.
 case "$commerce_before" in
  "$commerce_target"|\
+ 86e9d96817cf53c7e1101a0420e17fec39c0f1cf/493d9b5dd388ce84dc559565de3c2f438b813422/3c1cb19872b14b8cca44a370eefe81411c1ef42a/63f1f716ee9688cbf128ad4081a1b20864a5b6fc/63990e2f3f47f40b3d77d5ae702a2767b3e25c11/d6c8962294ff26a940462d3d33b99d3946e9e193/e66c5ce9912c3265465256b73bc407b1241aeb0f/de1d6ebce029583629745d9d97d4603d7a81838b/2fe185146d5cedae55ebfeb818fc18da3c3e0cf2/2eb5f6ded03ae575c2a73ce3d4912e2177b52d27|\
  e9d2bed2d47f6dc0b61767f6a28178eae9eff9b0/493d9b5dd388ce84dc559565de3c2f438b813422/3c1cb19872b14b8cca44a370eefe81411c1ef42a/63f1f716ee9688cbf128ad4081a1b20864a5b6fc/63990e2f3f47f40b3d77d5ae702a2767b3e25c11/d6c8962294ff26a940462d3d33b99d3946e9e193/e66c5ce9912c3265465256b73bc407b1241aeb0f|\
  e2dc460016caa3679f70bcda5d1c810a448b01ed/493d9b5dd388ce84dc559565de3c2f438b813422/3c1cb19872b14b8cca44a370eefe81411c1ef42a/54cd1fc7f99320df137426c2fd9cbc460c0c52c9/63990e2f3f47f40b3d77d5ae702a2767b3e25c11/d6c8962294ff26a940462d3d33b99d3946e9e193/e66c5ce9912c3265465256b73bc407b1241aeb0f|\
  5cae7c3c414386fecb82a0226b43237c3445001d/missing/missing|\

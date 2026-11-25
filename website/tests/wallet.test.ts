@@ -25,6 +25,11 @@ function provider(){
 }
 afterEach(async()=>{await wallets.disconnect();vi.unstubAllGlobals();});
 describe('wallet connection boundaries',()=>{
+ it('connects to a nested mobile wallet when the injected provider registry has no request method',()=>{
+  const nested=provider();
+  const registry={providers:[nested]} as unknown as WalletProvider;
+  expect(selectInjectedWalletProvider({ethereum:registry})).toBe(nested);
+ });
  it('proposes personal_sign for optional-chain WalletConnect sessions',async()=>{
   // WalletConnect 2.26 uses no required-method defaults when no required
   // chains are configured; the optional list must request message signing.

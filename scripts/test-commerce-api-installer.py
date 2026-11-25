@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory() as temporary:
         (root / name).mkdir(parents=True, exist_ok=True)
     for name in ['scripts/install-commerce-api-only.sh', 'scripts/v3-history-install.py',
                  'scripts/v3-unified-release-pins.mjs', 'scripts/verify-v3-unified-release.mjs', 'scripts/verify-v3-unified-deployment.mjs',
-                 'server/portfolio-notifications.mjs', 'server/portfolio-telegram.mjs', 'scripts/configure-portfolio-telegram.py', 'test/portfolio-telegram.test.mjs',
+                 'server/portfolio-notifications.mjs', 'server/portfolio-telegram.mjs', 'server/portfolio-status.mjs', 'server/portfolio-payout.mjs', 'scripts/configure-portfolio-telegram.py', 'test/portfolio-telegram.test.mjs',
                  'server/v3-member-history.mjs', 'server/trades-api.mjs', 'server/community.mjs', 'test/v3-portfolio-support.test.mjs',
                  'server/commerce-ebay.mjs', 'server/trading-activity.mjs', 'test/commerce-ebay.test.mjs', 'test/trading-activity.test.mjs', 'test/v3-member-history-api.test.mjs']:
         source = (repo / name).read_text()
@@ -212,10 +212,26 @@ esac''',
         (previous/name).write_bytes(historical_blob(blob))
     upgrade = run('--install')
     assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
-    for name in ['server/portfolio-notifications.mjs','server/portfolio-telegram.mjs','scripts/configure-portfolio-telegram.py']:
+    for name in ['server/portfolio-notifications.mjs','server/portfolio-telegram.mjs','scripts/configure-portfolio-telegram.py','server/portfolio-status.mjs','server/portfolio-payout.mjs']:
         assert (current/name).read_bytes() == (repo/name).read_bytes()
     current.unlink()
     current.symlink_to(previous)
+    # The notification-enabled release was already deployed before keeper and payout verification were added.
+    notification_modules = {
+        'server/portfolio-notifications.mjs': 'de1d6ebce029583629745d9d97d4603d7a81838b',
+        'server/portfolio-telegram.mjs': '2fe185146d5cedae55ebfeb818fc18da3c3e0cf2',
+        'scripts/configure-portfolio-telegram.py': '2eb5f6ded03ae575c2a73ce3d4912e2177b52d27'
+    }
+    for name, blob in {**notification_modules, 'server/trades-api.mjs': '86e9d96817cf53c7e1101a0420e17fec39c0f1cf',
+                       'server/community.mjs': '0c8b5d1eb97c6761f51acfe191b4ad6533982721'}.items():
+        (previous/name).write_bytes(historical_blob(blob))
+    upgrade = run('--install')
+    assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
+    assert (current/'server/portfolio-status.mjs').is_file() and (current/'server/portfolio-payout.mjs').is_file()
+    current.unlink()
+    current.symlink_to(previous)
+    for name in notification_modules:
+        (previous/name).unlink()
     (previous/'server/community.mjs').write_text('local unpublished changes')
     unknown_support = run('--check')
     assert unknown_support.returncode != 0 and 'COMMERCE_LIVE_SUPPORT_VERSION_REVIEW_REQUIRED' in unknown_support.stdout

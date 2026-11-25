@@ -1,3 +1,4 @@
+import V3PayoutReceipt from './V3PayoutReceipt';
 import {useEffect,useRef,useState} from 'react';
 import {getWalletProvider} from './wallet';
 import {HistoryServerError,readServerWithdrawals} from './v3-server-history';
@@ -44,7 +45,7 @@ export default function V3WithdrawalHistory({wallet,config}:{wallet:string;confi
       {([['personal','Personal profit'],['referral','Referral commission'],['network','Network rewards'],['principal','Principal']] as const).map(([key,label])=>
        <div key={key}><dt>{label}</dt><dd>{formatV3Amount(r.allocation![key])} test USDT</dd></div>)}</dl></details>}</div>
     <div><b>{formatV3Amount(r.gross)} USDT</b><small>Net {formatV3Amount(r.gross-r.fee)} · Fee {formatV3Amount(r.fee)}</small></div>
-    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span></div>
+    <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span>{config.unified?.portfolio&&r.status===3&&<V3PayoutReceipt key={config.address+'/'+r.beneficiary+'/'+r.id} vault={config.address} row={r}/>}</div>
    </article>)}
    {!data.items.length&&<p>No confirmed withdrawal requests for this wallet.</p>}
    <div className="gv2-buttons"><button type="button" disabled={loading||page===0} onClick={()=>setPage(p=>p-1)}>Newer requests</button>
