@@ -75,7 +75,7 @@ def check_route(profiles, endpoint, required='optional'):
             data = json.loads(body)
             if data.get('chainId') != 97 or str(data.get('vault')).lower() != vault:
                 raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
-            if expected == 200 and (not isinstance(data.get('items'), list) or
+            if expected == 200 and (data.get('notificationsVersion') != 1 or not isinstance(data.get('items'), list) or
                                     any(item.get('published') is not True for item in data['items'])):
                 raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
             if expected == 401 and ('items' in data or not data.get('error')):

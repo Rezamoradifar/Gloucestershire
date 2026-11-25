@@ -86,7 +86,7 @@ case "$url" in
    part="${{url#*/api/v3/community/}}"; vault="${{part%%/*}}"
    if [[ -f "{root}/wrong-support" ]]; then echo missing; echo 404
    elif [[ "$part" == */announcements ]]; then
-    printf '{{"chainId":97,"vault":"%s","items":[]}}\\n200' "$vault"
+    printf '{{"chainId":97,"vault":"%s","notificationsVersion":1,"items":[]}}\\n200' "$vault"
    else printf '{{"chainId":97,"vault":"%s","error":"Sign in"}}\\n401' "$vault"; fi ;;
  */api/v3/member-*)
    python3 - "$url" <<'PY'

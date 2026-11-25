@@ -46,6 +46,7 @@ test('the portfolio API isolates sessions, threads and announcements by vault an
  try{
   await start();
   assert.equal((await call(unknown,'announcements')).status,404);
+  assert.equal((await call(vault,'announcements')).data.notificationsVersion,1);
   assert.equal((await call(vault,'tickets?admin=1')).status,401);
   const [a,m,f,b]=await Promise.all([authenticate(member),authenticate(manager),authenticate(funder),authenticate(member,second)]);
   assert.equal((await call(vault,'notifications')).status,401);

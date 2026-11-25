@@ -61,7 +61,7 @@ export async function createCommunity({file,owner,isAdmin,chainId,contract,origi
   if(all)await admin(user(req));
   const items=state.announcements.filter(item=>all||item.published).reverse();
   if(portfolio)items.sort((a,b)=>(b.updatedAt||b.createdAt).localeCompare(a.updatedAt||a.createdAt));
-  send(200,list(items,url.searchParams));return true;
+  send(200,{...list(items,url.searchParams),...(portfolio?{notificationsVersion:1}:{})});return true;
  }
  const publicPost=portfolio && method==='GET' && route.match(/^announcements\/([a-zA-Z0-9-]+)$/);
  if(publicPost){

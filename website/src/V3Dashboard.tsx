@@ -139,6 +139,7 @@ export default function V3Dashboard(){
  const selection=selectedItem?.scope===selectionScope?selectedItem.id:undefined;
  const alertsTab=tab==='notifications'||tab==='admin-notifications';
  const staffTab=tab==='admin-tickets'||tab==='admin-announcements';
+ const adminAlerts=staffTab||tab==='admin-notifications'||Boolean(view?.canManage);
  const communityTab=staffTab||tab==='tickets'||tab==='announcements'||alertsTab;
  const independentTab=Boolean(config?.unified?.portfolio&&(communityTab||tab==='history'));
  const supportKey=[walletSession.version,config?.address,tab].join('/');
@@ -645,8 +646,8 @@ export default function V3Dashboard(){
    <header className="topbar gv2-classic-topbar">
      <div className="breadcrumb"><button ref={menuTrigger} className="icon-button mobile-menu" aria-label="Open menu" aria-controls="v3-dashboard-menu" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19}/></button><span>Dashboard</span><ChevronRight size={14}/><strong>{activeTabLabel}</strong></div>
     <div className="top-actions"><span className="network-label">V3 · TESTNET</span>
-     {support&&<NotificationBell key={selectionScope+String(Boolean(view?.canManage))} client={support} admin={Boolean(view?.canManage)}
-      onOpen={()=>navigate(view?.canManage?'admin-notifications':'notifications')}/>}
+     {support&&<NotificationBell key={selectionScope+String(adminAlerts)} client={support} admin={adminAlerts}
+      onOpen={()=>navigate(adminAlerts?'admin-notifications':'notifications')}/>}
      <ThemeSwitch inline/>
      <V3WalletControl address={wallet} busy={connecting||busy} onConnect={openWalletPicker} onDisconnect={()=>void disconnect()}/></div>
    </header>

@@ -12,15 +12,19 @@ type Props={client:SupportClient;admin:boolean};
 function useDesk<T,P extends SupportPage<T>=SupportPage<T>>(client:SupportClient,route:string,privateList:boolean){
  const [page,setPage]=useState<P|null>(null),[busy,setBusy]=useState(false);
  const [error,setError]=useState(''),[notice,setNotice]=useState('');
- const generation=useRef(0),running=useRef(false);
- useLayoutEffect(()=>()=>{generation.current++;running.current=false;},[client,route,privateList]);
+ const generation=useRef(0),running=useRef<'manual'|'background'|null>(null);
+ useLayoutEffect(()=>()=>{generation.current++;running.current=null;},[client,route,privateList]);
 
  const lastQuery=useRef({index:0,filters:{} as Record<string,string>});
  const afterRefresh=useRef<Work|null>(null);
  async function run(work:Work,auth=privateList,background=false){
-  if(running.current)return;
+  if(running.current){
+   if(background||running.current==='manual')return;
+   // A periodic read must never swallow a click or replace the result of a newer action.
+   generation.current++;
+  }
   const id=generation.current,valid=()=>generation.current===id;
-  running.current=true;if(!background){setBusy(true);setError('');setNotice('');}
+  running.current=background?'background':'manual';if(!background){setBusy(true);setError('');setNotice('');}
   try{
    const token=auth?await client.authenticate(valid,!background):'';
    if(valid()){await work(token,valid);if(valid())setError('');}
@@ -29,7 +33,7 @@ function useDesk<T,P extends SupportPage<T>=SupportPage<T>>(client:SupportClient
     if(e instanceof SupportError&&(e.status===401||e.status===403))setPage(null);
     setError(e instanceof Error?e.message:'Support is temporarily unavailable.');
    }
-  }finally{if(valid()){running.current=false;setBusy(false);}}
+  }finally{if(valid()){running.current=null;setBusy(false);}}
  }
  async function load(token:string,valid:()=>boolean,index=0,filters:Record<string,string>={}){
   const params=new URLSearchParams({page:String(index),...filters});
