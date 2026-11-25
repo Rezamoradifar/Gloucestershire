@@ -209,7 +209,7 @@ class FakeSystem:
             return 200, json.dumps({'version':1, 'chainId':97, 'vaultAddress':M.TARGET,
                                     'requirementEnabled':self.mode != 'activity-disabled',
                                     'windowSeconds':86400, 'activationTimestamp':activity['activationTimestamp']})
-        if route in ('/automation-data/activation.json', '/deploy/zero-start-activation.json', '/api/automation/status'):
+        if route in ('/automation-data/activation.json', '/deploy/zero-start-activation.json', '/api/automation/status?vault=legacy'):
             return 200, json.dumps({'version':1, 'chainId':97, 'target':M.TARGET, 'status':'waiting'})
         raise AssertionError('Unexpected fetch: '+route)
 

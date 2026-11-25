@@ -64,7 +64,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 curl -fsS --max-time 20 http://127.0.0.1:3115/api/health -o "$tmp/health.json"
 curl -fsS --max-time 20 http://127.0.0.1:3115/api/config -o "$tmp/config.json"
-curl -fsS --max-time 20 http://127.0.0.1:3115/api/automation/status -o "$tmp/automation.json"
+curl -fsS --max-time 20 'http://127.0.0.1:3115/api/automation/status?vault=legacy' -o "$tmp/automation.json"
 curl -fsS --max-time 25 \
  'http://127.0.0.1:3115/api/event-history/window?wallet=0x786eBc9EA12ED00616E538DD35A78dC8E12FFDF6&asset=0x0000000000000000000000000000000000000000&scope=wallet&kind=finance' \
  -o "$tmp/history.json"

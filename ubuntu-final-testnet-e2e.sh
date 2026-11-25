@@ -36,7 +36,7 @@ live_gate(){
   curl --fail-with-body --silent --show-error --max-time 20 \
     https://globaldroptrade.com/api/config > "$temporary/config.json"
   curl --fail-with-body --silent --show-error --max-time 20 \
-    https://globaldroptrade.com/api/automation/status > "$temporary/automation.json"
+    'https://globaldroptrade.com/api/automation/status?vault=legacy' > "$temporary/automation.json"
 
   command -v node >/dev/null
   node scripts/final-testnet-receipt-gate.mjs \
