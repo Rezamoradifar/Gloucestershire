@@ -1,8 +1,9 @@
 // User requests and operator settlement against the independently verified test release.
 import {BrowserProvider,Contract,getAddress,type Eip1193Provider,type LogDescription} from 'ethers';
 import {checkedGas,submitVerified,type V3Action,type V3TransactionProgressCallback} from './v3-actions';
-import {v3ReadSession,V3_TEST_TOKEN_ABI} from './v3-chain';
+import {v3ReadSession,V3_TEST_TOKEN_ABI,type V3Withdrawal} from './v3-chain';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
+import {readVerifiedWithdrawal} from './v3-withdrawal-history';
 import {v3WithdrawalFee} from './v3-withdrawal-form';
 
 import type {PortfolioAction} from './v3-portfolio';
@@ -17,8 +18,25 @@ export function isUnifiedWithdrawal(action:V3Action|UnifiedWithdrawal):action is
  return action.kind==='requestAccountWithdrawal'||Object.hasOwn(requestKind,action.kind)||['approveWithdrawal','rejectWithdrawal','reserveExistingCash',
   'fundWithdrawal','payWithdrawal','cancelWithdrawal','fundPlanReserve'].includes(action.kind);
 }
+// The on-chain reject method accepts more than one state; compare the exact
+// state shown in the operator's review immediately before each wallet prompt.
+export async function recheckOperatorWithdrawal(vault:Contract,who:string,portfolio:boolean,action:UnifiedWithdrawal,
+ reviewed:V3Withdrawal,block:number){
+ if(!('id' in action)||action.id!==reviewed.id)throw Error('The reviewed withdrawal does not match this action.');
+ const at={blockTag:block};
+ const isManager=action.kind!=='fundWithdrawal'&&await vault.hasRole(await vault.MANAGER_ROLE(at),who,at);
+ const isFunder=(action.kind==='payWithdrawal'||action.kind==='fundWithdrawal')&&
+  await vault.hasRole(await vault.FUNDER_ROLE(at),who,at);
+ if(!isManager&&!isFunder)throw Error('Your settlement role changed. Refresh the queue.');
+ const latest=await readVerifiedWithdrawal(vault,action.id,at,portfolio);
+ const sources=['personal','referral','network','principal'] as const;
+ if(latest.beneficiary!==reviewed.beneficiary||latest.status!==reviewed.status||latest.kind!==reviewed.kind||
+   latest.gross!==reviewed.gross||latest.fee!==reviewed.fee||sources.some(key=>latest.allocation?.[key]!==reviewed.allocation?.[key]))
+  throw Error('This withdrawal changed after review. Refresh the queue before signing.');
+}
+
 export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:string,action:UnifiedWithdrawal,
- config:V3SiteReleaseConfig|null,options:{enabled:boolean;onProgress?:V3TransactionProgressCallback}){
+ config:V3SiteReleaseConfig|null,options:{enabled:boolean;onProgress?:V3TransactionProgressCallback;reviewedRequest?:V3Withdrawal}){
  if(!options.enabled||!config?.unified)throw Error('The unified testnet preview is read-only.');
  const who=getAddress(wallet);
  if(action.kind==='requestAccountWithdrawal'){
@@ -42,6 +60,11 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
   async function submit(contract:Contract,name:string,args:unknown[],label:string,operation:typeof step|'allowance_reset'|'token_approval'=step){
    options.onProgress?.({step:'simulation',action:operation});
    const gas=await checkedGas(session,contract,name,args,who);
+   if(options.reviewedRequest){
+    const head=await session.provider.getBlockNumber();
+    if(head<session.block.number)throw Error('Unable to verify the latest settlement block.');
+    await recheckOperatorWithdrawal(session.vault,who,Boolean(config!.unified?.portfolio),action,options.reviewedRequest,head);
+   }
    return submitVerified(provider,who,signer,config!,await contract.getAddress(),
     contract.interface.encodeFunctionData(name,args),gas,label,operation,options.onProgress);
   }

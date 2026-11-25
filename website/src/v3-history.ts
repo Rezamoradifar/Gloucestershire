@@ -138,10 +138,40 @@ export async function queryV3HistoryRange(provider:Provider,contract:string,wall
  }
  const full=[...first,...second,...approvals,...networkFirstLogs,...networkSecondLogs,...lifecycleLogs];
  if(full.length>eventLimit)throw Error(historyTooDense);
+ const {items,logBlocks}=decodeV3HistoryLogs(full,address,who,network,range,ownedRequests);
+ // Only request times for blocks containing this wallet's events. A missing
+ // timestamp leaves the original block reference usable.
+ const blocks=[...logBlocks.keys()],times=new Map<number,number>();
+ for(let start=0;start<blocks.length;start+=4){
+  signal?.throwIfAborted();
+  await Promise.all(blocks.slice(start,start+4).map(async height=>{
+   const block=await provider.getBlock(height).catch(()=>null);
+   if(!block)return;
+   if(block.hash?.toLowerCase()!==logBlocks.get(height)?.toLowerCase())throw Error('The history block changed while loading. Refresh history.');
+   if(Number.isSafeInteger(block.timestamp)&&block.timestamp>0)times.set(height,block.timestamp);
+  }));
+ }
+ for(const item of items)item.timestamp=times.get(item.block);
+ const recheck=await blockAtAnchor();
+ if(!recheck?.hash||recheck.hash.toLowerCase()!==anchor.hash.toLowerCase())
+  throw Error('The history block changed while loading. Refresh history.');
+ signal?.throwIfAborted();
+ return {anchor,from,to,items};
+}
+
+export type V3RawHistoryLog=Pick<Log,'address'|'blockHash'|'blockNumber'|'transactionHash'|'index'|'topics'|'data'>&{removed?:boolean};
+
+// Check attribution, contract routing and amount reconciliation before displaying an
+// event. Both the server-backed history and the legacy chain reader use this decoder.
+export function decodeV3HistoryLogs(full:V3RawHistoryLog[],address:string,who:string,network:string|null,
+ range:{from:number;to:number},ownedRequests?:ReadonlySet<string>){
+ const {from,to}=range;
+ const vaultFirst=network?firstAccount.filter(name=>!networkFirst.includes(name)):firstAccount;
+ const vaultSecond=network?secondAccount.filter(name=>!networkSecond.includes(name)):secondAccount;
  const seen=new Set<string>();
  const allocations=new Map<string,ReturnType<typeof events.parseLog>>();
  const logBlocks=new Map<number,string>();
- for(const log of second){
+ for(const log of full){
   if(log.topics[0]!==topic('AccountWithdrawalAllocated'))continue;
   const event=events.parseLog({topics:log.topics,data:log.data});
   if(!event||getAddress(event.args.user)!==who)throw Error('Withdrawal allocation mismatch.');
@@ -149,7 +179,7 @@ export async function queryV3HistoryRange(provider:Provider,contract:string,wall
   if(allocations.has(key))throw Error('Duplicate withdrawal allocation.');
   allocations.set(key,event);
  }
- const items=full.map((log:Log):V3HistoryItem=>{
+ const items=full.map((log):V3HistoryItem=>{
   const logAddress=getAddress(log.address);
   if(log.removed||(logAddress!==address&&logAddress!==V3_TEST_TOKEN&&logAddress!==network)||!hash(log.transactionHash)||
    !Number.isSafeInteger(log.blockNumber)||log.blockNumber<from||log.blockNumber>to||
@@ -236,24 +266,7 @@ export async function queryV3HistoryRange(provider:Provider,contract:string,wall
   return {key,block:log.blockNumber,transaction:log.transactionHash,index:log.index,title,detail,value,category};
  }).filter(item=>item.title).sort((a,b)=>b.block-a.block||b.index-a.index);
  if(allocations.size)throw Error('Unmatched combined withdrawal allocation.');
- // Only request times for blocks containing this wallet's events. A missing
- // timestamp leaves the original block reference usable.
- const blocks=[...logBlocks.keys()],times=new Map<number,number>();
- for(let start=0;start<blocks.length;start+=4){
-  signal?.throwIfAborted();
-  await Promise.all(blocks.slice(start,start+4).map(async height=>{
-   const block=await provider.getBlock(height).catch(()=>null);
-   if(!block)return;
-   if(block.hash?.toLowerCase()!==logBlocks.get(height)?.toLowerCase())throw Error('The history block changed while loading. Refresh history.');
-   if(Number.isSafeInteger(block.timestamp)&&block.timestamp>0)times.set(height,block.timestamp);
-  }));
- }
- for(const item of items)item.timestamp=times.get(item.block);
- const recheck=await blockAtAnchor();
- if(!recheck?.hash||recheck.hash.toLowerCase()!==anchor.hash.toLowerCase())
-  throw Error('The history block changed while loading. Refresh history.');
- signal?.throwIfAborted();
- return {anchor,from,to,items};
+ return {items,logBlocks};
 }
 
 export async function readV3HistoryPage(walletProvider:Eip1193Provider,wallet:string,

@@ -6,6 +6,7 @@ import {
  BrowserProvider,Contract,Interface,ZeroAddress,getAddress,isAddress,toQuantity,
  type Eip1193Provider,type Log,type JsonRpcSigner,type TransactionReceipt
 } from 'ethers';
+import {checkV3WithdrawalAnchor,readVerifiedWithdrawal,type V3WithdrawalAnchor} from './v3-withdrawal-history';
 import {readWalletSelection} from './wallet-read';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {V3_ABI,V3_TEST_TOKEN_ABI,v3ReadSession,v3ReleaseConfig,type V3Withdrawal} from './v3-chain';
@@ -34,7 +35,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in'|'vip_verification';
  hash?:string;blockNumber?:number;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;
@@ -683,27 +684,28 @@ export async function sendV3FundWithdrawal(walletProvider:Eip1193Provider,wallet
  }finally{provider.destroy();}
 }
 export async function readV3ManagerQueue(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null=v3ReleaseConfig,page=0){
- if(!Number.isSafeInteger(page)||page<0||page>100000)
-  throw Error('Invalid V3 manager request page.');
+ config:V3SiteReleaseConfig|null=v3ReleaseConfig,page=0,anchor:V3WithdrawalAnchor|null=null,requestId:number|null=null){
+ if(!Number.isSafeInteger(page)||page<0||page>Math.floor(Number.MAX_SAFE_INTEGER/20)||
+    (requestId!==null&&(!Number.isSafeInteger(requestId)||requestId<0)))
+  throw Error('Invalid V3 manager request page or number.');
  const s=await v3ReadSession(walletProvider,wallet,config,Boolean(config?.unified));
  try{
+  // Check current access even when browsing an earlier confirmed queue snapshot.
   const role=await s.vault.MANAGER_ROLE(s.options);
   const funder=config?.unified&&await s.vault.hasRole(await s.vault.FUNDER_ROLE(s.options),wallet,s.options);
   if(!funder&&!await s.vault.hasRole(role,wallet,s.options))
    throw Error('Connect an authorized settlement wallet to view the approval queue.');
-  const raw=await s.vault.withdrawalCount(s.options);
-  const count=Number(raw);
+  const selected=anchor??{block:s.block.number,hash:s.block.hash!};
+  if(selected.block>s.block.number||selected.block<s.deploymentBlock)throw Error('Queue block is outside this verified deployment.');
+  await checkV3WithdrawalAnchor(s.provider,selected);
+  const options={blockTag:selected.block};
+  const count=Number(await s.vault.withdrawalCount(options));
   if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid V3 queue size.');
-  const from=count-page*20;
-  const ids=Array.from({length:Math.max(0,Math.min(20,from))},(_,i)=>from-1-i);
-  const requests=await Promise.all(ids.map(async id=>{
-   const r=await s.vault.withdrawalOf(id,s.options);
-   return {id,beneficiary:getAddress(r.beneficiary),
-    positionId:Number(r.positionId),gross:BigInt(r.gross),fee:BigInt(r.fee),
-    requestedAt:Number(r.requestedAt),status:Number(r.status),
-    kind:Number(r.kind)} as V3Withdrawal;
-  }));
-  return {count,page,requests};
+  const end=count-page*20;
+  const ids=requestId!==null?(requestId<count?[requestId]:[]):
+   Array.from({length:Math.max(0,Math.min(20,end))},(_,i)=>end-1-i);
+  const requests=await Promise.all(ids.map(id=>readVerifiedWithdrawal(s.vault,id,options,Boolean(config?.unified?.portfolio))));
+  await checkV3WithdrawalAnchor(s.provider,selected);
+  return {count,page,requests,anchor:selected};
  }finally{s.provider.destroy();}
 }

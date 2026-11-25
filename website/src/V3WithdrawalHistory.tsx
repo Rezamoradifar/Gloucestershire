@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {getWalletProvider} from './wallet';
+import {HistoryServerError,readServerWithdrawals} from './v3-server-history';
 import {formatV3Amount} from './v3-format';
 import {formatUtcTime} from './utc-time';
 import {readV3WithdrawalPage,type V3WithdrawalAnchor,type V3WithdrawalPage} from './v3-withdrawal-history';
@@ -13,14 +14,19 @@ export default function V3WithdrawalHistory({wallet,config}:{wallet:string;confi
  const [status,setStatus]=useState('all');
  const anchor=useRef<V3WithdrawalAnchor|null>(null);
  useEffect(()=>{
-  let alive=true;
-  const provider=getWalletProvider();setLoading(true);setData(null);setError('');
-  if(!provider){setError('Reconnect your wallet to load withdrawal requests.');setLoading(false);return;}
-  void readV3WithdrawalPage(provider,wallet,config,page,anchor.current).then(result=>{
-   if(alive){anchor.current=result.anchor;setData(result);}
-  }).catch(()=>{if(alive)setError('Unable to verify withdrawal requests. Refresh and try again.');})
-   .finally(()=>{if(alive)setLoading(false);});
-  return()=>{alive=false;};
+  const abort=new AbortController();
+  setLoading(true);setData(null);setError('');
+  async function load(){
+   if(config.unified?.portfolio)return readServerWithdrawals({wallet,config,signal:abort.signal},page,anchor.current);
+   const provider=getWalletProvider();
+   if(!provider)throw Error('Wallet disconnected');
+   return readV3WithdrawalPage(provider,wallet,config,page,anchor.current);
+  }
+  void load().then(result=>{
+   if(!abort.signal.aborted){anchor.current=result.anchor;setData(result);}
+  }).catch(error=>{if(!abort.signal.aborted)setError(error instanceof HistoryServerError?error.message:'Unable to verify withdrawal requests. Refresh and try again.');})
+   .finally(()=>{if(!abort.signal.aborted)setLoading(false);});
+  return()=>abort.abort();
  },[wallet,config,page,version]);
  const refresh=()=>{anchor.current=null;setPage(0);setVersion(v=>v+1);};
  return <section className="gv2-panel"><div className="gv2-panel-head"><div><h3>Withdrawal requests</h3>

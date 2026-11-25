@@ -1,5 +1,6 @@
 """Exercise a narrowly scoped API upgrade and its failure rollback with stub services."""
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -23,8 +24,10 @@ with tempfile.TemporaryDirectory() as temporary:
                  'etc/globaldroptrade', 'opt/globaldroptrade-api/releases/old/server',
                  'opt/globaldroptrade-api/releases/old/node_modules', 'var/lib/globaldroptrade']:
         (root / name).mkdir(parents=True, exist_ok=True)
-    for name in ['scripts/install-commerce-api-only.sh', 'server/trades-api.mjs',
-                 'server/commerce-ebay.mjs', 'server/trading-activity.mjs', 'test/commerce-ebay.test.mjs', 'test/trading-activity.test.mjs']:
+    for name in ['scripts/install-commerce-api-only.sh', 'scripts/v3-history-install.py',
+                 'scripts/v3-unified-release-pins.mjs', 'scripts/verify-v3-unified-release.mjs', 'scripts/verify-v3-unified-deployment.mjs',
+                 'server/v3-member-history.mjs', 'server/trades-api.mjs',
+                 'server/commerce-ebay.mjs', 'server/trading-activity.mjs', 'test/commerce-ebay.test.mjs', 'test/trading-activity.test.mjs', 'test/v3-member-history-api.test.mjs']:
         source = (repo / name).read_text()
         if name.endswith('.sh'):
             for prefix in ['/opt/', '/etc/', '/var/']:
@@ -40,8 +43,25 @@ with tempfile.TemporaryDirectory() as temporary:
     envfile.write_text('TRADES_CHAIN_ID=97\nEBAY_CLIENT_SECRET=never-print-this\n')
     envfile.chmod(0o600)
     unit = root / 'etc/systemd/system/globaldroptrade-api.service'
-    unit.write_text('[Service]\nWorkingDirectory='+str(current)+'\nExecStart=/usr/bin/node '+str(current)+'/server/trades-api.mjs\n')
+    unit.write_text('[Service]\nUser=globaldroptrade-api\nWorkingDirectory='+str(current)+'\nExecStart=/usr/bin/node '+str(current)+'/server/trades-api.mjs\n')
     original_env, original_unit = envfile.read_bytes(), unit.read_bytes()
+    history_state = root/'var/lib/globaldroptrade'
+    v7 = history_state/'v3-portfolio-testnet/deployment-proof.json'
+    v7.parent.mkdir()
+    proof = {key:'0x'+str(i)*40 for i,key in enumerate(('vault','book','network','token','manager','feeReceiver'),1)}
+    proof.update({key:'0x'+'a'*64 for key in ('deploymentTx','initcodeHash','tokenRuntimeHash','vaultRuntimeHash','bookRuntimeHash','networkRuntimeHash')})
+    proof.update(status='VERIFIED_PORTFOLIO_TESTNET_ONLY',chainId=97,deploymentBlock=55,operatorNote='never-export-private-keys')
+    v7.write_text(json.dumps(proof))
+    v7.chmod(0o600)
+    archive = root/'etc/globaldroptrade/archive-rpc-url'
+    archive.write_text('https://archive.example/private-rpc-secret')
+    archive.chmod(0o600)
+    dropin = Path(str(unit)+'.d')/'40-v3-history-read-rpc.conf'
+    response = dict(chainId=97, version=1, wallet=proof['manager'], vault=proof['vault'],
+                    network=proof['network'],token=proof['token'],anchor=dict(firstBlock=55,block=58,hash='0x'+'b'*64),
+                    range={'from':55,'to':58},logs=[],requestIds=[])
+    proof8 = {**proof, 'vault':'0x'+'7'*40, 'status':'VERIFIED_PLAN_PORTFOLIO_TESTNET_ONLY'}
+    response8 = {**response, 'vault':proof8['vault']}
     stubs = {
         'id': 'if [[ "$1" == -u ]]; then echo 0; else exit 1; fi',
         'stat': f'if [[ "$1" == -c && "$2" == %u ]]; then echo 0; else exec "{real_stat}" "$@"; fi',
@@ -61,6 +81,31 @@ while [[ $# -gt 0 ]]; do
  shift
 done
 case "$url" in
+ */api/v3/member-*)
+   python3 - "$url" <<'PY'
+import json, sys
+from pathlib import Path
+from urllib.parse import urlsplit, parse_qs
+url = urlsplit(sys.argv[1])
+params = parse_qs(url.query)
+value = {response8!r} if params['vault'] == ['{proof8['vault']}'] else {response!r}
+if Path('{root}/wrong-history').exists():
+    value['chainId'] = 56
+elif 'anchor' in params:
+    assert params['anchor'] == ['58'] and params['hash'] == [value['anchor']['hash']]
+    if url.path.endswith('member-withdrawals'):
+        assert params['page'] == ['0']
+        value.update(page=0, total=0, items=[])
+        if Path('{root}/wrong-withdrawals').exists():
+            value['total'] = 1
+    else:
+        assert params['from'] == params['to'] == ['55'] and params['category'] == ['deposits']
+        value['range'] = {{'from':55,'to':55}}
+        if Path('{root}/wrong-log-page').exists():
+            value['range']['to'] = 58
+print(json.dumps(value))
+PY
+   ;;
  */api/health) printf '{{"status":"ok"}}' > "$target" ;;
  */api/config) if [[ -f "{root}/fail" && -f "{root}/restarts" ]]; then printf '{{"vault":"changed"}}' > "$target"; else printf '{{"vault":"original"}}' > "$target"; fi ;;
  */api/marketplace*) printf '{{"providers":[{{}},{{}}]}}' > "$target" ;;
@@ -89,11 +134,24 @@ esac''',
     assert current.resolve() != previous
     assert (current / 'server/commerce-ebay.mjs').is_file()
     assert (current / 'server/trading-activity.mjs').is_file()
+    assert (current / 'server/v3-member-history.mjs').is_file()
+    assert (current / 'scripts/verify-v3-unified-release.mjs').is_file()
+    exported = json.loads((current/'server/v3-history-profiles.json').read_text())
+    assert exported == [{k:v for k,v in proof.items() if k != 'operatorNote'}]
+    assert archive.read_text() not in dropin.read_text() and 'LoadCredential=v3-history-rpc:' in dropin.read_text()
     again = run('--install')
     assert again.returncode == 0 and 'COMMERCE_API_ALREADY_INSTALLED' in again.stdout
     assert (root / 'restarts').read_text().count('restart') == 1
     assert (current / 'node_modules/sentinel').read_text() == 'preserved dependency'
     assert (current / 'unrelated-code').read_text() == 'preserved'
+    v8 = history_state/'v3-plan-portfolio-testnet/deployment-proof.json'
+    v8.parent.mkdir()
+    v8.write_text(json.dumps(proof8))
+    v8.chmod(0o600)
+    add_stage = run('--install')
+    assert add_stage.returncode == 0, add_stage.stdout + add_stage.stderr
+    assert [p['vault'] for p in json.loads((current/'server/v3-history-profiles.json').read_text())] == [proof['vault'],proof8['vault']]
+    v8.unlink()
     assert envfile.read_bytes() == original_env and unit.read_bytes() == original_unit
     assert 'never-print-this' not in installed.stdout + installed.stderr
     modules = [previous / 'server' / name for name in ('trades-api.mjs', 'commerce-ebay.mjs', 'trading-activity.mjs')]
@@ -103,6 +161,7 @@ esac''',
             (summary_api, '317ae1adc05081ee2e0ee3f6cc36e8d6535918ec', None),
             ('c94269f994a19dbb641f30430441df776d78e065', '6f21e279898a3326790a7a856e3a2b9d7c2bd040', 'cbe54780136ea3fc4afc21c3ee6bfca7588474ee'),
             ('c94269f994a19dbb641f30430441df776d78e065', '780c0035f2727a4325c2ae56efba2acd4df896e6', 'beaa81c538b393513ac1e96a7e490709130b9ac3'),
+            ('c94269f994a19dbb641f30430441df776d78e065', '493d9b5dd388ce84dc559565de3c2f438b813422', '3c1cb19872b14b8cca44a370eefe81411c1ef42a'),
             ('e786a10d90a6918f95187ff1cdf982b0e4490a40', 'd8ebad0e2f064bd4c7ac0ad177da17b32b51e124', 'cbe54780136ea3fc4afc21c3ee6bfca7588474ee')]:
         current.unlink()
         current.symlink_to(previous)
@@ -137,6 +196,24 @@ esac''',
     assert 'TRADING_ACTIVITY_RESPONSE_INVALID' in wrong_source.stderr
     assert 'COMMERCE_PREVIOUS_API_RESTORED' in wrong_source.stdout
     (root / 'wrong-seller').unlink()
+    dropin.unlink()
+    (root/'wrong-history').touch()
+    wrong_history=run('--install')
+    assert wrong_history.returncode != 0 and current.resolve() == previous, wrong_history.stdout
+    assert 'V3_HISTORY_API_IDENTITY_OR_COVERAGE_INVALID' in wrong_history.stderr
+    assert not dropin.exists()
+    (root/'wrong-history').unlink()
+    for marker, message in [('wrong-log-page','V3_HISTORY_EVENT_PAGE_INVALID'),
+                            ('wrong-withdrawals','V3_HISTORY_WITHDRAWAL_PAGE_INVALID')]:
+        (root/marker).touch()
+        failed_page = run('--install')
+        assert failed_page.returncode != 0 and current.resolve() == previous
+        assert message in failed_page.stderr and not dropin.exists()
+        (root/marker).unlink()
+    v7.chmod(0o644)
+    unsafe_history=run('--check')
+    assert unsafe_history.returncode!=0 and 'V3_HISTORY_PROOF_FILE_UNSAFE' in unsafe_history.stderr
+    v7.chmod(0o600)
     (previous / 'server/trades-api.mjs').write_text('unreviewed')
     (root / 'restarts').unlink()
     refused = run('--install')
