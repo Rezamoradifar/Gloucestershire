@@ -83,6 +83,7 @@ export function V3SupportTickets({client,admin,wallet,onConnect,initialTicket}:{
   await load(token,valid,index,next);if(valid()){setFilters(next);setTicket(null);setReply('');}
  });
  async function open(id:string){
+  if(ticket?.id===id){titleRef.current?.focus();return;}
   await run(async(token,valid)=>{
    const result=await client.request<Ticket>('tickets/'+id+(admin?'?admin=1':''),'GET',undefined,token);
    if(valid()){setTicket(result);setReply('');requestAnimationFrame(()=>titleRef.current?.focus());}
@@ -142,7 +143,7 @@ export function V3SupportTickets({client,admin,wallet,onConnect,initialTicket}:{
      <strong>{entry.admin?'Support team':'Account holder'}</strong><time dateTime={entry.createdAt}>{formatUtcTime(entry.createdAt)}</time><p>{entry.message}</p>
     </li>)}</ol>
     {ticket.status==='open'&&<form onSubmit={e=>{e.preventDefault();change({message:reply});}}>
-     <label>Reply<textarea required maxLength={4000} rows={3} value={reply} onChange={e=>setReply(e.target.value)}/></label>
+     <label>Reply<textarea required disabled={busy} maxLength={4000} rows={3} value={reply} onChange={e=>setReply(e.target.value)}/></label>
      <button className="gv2-primary" disabled={busy||!reply.trim()}>Send reply</button>
     </form>}
     <button disabled={busy} onClick={()=>change({status:ticket.status==='open'?'closed':'open'})}>{ticket.status==='open'?'Close ticket':'Reopen ticket'}</button>
