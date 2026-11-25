@@ -1,6 +1,6 @@
 # Plan-based earnings withdrawals on testnet
 
-The active V7 portfolio contract uses one 10% earnings cap per request. V8 uses the same earnings sources, payout queue, principal rules and fees, and looks up the member's rate for each new request. Each capital tier starts at 10%. A change to the table applies to future requests.
+The active V7 portfolio contract uses one 10% earnings cap per request. V8 uses the same earnings sources, payout queue, principal rules and fees, and looks up the member's rate for each new request. The approved per-request earnings cap for Starter, Basic, Growth, Pro and VIP is 10% of deposits plus completed reinvestments. These rates match the contract's initial values. A change to the table applies to future requests.
 
 The V8 site is published separately at `/plan-portfolio-test/`. It uses its own vault and ledger. Existing V7 members continue to use their original account at the main site. Deposits and pending withdrawals do not transfer to V8.
 
@@ -13,7 +13,7 @@ Use a JSON object containing the five approved percentages, keyed by `Starter`, 
 After deployment, run the following in the matching release checkout. Use the public address of an administrator of the V8 vault.
 
 ```sh
-node scripts/prepare-v3-plan-rates.mjs "$ADMIN_ADDRESS" /path/to/approved-rates.json
+node scripts/prepare-v3-plan-rates.mjs "$ADMIN_ADDRESS" config/plan-withdrawal-rates.json
 ```
 
 The command verifies the chain-97 deployment from `/var/lib/globaldroptrade/v3-plan-portfolio-testnet/deployment-proof.json`, reads all five current rates at one confirmed block and simulates the complete update. The output identifies each tier's current and approved basis points. If the table changes, review the unsigned transaction in the output, verify its chain, destination, value and all five rates in the administrator's wallet, and submit it there. Rerunning the command after confirmation returns the updated rates and a null transaction when there is no change.
