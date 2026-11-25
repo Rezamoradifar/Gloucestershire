@@ -25,6 +25,10 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   expect(siteRoute('#v2-dashboard',opts)).toBe('v3');
   expect(siteRoute('#v3-dashboard',opts)).toBe('v3');
   expect(siteRoute('#dashboard',opts)).toBe('v3');
+  for(const hash of ['#dashboard/admin','#dashboard/history']){
+   expect(siteRoute(hash,opts)).toBe('v3');
+   expect(siteRoute(hash,{...opts,v3Only:false})).toBe('landing');
+  }
   expect(file('V3Dashboard.tsx')).not.toContain('href="#v2-dashboard"');
  });
  it('preserves the main landing and keeps the isolated hourly page on the dashboard',()=>{

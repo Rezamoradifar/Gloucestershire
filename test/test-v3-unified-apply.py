@@ -32,6 +32,9 @@ elif [[ ${ACCOUNT_REINVEST:-0} == 1 ]]; then
 elif [[ ${UPLINE_RATES:-0} == 1 ]]; then
   profile=(--upline-rates)
   route_name=upline-rates-test
+elif [[ -n ${PORTFOLIO_KIND:-} ]]; then
+  profile=("--$PORTFOLIO_KIND")
+  route_name="$PORTFOLIO_KIND-test"
 fi
 node() {
   printf '%s\n' "${*:2}" >> "$TRACE"
@@ -59,6 +62,12 @@ curl() {
   echo "https $url" >> "$TRACE"
   if [[ -n $ACTIVITY_BODY ]]; then printf '%s\n' "$ACTIVITY_BODY"
   else printf '{"source":"%s","status":"not_configured","rows":[]}\n' "${url##*=}"; fi
+}
+python3(){
+ if [[ $1 == scripts/v3-history-install.py && $2 == probe ]]; then
+   echo "history ${*:4}" >> "$TRACE"; return "${HISTORY_RESULT:-0}"
+ fi
+ command python3 "$@"
 }
 sleep() { :; }
 apply_release "$REVISION" "$TEST_PROOF" "${DEPLOY_OPTION:-}"
@@ -246,6 +255,23 @@ class ApplyTestnet(unittest.TestCase):
             self.assertIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", partial.stdout)
             self.assertIn("GLOBAL_PANEL_SITE_READY_COMMERCE_PENDING", partial.stderr)
             self.assertNotIn("GLOBAL_GLASS_PANEL_INSTALLED", partial.stdout)
+
+    def test_portfolio_publication_requires_working_history_for_this_profile(self):
+        self.proof.write_bytes(PROOF)
+        for kind, option in [('portfolio', '--primary-with-commerce'), ('portfolio','--primary'),
+                             ('portfolio',''), ('plan-portfolio','')]:
+            with self.subTest(kind=kind, option=option):
+                settings = dict(PORTFOLIO_KIND=kind, DEPLOY_OPTION=option)
+                ready, calls = self.apply(**settings)
+                self.assertEqual(ready.returncode, 0, ready.stderr)
+                self.assertEqual(calls[2:4], [f"commerce {REVISION} --install", f"history domain {kind}"])
+                self.assertIn("--install", calls[4])
+                self.assertEqual(sum(c.startswith("commerce ") for c in calls), 1)
+                for failure in [dict(COMMERCE_RESULT="19"), dict(HISTORY_RESULT="19")]:
+                    stopped, calls = self.apply(**settings, **failure)
+                    self.assertEqual(stopped.returncode, 19)
+                    self.assertIn("GLOBAL_PANEL_HISTORY_API_NOT_READY", stopped.stderr)
+                    self.assertFalse(any(c.startswith(("--install", "scripts/install-v3-unified-test-site")) for c in calls))
 
     def test_manual_reinvest_reuses_its_own_proof_and_worker_for_primary(self):
         result, calls = self.apply(MANUAL_REINVEST="1", DEPLOY_OPTION="--primary")

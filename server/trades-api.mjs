@@ -8,6 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {Block,Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress,keccak256} from 'ethers';
 import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 import {createAutomationStatusReader} from './automation-status.mjs';
+import {createV3MemberHistory,memberHistoryFailure} from './v3-member-history.mjs';
 import {createHistoryRelay} from './history-relay.mjs';
 import {createTeamRelay} from './team-relay.mjs';
 import {createV2ReadGateway,V2_RPC_SOURCES} from './v2-read-rpc.mjs';
@@ -133,7 +134,7 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),activity=createTradingActivity({seller:commerce}),migration,dailyActivity,historyRelay,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),activity=createTradingActivity({seller:commerce}),migration,dailyActivity,historyRelay,memberHistory,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
@@ -143,6 +144,11 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Commun
   if(dailyActivity&&await dailyActivity(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
   const url=new URL(req.url,'http://localhost');
+  if(url.pathname==='/api/v3/member-history'||url.pathname==='/api/v3/member-withdrawals'){
+   if(!memberHistory)return send(503,{error:'Verified member history is temporarily unavailable.'});
+   try{return send(200,await memberHistory.get(url.searchParams,url.pathname.endsWith('withdrawals')?'withdrawals':'events'));}
+   catch(error){const failure=memberHistoryFailure(error);return send(failure.status,{error:failure.error});}
+  }
   if(url.pathname==='/api/commerce/activity'){
    const source=url.searchParams.get('source');
    if(!activity.supports(source))return send(400,{error:'Unknown activity source'});
@@ -267,12 +273,13 @@ if(import.meta.url===entrypoint){
   const {createMigrationService}=await import('./migration-service.mjs');
   const migration=createMigrationService(config,{allowLegacy:process.env.GLOBAL_MIGRATION_ENABLED!=='false'});
   const automationStatus=createAutomationStatusReader({file:process.env.GLOBAL_AUTOMATION_PUBLIC_STATUS,chainId:config.chainId,vaultAddress:config.address});
+  const memberHistory=createV3MemberHistory();
   const historyRelay=createHistoryRelay(config),teamRelay=createTeamRelay(config),v2ReadGateway=createV2ReadGateway();
-  const server=createApiServer(feed,{community,v2Community,v2ReadGateway,migration,dailyActivity,historyRelay,teamRelay,automationStatus});
+  const server=createApiServer(feed,{community,v2Community,v2ReadGateway,migration,dailyActivity,historyRelay,memberHistory,teamRelay,automationStatus});
   server.listen(config.port,'127.0.0.1',()=>console.log(`Global settlement API listening on 127.0.0.1:${config.port}; configured=${feed.configured}`));
   for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{
    feed.close();community.close?.();(await verifiedV2)?.close?.();dailyActivity?.close?.();
-   historyRelay.close();teamRelay.close();migration.close();process.exit(0);
+   historyRelay.close();memberHistory.close();teamRelay.close();migration.close();process.exit(0);
   }));
  }catch(e){console.error('Settlement/support API startup failed:',e.code||e.name||'Unknown error');process.exitCode=1;}
 }

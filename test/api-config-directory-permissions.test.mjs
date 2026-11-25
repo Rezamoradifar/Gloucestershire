@@ -27,7 +27,8 @@ function fixture(){
  fs.mkdirSync(path.join(root,'etc/systemd/system'),{recursive:true,mode:0o700});
  const adjusted=source.replaceAll('/opt/globaldroptrade-api',path.join(root,'opt/api'))
   .replaceAll('/etc/globaldroptrade',path.join(root,'etc/globaldroptrade'))
-  .replaceAll('/etc/systemd/system',path.join(root,'etc/systemd/system'));
+  .replaceAll('/etc/systemd/system',path.join(root,'etc/systemd/system'))
+  .replaceAll('/var/lib/globaldroptrade',path.join(root,'var/lib/globaldroptrade'));
  const installer=path.join(root,'ubuntu-api.sh');write(installer,adjusted,0o700);
  return {root,bin,installer,config:path.join(root,'etc/globaldroptrade')};
 }

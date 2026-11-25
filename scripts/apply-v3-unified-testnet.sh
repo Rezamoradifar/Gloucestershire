@@ -62,9 +62,15 @@ verify_proof() {
   fail UNIFIED_INDEPENDENT_VERIFICATION_FAILED
 }
 
-install_panel_commerce() {
+install_panel_api() {
+  GLOBAL_V3_HISTORY_REQUIRED="$2" GLOBAL_COMMERCE_EXPECTED_SHA="$1" bash scripts/install-commerce-api-only.sh --install || return $?
+  if [[ $2 != optional ]]; then
+    python3 scripts/v3-history-install.py probe /opt/globaldroptrade-api/current/server/v3-history-profiles.json domain "$2"
+  fi
+}
+
+check_panel_commerce() {
   local source
-  GLOBAL_COMMERCE_EXPECTED_SHA="$1" bash scripts/install-commerce-api-only.sh --install || return $?
   for source in kraken amazon ebay; do
     curl -fsS --noproxy '*' --max-time 45 --resolve globaldroptrade.com:443:127.0.0.1 \
       "https://globaldroptrade.com/api/commerce/activity?source=$source" | python3 -c '
@@ -81,7 +87,7 @@ sys.exit(0 if valid else "GLOBAL_PANEL_COMMERCE_ROUTE_INVALID")
 }
 
 apply_release() {
-  local sha=$1 proof=$2 digest on_disk worker_status=0 commerce_status=0
+  local sha=$1 proof=$2 digest on_disk worker_status=0 commerce_status=0 history_profile=optional primary=0
   local journal="${2%/*}/pending.json"
   local -a publish=(bash scripts/install-v3-unified-test-site.sh "${profile[@]}" --install-prepared "$sha" "$proof")
   if [[ -e $proof || -L $proof ]]; then
@@ -109,11 +115,23 @@ apply_release() {
     *) echo UNIFIED_WORKER_INSTALLATION_FAILED >&2; return "$worker_status" ;;
   esac
   if [[ ${3:-} == --primary || ${3:-} == --primary-with-commerce ]]; then
+    primary=1
     (( worker_status == 0 )) || return "$worker_status"
+  fi
+  case "$route_name" in
+    portfolio-test|plan-portfolio-test)
+      history_profile=${route_name%-test}
+      # These dashboards read their ledgers through the API. Keep the served
+      # website available until both history routes work over origin HTTPS.
+      install_panel_api "$sha" "$history_profile" || { commerce_status=$?; echo GLOBAL_PANEL_HISTORY_API_NOT_READY >&2; return "$commerce_status"; }
+      ;;
+  esac
+  if (( primary )); then
     node scripts/publish-v3-single-capital-primary.mjs --install "$sha" "$digest" "$deployment_rpc" "${profile[@]}" || return $?
     echo 'GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE=https://globaldroptrade.com/#dashboard'
     if [[ ${3:-} == --primary-with-commerce ]]; then
-      install_panel_commerce "$sha" || commerce_status=$?
+      if [[ $history_profile == optional ]]; then install_panel_api "$sha" optional || commerce_status=$?; fi
+      if (( commerce_status == 0 )); then check_panel_commerce || commerce_status=$?; fi
       if (( commerce_status != 0 )); then
         echo GLOBAL_PANEL_SITE_READY_COMMERCE_PENDING >&2
         return "$commerce_status"

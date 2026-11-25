@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {ArrowDownLeft,ArrowUpRight,CheckCircle2,ExternalLink,History,RefreshCw} from 'lucide-react';
 import {getWalletProvider} from './wallet';
+import {HistoryServerError,readServerHistoryPage,searchServerHistory} from './v3-server-history';
 import {V3_EXPLORER} from './v3-chain';
 import {readV3HistoryPage,type V3HistoryAnchor,type V3HistoryCategory,type V3HistoryItem,type V3HistoryPage} from './v3-history';
 import {searchV3History,type V3HistoryQuery,type V3SearchProgress} from './v3-history-search';
@@ -26,28 +27,42 @@ export default function V3HistoryPanel({wallet,config}:{wallet:string;config:V3S
  const [query,setQuery]=useState<V3HistoryQuery|null>(null),[matches,setMatches]=useState<V3HistoryItem[]>([]);
  const [progress,setProgress]=useState<V3SearchProgress|null>(null),[stopped,setStopped]=useState(false);
  const anchor=useRef<V3HistoryAnchor|null>(null),controller=useRef<AbortController|null>(null);
+ const server=Boolean(config.unified?.portfolio);
+ const browseEnds=useRef<number[]>([]);
  const browsePage=query?0:page;
  useEffect(()=>{
   const abort=new AbortController();
   controller.current=abort;
-  const provider=getWalletProvider();
+  const request={wallet,config,signal:abort.signal};
+  const legacyProvider=server?null:getWalletProvider();
   setLoading(true);setError('');setData(null);setStopped(false);setMatches([]);setProgress(null);
-  if(!provider){setError('Wallet disconnected. Reconnect to load account activity.');setLoading(false);return;}
-  const work=query?searchV3History(provider,wallet,config,query,abort.signal,result=>{
+  if(!server&&!legacyProvider){setError('Wallet disconnected. Reconnect to load account activity.');setLoading(false);return;}
+  function onProgress(result:V3SearchProgress){
    if(abort.signal.aborted)return;
    anchor.current=result.anchor;
    if(result.items.length)setMatches(previous=>[...previous,...result.items]);
    setProgress(result);
-  },anchor.current):readV3HistoryPage(provider,wallet,config,browsePage,anchor.current).then(result=>{
-   if(!abort.signal.aborted){anchor.current=result.anchor;setData(result);}
-  });
-  void work.catch(e=>{
-   if(!abort.signal.aborted)setError(e instanceof Error&&safeHistoryMessages.has(e.message)?e.message:
+  }
+  async function load(){
+   if(query){
+    if(server)await searchServerHistory(request,query,onProgress,anchor.current);
+    else await searchV3History(legacyProvider!,wallet,config,query,abort.signal,onProgress,anchor.current);
+    return;
+   }
+   const result=server?await readServerHistoryPage(request,browsePage,anchor.current,browseEnds.current[browsePage]):
+    await readV3HistoryPage(legacyProvider!,wallet,config,browsePage,anchor.current);
+   if(abort.signal.aborted)return;
+   anchor.current=result.anchor;
+   browseEnds.current[browsePage+1]=result.from-1;
+   setData(result);
+  }
+  void load().catch(e=>{
+   if(!abort.signal.aborted)setError(e instanceof HistoryServerError||(e instanceof Error&&safeHistoryMessages.has(e.message))?e.message:
     'Unable to load verified activity. Please retry or use the block explorer.');
   }).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
   return()=>{abort.abort();};
- },[wallet,config,query,browsePage,version]);
- const refresh=()=>{anchor.current=null;setPage(0);setVersion(v=>v+1);};
+ },[wallet,config,server,query,browsePage,version]);
+ const refresh=()=>{anchor.current=null;browseEnds.current=[];setPage(0);setVersion(v=>v+1);};
  function submit(selected=category){
   let start:number|undefined,end:number|undefined;
   if(period==='custom'){
@@ -66,7 +81,7 @@ export default function V3HistoryPanel({wallet,config}:{wallet:string;config:V3S
  const filters=[['all','All'],['deposits','Deposits'],['earnings','Earnings'],['withdrawals','Withdrawals'],['account','Account']] as const;
  return <section className="gv2-panel gv3-history" aria-labelledby="gv3-history-title">
   <div className="gv2-panel-head"><div><h3 id="gv3-history-title"><History size={19}/> Transaction history</h3>
-   <p>Confirmed activity for your connected wallet on this test contract.</p></div>
+   <p>{server?'Confirmed wallet activity from the Global history server.':'Confirmed activity for your connected wallet on this test contract.'}</p></div>
    <button type="button" disabled={loading} onClick={refresh}><RefreshCw size={15}/> Refresh</button></div>
   <form onSubmit={e=>{e.preventDefault();submit();}} aria-label="Search full transaction history">
    <div className="gv3-history-filters" aria-label="Activity type">{filters.map(([id,label])=><button type="button" key={id}

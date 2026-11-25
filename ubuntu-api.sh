@@ -7,6 +7,10 @@ node -e 'if(Number(process.versions.node.split(".")[0])<20)process.exit(1)'
 api_root=/opt/globaldroptrade-api
 release="$api_root/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 envfile=/etc/globaldroptrade/trades.env
+history_state=/var/lib/globaldroptrade
+archive_rpc=/etc/globaldroptrade/archive-rpc-url
+history_active=0
+history_credential=''
 config_dir=/etc/globaldroptrade
 unit=/etc/systemd/system/globaldroptrade-api.service
 backup_dir=$(mktemp -d)
@@ -36,6 +40,19 @@ install -d -m 755 "$release/scripts" "$release/artifacts"
 # Explicit modes also cover source or dependency files copied with private permissions.
 find "$release" -type d -exec chmod 755 {} +
 find "$release" -type f -exec chmod u=rwX,go=rX {} +
+for kind in portfolio plan-portfolio; do
+ proof="$history_state/v3-$kind-testnet/deployment-proof.json"
+ if [[ -e $proof || -L $proof ]]; then history_active=1; fi
+done
+if ((history_active)); then
+ python3 scripts/v3-history-install.py export "$history_state" optional > "$release/server/v3-history-profiles.json"
+ chmod 644 "$release/server/v3-history-profiles.json"
+fi
+if ((history_active)) && [[ -e $archive_rpc || -L $archive_rpc ]]; then
+ if [[ ! -L $archive_rpc && -f $archive_rpc && $(stat -c %u "$archive_rpc") == 0 && $(stat -c %a "$archive_rpc") == 600 ]]; then
+  history_credential="LoadCredential=v3-history-rpc:$archive_rpc"
+ else echo V3_HISTORY_PRIVATE_RPC_CONFIG_IGNORED; fi
+fi
 if [ -e "$envfile" ] || [ -L "$envfile" ]; then
  [ -f "$envfile" ] && [ ! -L "$envfile" ] && [ "$(stat -c '%u' "$envfile")" = 0 ] && [ "$(stat -c '%h' "$envfile")" = 1 ] || { echo 'API_ENV_FILE_UNSAFE'; exit 1; }
 else
@@ -61,6 +78,7 @@ User=globaldroptrade-api
 Group=globaldroptrade-api
 WorkingDirectory=$api_root/current
 EnvironmentFile=$envfile
+$history_credential
 ExecStart=$node_bin $api_root/current/server/trades-api.mjs
 Restart=on-failure
 RestartSec=5
@@ -90,5 +108,8 @@ for attempt in 1 2 3 4 5; do
  sleep 1
 done
 if [ "$ready" -ne 1 ]; then rollback; echo 'API health check failed; previous service restored.'; exit 1; fi
+if ((history_active)) && ! python3 scripts/v3-history-install.py probe "$release/server/v3-history-profiles.json" local; then
+ rollback; echo 'V3_HISTORY_API_NOT_READY'; exit 1
+fi
 echo 'Settlement API installed. Configure /etc/globaldroptrade/trades.env with the verified RPC, chain and contract; restart globaldroptrade-api after editing.'
 echo 'No blockchain transaction is sent. Support login uses a wallet message signature; administrator access follows the configured contract owner.'

@@ -90,6 +90,7 @@ export const V3_ABI=[
  'function hasRole(bytes32,address) view returns(bool)',
  'function cashStatus() view returns(uint256 cash,uint256 principal,uint256 accruedProfit,uint256 escrowedCash,uint256 totalCashShortfall)',
  'function register(address)',
+ 'function setVipKyc(address member,bool approved)',
  'function checkIn()',
  'function checkInAndAccrue(uint256[])',
  'function deposit(uint256,address)',

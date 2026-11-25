@@ -112,7 +112,8 @@ exit 0
     const apiSource=fs.readFileSync(path.join(repository,'ubuntu-api.sh'),'utf8');
     const apiCopy=apiSource.replaceAll('/opt/globaldroptrade-api',root+'/opt/globaldroptrade-api')
         .replaceAll('/etc/globaldroptrade',root+'/etc/globaldroptrade')
-        .replaceAll('/etc/systemd/system',root+'/etc/systemd/system');
+        .replaceAll('/etc/systemd/system',root+'/etc/systemd/system')
+        .replaceAll('/var/lib/globaldroptrade',root+'/var/lib/globaldroptrade');
     write(path.join(root,'ubuntu-api.sh'),apiCopy,0o700);
     for(const [file,contents] of Object.entries({
         'server/fake.mjs':'export {};\n','server/trades.env.example':'TRADES_PORT=3115\n',
