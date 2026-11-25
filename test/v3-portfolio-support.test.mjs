@@ -46,8 +46,12 @@ test('the portfolio API isolates sessions, threads and announcements by vault an
  try{
   await start();
   assert.equal((await call(unknown,'announcements')).status,404);
+  assert.equal((await call(vault,'announcements')).data.notificationsVersion,1);
   assert.equal((await call(vault,'tickets?admin=1')).status,401);
   const [a,m,f,b]=await Promise.all([authenticate(member),authenticate(manager),authenticate(funder),authenticate(member,second)]);
+  assert.equal((await call(vault,'notifications')).status,401);
+  assert.equal((await call(vault,'notifications?admin=1','GET',undefined,f)).status,403);
+  assert.equal((await call(second,'notifications','GET',undefined,a)).status,401);
   const create=await call(vault,'tickets','POST',{title:'Missing delivery',message:'Please check order 107.'},a);
   assert.equal(create.status,201);const thread='tickets/'+create.data.id;
   assert.equal((await call(vault,'tickets','GET',undefined,f)).data.total,0);
@@ -74,7 +78,21 @@ test('the portfolio API isolates sessions, threads and announcements by vault an
   assert.equal((await call(vault,'announcements')).data.total,0);
   assert.equal((await call(vault,'announcements?admin=1','GET',undefined,m)).data.items[0].published,false);
   assert.equal((await call(vault,notice,'PATCH',{published:true,ifRevision:3},m)).status,200);
+  const memberFeed=(await call(vault,'notifications','GET',undefined,a)).data;
+  const managerFeed=(await call(vault,'notifications?admin=1','GET',undefined,m)).data;
+  assert.equal(memberFeed.unread,3);assert.equal(managerFeed.unread,4);
+  assert.equal(memberFeed.telegram,undefined);assert.equal(managerFeed.telegram.privateConfigured,false);
+  assert.equal((await call(vault,'notifications','GET',undefined,f)).data.unread,1);
+  assert.equal((await call(second,'notifications','GET',undefined,b)).data.unread,0);
+  assert.equal((await call(vault,'notifications/read?admin=1','POST',{through:managerFeed.latest},f)).status,403);
+  const hidden=managerFeed.items.find(r=>r.kind==='ticket-opened').seq;
+  assert.equal((await call(vault,'notifications/read','POST',{through:hidden},a)).status,409);
+  assert.equal((await call(vault,'notifications/read','POST',{through:memberFeed.latest},a)).status,200);
+  assert.equal((await call(vault,'notifications?summary=1','GET',undefined,a)).data.unread,0);
+  assert.equal((await call(vault,'notifications?admin=1','GET',undefined,m)).data.unread,4);
+  assert.equal((await call(vault,notice+'/channel','POST',{},m)).status,409);
   currentManager=member.address;
+  assert.equal((await call(vault,'notifications?admin=1','GET',undefined,m)).status,403);
   assert.equal((await call(vault,'tickets?admin=1','GET',undefined,m)).status,403);
   assert.equal((await call(vault,'tickets?admin=1','GET',undefined,a)).status,403);
   confirmedManager=member.address;assert.equal((await call(vault,'tickets?admin=1','GET',undefined,a)).status,200);
@@ -85,11 +103,16 @@ test('the portfolio API isolates sessions, threads and announcements by vault an
   const fresh=await authenticate(member);
   assert.equal((await call(vault,thread,'GET',undefined,fresh)).data.messages[1].message,'The carrier has the parcel.');
   assert.equal((await call(vault,'announcements')).data.items[0].title,'Updated hours');
+  assert.equal((await call(vault,'notifications','GET',undefined,fresh)).data.unread,0);
   for(let i=0;i<21;i++){
    const result=await call(vault,'announcements','POST',{title:'Notice '+i,message:'Published.'},fresh);assert.equal(result.status,201);
   }
   const older=await call(vault,'announcements?page=1');assert.equal(older.data.total,22);assert.equal(older.data.items.length,2);
   assert.equal(older.data.items[1].title,'Updated hours');
+  const pack={posts:['welcome','notifications','private-support','history','network','service-updates'].map(key=>({key,title:key,message:'Member guide.'}))};
+  assert.equal((await call(vault,'announcements/starter-pack','POST',pack,fresh)).data.published,6);
+  assert.equal((await call(vault,'announcements/starter-pack','POST',pack,fresh)).data.published,0);
+  assert.equal((await call(vault,'notifications','GET',undefined,fresh)).data.unread,27);
   const saved=JSON.parse(await readFile(path.join(directory,vault,'community.json'),'utf8'));assert.equal(saved.tickets.length,2);
   await assert.rejects(createCommunity({prefix:'/api/v3/community/'+unknown+'/',contract:vault,chainId:97,file:''}));
  }finally{if(server?.listening)await stop();reader.close();await rm(directory,{force:true,recursive:true});}

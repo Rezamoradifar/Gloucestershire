@@ -4,7 +4,7 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {flushSync} from 'react-dom';
 import {ZeroAddress,getAddress,formatUnits} from 'ethers';
-import {ArrowUpRight,Bell,LifeBuoy,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,Globe2,History,Home,
+import {ArrowUpRight,Bell,Inbox,LifeBuoy,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,Globe2,History,Home,
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {readWalletSelection} from './wallet-read';
@@ -55,7 +55,7 @@ import {formatV3Amount as show} from './v3-format';
 import {formatUtcTime} from './utc-time';
 import V3ManagerVipPanel from './V3ManagerVipPanel';
 import {sendManagerChange,type MemberChange} from './v3-manager-vip';
-import {V3SupportTickets,V3Announcements} from './V3Community';
+import {V3SupportTickets,V3Announcements,V3Notifications,NotificationBell} from './V3Community';
 import {portfolioSupport} from './v3-support';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
 import {parseV3Amount as amount,v3WithdrawalFee,type V3WithdrawalKind} from './v3-withdrawal-form';
@@ -72,7 +72,7 @@ import './v3-account-and-team.css';
 import './v3-glass.css';
 import './v3-support.css';
 
-type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'tickets'|'announcements'|'admin';
+type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'tickets'|'announcements'|'notifications'|'admin-notifications'|'admin-tickets'|'admin-announcements'|'admin';
 type AdminSection='settlements'|'members'|'tickets'|'announcements';
 const menus=[
  {id:'overview' as Tab,label:'Overview',Icon:Home},
@@ -82,6 +82,7 @@ const menus=[
  {id:'history' as Tab,label:'History',Icon:History},
  {id:'profile' as Tab,label:'Profile',Icon:UserRound},
  {id:'tickets' as Tab,label:'Support tickets',Icon:LifeBuoy},
+ {id:'notifications' as Tab,label:'Notifications',Icon:Inbox},
  {id:'announcements' as Tab,label:'Announcements',Icon:Bell},
  {id:'admin' as Tab,label:'Admin panel',Icon:Settings2}
 ];
@@ -133,7 +134,13 @@ export default function V3Dashboard(){
  const [adminSection,setAdminSection]=useState<AdminSection>('settlements');
  const support=useMemo(()=>config?.unified?.portfolio?portfolioSupport(config.address,wallet,{token:''}):null,
   [config,wallet,walletSession.version]);
- const communityTab=tab==='tickets'||tab==='announcements';
+ const [selectedItem,setSelectedItem]=useState<{id:string;scope:string}|null>(null);
+ const selectionScope=[walletSession.version,config?.address].join('/');
+ const selection=selectedItem?.scope===selectionScope?selectedItem.id:undefined;
+ const alertsTab=tab==='notifications'||tab==='admin-notifications';
+ const staffTab=tab==='admin-tickets'||tab==='admin-announcements';
+ const adminAlerts=staffTab||tab==='admin-notifications'||Boolean(view?.canManage);
+ const communityTab=staffTab||tab==='tickets'||tab==='announcements'||alertsTab;
  const independentTab=Boolean(config?.unified?.portfolio&&(communityTab||tab==='history'));
  const supportKey=[walletSession.version,config?.address,tab].join('/');
  useEffect(()=>{setAdminSection('settlements');},[walletSession.version,config?.address]);
@@ -142,7 +149,7 @@ export default function V3Dashboard(){
  const currentReviewKey=useRef<string|null>(null);currentReviewKey.current=reviewKey;
  const singleCapital=config?.unified?.singleCapital===true;
  const tabLabel=(id:Tab,label:string)=>singleCapital&&id==='positions'?'Investment account':label;
- const activeTabLabel=tabLabel(tab,menus.find(item=>item.id===tab)?.label??'');
+ const activeTabLabel=tab==='admin-notifications'?'Admin notifications':tab==='admin-tickets'?'Support inbox':tab==='admin-announcements'?'Manage announcements':tabLabel(tab,menus.find(item=>item.id===tab)?.label??'');
  const unifiedEnabled=unifiedWalletEnabled(config,typeof window==='undefined'?'':window.location.pathname);
  const unifiedReadOnly=Boolean(config?.unified)&&!unifiedEnabled;
  const operatorAccess=Boolean(view?.canManage||(config?.unified&&view?.canFund));
@@ -229,7 +236,7 @@ export default function V3Dashboard(){
   if(walletSession.version!==walletVersion.current||provider!==getWalletProvider())return;
   const id=++revision.current;
   if(!provider||!wallet||chain!==97||!config){setView(null);setReadError(walletSession.error??'');setLoading(false);return;}
-  if(tab==='history'&&config.unified?.portfolio){setLoading(false);setReadError('');return;}
+  if(independentTab){setLoading(false);setReadError('');return;}
   if(!background)setLoading(true);
   try{
    const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null,unifiedPageStart,withdrawalCoverage,confirmedBlock.current);
@@ -240,7 +247,7 @@ export default function V3Dashboard(){
     setReadError(background?'Refresh unavailable. Values shown are from the last verified block.':'Unable to load verified account data. Retry or use the wallet connection check.');
    }
   }finally{if(id===revision.current)setLoading(false);}
- },[walletSession,wallet,chain,config,tab,branchPage,groupPage,unifiedPageStart,withdrawalCoverage]);
+ },[walletSession,wallet,chain,config,tab,branchPage,groupPage,unifiedPageStart,withdrawalCoverage,independentTab]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
   if(loading||!config||!wallet||chain!==97||independentTab)return;
@@ -609,6 +616,7 @@ export default function V3Dashboard(){
    </div>
   </article>;
  const navigate=(to:Tab,nextValue='',target:'withdraw'|'reinvest'|null=null)=>{
+  setSelectedItem(null);
   const accountWithdrawal=singleCapital&&to==='withdrawals';
   const deepLink=linkedMemberTab('#dashboard/'+to);
   if(deepLink||linkedMemberTab(window.location.hash)){
@@ -626,7 +634,7 @@ export default function V3Dashboard(){
    <a className="brand" href="#" onClick={()=>setMenuOpen(false)}><span className="brand-icon" aria-hidden="true"><Globe2 size={25}/></span>
     <div><strong>GLOBAL</strong><small>ARBITRAGE &amp; DROPSHIPPING</small></div></a>
    <div className="sidebar-caption">YOUR WORKSPACE</div>
-   <nav>{menus.filter(x=>(x.id!=='admin'||operatorAccess)&&(!['tickets','announcements'].includes(x.id)||support)).map(({id,label,Icon})=>
+   <nav>{menus.filter(x=>(x.id!=='admin'||operatorAccess)&&(!['tickets','announcements','notifications'].includes(x.id)||support)).map(({id,label,Icon})=>
     <button key={id} onClick={()=>navigate(id)} className={tab===id?'active':''} aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{tabLabel(id,label)}</span>{tab===id&&<ChevronRight size={15}/>}</button>)}
     <button type="button" onClick={()=>{window.location.hash='#marketplace';}}><Coins size={19}/><span>Products &amp; sales</span></button></nav>
    <div className="gv2-sidebar-bottom"><div className="gv1-sidebar-network"><span>◆</span><div><strong>BNB Testnet</strong><small>Test environment</small></div></div>
@@ -638,6 +646,8 @@ export default function V3Dashboard(){
    <header className="topbar gv2-classic-topbar">
      <div className="breadcrumb"><button ref={menuTrigger} className="icon-button mobile-menu" aria-label="Open menu" aria-controls="v3-dashboard-menu" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19}/></button><span>Dashboard</span><ChevronRight size={14}/><strong>{activeTabLabel}</strong></div>
     <div className="top-actions"><span className="network-label">V3 · TESTNET</span>
+     {support&&<NotificationBell key={selectionScope+String(adminAlerts)} client={support} admin={adminAlerts}
+      onOpen={()=>navigate(adminAlerts?'admin-notifications':'notifications')}/>}
      <ThemeSwitch inline/>
      <V3WalletControl address={wallet} busy={connecting||busy} onConnect={openWalletPicker} onDisconnect={()=>void disconnect()}/></div>
    </header>
@@ -670,7 +680,7 @@ export default function V3Dashboard(){
      <p>No balance is shown before the V3 code hash and selected wallet are independently verified.</p>
      <div className="gv2-buttons"><button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}>Browser wallet</button>
       <button disabled={connecting} onClick={()=>void connect('walletconnect')}>WalletConnect QR</button></div></section>}
-    {wallet&&chain!==97&&(!independentTab||tab==='tickets')&&<section className="gv2-panel"><h3>Switch to BNB Testnet (97)</h3>
+    {wallet&&chain!==97&&(!independentTab||tab==='tickets'||alertsTab||staffTab)&&<section className="gv2-panel"><h3>Switch to BNB Testnet (97)</h3>
      <p>Do not use BNB Mainnet or transfer real Tether to this prototype.</p>
      <button className="gv2-primary" onClick={()=>void switchWalletNetwork().catch(e=>setError(String(e)))}>Switch network</button></section>}
     {wallet&&chain===97&&loading&&!view&&!independentTab&&<section className="gv2-panel">Verifying pinned V3 runtime and account balances…</section>}
@@ -686,6 +696,7 @@ export default function V3Dashboard(){
     </section>}
     {tab==='overview'&&support&&<nav className="gv3-community-links" aria-label="Member services">
      <button onClick={()=>navigate('tickets')}><LifeBuoy size={19}/> Support tickets <ChevronRight size={16}/></button>
+     <button onClick={()=>navigate('notifications')}><Inbox size={19}/> Notifications <ChevronRight size={16}/></button>
      <button onClick={()=>navigate('announcements')}><Bell size={19}/> Announcements <ChevronRight size={16}/></button>
     </nav>}
     {tab==='overview'&&view&&<div className="gv3-sync-line" aria-live="off"><span className="gv3-live-status">{loading?'CHECKING BLOCKCHAIN':'AUTO REFRESH · 20 SEC'}</span>
@@ -701,9 +712,22 @@ export default function V3Dashboard(){
      <V3HistoryPanel key={config.address+':'+wallet} wallet={wallet} config={config}/>
      <V3WithdrawalHistory key={'withdraw-'+config.address+':'+wallet} wallet={wallet} config={config}/>
     </div>}
+    {alertsTab&&support&&(!wallet||chain===97)&&<V3Notifications key={supportKey} client={support} admin={tab==='admin-notifications'} wallet={wallet}
+     onManage={area=>navigate(area==='tickets'?'admin-tickets':'admin-announcements')}
+     onConnect={openWalletPicker} onPublic={()=>navigate('announcements')}
+     onSwitch={view?.canManage||tab==='admin-notifications'?()=>navigate(tab==='admin-notifications'?'notifications':'admin-notifications'):undefined}
+     onItem={(kind,id)=>{
+      if(kind==='announcement')navigate('announcements');
+      else if(tab==='admin-notifications')navigate('admin-tickets');
+      else navigate('tickets');
+      setSelectedItem({id,scope:selectionScope});
+     }}/>}
+    {staffTab&&support&&!wallet&&<section className="gv2-panel gv3-support"><button onClick={openWalletPicker}>Connect manager wallet</button></section>}
+    {tab==='admin-announcements'&&support&&wallet&&chain===97&&<V3Announcements key={supportKey} client={support} admin/>}
+    {tab==='admin-tickets'&&support&&wallet&&chain===97&&<V3SupportTickets key={supportKey} client={support} wallet={wallet} admin initialTicket={selection} onConnect={openWalletPicker}/>}
     {communityTab&&!support&&<p role="status">Support is available on the portfolio dashboard.</p>}
-    {tab==='announcements'&&support&&<V3Announcements key={supportKey} client={support} admin={false}/>}
-    {tab==='tickets'&&support&&(!wallet||chain===97)&&<V3SupportTickets key={supportKey} client={support} wallet={wallet} admin={false} onConnect={openWalletPicker}/>}
+    {tab==='announcements'&&support&&<V3Announcements key={supportKey} client={support} admin={false} initialPost={selection}/>}
+    {tab==='tickets'&&support&&(!wallet||chain===97)&&<V3SupportTickets key={supportKey} client={support} wallet={wallet} admin={false} initialTicket={selection} onConnect={openWalletPicker}/>}
     {view&&tab!=='history'&&!communityTab&&<div className="gv2-content">
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly} onCheckIn={checkIn} onPositions={()=>navigate('positions')} unifiedEnabled={unifiedEnabled}/>
@@ -783,10 +807,11 @@ export default function V3Dashboard(){
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
      </section>}
      {tab==='admin'&&support&&view.canManage&&<nav className="gv3-admin-sections" aria-label="Admin sections">
+      <button onClick={()=>navigate('admin-notifications')}>Notifications &amp; Telegram</button>
       {([['settlements','Withdrawals & funding'],['members','Members'],['tickets','Support inbox'],['announcements','Announcements']] as const).map(([id,label])=>
        <button key={id} aria-pressed={adminSection===id} onClick={()=>setAdminSection(id)}>{label}</button>)}
      </nav>}
-     {tab==='admin'&&support&&view.canManage&&adminSection==='tickets'&&<V3SupportTickets key={supportKey+'/admin'} client={support} admin wallet={wallet} onConnect={openWalletPicker}/>}
+     {tab==='admin'&&support&&view.canManage&&adminSection==='tickets'&&<V3SupportTickets key={supportKey+'/admin'} initialTicket={selection} client={support} admin wallet={wallet} onConnect={openWalletPicker}/>}
      {tab==='admin'&&support&&view.canManage&&adminSection==='announcements'&&<V3Announcements key={supportKey+'/admin'} client={support} admin/>}
      {tab==='admin'&&config.unified?.portfolio&&view.canManage&&adminSection==='members'&&walletSession.provider&&
       <V3ManagerVipPanel key={wallet+':'+config.address+':'+walletSession.version} provider={walletSession.provider} manager={wallet} config={config}

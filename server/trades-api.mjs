@@ -135,7 +135,7 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
 export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),activity=createTradingActivity({seller:commerce}),migration,dailyActivity,historyRelay,memberHistory,portfolioCommunity=createPortfolioCommunity(memberHistory),teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
- return http.createServer(async(req,res)=>{
+ const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
   if(await portfolioCommunity(req,res))return;
@@ -203,6 +203,8 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Commun
   }catch{if(!res.destroyed)send(503,{status:'unavailable',source,trades:[],updatedAt:null});}
   finally{clearTimeout(timer);}
  });
+ server.once('close',()=>portfolioCommunity.close?.());
+ return server;
 }
 async function configuredCommunity(config){
  const provider=config.rpcUrl&&config.address?createApiReadProvider(config):null;

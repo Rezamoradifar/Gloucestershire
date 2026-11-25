@@ -65,7 +65,7 @@ def check_route(profiles, endpoint, required='optional'):
 
     def check_support(proof):
         vault = proof['vault'].lower()
-        for route, expected in [('announcements', 200), ('tickets?admin=1', 401)]:
+        for route, expected in [('announcements', 200), ('tickets?admin=1', 401), ('notifications', 401), ('notifications?admin=1', 401)]:
             payload = subprocess.check_output(['curl', '-sS', '--noproxy', '*', '--max-time', '15',
                                                *transport, '-w', '\n%{http_code}',
                                                f'{base}/api/v3/community/{vault}/{route}'])
@@ -75,7 +75,7 @@ def check_route(profiles, endpoint, required='optional'):
             data = json.loads(body)
             if data.get('chainId') != 97 or str(data.get('vault')).lower() != vault:
                 raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
-            if expected == 200 and (not isinstance(data.get('items'), list) or
+            if expected == 200 and (data.get('notificationsVersion') != 1 or not isinstance(data.get('items'), list) or
                                     any(item.get('published') is not True for item in data['items'])):
                 raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
             if expected == 401 and ('items' in data or not data.get('error')):

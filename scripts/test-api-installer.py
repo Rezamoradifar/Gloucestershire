@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as directory:
         destination = root/'server'/source.name
         destination.write_bytes(source.read_bytes())
         copied.append(destination)
-    for relative in [*('scripts/'+file.name for file in (repo/'scripts').glob('*.mjs')), 'artifacts/TestnetDeferredMigrationVault.json', 'package.json', 'package-lock.json']:
+    for relative in [*('scripts/'+file.name for file in (repo/'scripts').glob('*.mjs')), 'scripts/configure-portfolio-telegram.py', 'artifacts/TestnetDeferredMigrationVault.json', 'package.json', 'package-lock.json']:
         destination = root/relative
         destination.write_bytes((repo/relative).read_bytes())
         copied.append(destination)
