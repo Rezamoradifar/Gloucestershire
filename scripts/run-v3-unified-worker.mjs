@@ -84,7 +84,7 @@ export async function selectWorkerProvider(command, proof, operator, profile, {
   const verify = provider => verifyOperator(provider, proof, operator, profile);
   if (command === '--check') return readOnly(endpoints[0], 'worker-check', verify);
   if (command !== '--tick') throw Error('UNIFIED_WORKER_INVALID_ARGUMENTS');
-  let cause;
+  let lastTransport;
   for (const url of endpoints) {
     const provider = createProvider(url, 12000);
     try {
@@ -92,11 +92,13 @@ export async function selectWorkerProvider(command, proof, operator, profile, {
       return {provider, ...check};
     } catch (error) {
       provider.destroy();
-      if (!transportReason(error)) throw error;
-      cause = error;
+      lastTransport = transportReason(error);
+      if (!lastTransport) throw error;
     }
   }
-  throw cause ?? Error('UNIFIED_WORKER_RPC_UNAVAILABLE');
+  // Only this path has exhausted public reads before tick() can touch a journal or sign.
+  throw Object.assign(Error('UNIFIED_WORKER_PREFLIGHT_' + lastTransport.replaceAll('+', '_')),
+    {code:'UNIFIED_WORKER_PREFLIGHT_RPC_UNAVAILABLE'});
 }
 
 export async function combinedCycle({hasAccrual, hasVolume, recoverVolume, checkVolume, accrue, volume}) {
@@ -179,6 +181,7 @@ async function main() {
       const ready = {sourceSha:sha, proofSha256:createHash('sha256').update(raw).digest('hex'),
         chainId:97, vault:getAddress(proof.vault), operator:signer.address, block, gasReady:balance >= minimum};
       atomicFile(path.join(profile.stateDirectory, 'worker-ready.json'), JSON.stringify(ready) + '\n');
+      console.log('UNIFIED_WORKER_PREFLIGHT_OK chain=97 block=' + block);
     }
     if (balance < minimum) {
       console.error('UNIFIED_KEEPER_NEEDS_TEST_GAS=' + signer.address + ' MINIMUM_TBNB=0.001 CHAIN_ID=97');
@@ -194,6 +197,8 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)
   main().catch(error => {
     const message = String(error?.message ?? '');
-    console.error(/^[A-Z][A-Z_0-9]{3,100}$/.test(message) ? message : 'UNIFIED_WORKER_' + (error?.code && /^[A-Z_0-9]+$/.test(error.code) ? error.code : 'FAILED'));
-    process.exitCode = 1;
+    const transport = transportReason(error);
+    const fallback = transport?.replaceAll('+', '_') ?? (typeof error?.code === 'string' && /^[A-Z_0-9]{1,75}$/.test(error.code) ? error.code : 'FAILED');
+    console.error(/^[A-Z][A-Z_0-9]{3,100}$/.test(message) ? message : 'UNIFIED_WORKER_' + fallback);
+    process.exitCode = error?.code === 'UNIFIED_WORKER_PREFLIGHT_RPC_UNAVAILABLE' ? 75 : 1;
   });

@@ -126,7 +126,11 @@ for ext in service timer; do
   mv -T "$target.new" "$target"
 done
 systemctl daemon-reload
-systemctl start "$unit.service"
+if [[ -n $public_run ]]; then
+  python3 scripts/start-v3-unified-portfolio-worker.py "$unit" "$gas_status"
+else
+  systemctl start "$unit.service"
+fi
 systemctl enable --now "$unit.timer"
 systemctl is-active --quiet "$unit.timer"
 if (( gas_status == 42 )); then

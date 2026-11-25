@@ -1,10 +1,16 @@
 """Exercise the release sequencing without any wallet, provider, system service or live website."""
 from hashlib import sha256
 from pathlib import Path
+from contextlib import redirect_stderr, redirect_stdout
+from importlib import util
+from io import StringIO
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from uuid import uuid4
 
 SOURCE = Path(__file__).resolve().parents[1] / "scripts/apply-v3-unified-testnet.sh"
 REVISION = "a" * 40
@@ -373,7 +379,7 @@ class WorkerGasInstallation(unittest.TestCase):
         source = source.replace("/etc/globaldroptrade", str(config))
         source = source.replace("/etc/systemd/system", str(self.units))
         source = source.replace("/opt/globaldroptrade-node/node-v22.23.3-linux-$arch/bin", str(self.tools))
-        for label in ["unified", "single-capital", "daily-capital"]:
+        for label in ["unified", "single-capital", "daily-capital", "portfolio"]:
             release_root = self.root / (label + "-worker")
             release = release_root / REVISION
             release.mkdir(parents=True)
@@ -385,6 +391,7 @@ class WorkerGasInstallation(unittest.TestCase):
             source = source.replace("/var/lib/globaldroptrade/v3-" + label + "-testnet", str(proof))
         source = source.replace("/opt/global-v3-$name-worker", str(self.root / "$name-worker"))
         source = source.replace("/var/lib/globaldroptrade/v3-$name-testnet", str(self.root / "$name-state"))
+        source = source.replace('public_dir="/var/lib/$unit-public"', f'public_dir="{self.root}/$unit-public"')
         self.script = self.root / "worker.sh"
         self.script.write_text(source)
         self.env = dict(os.environ, PATH=str(self.tools) + os.pathsep + os.environ["PATH"],
@@ -413,7 +420,16 @@ if [[ $2 == --check ]]; then exit "$GAS_STATUS"; fi""")
     def invoke(self, status, *profile):
         self.env["GAS_STATUS"] = str(status)
         return subprocess.run(["bash", str(self.script), REVISION, *profile],
-                              env=self.env, capture_output=True, text=True)
+                              cwd=SOURCE.parent.parent, env=self.env, capture_output=True, text=True)
+
+    def test_new_portfolio_worker_finishes_its_initial_start_before_enabling_the_timer(self):
+        self.mock("install", 'if [[ "$*" == *" -o global-v3-portfolio "* ]]; then exec /usr/bin/install -d -m 0755 "${@: -1}"; fi\nexec /usr/bin/install "$@"')
+        self.mock("systemctl", 'echo "systemctl $*" >> "$TRACE"\nif [[ $1 == is-active && ! -f "$TRACE.enabled" ]]; then exit 3; fi\nif [[ $1 == enable ]]; then touch "$TRACE.enabled"; fi')
+        result = self.invoke(0, "--portfolio")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = (self.root / "calls").read_text().splitlines()
+        self.assertLess(calls.index("systemctl start global-v3-portfolio-keeper-testnet.service"),
+                        calls.index("systemctl enable --now global-v3-portfolio-keeper-testnet.timer"))
 
     def test_single_capital_installs_timer_for_zero_gas_and_checks_again_after_funding(self):
         waiting = self.invoke(42, "--single-capital")
@@ -441,6 +457,84 @@ if [[ $2 == --check ]]; then exit "$GAS_STATUS"; fi""")
             result = self.invoke(status, *profile)
             self.assertEqual(result.returncode, status, result.stderr)
             self.assertEqual(list(self.units.iterdir()), [])
+
+
+class PortfolioWorkerStart(unittest.TestCase):
+    helper_path = SOURCE.with_name("start-v3-unified-portfolio-worker.py")
+    unit = "global-v3-portfolio-keeper-testnet"
+
+    @classmethod
+    def setUpClass(cls):
+        spec = util.spec_from_file_location("portfolio_start", cls.helper_path)
+        cls.worker = util.module_from_spec(spec)
+        spec.loader.exec_module(cls.worker)
+
+    def state(self, start, end, *, code=0, result="success", active="inactive"):
+        return {"ExecMainStartTimestampMonotonic": str(start), "ExecMainExitTimestampMonotonic": str(end),
+                "Result": result, "ExecMainStatus": str(code), "ExecMainCode": "1", "ActiveState": active,
+                "InvocationID": "2" * 32}
+
+    def run_case(self, states, *, active=True, starts=(), journal="", gas=0):
+        states, starts = iter(states), iter(starts)
+        calls = []
+        def systemctl(*args):
+            calls.append(args[0])
+            if args[0] == "show":
+                output = "\n".join(f"{k}={v}" for k, v in next(states).items())
+                return subprocess.CompletedProcess(args, 0, output)
+            code = (0 if active else 3) if args[0] == "is-active" else next(starts)
+            return subprocess.CompletedProcess(args, code)
+        out = StringIO()
+        with patch.object(self.worker, "systemctl", systemctl), patch.object(self.worker.time, "sleep"), \
+             patch.object(self.worker.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, journal)), \
+             redirect_stdout(out), redirect_stderr(out):
+            status = self.worker.start(self.unit, gas)
+        return status, calls.count("start"), out.getvalue()
+
+    def test_observes_only_a_new_completed_invocation_on_an_existing_timer(self):
+        old = self.state(10, 20)
+        status, starts, _ = self.run_case([old, old, self.state(30, 20, active="activating"), self.state(30, 40)])
+        self.assertEqual((status, starts), (0, 0))
+
+    def test_temporary_preflight_can_recover_once_without_an_extra_scheduled_start(self):
+        temporary = self.state(20, 25, code=75, result="exit-code", active="failed")
+        status, starts, log = self.run_case([self.state(1, 2), temporary, temporary, self.state(30, 40)])
+        self.assertEqual((status, starts), (0, 0))
+        self.assertEqual(log.count("RETRYING_READ_ONLY_PREFLIGHT"), 1)
+        status, starts, log = self.run_case([temporary, temporary], active=False, starts=[1, 1])
+        self.assertEqual((status, starts), (1, 2))
+
+    def test_journal_or_integrity_failure_stops_and_prints_only_the_worker_code(self):
+        failed = self.state(30, 40, code=1, result="exit-code", active="failed")
+        for message, expected in [("UNIFIED_RECOVERY_NONCE_MISMATCH", "UNIFIED_RECOVERY_NONCE_MISMATCH"),
+                                  ("rpc https://example.invalid/?api_key=sample", "NO_WORKER_CODE")]:
+            status, starts, log = self.run_case([self.state(1, 2), failed], journal=message)
+            self.assertEqual((status, starts), (1, 0))
+            self.assertIn("reason=" + expected, log)
+            self.assertNotIn("api_key", log)
+            self.assertNotIn("RETRYING", log)
+
+    def test_low_gas_requires_the_matching_installation_precheck(self):
+        waiting = self.state(30, 40, code=42)
+        for gas, expected in [(0, 1), (42, 0)]:
+            status, _, _ = self.run_case([self.state(1, 2), waiting], gas=gas)
+            self.assertEqual(status, expected)
+
+    @unittest.skipUnless(os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted" and
+                         Path("/run/systemd/system").is_dir(), "requires a disposable systemd runner")
+    def test_real_oneshot_timer_reports_a_fresh_success(self):
+        unit = "global-qa-" + uuid4().hex
+        subprocess.run(["sudo", "-n", "systemd-run", "--quiet", "--unit=" + unit,
+                        "--on-active=2s", "--on-unit-inactive=4s", "--timer-property=AccuracySec=100ms",
+                        "--property=Type=oneshot", "/usr/bin/true"], check=True)
+        try:
+            result = subprocess.run([sys.executable, "-c",
+                'import runpy, sys; sys.exit(runpy.run_path(sys.argv[1])["start"](sys.argv[2], 0))',
+                str(self.helper_path), unit], capture_output=True, text=True, timeout=25)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("UNIFIED_WORKER_WAITING_FOR_FRESH_TIMER_RUN", result.stdout)
+        finally:
+            subprocess.run(["sudo", "-n", "systemctl", "stop", unit + ".timer", unit + ".service"], check=False)
 
 
 if __name__ == "__main__":

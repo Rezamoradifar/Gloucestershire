@@ -61,6 +61,19 @@ test('invalid contract proof, paused vault or privileged worker stops timer prov
   }
 });
 
+test('only exhausted pre-signature transports get the temporary start failure code', async () => {
+  let opened = 0, closed = 0;
+  await assert.rejects(selectWorkerProvider('--tick', {}, 'operator', {}, {
+    createProvider() { opened++; return {destroy:() => { closed++; }}; },
+    async verifyOperator() {
+      throw Object.assign(Error('upstream request details'), {code:'SERVER_ERROR', response:{statusCode:403}});
+    }
+  }), error => error.code === 'UNIFIED_WORKER_PREFLIGHT_RPC_UNAVAILABLE' &&
+                error.message === 'UNIFIED_WORKER_PREFLIGHT_HTTP_403');
+  assert.equal(opened, 4);
+  assert.equal(closed, opened);
+});
+
 function hooks(options = {}) {
   const events = [];
   const run = (name, result) => async () => { events.push(name); return result; };
