@@ -1,3 +1,4 @@
+import {parseUnits} from 'ethers';
 import {parseZonedTimestamp} from './utc-time';
 
 export type AccountSource = 'amazon' | 'ebay' | 'kraken';
@@ -7,7 +8,10 @@ export const markets = {
   'ETH/USD': {pair:'ETHUSD', key:'XETHZUSD', base:'ETH'}
 } as const;
 export type Pair = keyof typeof markets;
-export type Entry = {id:string; side:'buy'|'sell'; item:string; time:string; amount:string; unit:string; price?:string};
+export type StoreProduct = {name:string|null; model:string|null; type:string|null; quantity:number|null};
+export type StoreProfit = {net:string; netSales:string; costs:string};
+export type Entry = {id:string; side:'buy'|'sell'; item:string; time:string; amount:string; unit:string; price?:string;
+  products?:StoreProduct[]; productCount?:number; profit?:StoreProfit; refundStatus?:'partial'|'full'};
 export type Feed = {source:Source; status:'live'|'delayed'|'connected'|'partial'|'not_configured'|'unavailable'|'rate_limited';
   updatedAt:string|null; rows:Entry[]};
 
@@ -21,6 +25,34 @@ export function formatTradeAmount(value:string):string {
   const [whole, fraction='']=value.split('.');
   const digits=fraction.replace(/0+$/,'');
   return whole.replace(/\B(?=(\d{3})+(?!\d))/g,',')+(digits?'.'+digits:'');
+}
+function productText(value:unknown, max:number) {
+  return value===null || (typeof value==='string' && value.trim().length>0 && value.length<=max &&
+    !/[\p{Cc}\p{Cf}<>@]|https?:\/\//iu.test(value));
+}
+
+function validateStoreDetails(row:Entry,source:AccountSource) {
+  if(row.refundStatus!==undefined)
+    requireData(source==='ebay' && (row.refundStatus==='partial' || row.refundStatus==='full'));
+  if(row.products!==undefined || row.productCount!==undefined) {
+    requireData(source!=='kraken' && Array.isArray(row.products) && row.products.length<=12 &&
+      Number.isSafeInteger(row.productCount) && row.productCount!>=row.products.length);
+    for(const product of row.products) {
+      requireData(product && productText(product.name,160) && productText(product.model,100) &&
+        productText(product.type,100) && (product.quantity===null ||
+          (Number.isSafeInteger(product.quantity) && product.quantity>0)));
+    }
+  }
+  if(row.profit!==undefined) {
+    const profit=row.profit;
+    const unsigned=(n:unknown)=>typeof n==='string' && /^\d{1,24}(?:\.\d{1,6})?$/.test(n);
+    requireData(source==='ebay' && profit && unsigned(profit.netSales) && unsigned(profit.costs) &&
+      typeof profit.net==='string' && /^-?\d{1,24}(?:\.\d{1,6})?$/.test(profit.net));
+    const netSales=parseUnits(profit.netSales,18), gross=parseUnits(row.amount,18);
+    requireData(netSales<=gross && netSales-parseUnits(profit.costs,18)===parseUnits(profit.net,18));
+    if(row.refundStatus==='full')requireData(netSales===0n);
+    if(row.refundStatus==='partial')requireData(netSales>0n && netSales<gross);
+  }
 }
 export function readAccountFeed(value:unknown, source:AccountSource, now=Date.now()):Feed {
   const feed=value as Feed;
@@ -40,6 +72,7 @@ export function readAccountFeed(value:unknown, source:AccountSource, now=Date.no
     if(source==='amazon') requireData(row.side==='buy' && row.item==='Purchase charge');
     if(source==='ebay') requireData(row.side==='sell' && row.item==='Paid order');
     if(source==='kraken') requireData(['buy','sell'].includes(row.side) && /^[A-Z0-9. /-]{3,32}$/i.test(row.item));
+    validateStoreDetails(row,source);
     ids.add(row.id);
   }
   return {...feed, rows:[...feed.rows].sort((a,b)=>Date.parse(b.time)-Date.parse(a.time))};

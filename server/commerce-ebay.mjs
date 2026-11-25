@@ -1,6 +1,7 @@
 // Read-only, opt-in public aggregate from the operator's own eBay seller.
 // It never places an order, exposes a buyer or invents business profit.
 import {open} from 'node:fs/promises';
+import {constants} from 'node:fs';
 import {isAbsolute} from 'node:path';
 import {formatUnits,parseUnits} from 'ethers';
 
@@ -13,24 +14,45 @@ const PAGE_LIMIT=100;
 const paidStates=new Set(['PAID','PARTIALLY_REFUNDED','FULLY_REFUNDED']);
 const moneyUnits=value=>typeof value==='string'&&/^\d{1,18}(?:\.\d{1,6})?$/.test(value)?parseUnits(value,6):null;
 
-// The operator's reconciled rows stay private. Match both the order amount
-// and its eBay revision so refunds cannot reuse a stale cost statement.
-async function loadReconciliation(file){
- if(!file||!isAbsolute(file))return new Map();
+export async function readCommerceInput(file){
+ if(typeof file!=='string'||!isAbsolute(file))return null;
  let handle;
  try{
-  handle=await open(file,'r');
+  handle=await open(file,constants.O_RDONLY|constants.O_NONBLOCK);
   const stats=await handle.stat();
-  if(!stats.isFile()||stats.size>4*1024*1024)return new Map();
-  const ledger=JSON.parse(await handle.readFile('utf8'));
-  if(ledger.version!==1||!Array.isArray(ledger.orders))return new Map();
-  const rows=new Map();
-  for(const row of ledger.orders){
-   if(typeof row?.orderId!=='string'||rows.has(row.orderId))return new Map();
-   rows.set(row.orderId,row);
-  }
-  return rows;
- }catch{return new Map();}finally{await handle?.close();}
+  if(!stats.isFile()||stats.size<1||stats.size>4*1024*1024)return null;
+  const buffer=Buffer.alloc(stats.size+1);
+  const {bytesRead}=await handle.read(buffer);
+  if(bytesRead!==stats.size)return null;
+  return JSON.parse(buffer.toString('utf8',0,bytesRead));
+ }catch{return null;}finally{await handle?.close();}
+}
+
+export async function loadReconciliation(file){
+ const ledger=await readCommerceInput(file);
+ const rows=new Map();
+ if(ledger?.version!==1||!Array.isArray(ledger.orders))return rows;
+ for(const row of ledger.orders){
+  if(typeof row?.orderId!=='string'||rows.has(row.orderId))return new Map();
+  rows.set(row.orderId,row);
+ }
+ return rows;
+}
+
+// Match the complete cost statement to the exact provider revision and gross.
+export function reconciledSale(order,row){
+ const price=order.pricingSummary?.total,gross=moneyUnits(price?.value);
+ if(!paidStates.has(order.orderPaymentStatus)||!row||row.orderId!==order.orderId||
+    !/^[A-Z]{3}$/.test(price?.currency??'')||row.currency!==price.currency||gross===null||moneyUnits(row.gross)!==gross||
+    typeof order.lastModifiedDate!=='string'||!Number.isFinite(Date.parse(order.lastModifiedDate))||
+    row.orderRevision!==order.lastModifiedDate)return null;
+ const refunds=moneyUnits(row.refunds),supplier=moneyUnits(row.supplierCost),fees=moneyUnits(row.fees),other=moneyUnits(row.otherCosts);
+ if(refunds===null||refunds>gross||supplier===null||fees===null||other===null||
+    (order.orderPaymentStatus==='FULLY_REFUNDED'&&refunds!==gross)||
+    (order.orderPaymentStatus==='PARTIALLY_REFUNDED'&&(refunds===0n||refunds>=gross))||
+    (order.orderPaymentStatus==='PAID'&&refunds!==0n))return null;
+ const costs=supplier+fees+other,netSales=gross-refunds;
+ return {refunds,netSales,costs,net:netSales-costs};
 }
 
 export function sellerPerformance(orders,windowEnd,reconciled){
@@ -45,13 +67,9 @@ export function sellerPerformance(orders,windowEnd,reconciled){
   const g=groups.get(currency)??{currency,gross:0n,recent:0n,refunds:0n,costs:0n,complete:true};
   groups.set(currency,g);g.gross+=gross;
   if(Date.parse(o.creationDate)>=windowEnd-7*86400000)g.recent+=gross;
-  const row=reconciled.get(o.orderId);
-  const refunds=moneyUnits(row?.refunds),cost=moneyUnits(row?.supplierCost),fees=moneyUnits(row?.fees),other=moneyUnits(row?.otherCosts);
-  if(!row||row.currency!==currency||moneyUnits(row.gross)!==gross||!Number.isFinite(Date.parse(o.lastModifiedDate))||
-    row.orderRevision!==o.lastModifiedDate||refunds===null||refunds>gross||cost===null||fees===null||other===null||
-    (o.orderPaymentStatus==='FULLY_REFUNDED'&&refunds!==gross)||(o.orderPaymentStatus==='PARTIALLY_REFUNDED'&&(refunds===0n||refunds>=gross))||
-    (o.orderPaymentStatus==='PAID'&&refunds!==0n))g.complete=false;
-  else{g.refunds+=refunds;g.costs+=cost+fees+other;}
+  const sale=reconciledSale(o,reconciled.get(o.orderId));
+  if(!sale)g.complete=false;
+  else{g.refunds+=sale.refunds;g.costs+=sale.costs;}
  }
  const display=n=>formatUnits(n,6);
  return {orderCount:orders.length,currencies:[...groups.values()].sort((a,b)=>a.currency.localeCompare(b.currency)).map(g=>({

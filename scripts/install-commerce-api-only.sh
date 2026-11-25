@@ -57,14 +57,14 @@ commerce_fingerprint(){
 }
 commerce_target=$(commerce_fingerprint server)
 commerce_before=$(commerce_fingerprint "$commerce_previous/server")
-# Released combinations only: pre-commerce, the original and revised seller
-# summaries, and the first glass-panel release before the startup fix.
+# Each tuple identifies the three modules shipped together in a known release.
 case "$commerce_before" in
  "$commerce_target"|\
  5cae7c3c414386fecb82a0226b43237c3445001d/missing/missing|\
  3455a60264a754cc6a558737ded964391d517109/967e427df79f212b956e11724c331ac26326e426/missing|\
  3455a60264a754cc6a558737ded964391d517109/317ae1adc05081ee2e0ee3f6cc36e8d6535918ec/missing|\
  c94269f994a19dbb641f30430441df776d78e065/d8ebad0e2f064bd4c7ac0ad177da17b32b51e124/cbe54780136ea3fc4afc21c3ee6bfca7588474ee|\
+ c94269f994a19dbb641f30430441df776d78e065/6f21e279898a3326790a7a856e3a2b9d7c2bd040/cbe54780136ea3fc4afc21c3ee6bfca7588474ee|\
  e786a10d90a6918f95187ff1cdf982b0e4490a40/d8ebad0e2f064bd4c7ac0ad177da17b32b51e124/cbe54780136ea3fc4afc21c3ee6bfca7588474ee) ;;
  *) echo COMMERCE_LIVE_API_VERSION_REVIEW_REQUIRED
     echo "COMMERCE_MODULE_FINGERPRINT=$commerce_before"
@@ -73,7 +73,7 @@ esac
 # A release-directory switch must not redirect a relative customer-data path.
 node --env-file="$commerce_env" --input-type=module - <<'JS'
 import path from 'node:path';
-for(const key of ['COMMUNITY_DATA_FILE','V2_COMMUNITY_DATA_FILE','DAILY_ACTIVITY_FILE','GLOBAL_AUTOMATION_PUBLIC_STATUS','EBAY_SELLER_RECONCILIATION_FILE']){
+for(const key of ['COMMUNITY_DATA_FILE','V2_COMMUNITY_DATA_FILE','DAILY_ACTIVITY_FILE','GLOBAL_AUTOMATION_PUBLIC_STATUS','EBAY_SELLER_RECONCILIATION_FILE','COMMERCE_PRODUCT_CATALOG_FILE']){
  if(process.env[key]&&!path.isAbsolute(process.env[key])){
   console.error('COMMERCE_RELATIVE_DATA_PATH_REVIEW_REQUIRED='+key);process.exitCode=1;
  }
@@ -162,12 +162,14 @@ if(v.version!==1||v.source!=='ebay'||!['live','not_configured','unavailable','ra
  v.commercialProfit!==null||v.profitStatus!=='unverified_costs_and_fees')throw Error('COMMERCE_API_STATUS_INVALID');
 console.log('COMMERCE_SELLER_STATUS='+v.status);
 JS
-curl -fsS --noproxy '*' --max-time 30 'http://127.0.0.1:3115/api/commerce/activity?source=kraken' -o "$commerce_stage/activity.json"
-node --input-type=module - "$commerce_stage/activity.json" <<'JS'
+for source in kraken amazon ebay; do
+ curl -fsS --noproxy '*' --max-time 45 "http://127.0.0.1:3115/api/commerce/activity?source=$source" -o "$commerce_stage/activity.json"
+ node --input-type=module - "$commerce_stage/activity.json" "$source" <<'JS'
 import fs from 'node:fs';
 const v=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
-if(v.source!=='kraken'||!Array.isArray(v.rows)||!['connected','partial','not_configured','unavailable','rate_limited'].includes(v.status))throw Error('TRADING_ACTIVITY_RESPONSE_INVALID');
+if(v.source!==process.argv[3]||!Array.isArray(v.rows)||!['connected','partial','not_configured','unavailable','rate_limited'].includes(v.status))throw Error('TRADING_ACTIVITY_RESPONSE_INVALID');
 JS
+done
 commerce_changed=0
 echo "COMMERCE_API_ONLY_INSTALLED=$GLOBAL_COMMERCE_EXPECTED_SHA"
 echo 'COMMERCE_REQUIRES_SELLER_AUTHORIZATION_AND_COST_RECONCILIATION'

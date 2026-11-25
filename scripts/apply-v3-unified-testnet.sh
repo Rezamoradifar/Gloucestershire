@@ -63,18 +63,21 @@ verify_proof() {
 }
 
 install_panel_commerce() {
+  local source
   GLOBAL_COMMERCE_EXPECTED_SHA="$1" bash scripts/install-commerce-api-only.sh --install || return $?
-  curl -fsS --noproxy '*' --max-time 30 --resolve globaldroptrade.com:443:127.0.0.1 \
-    'https://globaldroptrade.com/api/commerce/activity?source=kraken' | python3 -c '
+  for source in kraken amazon ebay; do
+    curl -fsS --noproxy '*' --max-time 45 --resolve globaldroptrade.com:443:127.0.0.1 \
+      "https://globaldroptrade.com/api/commerce/activity?source=$source" | python3 -c '
 import json, sys
 try:
     feed = json.load(sys.stdin)
 except ValueError:
     sys.exit("GLOBAL_PANEL_COMMERCE_ROUTE_INVALID")
-valid = (isinstance(feed, dict) and feed.get("source") == "kraken" and isinstance(feed.get("rows"), list)
+valid = (isinstance(feed, dict) and feed.get("source") == sys.argv[1] and isinstance(feed.get("rows"), list)
          and feed.get("status") in {"connected", "partial", "not_configured", "unavailable", "rate_limited"})
 sys.exit(0 if valid else "GLOBAL_PANEL_COMMERCE_ROUTE_INVALID")
-'
+' "$source" || return $?
+  done
 }
 
 apply_release() {

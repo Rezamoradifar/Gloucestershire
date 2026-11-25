@@ -3,10 +3,10 @@
 .gv3-desk-head,.gv3-tape-foot {display:flex;align-items:center;justify-content:space-between;gap:12px}
 .gv3-desk-head h2 {display:flex;align-items:center;gap:10px;margin:0;color:var(--glass-ink);font-size:clamp(17px,2vw,22px);letter-spacing:-.035em}
 .gv3-desk-head svg {color:var(--glass-accent)}
-.gv3-workspace .gv3-desk-head select {max-width:100%;min-height:40px;padding:5px 7px;border:1px solid var(--glass-line);border-radius:9px;background:var(--glass-inset);color:var(--glass-ink);font-family:inherit;font-size:12px;font-weight:600}
+:is(.gv3-workspace,.gdt-trades) .gv3-desk-head select {max-width:100%;min-height:40px;padding:5px 7px;border:1px solid var(--glass-line);border-radius:9px;background:var(--glass-inset);color:var(--glass-ink);font-family:inherit;font-size:12px;font-weight:600}
 .gv3-desk-tabs {display:flex;gap:4px;width:fit-content;max-width:100%;margin:16px 0;padding:3px;border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-inset)}
-.gv3-workspace.gv2-classic .gv3-desk-tabs button {min-width:0;min-height:38px;padding:6px 15px;border:0;border-radius:9px;background:transparent;color:var(--glass-muted);box-shadow:none;font-size:12px;font-weight:600}
-.gv3-workspace.gv2-classic .gv3-desk-tabs button[aria-pressed=true] {background:var(--glass-tab);color:var(--glass-accent);box-shadow:inset 0 0 0 1px var(--glass-line)}
+:is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-desk-tabs button {min-width:0;min-height:38px;padding:6px 15px;border:0;border-radius:9px;background:transparent;color:var(--glass-muted);box-shadow:none;font-size:12px;font-weight:600}
+:is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-desk-tabs button[aria-pressed=true] {background:var(--glass-tab);color:var(--glass-accent);box-shadow:inset 0 0 0 1px var(--glass-line)}
 .gv3-tape-summary {display:flex;align-items:center;gap:14px;min-width:0}
 .gv3-tape-summary>div:first-child {flex:1;min-width:0}
 .gv3-tape-summary small,.gv3-tape-quote>span,.gv3-tape-foot {color:var(--glass-muted);font-size:11px}
@@ -19,7 +19,7 @@
 .gv3-tape-quote>strong {color:var(--glass-ink);font-size:clamp(18px,2.6vw,28px);line-height:1.15;letter-spacing:-.04em}
 .gv3-tape-quote>span {grid-column:1;grid-row:1}.gv3-tape-quote>strong {grid-column:1;grid-row:2}
 .gv3-trace {grid-row:1/3;grid-column:2;width:100%;height:36px;color:var(--glass-accent)}
-.gv3-workspace.gv2-classic .gv3-tape-refresh {display:grid;place-items:center;flex:0 0 40px;width:40px;min-height:40px;padding:6px;border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-inset);color:var(--glass-ink)}
+:is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-tape-refresh {display:grid;place-items:center;flex:0 0 40px;width:40px;min-height:40px;padding:6px;border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-inset);color:var(--glass-ink)}
 .gv3-tape-description {margin:9px 0 13px;color:var(--glass-muted);font-size:12px;line-height:1.5}
 .gv3-tape-table {border-top:1px solid var(--glass-line)}
 .gv3-tape-row {display:grid;grid-template-columns:minmax(55px,.7fr) minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,.95fr);align-items:center;gap:10px;min-height:37px;border-bottom:1px solid var(--glass-line);font-size:13px;color:var(--glass-ink)}
@@ -34,19 +34,81 @@
 .gv3-tape-empty {display:flex;align-items:center;gap:10px;min-height:62px;padding:12px;border:1px dashed var(--glass-line);border-radius:11px;color:var(--glass-muted);font-size:13px}
 .gv3-tape-empty svg {flex:none}
 .gv3-tape-foot {flex-wrap:wrap;margin-top:9px;min-height:28px}
-.gv3-workspace.gv2-classic .gv3-tape-foot button {display:inline-flex;align-items:center;gap:4px;min-height:34px;padding:4px;border:0;background:none;color:var(--glass-accent);font-size:11px;box-shadow:none}
+:is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-tape-foot button {display:inline-flex;align-items:center;gap:4px;min-height:34px;padding:4px;border:0;background:none;color:var(--glass-accent);font-size:11px;box-shadow:none}
 .gv3-tape-foot button[aria-expanded=true] svg {transform:rotate(180deg)}
 .gv3-seller-summary {border-top:1px solid var(--glass-line);margin-top:8px}
 .gv3-seller-summary summary {padding:13px 0;color:var(--glass-accent);cursor:pointer;font-size:12px}
 @media(max-width:600px) {
   .gv3-trading-desk {margin:14px 0 18px}
   .gv3-desk-tabs {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:1px}
-  .gv3-workspace.gv2-classic .gv3-desk-tabs button {min-height:42px;padding:4px;font-size:11px}
+  :is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-desk-tabs button {min-height:42px;padding:4px;font-size:11px}
   .gv3-tape-row {gap:5px;grid-template-columns:minmax(42px,.67fr) minmax(0,1.2fr) minmax(0,1.05fr) minmax(0,.95fr);font-size:11px}
   .gv3-tape-columns {font-size:10px}
   .gv3-desk-head {flex-wrap:wrap}
   .gv3-tape-summary {gap:7px}
   .gv3-tape-quote {grid-template-columns:1fr;justify-items:end}
   .gv3-trace {grid-column:1;grid-row:3;width:80px;height:16px}
-  .gv3-workspace.gv2-classic .gv3-tape-refresh {flex-basis:36px;width:36px}
+  :is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-tape-refresh {flex-basis:36px;width:36px}
+}
+
+
+.gdt-trades .gv3-trading-desk {
+  --glass-ink:var(--text); --glass-muted:var(--dim); --glass-line:var(--border);
+  --glass-accent:#94e4ca; --glass-sell:#ffa997; --glass-warm:#e8c57d;
+  --glass-tab:#66c9af1a; --glass-inset:#101d28;
+  border:1px solid var(--glass-line); border-radius:20px; color:var(--glass-ink); background:#14212d;
+}
+:root[data-theme='light'] .gdt-trades .gv3-trading-desk {
+  --glass-accent:#10614e; --glass-sell:#943e31; --glass-warm:#745017; --glass-inset:#eff5f4;
+  background:#fafdfc;
+}
+.gdt-trades .gv3-desk-head h2 {font-size:clamp(18px,3vw,26px);line-height:1.25;margin:0}
+.gv3-store-tape .gv3-tape-summary h3 {margin:0;font-size:clamp(19px,2.1vw,24px)}
+.gv3-store-tape .gv3-tape-description {margin:4px 0 0}
+.gv3-store-sources {display:flex;flex-wrap:wrap;gap:6px 16px;padding:11px 0 15px}
+.gv3-store-sources .gv3-tape-state {flex-wrap:wrap;gap:5px;line-height:1.4}
+.gv3-store-sources b {font-weight:650;color:var(--glass-ink)}
+.gv3-store-toolbar {display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 6px}
+.gv3-store-toolbar>small,.gv3-store-meta,.gv3-store-money>small,.gv3-store-money>span {color:var(--glass-muted);font-size:11px}
+.gv3-store-filters {display:flex;gap:4px}
+:is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-store-filters button {
+  background:transparent;min-height:35px;border:1px solid transparent;padding:4px 10px;border-radius:8px;
+  color:var(--glass-muted);font:inherit;font-size:12px;box-shadow:none;cursor:pointer;
+}
+:is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-store-filters button[aria-pressed=true] {
+  color:var(--glass-accent);background:var(--glass-tab);border-color:var(--glass-line);font-weight:650;
+}
+.gv3-store-rows {list-style:none;margin:0;padding:0;border-top:1px solid var(--glass-line)}
+.gv3-store-row {padding:12px 0;border-bottom:1px solid var(--glass-line)}
+.gv3-store-meta {display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.gv3-store-meta time {margin-left:auto}
+.gv3-store-refund {color:var(--glass-warm);font-weight:650}
+.gv3-store-body {display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);align-items:start;gap:10px 18px;margin-top:7px}
+.gv3-store-product,.gv3-store-money {min-width:0;overflow-wrap:anywhere;color:var(--glass-ink)}
+.gv3-store-product>strong {font-size:15px;line-height:1.35}
+.gv3-product-fields {display:flex;flex-wrap:wrap;gap:2px 12px;margin:3px 0 0}
+.gv3-product-fields div {display:inline-flex;gap:4px;max-width:100%;align-items:baseline}
+.gv3-product-fields dt,.gv3-product-fields dd {font:inherit;font-size:11px;margin:0;line-height:1.4}
+.gv3-product-fields dt {color:var(--glass-muted)}
+.gv3-product-fields dd {min-width:0;color:var(--glass-ink)}
+.gv3-store-money {display:grid;gap:2px;justify-items:end;text-align:right;line-height:1.4}
+.gv3-store-money strong {font-size:15px;letter-spacing:-.02em}.gv3-store-money strong span {font-size:11px}
+.gv3-store-profit summary {font-size:11px;color:var(--glass-accent);cursor:pointer}
+.gv3-store-profit>span {display:block;color:var(--glass-muted);font-size:11px}
+.gv3-store-money strong[data-result=gain] {color:var(--glass-accent)}
+.gv3-store-money strong[data-result=loss] {color:var(--glass-sell)}
+:where(.gv3-store-items,.gv3-store-volumes) summary {width:fit-content;padding:6px 0;color:var(--glass-accent);font-size:12px;cursor:pointer}
+.gv3-store-items>div {padding:5px 0;font-size:13px}.gv3-store-items p {margin:5px 0;color:var(--glass-muted);font-size:11px}
+.gv3-store-volumes {margin-top:6px}
+.gv3-store-volumes p {margin:3px 0 6px;font-size:12px;line-height:1.5;color:var(--glass-muted)}
+.gv3-store-volumes>div {display:flex;flex-wrap:wrap;gap:4px 14px;padding:6px 0;font-size:12px;color:var(--glass-ink)}
+.gv3-trading-desk :is(button,select,summary):focus-visible {outline:2px solid var(--glass-accent);outline-offset:2px}
+@media(max-width:600px) {
+  .gv3-store-meta {gap:4px 6px}.gv3-store-meta time {font-size:10px}
+  .gv3-store-body {grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 12px}
+  .gv3-store-product {grid-column:1/-1}.gv3-store-money {justify-items:start;text-align:left}
+  .gv3-store-money:last-child {justify-items:end;text-align:right}
+  .gv3-store-toolbar>small {font-size:10px}
+  :is(.gv3-workspace.gv2-classic,.gdt-trades) .gv3-store-filters button {min-height:42px}
+  :where(.gv3-store-items,.gv3-store-volumes) summary {padding:11px 0}
 }
