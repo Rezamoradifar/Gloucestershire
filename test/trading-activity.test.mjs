@@ -183,6 +183,58 @@ test('opted-in refunded sales retain one original gross with net sales and losse
   }
 });
 
+test('temporary store outages keep the last confirmed snapshot for ten minutes without extending its timestamp',async()=>{
+  let clock=time, status=200, reads=0;
+  const env={...sellerEnv,EBAY_SELLER_PUBLIC_ACTIVITY:'1'};
+  const fetcher=async url=>{
+    if(url.includes('oauth2/token'))return ok({access_token:'token',expires_in:7200});
+    reads++;
+    return status===200?ok({total:1,orders:[paidOrder]}):{ok:false,status};
+  };
+  const seller=createCommerceStatus({env,fetcher,now:()=>clock});
+  const desk=createTradingActivity({seller,env,now:()=>clock});
+  const confirmed=await desk.get('ebay');
+  clock+=31000;status=503;
+  const delayed=await desk.get('ebay');
+  assert.deepEqual(delayed,{source:'ebay',status:'unavailable',updatedAt:null,rows:[],lastConfirmed:confirmed});
+  clock+=31000;status=429;
+  const [limited,duplicate]=await Promise.all([desk.get('ebay'),desk.get('ebay')]);
+  assert.deepEqual(limited,duplicate);
+  assert.deepEqual(limited.lastConfirmed,confirmed);assert.equal(limited.status,'rate_limited');assert.equal(reads,3);
+  clock=time+599999;assert.deepEqual((await desk.get('ebay')).lastConfirmed,confirmed);
+  clock++;assert.equal((await desk.get('ebay')).lastConfirmed,undefined);
+  clock+=91000;status=200;
+  const recovered=await desk.get('ebay');
+  assert.equal(recovered.status,'connected');assert.equal(recovered.updatedAt,new Date(clock).toISOString());
+  clock+=31000;status=403;
+  assert.deepEqual(await desk.get('ebay'),{source:'ebay',status:'unavailable',updatedAt:null,rows:[]});
+  clock+=31000;status=503;assert.equal((await desk.get('ebay')).lastConfirmed,undefined);
+});
+
+test('a store opt-out, reduced disclosure or replaced credential clears cached and in-flight rows',async()=>{
+  const env={...amazonEnv,DROPSHIPPING_PUBLIC_DETAILS:'1'};
+  const tx={transactionId:'test',transactionType:'CHARGE',transactionDate:when,amount:{currencyCode:'USD',amount:'25.00'}};
+  let clock=time, status=200, finish,requestStarted;
+  const started=new Promise(resolve=>{requestStarted=resolve;});
+  const fetcher=async url=>{
+    if(url.includes('auth/o2/token'))return ok({access_token:'token',expires_in:7200});
+    if(status===0){requestStarted();await new Promise(resolve=>{finish=resolve;});}
+    return status===503?{ok:false,status}:ok({transactions:[tx]});
+  };
+  const desk=createTradingActivity({env,fetcher,now:()=>clock});
+  assert.deepEqual((await desk.get('amazon')).rows[0].products,[]);
+  env.DROPSHIPPING_PUBLIC_DETAILS='0';status=503;
+  assert.equal((await desk.get('amazon')).lastConfirmed,undefined);
+  clock+=31000;status=200;assert.equal((await desk.get('amazon')).rows[0].products,undefined);
+  const off={source:'amazon',status:'not_configured',updatedAt:null,rows:[]};
+  env.AMAZON_BUSINESS_PUBLIC_ACTIVITY='0';assert.deepEqual(await desk.get('amazon'),off);
+  env.AMAZON_BUSINESS_PUBLIC_ACTIVITY='1';status=0;
+  const pending=desk.get('amazon');await started;
+  env.AMAZON_BUSINESS_REFRESH_TOKEN='replacement';
+  assert.deepEqual(await desk.get('amazon'),off);
+  finish();assert.deepEqual(await pending,off);
+});
+
 test('Amazon reports an actual charge with bounded public catalog lines and quantities, never a sale profit',async t=>{
   const files=await privateInputs(t,[{source:'amazon',id:'B000ABC123',name:'Portable audio',model:'ABC-123',type:'Speaker'}]);
   const tx={transactionId:'private-charge',transactionType:'CHARGE',transactionDate:when,

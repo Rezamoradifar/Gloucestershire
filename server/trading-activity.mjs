@@ -7,6 +7,7 @@ const SOURCES = ['amazon', 'ebay', 'kraken'];
 const MAX_PAGES = 4;
 const MAX_ROWS = 20;
 const MAX_PRODUCT_LINES = 12;
+const STORE_SNAPSHOT_LIFETIME = 10 * 60 * 1000;
 
 function requireValue(condition) {
   if (!condition) throw Error('Invalid provider response');
@@ -87,10 +88,9 @@ const businessRegions = {na:'na', eu:'eu', fe:'jp'};
 function amazonPurchases(env, fetcher, now) {
   const {AMAZON_BUSINESS_CLIENT_ID: clientId, AMAZON_BUSINESS_CLIENT_SECRET: secret,
     AMAZON_BUSINESS_REFRESH_TOKEN: refreshToken} = env;
-  if (env.AMAZON_BUSINESS_PUBLIC_ACTIVITY !== '1' || !clientId || !secret || !refreshToken) return null;
   const region = env.AMAZON_BUSINESS_REGION || 'na';
   let token, expires = 0;
-  return async (start, end, details) => {
+  async function read(start, end, details) {
     requireValue(Object.hasOwn(businessRegions, region));
     if (!token || expires <= now()) {
       const auth = await readJson(fetcher, 'https://api.amazon.com/auth/o2/token', {method:'POST',
@@ -124,7 +124,10 @@ function amazonPurchases(env, fetcher, now) {
       tokens.add(next);
     }
     return {rows, partial:Boolean(next)};
-  };
+  }
+  return () => env.AMAZON_BUSINESS_PUBLIC_ACTIVITY === '1' && clientId && secret && refreshToken &&
+    env.AMAZON_BUSINESS_CLIENT_ID === clientId && env.AMAZON_BUSINESS_CLIENT_SECRET === secret &&
+    env.AMAZON_BUSINESS_REFRESH_TOKEN === refreshToken && (env.AMAZON_BUSINESS_REGION || 'na') === region ? read : null;
 }
 
 function ebaySales(orderPage) {
@@ -190,43 +193,66 @@ function krakenFills(env, fetcher, now) {
 }
 
 export function createTradingActivity({env=process.env, fetcher=fetch, now=Date.now, seller}={}) {
-  const readers = {amazon:amazonPurchases(env,fetcher,now), ebay:ebaySales(seller?.activityOrderPage), kraken:krakenFills(env,fetcher,now)};
-  const cache = new Map(), pending = new Map();
+  const amazonReader = amazonPurchases(env,fetcher,now);
+  const readers = {get amazon(){return amazonReader();}, get ebay(){return ebaySales(seller?.activityOrderPage);}, kraken:krakenFills(env,fetcher,now)};
+  const states = new Map();
   const blank = (source,status) => ({source,status,updatedAt:null,rows:[]});
-  async function load(source) {
-    const reader = readers[source];
-    if (!reader) return blank(source,'not_configured');
-    try {
-      const end = now(), start = end-7*DAY;
-      let details;
-      if (source !== 'kraken' && env.DROPSHIPPING_PUBLIC_DETAILS === '1') {
-        const [catalog, statements] = await Promise.all([
-          productCatalog(env.COMMERCE_PRODUCT_CATALOG_FILE),
-          source === 'ebay' ? loadReconciliation(env.EBAY_SELLER_RECONCILIATION_FILE) : null,
-        ]);
-        details = {catalog,statements};
-      }
-      const result = await reader(start,end,details);
-      const seen = new Set();
-      const rows = result.rows.filter(row => {
-        const time = Date.parse(row.time);
-        if (time<start || time>end || seen.has(row.id)) return false;
-        seen.add(row.id);
-        return true;
-      }).sort((a,b)=>b.time.localeCompare(a.time)).slice(0, MAX_ROWS);
-      return {source,status:result.partial?'partial':'connected',updatedAt:new Date(now()).toISOString(),rows};
-    } catch (error) { return blank(source,error.status===429?'rate_limited':'unavailable'); }
+  const disclose = source => source !== 'kraken' && env.DROPSHIPPING_PUBLIC_DETAILS === '1';
+
+  async function load(source,reader,withDetails) {
+    const end = now(), start = end-7*DAY;
+    let details;
+    if (withDetails) {
+      const [catalog, statements] = await Promise.all([
+        productCatalog(env.COMMERCE_PRODUCT_CATALOG_FILE),
+        source === 'ebay' ? loadReconciliation(env.EBAY_SELLER_RECONCILIATION_FILE) : null,
+      ]);
+      details = {catalog,statements};
+    }
+    const result = await reader(start,end,details);
+    const seen = new Set();
+    const rows = result.rows.filter(row => {
+      const time = Date.parse(row.time);
+      if (time<start || time>end || seen.has(row.id)) return false;
+      seen.add(row.id);
+      return true;
+    }).sort((a,b)=>b.time.localeCompare(a.time)).slice(0, MAX_ROWS);
+    return {source,status:result.partial?'partial':'connected',updatedAt:new Date(now()).toISOString(),rows};
   }
+
   return {supports: source => SOURCES.includes(source), async get(source) {
     if (!SOURCES.includes(source)) throw Error('Unknown activity source');
-    const cached=cache.get(source);
-    if (cached && cached.expires>now()) return cached.value;
-    if (pending.has(source)) return pending.get(source);
-    const task=load(source).then(value => {
-      cache.set(source,{value,expires:now()+(value.status==='rate_limited'?90000:30000)});
+    const reader=readers[source], withDetails=disclose(source);
+    if (!reader) {states.delete(source);return blank(source,'not_configured');}
+    let state=states.get(source);
+    if (!state || state.withDetails!==withDetails) {
+      state={withDetails,confirmed:null,cached:null,expires:0,pending:null};
+      states.set(source,state);
+    }
+    if (state.cached && state.expires>now()) return state.cached;
+    if (state.pending) return state.pending;
+    state.pending=load(source,reader,withDetails).then(feed=>{
+      if (source!=='kraken') state.confirmed=feed;
+      return feed;
+    }).catch(error=>{
+      const failure=blank(source,error?.status===429?'rate_limited':'unavailable');
+      const transient=[408,429].includes(error?.status) || (error?.status>=500 && error.status<600) ||
+        ['AbortError','TimeoutError'].includes(error?.name) || (error instanceof TypeError && error.message==='fetch failed');
+      const snapshot=state.confirmed;
+      if (snapshot && transient && now() < Date.parse(snapshot.updatedAt)+STORE_SNAPSHOT_LIFETIME) {
+        failure.lastConfirmed=snapshot;
+      } else {state.confirmed=null;}
+      return failure;
+    }).then(value=>{
+      if (!readers[source] || disclose(source)!==withDetails || states.get(source)!==state) {
+        if (states.get(source)===state) states.delete(source);
+        return blank(source,readers[source]?'unavailable':'not_configured');
+      }
+      const retryAt=now()+(value.status==='rate_limited'?90000:30000);
+      state.expires=value.lastConfirmed ? Math.min(retryAt,Date.parse(value.lastConfirmed.updatedAt)+STORE_SNAPSHOT_LIFETIME) : retryAt;
+      state.cached=value;
       return value;
-    }).finally(()=>pending.delete(source));
-    pending.set(source,task);
-    return task;
+    }).finally(()=>{state.pending=null;});
+    return state.pending;
   }};
 }

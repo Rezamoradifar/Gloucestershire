@@ -67,6 +67,8 @@
 .gv3-store-tape .gv3-tape-description {margin:4px 0 0}
 .gv3-store-sources {display:flex;flex-wrap:wrap;gap:6px 16px;padding:11px 0 15px}
 .gv3-store-sources .gv3-tape-state {flex-wrap:wrap;gap:5px;line-height:1.4}
+.gv3-store-sources time {flex-basis:100%;color:var(--glass-muted);font-variant-numeric:tabular-nums}
+.gv3-store-delay {color:var(--glass-warm)}
 .gv3-store-sources b {font-weight:650;color:var(--glass-ink)}
 .gv3-store-toolbar {display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 6px}
 .gv3-store-toolbar>small,.gv3-store-meta,.gv3-store-money>small,.gv3-store-money>span {color:var(--glass-muted);font-size:11px}

@@ -1,5 +1,8 @@
 import {formatUnits} from 'ethers';
 
+const memberTiers=['Starter','Basic','Growth','Pro','VIP'];
+export const v3TierName=(tier:number)=>memberTiers[tier]??'Member';
+
 // Truncate for display, but never present a small nonzero amount as zero.
 export function formatV3Amount(value:bigint,precision=6){
  if(value<0n||!Number.isInteger(precision)||precision<1||precision>18)

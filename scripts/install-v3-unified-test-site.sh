@@ -7,7 +7,7 @@ umask 077
 profile=()
 route_name=unified-test
 expected_proof=/var/lib/globaldroptrade/v3-unified-testnet/deployment-proof.json
-if [[ ${1:-} == --single-capital || ${1:-} == --daily-capital || ${1:-} == --referral-profit || ${1:-} == --manual-reinvest || ${1:-} == --upline-rates || ${1:-} == --account-reinvest || ${1:-} == --portfolio ]]; then
+if [[ ${1:-} == --single-capital || ${1:-} == --daily-capital || ${1:-} == --referral-profit || ${1:-} == --manual-reinvest || ${1:-} == --upline-rates || ${1:-} == --account-reinvest || ${1:-} == --portfolio || ${1:-} == --plan-portfolio ]]; then
   name=${1#--}
   profile=("$1")
   shift
@@ -86,22 +86,26 @@ cmp -s "$hourly/index.html" "$work/hourly-before.html" || { echo UNIFIED_SITE_HO
 if [[ $route_name != unified-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-before.html"
 fi
-if [[ $route_name == daily-capital-test || $route_name == referral-profit-test || $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == upline-rates-test ]]; then
+if [[ $route_name == daily-capital-test || $route_name == referral-profit-test || $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == plan-portfolio-test || $route_name == upline-rates-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/single-capital-test/ -o "$work/single-before.html"
 fi
-if [[ $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == upline-rates-test ]]; then
+if [[ $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == plan-portfolio-test || $route_name == upline-rates-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/referral-profit-test/ -o "$work/referral-before.html"
 fi
-if [[ $route_name == account-reinvest-test || $route_name == portfolio-test ]]; then
+if [[ $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == plan-portfolio-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/upline-rates-test/ -o "$work/upline-before.html"
  cmp -s "$site_root/upline-rates-test/index.html" "$work/upline-before.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 fi
-if [[ $route_name == portfolio-test ]]; then
+if [[ $route_name == portfolio-test || $route_name == plan-portfolio-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/account-reinvest-test/ -o "$work/account-before.html"
  cmp -s "$site_root/account-reinvest-test/index.html" "$work/account-before.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 fi
+if [[ $route_name == plan-portfolio-test && -d $site_root/portfolio-test ]]; then
+ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/portfolio-test/ -o "$work/portfolio-before.html"
+ cmp -s "$site_root/portfolio-test/index.html" "$work/portfolio-before.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
+fi
 export GLOBAL_V3_MANUAL_ARCHIVE=0
-if [[ ( $route_name == upline-rates-test || $route_name == account-reinvest-test || $route_name == portfolio-test ) && -f $site_root/manual-reinvest-test/index.html ]]; then
+if [[ ( $route_name == upline-rates-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == plan-portfolio-test ) && -f $site_root/manual-reinvest-test/index.html ]]; then
  export GLOBAL_V3_MANUAL_ARCHIVE=1
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/manual-reinvest-test/ -o "$work/manual-before.html"
  cmp -s "$site_root/manual-reinvest-test/index.html" "$work/manual-before.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
@@ -196,23 +200,27 @@ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.
 cmp -s "$work/main-before.html" "$work/main-after.html" && cmp -s "$work/hourly-before.html" "$work/hourly-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 if [[ $route_name != unified-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/unified-test/ -o "$work/legacy-unified-after.html"
- if [[ $route_name == daily-capital-test || $route_name == referral-profit-test || $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == upline-rates-test ]]; then
+ if [[ $route_name == daily-capital-test || $route_name == referral-profit-test || $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == plan-portfolio-test || $route_name == upline-rates-test ]]; then
   curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/single-capital-test/ -o "$work/single-after.html"
   cmp -s "$work/single-before.html" "$work/single-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
-  if [[ $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == upline-rates-test ]]; then
+  if [[ $route_name == manual-reinvest-test || $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == plan-portfolio-test || $route_name == upline-rates-test ]]; then
    curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/referral-profit-test/ -o "$work/referral-after.html"
    cmp -s "$work/referral-before.html" "$work/referral-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
   fi
  fi
  cmp -s "$work/legacy-unified-before.html" "$work/legacy-unified-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 fi
-if [[ $route_name == account-reinvest-test || $route_name == portfolio-test ]]; then
+if [[ $route_name == account-reinvest-test || $route_name == portfolio-test || $route_name == plan-portfolio-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/upline-rates-test/ -o "$work/upline-after.html"
  cmp -s "$work/upline-before.html" "$work/upline-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 fi
-if [[ $route_name == portfolio-test ]]; then
+if [[ $route_name == portfolio-test || $route_name == plan-portfolio-test ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/account-reinvest-test/ -o "$work/account-after.html"
  cmp -s "$work/account-before.html" "$work/account-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
+fi
+if [[ -f $work/portfolio-before.html ]]; then
+ curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/portfolio-test/ -o "$work/portfolio-after.html"
+ cmp -s "$work/portfolio-before.html" "$work/portfolio-after.html" || { echo UNIFIED_SITE_LEGACY_CHANGED; exit 1; }
 fi
 if [[ $GLOBAL_V3_MANUAL_ARCHIVE == 1 ]]; then
  curl -fsS --noproxy '*' --max-time 15 --resolve globaldroptrade.com:443:127.0.0.1 https://globaldroptrade.com/manual-reinvest-test/ -o "$work/manual-after.html"

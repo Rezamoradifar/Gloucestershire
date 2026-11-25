@@ -139,6 +139,7 @@ install_and_apply() {
     referral-profit-test) profile=(--referral-profit) ;;
     manual-reinvest-test) profile=(--manual-reinvest) ;;
     portfolio-test) profile=(--portfolio) ;;
+    plan-portfolio-test) profile=(--plan-portfolio) ;;
     account-reinvest-test) profile=(--account-reinvest) ;;
     upline-rates-test) profile=(--upline-rates) ;;
   esac
@@ -203,12 +204,13 @@ main() {
         [[ -s $deployment_proof && ! -L $deployment_proof ]] || fail SINGLE_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
       fi
       ;;
-    2:--daily-capital:|3:--daily-capital:--deploy-testnet|2:--referral-profit:|3:--referral-profit:--deploy-testnet|3:--referral-profit:--primary|2:--manual-reinvest:|3:--manual-reinvest:--deploy-testnet|3:--manual-reinvest:--primary|2:--upline-rates:|3:--upline-rates:--deploy-testnet|3:--upline-rates:--primary|2:--account-reinvest:|3:--account-reinvest:--deploy-testnet|3:--account-reinvest:--primary|3:--account-reinvest:--primary-with-commerce|2:--portfolio:|3:--portfolio:--deploy-testnet|3:--portfolio:--primary|3:--portfolio:--primary-with-commerce)
+    2:--daily-capital:|3:--daily-capital:--deploy-testnet|2:--referral-profit:|3:--referral-profit:--deploy-testnet|3:--referral-profit:--primary|2:--manual-reinvest:|3:--manual-reinvest:--deploy-testnet|3:--manual-reinvest:--primary|2:--upline-rates:|3:--upline-rates:--deploy-testnet|3:--upline-rates:--primary|2:--account-reinvest:|3:--account-reinvest:--deploy-testnet|3:--account-reinvest:--primary|3:--account-reinvest:--primary-with-commerce|2:--portfolio:|3:--portfolio:--deploy-testnet|3:--portfolio:--primary|3:--portfolio:--primary-with-commerce|2:--plan-portfolio:|3:--plan-portfolio:--deploy-testnet)
       route_name=${2#--}-test
       deployment_proof=/var/lib/globaldroptrade/v3-${2#--}-testnet/deployment-proof.json
       if [[ ${3:-} != --deploy-testnet ]]; then
         [[ -s $deployment_proof && ! -L $deployment_proof ]] || {
           [[ $route_name != daily-capital-test ]] || fail DAILY_CAPITAL_VERIFIED_DEPLOYMENT_REQUIRED
+          [[ $route_name != plan-portfolio-test ]] || fail PLAN_PORTFOLIO_VERIFIED_DEPLOYMENT_REQUIRED
           [[ $route_name != portfolio-test ]] || fail PORTFOLIO_VERIFIED_DEPLOYMENT_REQUIRED
           [[ $route_name != account-reinvest-test ]] || fail ACCOUNT_REINVEST_VERIFIED_DEPLOYMENT_REQUIRED
           [[ $route_name != upline-rates-test ]] || fail UPLINE_RATES_VERIFIED_DEPLOYMENT_REQUIRED

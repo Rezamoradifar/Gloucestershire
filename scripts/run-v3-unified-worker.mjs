@@ -135,7 +135,7 @@ async function tick(provider, signer, proof, directory) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const profile = unifiedProfileForFlag(['--single-capital','--daily-capital','--referral-profit','--manual-reinvest','--upline-rates','--account-reinvest','--portfolio'].includes(args.at(-1))?args.pop():undefined);
+  const profile = unifiedProfileForFlag(['--single-capital','--daily-capital','--referral-profit','--manual-reinvest','--upline-rates','--account-reinvest','--portfolio','--plan-portfolio'].includes(args.at(-1))?args.pop():undefined);
   const [command, sha, ...extra] = args;
   if (extra.length || !['--init-key','--check','--tick'].includes(command) ||
       (command === '--check' ? !/^[a-f0-9]{40}$/.test(sha ?? '') : sha !== undefined))

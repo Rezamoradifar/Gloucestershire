@@ -16,3 +16,6 @@
 .gv3-history-links{display:flex;gap:8px 22px;flex-wrap:wrap}
 .gv3-history-links .gv2-explorer{margin:12px 0 2px}
 @media(max-width:420px){.gv3-history-row{flex-wrap:wrap}.gv3-history-row>div:last-child{justify-items:start;text-align:left}}
+.gv3-history-count small{display:block;margin-top:3px}
+.gv3-history .gdp-filters input[type=date]{min-width:0;max-width:100%;color-scheme:dark}
+[data-theme=light] .gv3-history .gdp-filters input[type=date]{color-scheme:light}

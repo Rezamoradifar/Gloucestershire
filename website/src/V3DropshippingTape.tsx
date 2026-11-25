@@ -7,7 +7,7 @@ import {formatUtcTime} from './utc-time';
 import {activityStatuses, useTradingActivity} from './use-trading-activity';
 
 type Store = 'amazon'|'ebay';
-type StoreRecord = Entry & {store:Store};
+type StoreRecord = Entry & {store:Store; delayed?:boolean};
 type Filter = 'all'|'buy'|'sell';
 const stores = {amazon:'Amazon Business', ebay:'eBay'};
 const dateFormat = new Intl.DateTimeFormat('en-GB',{
@@ -31,6 +31,7 @@ function TradeRecord({row}:{row:StoreRecord}) {
       <span className={'gv3-trade-side '+row.side}>{purchase?<ArrowDownLeft size={14}/>:<ArrowUpRight size={14}/>}
         {purchase?'Buy':'Sell'}</span>
       <span>{stores[row.store]}</span>
+      {row.delayed&&<span className="gv3-store-delay">Last confirmed</span>}
       {row.refundStatus&&<span className="gv3-store-refund">{row.refundStatus==='full'?'Fully refunded':'Partially refunded'}</span>}
       <time dateTime={row.time} title={formatUtcTime(row.time)}>{purchase?'Charged':'Ordered'} {dateFormat.format(new Date(row.time))} UTC</time>
     </div>
@@ -83,6 +84,7 @@ function VolumeSummary({rows}:{rows:StoreRecord[]}) {
 function emptyText(feeds:(Feed|null)[]) {
   if(feeds.some(f=>!f))return 'Checking store records…';
   if(feeds.every(f=>f?.status==='not_configured'))return 'No connected store feed. Purchase charges and paid orders will appear here when shared by Global.';
+  if(feeds.some(f=>f?.snapshotStatus))return 'No matching transactions in the available snapshots.';
   if(feeds.every(f=>f?.status==='connected'))return 'No matching transactions in the past seven days.';
   if(feeds.some(f=>f?.status==='partial'))return 'No matching transactions in the available records.';
   if(feeds.some(f=>f?.status==='connected'))return 'No matching transactions from the available store.';
@@ -93,9 +95,8 @@ type Props = {amazon:Feed|null; ebay:Feed|null; pending:boolean; onRefresh:()=>v
 export function DropshippingRecords({amazon,ebay,pending,onRefresh}:Props) {
   const [filter,setFilter]=useState<Filter>('all'),[expanded,setExpanded]=useState(false);
   const sources=[['amazon',amazon],['ebay',ebay]] as const;
-  const rows:StoreRecord[]=sources.flatMap(([store,feed])=>(feed?.rows??[]).map(row=>({...row,store})))
+  const rows:StoreRecord[]=sources.flatMap(([store,feed])=>(feed?.rows??[]).map(row=>({...row,store,delayed:Boolean(feed?.snapshotStatus)})))
     .sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)||a.id.localeCompare(b.id));
-  const updated=sources.flatMap(([,feed])=>feed?.updatedAt?[Date.parse(feed.updatedAt)]:[]);
   const filtered=rows.filter(row=>filter==='all'||row.side===filter);
   const feeds=filter==='all'?[amazon,ebay]:[filter==='buy'?amazon:ebay];
   return <div className="gv3-store-tape">
@@ -103,15 +104,18 @@ export function DropshippingRecords({amazon,ebay,pending,onRefresh}:Props) {
       <button type="button" className="gv3-tape-refresh" disabled={pending} onClick={onRefresh} aria-label="Refresh dropshipping trades"><RefreshCw size={16}/></button>
     </div>
     <div className="gv3-store-sources" role="status">{sources.map(([store,feed])=>
-      <div key={store} className="gv3-tape-state" data-state={feed?.status??'loading'} title={feed?.updatedAt?'Checked '+formatUtcTime(feed.updatedAt):undefined}>
-        <i aria-hidden="true"/><b>{stores[store]}</b><span>{feed?activityStatuses[feed.status]:'Checking…'}</span>
+      <div key={store} className="gv3-tape-state" data-state={feed?.snapshotStatus?'delayed':feed?.status??'loading'}>
+        <i aria-hidden="true"/><b>{stores[store]}</b><span>{feed?.snapshotStatus?'Delayed · '+activityStatuses[feed.status]:feed?activityStatuses[feed.status]:'Checking…'}</span>
+        {feed?.updatedAt&&<time dateTime={feed.updatedAt}>
+          {feed.snapshotStatus==='partial'?'Last partial snapshot ':feed.snapshotStatus?'Last confirmed ':'Checked '}{formatUtcTime(feed.updatedAt)}
+        </time>}
       </div>)}</div>
     <div className="gv3-store-toolbar">
       <div className="gv3-store-filters" role="group" aria-label="Filter dropshipping trades">
         {([['all','All'],['buy','Buys'],['sell','Sales']] as const).map(([id,label])=>
           <button type="button" key={id} aria-pressed={filter===id} onClick={()=>{setFilter(id);setExpanded(false);}}>{label}</button>)}
       </div>
-      <small>{updated.length?'Snapshot '+new Date(Math.max(...updated)).toISOString().slice(11,19)+' UTC':'Time · UTC'}</small>
+      <small>Time · UTC</small>
     </div>
     {filtered.length?<ol className="gv3-store-rows" aria-label="Dropshipping transactions, newest first">
       {(expanded?filtered:filtered.slice(0,6)).map(row=><TradeRecord key={row.store+row.id} row={row}/>)}

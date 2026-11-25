@@ -41,8 +41,8 @@ test('empty complete results can be zero; incomplete or duplicate pages cannot',
  for(const [data,status,count] of [
   [{total:0},'live',0],
   [{total:101,orders:[order('A')]},'incomplete',null],
-  [{total:2,orders:[order('A')]},'unavailable',null],
-  [{total:2,orders:[order('A'),order('A')]},'unavailable',null],
+  [{total:2,orders:[order('A')]},'incomplete',null],
+  [{total:2,orders:[order('A'),order('A')]},'incomplete',null],
   [{total:1,orders:[{...order('A'),creationDate:'2026-11-10T10:00:00'}]},'unavailable',null],
   [{total:1,orders:[{...order('A'),creationDate:'2026-11-10T13:30:00+03:30'}]},'live',1]
  ]){
@@ -51,6 +51,76 @@ test('empty complete results can be zero; incomplete or duplicate pages cannot',
   const result=await service.get();assert.equal(result.status,status);assert.equal(result.paidOrders,count);
   assert.equal(result.commercialProfit,null);
  }
+});
+test('aggregates every monthly page in a fixed window, sharing the scan across public requests',async()=>{
+ const orders=Array.from({length:451},(_,i)=>({...order(String(i),i%3===0?'PENDING':'PAID'),
+  pricingSummary:{total:{currency:i%2===0?'EUR':'USD',value:'5.00'}}}));
+ const pages=[];
+ let time=clock,authCalls=0;
+ const service=createCommerceStatus({env:{...env,EBAY_SELLER_PUBLIC_PERFORMANCE:'1'},now:()=>time,fetcher:async url=>{
+  if(url.includes('/identity/')){authCalls++;return ok({access_token:'access',expires_in:3600});}
+  const params=new URL(url).searchParams;
+  const offset=Number(params.get('offset')),limit=Number(params.get('limit'));
+  pages.push({offset,limit,filter:params.get('filter')});
+  time+=500;
+  return ok({total:orders.length,offset,orders:orders.slice(offset,offset+limit)});
+ }});
+ const [summary,concurrent]=await Promise.all([service.get(),service.get()]);
+ assert.deepEqual(summary,concurrent);
+ assert.equal(summary.status,'live');assert.equal(summary.paidOrders,300);
+ assert.equal(summary.performance.orderCount,451);
+ assert.deepEqual(summary.performance.currencies,[
+  {currency:'EUR',gross:'750.0',recent:'750.0',netSales:null,profit:null},
+  {currency:'USD',gross:'750.0',recent:'750.0',netSales:null,profit:null}
+ ]);
+ assert.equal(authCalls,1);
+ assert.deepEqual(pages.map(p=>[p.offset,p.limit]),[[0,200],[200,200],[400,200]]);
+ assert.equal(new Set(pages.map(p=>p.filter)).size,1);
+ assert.equal(JSON.stringify(summary).includes('private@example.test'),false);
+ assert.deepEqual(await service.get(),summary);assert.equal(pages.length,3);
+});
+
+test('a bad later page never publishes partial counts or monetary totals',async()=>{
+ const first=Array.from({length:200},(_,i)=>order(String(i)));
+ for(const later of [
+  {total:203,orders:[order('200'),order('201'),order('202')]},
+  {total:202,orders:[order('200')]},
+  {total:202,orders:[order('0'),order('201')]},
+  {total:202,offset:100,orders:[order('200'),order('201')]}
+ ]){
+  const client=createCommerceStatus({env,now:()=>clock,fetcher:async url=>{
+   if(url.includes('/identity/'))return ok({access_token:'token',expires_in:7200});
+   return ok(new URL(url).searchParams.get('offset')==='0'?{total:202,offset:0,orders:first}:later);
+  }});
+  const summary=await client.get();assert.equal(summary.status,'incomplete');
+  assert.equal(summary.performance,undefined);assert.equal(summary.paidOrders,null);
+ }
+});
+
+test('obeys Retry-After across monthly scans and activity calls before retrying',async()=>{
+ let now=clock,calls=0;
+ const client=createCommerceStatus({env:{...env,EBAY_SELLER_PUBLIC_ACTIVITY:'1'},now:()=>now,fetcher:async url=>{
+  if(url.includes('/identity/'))return ok({access_token:'token',expires_in:7200});
+  calls++;return calls===1?{ok:false,status:429,headers:new Headers({'retry-after':'180'})}:ok({total:0});
+ }});
+ assert.equal((await client.get()).status,'rate_limited');
+ now+=90000;
+ assert.equal((await client.get()).status,'rate_limited');
+ await assert.rejects(client.activityOrderPage(now-60000,now,0,100),{status:429});
+ assert.equal(calls,1);now+=90001;
+ assert.equal((await client.get()).paidOrders,0);assert.equal(calls,2);
+});
+
+test('revoked opt-ins or changed credentials do not serve cached account data',async()=>{
+ const settings={...env,EBAY_SELLER_PUBLIC_ACTIVITY:'1',EBAY_SELLER_PUBLIC_PERFORMANCE:'1'};
+ const client=createCommerceStatus({env:settings,now:()=>clock,fetcher:async url=>url.includes('/identity/')?
+  ok({access_token:'token',expires_in:3600}):ok({total:0})});
+ assert.equal(typeof client.activityOrderPage,'function');assert.equal((await client.get()).performance.orderCount,0);
+ settings.EBAY_SELLER_PUBLIC_PERFORMANCE='0';
+ assert.equal((await client.get()).performance,undefined);
+ settings.EBAY_SELLER_PUBLIC_ACTIVITY='0';assert.equal(client.activityOrderPage,null);
+ settings.EBAY_SELLER_PUBLIC_ACTIVITY='1';settings.EBAY_SELLER_REFRESH_TOKEN='replacement';
+ assert.equal(client.activityOrderPage,null);assert.equal((await client.get()).status,'not_configured');
 });
 test('never reports stale sales after authorization or provider failure',async()=>{
  let time=clock,failed=false;

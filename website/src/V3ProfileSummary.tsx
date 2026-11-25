@@ -2,7 +2,7 @@ import {useState} from 'react';
 import {Copy,ExternalLink,UserRound} from 'lucide-react';
 import {formatEther,ZeroAddress} from 'ethers';
 import {V3_EXPLORER,type V3Snapshot} from './v3-chain';
-import {formatV3Amount as money} from './v3-format';
+import {formatV3Amount as money,v3TierName} from './v3-format';
 import {formatUtcTime} from './utc-time';
 import {availableAccountEarnings,totalAccountEarnings} from './v3-account-earnings';
 
@@ -11,7 +11,7 @@ export default function V3ProfileSummary({view,contract}:Props){
  const storageKey='gdt-profile-label:'+contract.toLowerCase()+':'+view.wallet.toLowerCase();
  const [name,setName]=useState(()=>{try{return window.localStorage.getItem(storageKey)?.slice(0,40)??'';}catch{return '';}});
  const [draft,setDraft]=useState(name),[editing,setEditing]=useState(false),[notice,setNotice]=useState('');
- const tier=['Starter','Basic','Growth','Pro','VIP'][view.tier]??'Member';
+ const tier=v3TierName(view.tier);
  const status=view.suspended?'Suspended':!view.registered?'Not registered':view.eligible?'Active':'Check-in required';
  const rows=(values:[string,string][])=>values.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>);
  return <section className="gv2-panel gdp-profile" aria-labelledby="gdp-profile-heading">

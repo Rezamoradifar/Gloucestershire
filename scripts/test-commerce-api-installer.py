@@ -102,6 +102,7 @@ esac''',
             (summary_api, '967e427df79f212b956e11724c331ac26326e426', None),
             (summary_api, '317ae1adc05081ee2e0ee3f6cc36e8d6535918ec', None),
             ('c94269f994a19dbb641f30430441df776d78e065', '6f21e279898a3326790a7a856e3a2b9d7c2bd040', 'cbe54780136ea3fc4afc21c3ee6bfca7588474ee'),
+            ('c94269f994a19dbb641f30430441df776d78e065', '780c0035f2727a4325c2ae56efba2acd4df896e6', 'beaa81c538b393513ac1e96a7e490709130b9ac3'),
             ('e786a10d90a6918f95187ff1cdf982b0e4490a40', 'd8ebad0e2f064bd4c7ac0ad177da17b32b51e124', 'cbe54780136ea3fc4afc21c3ee6bfca7588474ee')]:
         current.unlink()
         current.symlink_to(previous)

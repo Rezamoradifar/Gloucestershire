@@ -4,7 +4,7 @@ import {ArrowDownLeft,ArrowRight,LockKeyhole} from 'lucide-react';
 import type {V3Snapshot} from './v3-chain';
 import {availableAccountEarnings,totalAccountEarnings} from './v3-account-earnings';
 import {portfolioLimits,portfolioQuote,type PortfolioAction} from './v3-portfolio';
-import {formatShare,formatV3Amount as money} from './v3-format';
+import {formatShare,formatV3Amount as money,v3TierName} from './v3-format';
 import {parseV3Amount} from './v3-withdrawal-form';
 import {formatUtcTime} from './utc-time';
 
@@ -25,6 +25,8 @@ export default function V3PortfolioWithdrawal({view,value,onValue,onPage,busy,re
  const disabled=busy||!!hold||!limits||!maximum;
  const reserved=view.referralReserved+view.networkReserved+view.positions.reduce((sum,p)=>sum+p.reservedProfit,0n);
  const totalBasis=view.originalDeposits+view.reinvestments;
+ const rate=view.earningsCapBps===undefined?'—':formatShare(BigInt(view.earningsCapBps),10000n);
+ const capLabel=view.planPortfolio&&view.registered?v3TierName(view.tier)+' plan earnings cap':'Earnings cap per request';
  const page=view.withdrawalPage;
  function submit(){
   if(!quote||disabled)return;
@@ -32,14 +34,14 @@ export default function V3PortfolioWithdrawal({view,value,onValue,onPage,busy,re
   const exact=(n:bigint)=>formatUnits(n,18);
   onSubmit(action,'One withdrawal of '+exact(action.amount)+' test USDT. Personal profit '+exact(p.personal)+
    ', referral '+exact(p.referral)+', network '+exact(p.network)+', unlocked principal '+exact(p.principal)+
-   '. Earnings fee '+exact(earningsFee)+', principal deduction '+exact(principalFee)+'. Net if paid '+exact(net)+' test USDT.');
+   '. '+capLabel+' '+rate+' of '+exact(totalBasis)+' test USDT. Earnings fee '+exact(earningsFee)+', principal deduction '+exact(principalFee)+'. Net if paid '+exact(net)+' test USDT.');
  }
  return <section className="gv2-panel gdp-withdraw" aria-labelledby="account-withdraw-heading">
   <header className="gdp-title"><div><h2 id="account-withdraw-heading" tabIndex={-1}>Withdraw earnings</h2><p>One request across your account</p></div><ArrowDownLeft aria-hidden="true"/></header>
   <div className="gdp-withdraw-balance"><small>Available to request now</small><strong>{maximum===null?'—':money(maximum)} <span>test USDT</span></strong>
    <small>{limits&&total>0n?formatShare(limits.earnings,total)+' of posted earnings available':'Posted earnings '+money(total)+' test USDT'}</small></div>
   <div className="gdp-sources">{sources.map(([key,label])=><div key={key} data-source={key}><i/><span>{label}</span><b>{money(balances[key])}</b><small>{formatShare(balances[key],total)}</small></div>)}</div>
-  <p className="gdp-caption">Earnings cap per request <b>{money(view.ledger.requestCap)} test USDT</b> · {totalBasis?formatShare(view.ledger.requestCap,totalBasis):'10%'} of deposits and reinvestments. {reserved>0n&&('Reserved earnings '+money(reserved)+' test USDT.')}</p>
+  <p className="gdp-caption">{capLabel} <b>{rate}</b> of {money(totalBasis)} test USDT in deposits and reinvestments. Maximum earnings per request <b>{money(view.ledger.requestCap)} test USDT</b>. {reserved>0n&&('Reserved earnings '+money(reserved)+' test USDT.')}</p>
   {page&&<div className="gv3-window"><span>Additions {page.start+1}–{page.start+page.lots.length} of {page.totalLots}</span>
    <button disabled={busy||page.start===0} onClick={()=>onPage(Math.max(0,page.start-page.limit))}>Previous additions</button>
    <button disabled={busy||page.start+page.limit>=page.totalLots} onClick={()=>onPage(page.start+page.limit)}>Next additions</button></div>}
@@ -49,7 +51,8 @@ export default function V3PortfolioWithdrawal({view,value,onValue,onPage,busy,re
     onChange={e=>{setIncludePrincipal(e.target.checked);onValue('');}}/><span>Include unlocked principal<small>{limits?money(limits.principal):'—'} test USDT · 90-day lock · 30% deduction</small></span><LockKeyhole size={16}/></label>
    <label htmlFor={id+'-gross'}>Gross amount</label><div className="gdp-amount"><input id={id+'-gross'} inputMode="decimal" autoComplete="off" value={value}
     disabled={disabled} onChange={e=>onValue(e.target.value)} placeholder="0.00" aria-invalid={!!error&&!!value}/><span>test USDT</span></div>
-   <div className="gdp-presets" aria-label="Share of the current withdrawal limit">{[25,50,75,100].map(n=><button key={n} type="button"
+   <small id={id+'-share'}>Choose a share of the amount available now</small>
+   <div className="gdp-presets" role="group" aria-labelledby={id+'-share'}>{[25,50,75,100].map(n=><button key={n} type="button"
     disabled={disabled||!maximum||maximum*BigInt(n)/100n===0n} onClick={()=>onValue(formatUnits(maximum!*BigInt(n)/100n,18))}>{n}%</button>)}</div>
    {quote&&<div className="gdp-receipt" aria-live="polite"><div><span>Earnings fee · 2%</span><b>{formatUnits(quote.earningsFee,18)}</b></div>
     {quote.action.parts.principal>0n&&<div><span>Principal deduction · 30%</span><b>{formatUnits(quote.principalFee,18)}</b></div>}

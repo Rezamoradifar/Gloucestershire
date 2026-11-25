@@ -2,6 +2,8 @@
 
 The Global trading desk shows Amazon Business purchase charges and paid eBay seller orders in a single feed. Open **Live trades** on the landing page or **Home** in the member dashboard. The feed checks each account about every 30 seconds while the page is visible, backing off when the provider rate-limits it. It shows up to 20 of the latest records per store from the past seven days. Volume and profit figures summarize those records by currency. Each order counts once regardless of its number of product lines. Each provider has its own connection status.
 
+When a store or its network connection is temporarily unavailable or rate-limited, the desk keeps the last confirmed purchase or sales snapshot for up to ten minutes from its original retrieval. The source shows its own UTC confirmation time and delay status, and affected rows are labeled. A confirmed empty snapshot replaces previous orders. Disabling public activity or receiving a provider authorization failure clears the published snapshot. Reducing product disclosure clears the more detailed snapshot.
+
 ## Connect the accounts
 
 Use the operator's existing protected environment at `/etc/globaldroptrade/trades.env` on the API host. Catalog search credentials and the connected wallet do not authorize access to an order account.

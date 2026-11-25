@@ -1,4 +1,4 @@
-import {getAddress,Interface,zeroPadValue,type Eip1193Provider,type Log,type Provider} from 'ethers';
+import {getAddress,Interface,toBeHex,zeroPadValue,type Eip1193Provider,type Log,type Provider} from 'ethers';
 import {V3_ABI,V3_INDEPENDENT_READER_COUNT,v3ReadSession} from './v3-chain';
 import {formatV3Amount} from './v3-format';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
@@ -10,12 +10,15 @@ const firstAccount=['DepositRouted','DailyClaimAccrued','ReferralClaimAccrued',
 const secondAccount=['WithdrawalRequested','WithdrawalPaid','AccountWithdrawalAllocated','NetworkVolumeQueued'];
 const networkFirst=['RewardGroupCreated','RewardBranchesAdded','NetworkRewardPrepared','NetworkRewardEarned','CyclePrepared','CycleEarned'];
 const networkSecond=['NetworkVolumeQueued'];
+const lifecycle=['WithdrawalApproved','WithdrawalEscrowFunded','WithdrawalExistingCashReserved','WithdrawalReleased'];
 const tokenEvents=new Interface(['event Approval(address indexed owner,address indexed spender,uint256 value)']);
 const windowSize=2000;
 const maxEvents=200;
 // Keep retries bounded: public BNB RPCs differ in maximum getLogs range.
 const maxLogRequests=64;
-const historyUnavailable='Unable to load the complete activity for these blocks. Please retry or use the block explorer.';
+export const historyUnavailable='Unable to load the complete activity for these blocks. Please retry or use the block explorer.';
+export const historyRangeLimited='History provider requires a smaller block range.';
+export const historyTooDense='Too many events in this range. Open the contract explorer for this block range.';
 const topic=(name:string)=>events.getEvent(name)!.topicHash;
 const hash=(value:string)=>/^0x[0-9a-f]{64}$/i.test(value);
 const amount=(value:bigint)=>formatV3Amount(value)+' USDT';
@@ -62,44 +65,79 @@ function isLogRangeLimit(error:unknown){
 // across a changed chain. Returned entries are events, never synthetic sales.
 export async function queryV3HistoryWindow(provider:Provider,contract:string,wallet:string,
  anchor:V3HistoryAnchor,page:number,networkContract?:string):Promise<V3HistoryPage>{
+ const range=v3HistoryRange(anchor.block,page,anchor.firstBlock);
+ const result=await queryV3HistoryRange(provider,contract,wallet,anchor,range,networkContract);
+ return {...result,page};
+}
+
+const eventCategories:Record<string,V3HistoryCategory>={
+ DepositRouted:'deposits', DailyClaimAccrued:'earnings', ReferralClaimAccrued:'earnings',
+ NetworkClaimAccrued:'earnings', AccountEarningsReinvested:'earnings', ProfitReinvested:'earnings',
+ NetworkRewardEarned:'earnings', CycleEarned:'earnings', WithdrawalRequested:'withdrawals',
+ WithdrawalPaid:'withdrawals', AccountWithdrawalAllocated:'withdrawals'
+};
+
+export async function queryV3HistoryRange(provider:Provider,contract:string,wallet:string,
+ anchor:V3HistoryAnchor,range:{from:number;to:number},networkContract?:string,
+ category:'all'|V3HistoryCategory='all',signal?:AbortSignal,ownedRequests?:ReadonlySet<string>){
+ signal?.throwIfAborted();
+ const {from,to}=range;
+ if(!Number.isSafeInteger(from)||!Number.isSafeInteger(to)||from<anchor.firstBlock||from>to||to>anchor.block)
+  throw Error('Invalid V3 history range.');
  const address=getAddress(contract),who=getAddress(wallet);
  const network=networkContract?getAddress(networkContract):null;
  if(network&&(network===address||network===V3_TEST_TOKEN))throw Error('Invalid unified network history contract.');
  if(!hash(anchor.hash))throw Error('Invalid V3 history block hash.');
- const {from,to}=v3HistoryRange(anchor.block,page,anchor.firstBlock);
  const blockAtAnchor=async()=>{try{return await provider.getBlock(anchor.block);}catch{throw Error(historyUnavailable);}};
  const anchorBlock=await blockAtAnchor();
  if(!anchorBlock?.hash||anchorBlock.hash.toLowerCase()!==anchor.hash.toLowerCase())
   throw Error('The confirmed history block changed. Refresh history.');
  const account=zeroPadValue(who,32);
+ const requestBudget=maxLogRequests+Math.ceil((ownedRequests?.size??0)/64);
+ const eventLimit=signal&&from===to?10000:maxEvents;
  let requests=0;
  const scan=async(logAddress:string,topics:(string|string[]|null)[],start:number,end:number):Promise<Log[]>=>{
-  if(++requests>maxLogRequests)throw Error(historyUnavailable);
+  signal?.throwIfAborted();
+  if(++requests>requestBudget)throw Error(historyUnavailable);
   let logs:Log[];
   try{logs=await provider.getLogs({address:logAddress,fromBlock:start,toBlock:end,topics});}
   catch(error){
    if(!isLogRangeLimit(error)||start===end)throw Error(historyUnavailable);
+   if(signal)throw Error(historyRangeLimited);
    const middle=start+Math.floor((end-start)/2);
    const earlier=await scan(logAddress,topics,start,middle);
    const later=await scan(logAddress,topics,middle+1,end);
-   if(earlier.length+later.length>maxEvents)
-    throw Error('Too many events in this range. Open the contract explorer for this block range.');
+   if(earlier.length+later.length>eventLimit)
+    throw Error(historyTooDense);
    return [...earlier,...later];
   }
-  if(logs.length>maxEvents)throw Error('Too many events in this range. Open the contract explorer for this block range.');
+  if(logs.length>eventLimit)throw Error(historyTooDense);
   return logs;
  };
  // Sequential requests avoid multiplying rate pressure while preserving the
  // same complete, non-overlapping block range for both indexed filters.
  const vaultFirst=network?firstAccount.filter(name=>!networkFirst.includes(name)):firstAccount;
  const vaultSecond=network?secondAccount.filter(name=>!networkSecond.includes(name)):secondAccount;
- const first=await scan(address,[vaultFirst.map(topic),account],from,to);
- const second=await scan(address,[vaultSecond.map(topic),null,account],from,to);
- const approvals=await scan(V3_TEST_TOKEN,[tokenEvents.getEvent('Approval')!.topicHash,account,zeroPadValue(address,32)],from,to);
- const networkFirstLogs=network?await scan(network,[networkFirst.map(topic),account],from,to):[];
- const networkSecondLogs=network?await scan(network,[networkSecond.map(topic),null,account],from,to):[];
- if(first.length+second.length+approvals.length+networkFirstLogs.length+networkSecondLogs.length>maxEvents)
-  throw Error('Too many events in this range. Open the contract explorer for this block range.');
+ const walletLogs=(target:string,names:string[],position:1|2)=>{
+  const topics=names.filter(name=>category==='all'||(eventCategories[name]??'account')===category).map(topic);
+  return topics.length?scan(target,position===1?[topics,account]:[topics,null,account],from,to):Promise.resolve([]);
+ };
+ const first=await walletLogs(address,vaultFirst,1);
+ const second=await walletLogs(address,vaultSecond,2);
+ const approvals=category==='all'||category==='account'?
+  await scan(V3_TEST_TOKEN,[tokenEvents.getEvent('Approval')!.topicHash,account,zeroPadValue(address,32)],from,to):[];
+ const networkFirstLogs=network?await walletLogs(network,networkFirst,1):[];
+ const networkSecondLogs=network?await walletLogs(network,networkSecond,2):[];
+ const lifecycleLogs:Log[]=[];
+ if(ownedRequests?.size){
+  const ids=[...ownedRequests];
+  for(let i=0;i<ids.length;i+=64){
+   lifecycleLogs.push(...await scan(address,[lifecycle.map(topic),ids.slice(i,i+64)],from,to));
+   if(lifecycleLogs.length>eventLimit)throw Error(historyTooDense);
+  }
+ }
+ const full=[...first,...second,...approvals,...networkFirstLogs,...networkSecondLogs,...lifecycleLogs];
+ if(full.length>eventLimit)throw Error(historyTooDense);
  const seen=new Set<string>();
  const allocations=new Map<string,ReturnType<typeof events.parseLog>>();
  const logBlocks=new Map<number,string>();
@@ -111,7 +149,7 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
   if(allocations.has(key))throw Error('Duplicate withdrawal allocation.');
   allocations.set(key,event);
  }
- const items=[...first,...second,...approvals,...networkFirstLogs,...networkSecondLogs].map((log:Log):V3HistoryItem=>{
+ const items=full.map((log:Log):V3HistoryItem=>{
   const logAddress=getAddress(log.address);
   if(log.removed||(logAddress!==address&&logAddress!==V3_TEST_TOKEN&&logAddress!==network)||!hash(log.transactionHash)||
    !Number.isSafeInteger(log.blockNumber)||log.blockNumber<from||log.blockNumber>to||
@@ -121,14 +159,18 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
    logBlocks.set(log.blockNumber,log.blockHash);
   }
   const parsed=(logAddress===V3_TEST_TOKEN?tokenEvents:events).parseLog({topics:log.topics,data:log.data});
-  const allowed=logAddress===V3_TEST_TOKEN?['Approval']:logAddress===network?[...networkFirst,...networkSecond]:[...vaultFirst,...vaultSecond];
+  const allowed=logAddress===V3_TEST_TOKEN?['Approval']:logAddress===network?[...networkFirst,...networkSecond]:[...vaultFirst,...vaultSecond,...(ownedRequests?lifecycle:[])];
   if(!parsed||!allowed.includes(parsed.name))
    throw Error('Unexpected V3 history event.');
   const a=parsed.args;
-  const eventWallet=parsed.name==='Approval'?a.owner:parsed.name==='NetworkVolumeQueued'?a.source:
-   parsed.name==='ReferralClaimAccrued'?a.upline:parsed.name==='WithdrawalPaid'?a.beneficiary:a.user;
-  if(getAddress(eventWallet)!==who||(parsed.name==='Approval'&&getAddress(a.spender)!==address))
-   throw Error('V3 history wallet mismatch.');
+  if(lifecycle.includes(parsed.name)){
+   if(!ownedRequests?.has(toBeHex(a.id,32)))throw Error('V3 history request owner mismatch.');
+  }else{
+   const eventWallet=parsed.name==='Approval'?a.owner:parsed.name==='NetworkVolumeQueued'?a.source:
+    parsed.name==='ReferralClaimAccrued'?a.upline:parsed.name==='WithdrawalPaid'?a.beneficiary:a.user;
+   if(getAddress(eventWallet)!==who||(parsed.name==='Approval'&&getAddress(a.spender)!==address))
+    throw Error('V3 history wallet mismatch.');
+  }
   const key=log.transactionHash.toLowerCase()+':'+log.index;
   if(seen.has(key))throw Error('Duplicate V3 history event.');
   seen.add(key);
@@ -182,6 +224,13 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
     }
     break;
    }
+   case 'WithdrawalApproved':category='withdrawals';title='Withdrawal approved';detail='Request #'+number(a.id)+' · Manager approval';break;
+   case 'WithdrawalEscrowFunded':
+   case 'WithdrawalExistingCashReserved':
+    category='withdrawals';title='Withdrawal funded';detail='Request #'+number(a.id)+' · Cash reserved for payout';value=amount(a.gross);break;
+   case 'WithdrawalReleased':
+    if(a.status!==4n&&a.status!==5n)throw Error('Unexpected withdrawal release status.');
+    category='withdrawals';title=a.status===4n?'Withdrawal rejected':'Withdrawal cancelled';detail='Request #'+number(a.id)+' · Reservation released';break;
    case 'WithdrawalPaid':category='withdrawals';title='Withdrawal paid';detail='Request #'+number(BigInt(a.id))+' · Net tokens transferred to this wallet';value=amount(BigInt(a.net));break;
   }
   return {key,block:log.blockNumber,transaction:log.transactionHash,index:log.index,title,detail,value,category};
@@ -191,6 +240,7 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
  // timestamp leaves the original block reference usable.
  const blocks=[...logBlocks.keys()],times=new Map<number,number>();
  for(let start=0;start<blocks.length;start+=4){
+  signal?.throwIfAborted();
   await Promise.all(blocks.slice(start,start+4).map(async height=>{
    const block=await provider.getBlock(height).catch(()=>null);
    if(!block)return;
@@ -202,7 +252,8 @@ export async function queryV3HistoryWindow(provider:Provider,contract:string,wal
  const recheck=await blockAtAnchor();
  if(!recheck?.hash||recheck.hash.toLowerCase()!==anchor.hash.toLowerCase())
   throw Error('The history block changed while loading. Refresh history.');
- return {anchor,page,from,to,items};
+ signal?.throwIfAborted();
+ return {anchor,from,to,items};
 }
 
 export async function readV3HistoryPage(walletProvider:Eip1193Provider,wallet:string,

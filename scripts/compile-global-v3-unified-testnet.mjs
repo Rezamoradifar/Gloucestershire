@@ -210,7 +210,7 @@ export function compileAccountReinvestTestnet(){
 }
 
 // V7 replaces the V6 withdrawal lifecycle. Keep historical source inputs reproducible.
-export function compilePortfolioTestnet(){
+function portfolioSources(){
  const sources=accountReinvestSources();
  let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'SINGLE_CAPITAL_VERSION = 6','SINGLE_CAPITAL_VERSION = 7');
  const start=vault.indexOf('    function _beginRequest('),end=vault.indexOf('    function cashStatus()');
@@ -234,7 +234,24 @@ export function compilePortfolioTestnet(){
  sources[SINGLE_CAPITAL_BOOK]={content:book};
  const file='contracts/v3/GlobalV3PortfolioTestnet.sol';
  sources[file]={content:source(file)};
+ return sources;
+}
+
+export function compilePortfolioTestnet(){
+ const sources=portfolioSources();
+ const file='contracts/v3/GlobalV3PortfolioTestnet.sol';
  return compile(sources,file,'GlobalV3PortfolioTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
+}
+
+export function compilePlanPortfolioTestnet(){
+ const sources=portfolioSources();
+ let vault=replaceOnce(sources[SINGLE_CAPITAL_FILE].content,'SINGLE_CAPITAL_VERSION = 7','SINGLE_CAPITAL_VERSION = 8');
+ vault=replaceOnce(vault,'function profitWithdrawalCap(address who) public view returns(uint256)',
+  'function profitWithdrawalCap(address who) public view virtual returns(uint256)');
+ sources[SINGLE_CAPITAL_FILE]={content:vault};
+ const file='contracts/v3/GlobalV3PlanPortfolioTestnet.sol';
+ sources[file]={content:source(file)};
+ return compile(sources,file,'GlobalV3PlanPortfolioTestnet',SINGLE_CAPITAL_BOOK,'SingleCapitalBook');
 }
 
 export function compileDailyCapitalTestnet(){
@@ -247,7 +264,7 @@ export function compileDailyCapitalTestnet(){
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
  try{
   const args=process.argv.slice(2);
-  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet,'--upline-rates':compileUplineRatesTestnet,'--account-reinvest':compileAccountReinvestTestnet,'--portfolio':compilePortfolioTestnet};
+  const profiles={'--single-capital':compileSingleCapitalTestnet,'--daily-capital':compileDailyCapitalTestnet,'--referral-profit':compileReferralProfitTestnet,'--manual-reinvest':compileManualReinvestTestnet,'--upline-rates':compileUplineRatesTestnet,'--account-reinvest':compileAccountReinvestTestnet,'--portfolio':compilePortfolioTestnet,'--plan-portfolio':compilePlanPortfolioTestnet};
   if(args.length>1||args.length===1&&!Object.hasOwn(profiles,args[0]))throw Error('INVALID_V3_UNIFIED_COMPILE_ARGUMENT');
   const artifacts=(args.length?profiles[args[0]]:compileUnifiedTestnet)();
   const sizes=Object.fromEntries(Object.entries(artifacts).map(([name,a])=>[name,{

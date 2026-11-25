@@ -3,7 +3,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {DropshippingRecords} from '../src/V3DropshippingTape';
 import V3TradingDesk from '../src/V3TradingDesk';
 import V3LiveTrades from '../src/V3LiveTrades';
-import {readAccountFeed, type Feed} from '../src/trading-activity';
+import {interruptedFeed,readAccountFeed,StoreTransportError,storeSnapshotLifetime,type Feed} from '../src/trading-activity';
 
 const now=Date.parse('2026-11-25T10:00:00Z');
 const row={id:'a'.repeat(24),time:'2026-11-25T09:52:00Z',amount:'89.95',unit:'EUR',item:'Paid order',side:'sell'};
@@ -74,5 +74,27 @@ describe('live dropshipping trades',()=>{
   const blank=render(notConfigured,{...notConfigured,source:'ebay'});
   expect(blank).toContain('No connected store feed');expect(blank).not.toContain('class="gv3-store-row"');
   expect(blank).not.toContain('0%');
+ });
+ it('labels delayed rows, per-store last-confirmed UTC time and partial coverage',()=>{
+  const confirmed=feed(detail,{status:'partial'});
+  const wire={source:'ebay',status:'rate_limited',updatedAt:null,rows:[],lastConfirmed:confirmed};
+  const delayed=readAccountFeed(wire,'ebay',now+180000);
+  const html=render(purchase,delayed);
+  expect(delayed.rows).toEqual(confirmed.rows);
+  for(const text of ['Delayed · Rate limited','Last partial snapshot 2026-11-25 10:00:00 UTC','Portable radio','Radio purchase','Last confirmed'])
+    expect(html).toContain(text);
+  expect(()=>readAccountFeed(wire,'ebay',now+storeSnapshotLifetime)).toThrow();
+  expect(()=>readAccountFeed({...wire,status:'not_configured'},'ebay',now)).toThrow();
+  expect(()=>readAccountFeed({...wire,lastConfirmed:purchase},'ebay',now)).toThrow();
+  expect(()=>readAccountFeed({...wire,lastConfirmed:{...confirmed,status:'unavailable'}},'ebay',now)).toThrow();
+ });
+ it('retains the original store snapshot during client transport errors and clears on denial, expiry or different account source',()=>{
+  const confirmed=feed(detail),failure=new StoreTransportError('unavailable');
+  const stale=interruptedFeed('ebay',confirmed,failure,now+30000);
+  expect(stale).toEqual({...confirmed,status:'unavailable',snapshotStatus:'connected'});
+  expect(interruptedFeed('ebay',stale,new StoreTransportError('rate_limited'),now+90000)).toEqual({...stale,status:'rate_limited'});
+  expect(interruptedFeed('ebay',stale,failure,now+storeSnapshotLifetime).rows).toEqual([]);
+  expect(interruptedFeed('ebay',confirmed,Error('Denied'),now).rows).toEqual([]);
+  expect(interruptedFeed('amazon',confirmed,failure,now).rows).toEqual([]);
  });
 });

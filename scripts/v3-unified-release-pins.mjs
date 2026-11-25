@@ -77,7 +77,17 @@ export const PORTFOLIO_PROFILE = Object.freeze({
  initcodeHash:'0x97e0a2fe523e1924f84f0d3e1a1651d2d030a1a60db3dc60ee3b0e71a9c27579'
 });
 
+// V8 keeps its own proof, keeper and route. Existing V7 accounts remain on V7.
+export const PLAN_PORTFOLIO_PROFILE = Object.freeze({
+ status:'VERIFIED_PLAN_PORTFOLIO_TESTNET_ONLY', mode:'plan-portfolio-testnet', route:'/plan-portfolio-test/',
+ stateDirectory:'/var/lib/globaldroptrade/v3-plan-portfolio-testnet',
+ gasKey:'/etc/globaldroptrade/v3-plan-portfolio-keeper-testnet-gas-only.key',
+ timer:'global-v3-plan-portfolio-keeper-testnet.timer',
+ initcodeHash:'0x1cd7c82eebb3927cd8f83757d7013525d15406242bf53c328a1bf2bbbf9ba2a6'
+});
+
 export function unifiedProfileForFlag(flag) {
+ if(flag==='--plan-portfolio')return PLAN_PORTFOLIO_PROFILE;
  if(flag==='--portfolio')return PORTFOLIO_PROFILE;
  if(flag==='--account-reinvest')return ACCOUNT_REINVEST_PROFILE;
  if(flag==='--upline-rates')return UPLINE_RATES_PROFILE;

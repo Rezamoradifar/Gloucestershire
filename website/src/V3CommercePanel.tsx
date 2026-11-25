@@ -12,7 +12,7 @@ type Summary={version:1;source:'ebay';status:Status;updatedAt:string|null;
  windowStart:string|null;windowEnd:string|null;paidOrders:number|null;
  performance?:SellerPerformance;commercialProfit:null;profitStatus:'unverified_costs_and_fees'};
 const statuses:Record<Status,string>={live:'Seller connected',not_configured:'Seller connection required',
- unavailable:'Seller data unavailable',rate_limited:'Seller source rate limited',incomplete:'Too many orders for this summary'};
+ unavailable:'Seller data unavailable',rate_limited:'Seller source rate limited',incomplete:'Waiting for a complete order history'};
 
 export function readCommerceSummary(value:unknown,now=Date.now()):Summary|null{
  if(!value||typeof value!=='object')return null;
@@ -21,17 +21,17 @@ export function readCommerceSummary(value:unknown,now=Date.now()):Summary|null{
   v.commercialProfit!==null||v.profitStatus!=='unverified_costs_and_fees')return null;
  if(v.status!=='live')return v.paidOrders===null?{...v,performance:undefined,updatedAt:null,windowStart:null,windowEnd:null}:null;
  const updated=parseZonedTimestamp(v.updatedAt),start=parseZonedTimestamp(v.windowStart),end=parseZonedTimestamp(v.windowEnd);
- if(typeof v.paidOrders!=='number'||!Number.isSafeInteger(v.paidOrders)||v.paidOrders<0||v.paidOrders>100||
+ if(typeof v.paidOrders!=='number'||!Number.isSafeInteger(v.paidOrders)||v.paidOrders<0||
   !Number.isFinite(updated)||!Number.isFinite(start)||!Number.isFinite(end)||
   start>end||end>updated||updated>now+60000||now-updated>120000||end-start>31*86400000)return null;
  if(v.performance!==undefined){
-  const p=v.performance,decimal=(n:unknown)=>typeof n==='string'&&/^\d{1,22}(?:\.\d{1,6})?$/.test(n);
-  if(!p||!Number.isSafeInteger(p.orderCount)||p.orderCount<v.paidOrders||p.orderCount>100||!Array.isArray(p.currencies)||
+  const p=v.performance,decimal=(n:unknown)=>typeof n==='string'&&/^\d{1,30}(?:\.\d{1,6})?$/.test(n);
+  if(!p||!Number.isSafeInteger(p.orderCount)||p.orderCount<v.paidOrders||!Array.isArray(p.currencies)||
    p.currencies.length>p.orderCount||new Set(p.currencies.map(c=>c?.currency)).size!==p.currencies.length)return null;
   for(const c of p.currencies){
    if(!c||!(/^[A-Z]{3}$/.test(c.currency))||!decimal(c.gross)||!decimal(c.recent)||parseUnits(c.recent,6)>parseUnits(c.gross,6))return null;
    if(c.netSales===null&&c.profit===null)continue;
-   if(!decimal(c.netSales)||typeof c.profit!=='string'||!(/^-?\d{1,22}(?:\.\d{1,6})?$/.test(c.profit))||
+   if(!decimal(c.netSales)||typeof c.profit!=='string'||!(/^-?\d{1,30}(?:\.\d{1,6})?$/.test(c.profit))||
     parseUnits(c.netSales!,6)>parseUnits(c.gross,6)||parseUnits(c.profit,6)>parseUnits(c.netSales!,6))return null;
   }
  }

@@ -13,7 +13,8 @@ export type StoreProfit = {net:string; netSales:string; costs:string};
 export type Entry = {id:string; side:'buy'|'sell'; item:string; time:string; amount:string; unit:string; price?:string;
   products?:StoreProduct[]; productCount?:number; profit?:StoreProfit; refundStatus?:'partial'|'full'};
 export type Feed = {source:Source; status:'live'|'delayed'|'connected'|'partial'|'not_configured'|'unavailable'|'rate_limited';
-  updatedAt:string|null; rows:Entry[]};
+  updatedAt:string|null; rows:Entry[]; snapshotStatus?:'connected'|'partial'};
+export const storeSnapshotLifetime=10*60*1000;
 
 function decimal(value:unknown):value is string {
   return typeof value==='string' && /^\d{1,24}(?:\.\d{1,18})?$/.test(value) && Number(value)>0;
@@ -54,15 +55,11 @@ function validateStoreDetails(row:Entry,source:AccountSource) {
     if(row.refundStatus==='partial')requireData(netSales>0n && netSales<gross);
   }
 }
-export function readAccountFeed(value:unknown, source:AccountSource, now=Date.now()):Feed {
-  const feed=value as Feed;
-  requireData(feed?.source===source && Array.isArray(feed.rows) && feed.rows.length<=20);
-  if (feed.status!=='connected' && feed.status!=='partial') {
-    requireData(['not_configured','rate_limited','unavailable'].includes(feed.status) && feed.rows.length===0 && feed.updatedAt===null);
-    return {source, status:feed.status, updatedAt:null, rows:[]};
-  }
+function readSnapshot(feed:Feed, source:AccountSource, now:number, maxAge:number):Feed & {status:'connected'|'partial'} {
+  requireData(feed?.source===source && (feed.status==='connected' || feed.status==='partial') &&
+    Array.isArray(feed.rows) && feed.rows.length<=20);
   const updated=parseZonedTimestamp(feed.updatedAt);
-  requireData(Number.isFinite(updated) && updated<=now+60000 && updated>=now-120000);
+  requireData(Number.isFinite(updated) && updated<=now+60000 && updated>now-maxAge);
   const ids=new Set<string>();
   for (const row of feed.rows) {
     const time=parseZonedTimestamp(row?.time);
@@ -75,7 +72,20 @@ export function readAccountFeed(value:unknown, source:AccountSource, now=Date.no
     validateStoreDetails(row,source);
     ids.add(row.id);
   }
-  return {...feed, rows:[...feed.rows].sort((a,b)=>Date.parse(b.time)-Date.parse(a.time))};
+  return {source,status:feed.status,updatedAt:feed.updatedAt,rows:[...feed.rows].sort((a,b)=>Date.parse(b.time)-Date.parse(a.time))};
+}
+
+export function readAccountFeed(value:unknown, source:AccountSource, now=Date.now()):Feed {
+  const feed=value as Feed & {lastConfirmed?:Feed};
+  requireData(feed?.source===source && Array.isArray(feed.rows));
+  if (feed.status==='connected' || feed.status==='partial') return readSnapshot(feed,source,now,120000);
+  requireData(['not_configured','rate_limited','unavailable'].includes(feed.status) && feed.rows.length===0 && feed.updatedAt===null);
+  if (feed.lastConfirmed!==undefined) {
+    requireData(source!=='kraken' && feed.status!=='not_configured');
+    const snapshot=readSnapshot(feed.lastConfirmed,source,now,storeSnapshotLifetime);
+    return {...snapshot,status:feed.status,snapshotStatus:snapshot.status};
+  }
+  return {source,status:feed.status,updatedAt:null,rows:[]};
 }
 
 export function readMarketFeed(value:unknown, pair:Pair, now=Date.now()):Feed {
@@ -98,10 +108,33 @@ export function readMarketFeed(value:unknown, pair:Pair, now=Date.now()):Feed {
     updatedAt:new Date(now).toISOString(),rows};
 }
 
+export class StoreTransportError extends Error {
+  constructor(readonly status:'unavailable'|'rate_limited') { super('Store connection interrupted'); }
+}
+
+export function interruptedFeed(source:Source,previous:Feed|null,error:unknown,now=Date.now()):Feed {
+  if (source==='market' && previous?.source==='market' && previous.rows.length) return {...previous,status:'delayed'};
+  if (error instanceof StoreTransportError && previous?.source===source && source!=='market' && source!=='kraken' &&
+      previous.updatedAt && parseZonedTimestamp(previous.updatedAt)>now-storeSnapshotLifetime) {
+    const snapshotStatus=previous.snapshotStatus ?? previous.status;
+    if (snapshotStatus==='connected' || snapshotStatus==='partial') return {...previous,status:error.status,snapshotStatus};
+  }
+  return {source,status:error instanceof StoreTransportError?error.status:'unavailable',updatedAt:null,rows:[]};
+}
+
 export async function loadActivity(source:Source,pair:Pair,signal:AbortSignal):Promise<Feed> {
   const url=source==='market'?'https://api.kraken.com/0/public/Trades?pair='+markets[pair].pair+'&count=20':
     '/api/commerce/activity?source='+source;
-  const response=await fetch(url,{signal,cache:'no-store',credentials:source==='market'?'omit':'same-origin',referrerPolicy:'no-referrer'});
+  const store=source==='amazon' || source==='ebay';
+  let response:Response;
+  try {
+    response=await fetch(url,{signal,cache:'no-store',credentials:source==='market'?'omit':'same-origin',referrerPolicy:'no-referrer'});
+  } catch (error) {
+    if(store) throw new StoreTransportError('unavailable');
+    throw error;
+  }
+  if(store && (response.status===408 || response.status===429 || response.status>=500))
+    throw new StoreTransportError(response.status===429?'rate_limited':'unavailable');
   if(response.status===429) return {source,status:'rate_limited',updatedAt:null,rows:[]};
   if(!response.ok) throw Error('Activity unavailable');
   const data:unknown=await response.json();

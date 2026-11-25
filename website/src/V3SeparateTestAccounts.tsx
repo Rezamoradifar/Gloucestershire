@@ -14,6 +14,7 @@ export default function V3SeparateTestAccounts({config}:{config:V3SiteReleaseCon
  return <details className="gv3-account-archive">
   <summary>Previous test accounts</summary>
   <p>Positions, balances and requests stay on their original contracts.</p>
+  {config.unified.planPortfolio&&<a href="/portfolio-test/">Previous portfolio account and balances <ArrowUpRight size={14} aria-hidden="true"/></a>}
   {config.unified.portfolio&&<a href="/account-reinvest-test/">Previous account and balances <ArrowUpRight size={14} aria-hidden="true"/></a>}
   {config.unified.accountReinvest&&<a href="/upline-rates-test/">Previous upline-rate account <ArrowUpRight size={14} aria-hidden="true"/></a>}
   {config.unified.uplineRates&&import.meta.env.VITE_V3_MANUAL_ARCHIVE==='true'&&<a href="/manual-reinvest-test/">Previous manual-reinvestment account <ArrowUpRight size={14} aria-hidden="true"/></a>}
