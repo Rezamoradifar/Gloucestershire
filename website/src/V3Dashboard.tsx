@@ -1,10 +1,10 @@
 // Global V3 TESTNET workspace integrated into the original Global navy/gold
 // shell and five-tab mobile navigation. Uses verified testnet USDT claims only;
 // it can never display fabricated deposits, profits or cash.
-import {useCallback,useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {flushSync} from 'react-dom';
 import {ZeroAddress,getAddress,formatUnits} from 'ethers';
-import {ArrowUpRight,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,Globe2,History,Home,
+import {ArrowUpRight,Bell,LifeBuoy,CheckCircle2,ChevronRight,Clock3,Coins,ExternalLink,Globe2,History,Home,
  Layers,Menu,RefreshCw,Settings2,ShieldAlert,ShieldCheck,UserRound,Users,Wallet,X} from 'lucide-react';
 import {wallets,getWalletProvider,walletConnectionError,switchWalletNetwork,type WalletKind} from './wallet';
 import {readWalletSelection} from './wallet-read';
@@ -54,7 +54,9 @@ import DigitalValue from './DigitalValue';
 import {formatV3Amount as show} from './v3-format';
 import {formatUtcTime} from './utc-time';
 import V3ManagerVipPanel from './V3ManagerVipPanel';
-import {sendManagerVip,type VipChange} from './v3-manager-vip';
+import {sendManagerChange,type MemberChange} from './v3-manager-vip';
+import {V3SupportTickets,V3Announcements} from './V3Community';
+import {portfolioSupport} from './v3-support';
 import {readReferralInvite,reviewReferralForDeposit} from './referral-invite';
 import {parseV3Amount as amount,v3WithdrawalFee,type V3WithdrawalKind} from './v3-withdrawal-form';
 import './v2-dashboard.css';
@@ -68,8 +70,10 @@ import './v3-dashboard.css';
 import './v1-v3-dashboard.css';
 import './v3-account-and-team.css';
 import './v3-glass.css';
+import './v3-support.css';
 
-type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'admin';
+type Tab='overview'|'positions'|'team'|'history'|'profile'|'withdrawals'|'tickets'|'announcements'|'admin';
+type AdminSection='settlements'|'members'|'tickets'|'announcements';
 const menus=[
  {id:'overview' as Tab,label:'Overview',Icon:Home},
  {id:'positions' as Tab,label:'My positions',Icon:Layers},
@@ -77,7 +81,9 @@ const menus=[
  {id:'withdrawals' as Tab,label:'Withdrawal requests',Icon:Coins},
  {id:'history' as Tab,label:'History',Icon:History},
  {id:'profile' as Tab,label:'Profile',Icon:UserRound},
- {id:'admin' as Tab,label:'Funding & settlement',Icon:Settings2}
+ {id:'tickets' as Tab,label:'Support tickets',Icon:LifeBuoy},
+ {id:'announcements' as Tab,label:'Announcements',Icon:Bell},
+ {id:'admin' as Tab,label:'Admin panel',Icon:Settings2}
 ];
 const dock=[{id:'overview' as Tab,label:'Home',Icon:Home},{id:'positions' as Tab,label:'Positions',Icon:Layers},
  {id:'team' as Tab,label:'Team',Icon:Users},{id:'history' as Tab,label:'History',Icon:History},
@@ -124,6 +130,13 @@ export default function V3Dashboard(){
  const menuTrigger=useRef<HTMLButtonElement>(null);
  const [smallScreen,setSmallScreen]=useState(()=>typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 960px)').matches);
  const config=v3ReleaseConfig;
+ const [adminSection,setAdminSection]=useState<AdminSection>('settlements');
+ const support=useMemo(()=>config?.unified?.portfolio?portfolioSupport(config.address,wallet,{token:''}):null,
+  [config,wallet,walletSession.version]);
+ const communityTab=tab==='tickets'||tab==='announcements';
+ const independentTab=Boolean(config?.unified?.portfolio&&(communityTab||tab==='history'));
+ const supportKey=[walletSession.version,config?.address,tab].join('/');
+ useEffect(()=>{setAdminSection('settlements');},[walletSession.version,config?.address]);
  const reviewScope:V3ReviewScope|null=wallet&&chain===97&&config?{chainId:97,contract:config.address,wallet}:null;
  const reviewKey=reviewScope?v3ReviewKey(reviewScope):null;
  const currentReviewKey=useRef<string|null>(null);currentReviewKey.current=reviewKey;
@@ -230,7 +243,7 @@ export default function V3Dashboard(){
  },[walletSession,wallet,chain,config,tab,branchPage,groupPage,unifiedPageStart,withdrawalCoverage]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{
-  if(loading||!config||!wallet||chain!==97||(tab==='history'&&config.unified?.portfolio))return;
+  if(loading||!config||!wallet||chain!==97||independentTab)return;
   const tick=()=>{
    if(document.visibilityState!=='visible'||busy||polling.current)return;
    polling.current=true;
@@ -239,7 +252,7 @@ export default function V3Dashboard(){
   const timer=setInterval(tick,20000);
   document.addEventListener('visibilitychange',tick);
   return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',tick);};
- },[wallet,chain,busy,loading,refresh,config,tab]);
+ },[wallet,chain,busy,loading,refresh,config,tab,independentTab]);
  async function connect(kind:WalletKind){
   setConnecting(true);setError('');
   try{await wallets.connect(kind);}
@@ -302,19 +315,20 @@ export default function V3Dashboard(){
   }
   return !inFlight.current&&!pendingReviewGate();
  }
- async function perform(action:V3Action|UnifiedWithdrawal|VipChange,description:string,reviewedRequest?:V3Withdrawal){
+ async function perform(action:V3Action|UnifiedWithdrawal|MemberChange,description:string,reviewedRequest?:V3Withdrawal){
   if(busy||inFlight.current)return;
   if(!wallet){setError('Connect your wallet before continuing.');return;}
   if(!config){setError('The verified V3 testnet contract is unavailable.');return;}
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(chain!==97){setError('Switch your wallet to BNB Testnet before continuing.');return;}
   if(!view){setError('The verified account is unavailable. Refresh or use the wallet connection check.');return;}
-  if(action.kind==='setVipKyc'&&(!view.canManage||!config.unified?.portfolio)){setError('This action requires a verified portfolio manager.');return;}
-  if(config.unified&&action.kind!=='register'&&action.kind!=='setVipKyc'&&!isUnifiedWithdrawal(action)&&!isUnifiedNetworkAction(action)){setError('This action is unavailable on the unified test network.');return;}
+  const memberChange=action.kind==='setVipKyc'||action.kind==='setSuspended';
+  if(memberChange&&(!view.canManage||!config.unified?.portfolio)){setError('This action requires a verified portfolio manager.');return;}
+  if(config.unified&&action.kind!=='register'&&!memberChange&&!isUnifiedWithdrawal(action)&&!isUnifiedNetworkAction(action)){setError('This action is unavailable on the unified test network.');return;}
   if(!config.unified&&(action.kind==='fundWithdrawal'||action.kind==='cancelWithdrawal'||action.kind==='fundPlanReserve'))return;
   const trackedAction=Boolean(config.unified)||action.kind==='register'||action.kind==='createRewardGroup'||action.kind==='addRewardBranches';
   if(trackedAction&&pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
-  const target=config.unified&&action.kind!=='setVipKyc'&&isUnifiedNetworkAction(action)?networkActionTarget(config,action):config.address;
+  const target=config.unified&&!memberChange&&isUnifiedNetworkAction(action)?networkActionTarget(config,action):config.address;
   const parts=reviewedRequest?.allocation;
   const settleDetails=reviewedRequest?'\nBeneficiary '+reviewedRequest.beneficiary+
    (parts?'\nPersonal '+formatUnits(parts.personal,18)+' · Referral '+formatUnits(parts.referral,18)+' · Network '+formatUnits(parts.network,18)+' · Principal '+formatUnits(parts.principal,18):'')+
@@ -327,8 +341,8 @@ export default function V3Dashboard(){
   const report=(detail:V3TransactionProgress)=>{tracker.record(detail);if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
    let hash:string;
-   if(action.kind==='setVipKyc'){
-    hash=await sendManagerVip(p,wallet,action,config,unifiedEnabled,report);
+   if(memberChange){
+    hash=await sendManagerChange(p,wallet,action,config,unifiedEnabled,report);
    }else if(action.kind==='register'){
     hash=await runV3Registration({provider:p,wallet,referrer:action.referrer,config,unifiedEnabled,onProgress:report});
    }else if(config.unified&&isUnifiedNetworkAction(action)){
@@ -596,8 +610,9 @@ export default function V3Dashboard(){
   </article>;
  const navigate=(to:Tab,nextValue='',target:'withdraw'|'reinvest'|null=null)=>{
   const accountWithdrawal=singleCapital&&to==='withdrawals';
-  if(to==='admin'||to==='history'||linkedMemberTab(window.location.hash)){
-   const hash=to==='admin'||to==='history'?'#dashboard/'+to:'#dashboard';
+  const deepLink=linkedMemberTab('#dashboard/'+to);
+  if(deepLink||linkedMemberTab(window.location.hash)){
+   const hash=deepLink?'#dashboard/'+deepLink:'#dashboard';
    window.history.replaceState(window.history.state,'',hash);
   }
   setTab(accountWithdrawal?'positions':to);
@@ -611,7 +626,7 @@ export default function V3Dashboard(){
    <a className="brand" href="#" onClick={()=>setMenuOpen(false)}><span className="brand-icon" aria-hidden="true"><Globe2 size={25}/></span>
     <div><strong>GLOBAL</strong><small>ARBITRAGE &amp; DROPSHIPPING</small></div></a>
    <div className="sidebar-caption">YOUR WORKSPACE</div>
-   <nav>{menus.filter(x=>x.id!=='admin'||operatorAccess).map(({id,label,Icon})=>
+   <nav>{menus.filter(x=>(x.id!=='admin'||operatorAccess)&&(!['tickets','announcements'].includes(x.id)||support)).map(({id,label,Icon})=>
     <button key={id} onClick={()=>navigate(id)} className={tab===id?'active':''} aria-current={tab===id?'page':undefined}><Icon size={19}/><span>{tabLabel(id,label)}</span>{tab===id&&<ChevronRight size={15}/>}</button>)}
     <button type="button" onClick={()=>{window.location.hash='#marketplace';}}><Coins size={19}/><span>Products &amp; sales</span></button></nav>
    <div className="gv2-sidebar-bottom"><div className="gv1-sidebar-network"><span>◆</span><div><strong>BNB Testnet</strong><small>Test environment</small></div></div>
@@ -631,7 +646,7 @@ export default function V3Dashboard(){
      <h1>{tab==='overview'?'Account overview':activeTabLabel}</h1>
      <p>Test tokens only. No monetary value.</p>
      {unifiedReadOnly&&<p role="status"><strong>Read-only preview.</strong> Wallet transactions are disabled.</p>}
-    </div>{wallet&&config&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17}/> Refresh</button>}</div>
+    </div>{wallet&&config&&!communityTab&&<button onClick={()=>void refresh()} disabled={loading||busy}><RefreshCw size={17}/> Refresh</button>}</div>
     {!config&&<section className="gv2-panel gv3-not-ready" role="status"><ShieldAlert size={26}/>
      <h2>V3 integration is prepared, but activation is locked</h2>
      <p>The testnet contract must be deployed and independently verified before this dashboard can show account data.</p>
@@ -641,7 +656,7 @@ export default function V3Dashboard(){
     {config&&<>
     {tab==='admin'&&view&&!operatorAccess&&<p className="gv3-notice" role="status">This wallet has no manager or funding role for this contract.</p>}
     {error&&<p ref={actionError} className="gv2-error" role="alert">{error}</p>}
-    {readError&&!(tab==='history'&&config.unified?.portfolio)&&<p className="gv2-error" role="alert">{readError}</p>}
+    {readError&&!independentTab&&<p className="gv2-error" role="alert">{readError}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
     {config.unified&&notice&&txHash&&view?.registered&&!view.eligible&&!view.suspended&&!view.paused&&transactionProgress?.action==='test_deposit'&&transactionProgress.step==='confirmed'&&
      <button type="button" className="gv2-primary" disabled={busy||reviewRequired||unifiedReadOnly||view.asOf<view.lastCheckIn+3600} onClick={checkIn}>Activate account</button>}
@@ -651,15 +666,15 @@ export default function V3Dashboard(){
      <strong>Check wallet activity before retrying.</strong><p>A request may have been sent. The reminder is saved for this wallet and contract when browser storage is available. Check the transaction before trying again.</p>
      {reviewDetail&&<p>{reviewDetail.message} {reviewDetail.hash&&<a href={V3_EXPLORER+'/tx/'+reviewDetail.hash} target="_blank" rel="noreferrer">View transaction <ExternalLink size={14}/></a>}</p>}
      <button type="button" disabled={busy} onClick={acknowledgeReview}>I checked wallet history</button></div></section>}
-    {!wallet&&tab!=='overview'&&<section className="gv2-panel gv3-connect"><Wallet size={31}/><h2>Connect your BNB Testnet wallet</h2>
+    {!wallet&&tab!=='overview'&&!communityTab&&<section className="gv2-panel gv3-connect"><Wallet size={31}/><h2>Connect your BNB Testnet wallet</h2>
      <p>No balance is shown before the V3 code hash and selected wallet are independently verified.</p>
      <div className="gv2-buttons"><button className="gv2-primary" disabled={connecting} onClick={()=>void connect('injected')}>Browser wallet</button>
       <button disabled={connecting} onClick={()=>void connect('walletconnect')}>WalletConnect QR</button></div></section>}
-    {wallet&&chain!==97&&!(tab==='history'&&config.unified?.portfolio)&&<section className="gv2-panel"><h3>Switch to BNB Testnet (97)</h3>
+    {wallet&&chain!==97&&(!independentTab||tab==='tickets')&&<section className="gv2-panel"><h3>Switch to BNB Testnet (97)</h3>
      <p>Do not use BNB Mainnet or transfer real Tether to this prototype.</p>
      <button className="gv2-primary" onClick={()=>void switchWalletNetwork().catch(e=>setError(String(e)))}>Switch network</button></section>}
-    {wallet&&chain===97&&loading&&!view&&!(tab==='history'&&config.unified?.portfolio)&&<section className="gv2-panel">Verifying pinned V3 runtime and account balances…</section>}
-    {wallet&&chain===97&&!loading&&!view&&!(tab==='history'&&config.unified?.portfolio)&&<section className="gv2-panel"><h3>Verified V3 account unavailable</h3>
+    {wallet&&chain===97&&loading&&!view&&!independentTab&&<section className="gv2-panel">Verifying pinned V3 runtime and account balances…</section>}
+    {wallet&&chain===97&&!loading&&!view&&!independentTab&&<section className="gv2-panel"><h3>Verified V3 account unavailable</h3>
      <button onClick={()=>void refresh()}>Retry blockchain verification</button></section>}
     {tab==='profile'&&wallet&&<section className="gv2-panel"><h3>Wallet connection check</h3>
      <p>Compare the selected wallet and its BNB Testnet balance with an independent network read. No transaction or signature is requested.</p>
@@ -669,6 +684,10 @@ export default function V3Dashboard(){
       <p>Independent RPC: {walletDiagnostic.independent.status} · Block: {walletDiagnostic.independent.block??'unavailable'} · Balance: {walletDiagnostic.independent.testBNB===null?'unavailable':walletDiagnostic.independent.testBNB+' tBNB'}</p>
       <p>Balances can differ across blocks or RPCs; this check does not prove a wallet transaction will succeed.</p></div>}
     </section>}
+    {tab==='overview'&&support&&<nav className="gv3-community-links" aria-label="Member services">
+     <button onClick={()=>navigate('tickets')}><LifeBuoy size={19}/> Support tickets <ChevronRight size={16}/></button>
+     <button onClick={()=>navigate('announcements')}><Bell size={19}/> Announcements <ChevronRight size={16}/></button>
+    </nav>}
     {tab==='overview'&&view&&<div className="gv3-sync-line" aria-live="off"><span className="gv3-live-status">{loading?'CHECKING BLOCKCHAIN':'AUTO REFRESH · 20 SEC'}</span>
      <span>Verified block {view.block.toLocaleString('en-US')} · {formatUtcTime(view.asOf)}</span></div>}
     {tab==='overview'&&<V3ClassicOverview view={view} connected={Boolean(wallet)} busy={busy||reviewRequired} readOnly={unifiedReadOnly} unifiedRelease={Boolean(config.unified)} loading={loading} connecting={connecting}
@@ -682,7 +701,10 @@ export default function V3Dashboard(){
      <V3HistoryPanel key={config.address+':'+wallet} wallet={wallet} config={config}/>
      <V3WithdrawalHistory key={'withdraw-'+config.address+':'+wallet} wallet={wallet} config={config}/>
     </div>}
-    {view&&tab!=='history'&&<div className="gv2-content">
+    {communityTab&&!support&&<p role="status">Support is available on the portfolio dashboard.</p>}
+    {tab==='announcements'&&support&&<V3Announcements key={supportKey} client={support} admin={false}/>}
+    {tab==='tickets'&&support&&(!wallet||chain===97)&&<V3SupportTickets key={supportKey} client={support} wallet={wallet} admin={false} onConnect={openWalletPicker}/>}
+    {view&&tab!=='history'&&!communityTab&&<div className="gv2-content">
      {tab==='overview'&&<>
       <V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly} onCheckIn={checkIn} onPositions={()=>navigate('positions')} unifiedEnabled={unifiedEnabled}/>
       {config.unified&&<V3UnifiedActivity view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} onCheckIn={checkIn}/>}
@@ -760,10 +782,16 @@ export default function V3Dashboard(){
       <h3>Your recent V3 requests</h3>{view.withdrawals.map(r=>withdrawItem(r))}
       {!view.withdrawals.length&&<p>No V3 requests yet.</p>}
      </section>}
-     {tab==='admin'&&config.unified?.portfolio&&view.canManage&&walletSession.provider&&
+     {tab==='admin'&&support&&view.canManage&&<nav className="gv3-admin-sections" aria-label="Admin sections">
+      {([['settlements','Withdrawals & funding'],['members','Members'],['tickets','Support inbox'],['announcements','Announcements']] as const).map(([id,label])=>
+       <button key={id} aria-pressed={adminSection===id} onClick={()=>setAdminSection(id)}>{label}</button>)}
+     </nav>}
+     {tab==='admin'&&support&&view.canManage&&adminSection==='tickets'&&<V3SupportTickets key={supportKey+'/admin'} client={support} admin wallet={wallet} onConnect={openWalletPicker}/>}
+     {tab==='admin'&&support&&view.canManage&&adminSection==='announcements'&&<V3Announcements key={supportKey+'/admin'} client={support} admin/>}
+     {tab==='admin'&&config.unified?.portfolio&&view.canManage&&adminSection==='members'&&walletSession.provider&&
       <V3ManagerVipPanel key={wallet+':'+config.address+':'+walletSession.version} provider={walletSession.provider} manager={wallet} config={config}
        busy={busy} readOnly={unifiedReadOnly||reviewRequired} onChange={perform}/>}
-     {tab==='admin'&&operatorAccess&&<section className="gv2-panel">
+     {tab==='admin'&&operatorAccess&&(!support||!view.canManage||adminSection==='settlements')&&<section className="gv2-panel">
       <div className="gv2-panel-head"><h3>Funding &amp; settlement</h3></div>
       {view.dailyPlan&&view.canFund&&<div className="gv3-input-row">
        <label htmlFor="reserve-funding">Fund the plan reserve (test USDT)</label>

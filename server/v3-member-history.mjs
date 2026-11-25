@@ -46,6 +46,8 @@ const eventTypes = eventDefinitions.map(([source,position,category,signature]) =
   source,position,category,topic:events.getEvent(signature.slice(0,signature.indexOf('('))).topicHash,
 }));
 const vaultAbi = [
+  'function MANAGER_ROLE() view returns(bytes32)',
+  'function hasRole(bytes32,address) view returns(bool)',
   'function userWithdrawalCount(address) view returns(uint256)',
   'function userWithdrawalId(address,uint256) view returns(uint256)',
   'function withdrawalOf(uint256) view returns(tuple(address beneficiary,uint256 positionId,uint256 gross,uint256 fee,uint64 requestedAt,uint8 status,uint8 kind))',
@@ -311,6 +313,27 @@ export function createV3MemberHistory({proofs=readProfiles(),providers,env=proce
     return response;
   }
   return {
+    supportAuthority(address){
+      const entry=profiles.get(address);
+      if(!entry)return null;
+      return async wallet=>{
+        for(const provider of candidates){
+          try{
+            const proof=await session(provider,entry);
+            const head=await provider.getBlockNumber(),height=head-3;
+            check(integer(height)&&height>=proof.deploymentBlock);
+            const block=await getBlock(provider,height),vault=makeVault(proof.vault,provider);
+            const role=await vault.MANAGER_ROLE({blockTag:height});
+            const [confirmed,current]=await Promise.all([
+              vault.hasRole(role,wallet,{blockTag:height}),vault.hasRole(role,wallet,{blockTag:'latest'})
+            ]);
+            check((await getBlock(provider,height)).hash===block.hash);
+            return confirmed===true&&current===true;
+          }catch{ /* Try the next verified reader on transport or identity failure. */ }
+        }
+        throw Error('Verified manager role unavailable.');
+      };
+    },
     async get(params,kind='events'){
       const q=queryFor(params,kind),entry=profiles.get(q.vault);
       if(!entry)fail(503);

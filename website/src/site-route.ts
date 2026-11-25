@@ -3,6 +3,8 @@ export type SiteRoute='landing'|'v2'|'v3';
 type RouteOptions={v3Only:boolean;hourlyTest:boolean;dailyTest?:boolean;landingAtRoot:boolean};
 
 export function linkedMemberTab(hash:string) {
+ if(hash==='#dashboard/tickets')return 'tickets';
+ if(hash==='#dashboard/announcements')return 'announcements';
  if(hash==='#dashboard/history')return 'history';
  if(hash==='#dashboard/admin')return 'admin';
  return null;

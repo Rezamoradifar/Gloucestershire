@@ -35,7 +35,7 @@ export type V3Action=
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
  step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
- action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in'|'vip_verification';
+ action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in'|'vip_verification'|'member_status';
  hash?:string;blockNumber?:number;
 };
 export type V3TransactionProgressCallback=(progress:V3TransactionProgress)=>void;

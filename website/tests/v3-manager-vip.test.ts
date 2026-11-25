@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {Interface,ZeroAddress} from 'ethers';
-import {readManagerVip,sendManagerVip,vipMemberAddress,type VipChange} from '../src/v3-manager-vip';
+import {readManagerVip,readMemberDirectory,sendManagerChange,sendManagerVip,vipMemberAddress,type VipChange} from '../src/v3-manager-vip';
 import type {V3SiteReleaseConfig} from '../src/v3-site-config';
 
 const mock=vi.hoisted(()=>({session:vi.fn(),gas:vi.fn(),submit:vi.fn()}));
@@ -11,10 +11,10 @@ const address='0x3333333333333333333333333333333333333333',hash='0x'+'ab'.repeat
 const config={address,unified:{portfolio:true}} as V3SiteReleaseConfig;
 const wallet={request:async({method}:{method:string})=>method==='eth_chainId'?'0x61':[manager]};
 const change:VipChange={kind:'setVipKyc',member,previous:false,approved:true};
-const abi=new Interface(['function setVipKyc(address,bool)']);
+const abi=new Interface(['function setVipKyc(address,bool)','function setSuspended(address,bool)']);
 const readUsers=vi.fn(),hasRole=vi.fn(),canonical=vi.fn(),destroy=vi.fn();
 const role='0x'+'ee'.repeat(32),session={block:{number:42,timestamp:123,hash},options:{blockTag:42},
- provider:{send:canonical,destroy},vault:{MANAGER_ROLE:async()=>role,hasRole,users:readUsers,interface:abi}};
+ provider:{send:canonical,destroy},vault:{MANAGER_ROLE:async()=>role,GUARDIAN_ROLE:async()=>'guardian',memberCount:async()=>11n,memberAt:async(i:number)=>'0x'+(i+1).toString(16).padStart(40,'0'),hasRole,users:readUsers,interface:abi}};
 
 beforeEach(()=>{
  vi.clearAllMocks();
@@ -55,6 +55,23 @@ describe('manager VIP verification',()=>{
   const call=mock.submit.mock.calls[0];
   expect(call[1]).toBe(manager);expect(call[4]).toBe(address);expect(call[5]).toBe(abi.encodeFunctionData('setVipKyc',[member,approved]));
   expect(readUsers).toHaveBeenCalledWith(member,{blockTag:46});expect(destroy).toHaveBeenCalled();
+ });
+ it('pages the complete append-only registry and checks the manager role before listing',async()=>{
+  const page=await readMemberDirectory(wallet,manager,config,1);
+  expect(page.total).toBe(11);expect(page.members).toHaveLength(1);
+  expect(page.members[0].toLowerCase()).toBe('0x'+'b'.padStart(40,'0'));
+  hasRole.mockResolvedValue(false);
+  await expect(readMemberDirectory(wallet,manager,config,0)).rejects.toThrow('manager role');
+ });
+ it('requires guardian permission and confirms the exact resulting suspension or reactivation',async()=>{
+  const change={kind:'setSuspended' as const,member,previous:false,suspended:true};
+  readUsers.mockImplementation(async(_:string,at:{blockTag:number})=>({registered:true,vipKyc:true,suspended:at.blockTag===46}));
+  hasRole.mockImplementation(async(roleName:string)=>roleName!=='guardian');
+  await expect(sendManagerChange(wallet,manager,change,config,true)).rejects.toThrow('guardian role');
+  expect(mock.submit).not.toHaveBeenCalled();hasRole.mockResolvedValue(true);
+  await expect(sendManagerChange(wallet,manager,change,config,true)).resolves.toBe(tx);
+  expect(mock.submit.mock.calls[0][5]).toBe(abi.encodeFunctionData('setSuspended',[member,true]));
+  await expect(sendManagerChange(wallet,manager,{...change,previous:true,suspended:false},config,true)).rejects.toThrow('status changed');
  });
  it('withholds a success result if the receipt-block state or block hash differs',async()=>{
   readUsers.mockResolvedValue({registered:true,vipKyc:false});

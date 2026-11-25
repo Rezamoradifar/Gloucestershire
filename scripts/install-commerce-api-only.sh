@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Upgrade commerce and verified member history in the existing read-only API release.
+# Upgrade commerce, portfolio history and signed support in the existing API release.
 set +x
 set -Eeuo pipefail
 umask 077
@@ -61,11 +61,24 @@ commerce_fingerprint(){
  local IFS=/
  echo "${hashes[*]}"
 }
+community_hash(){
+ local file="$1/server/community.mjs"
+ if [[ -L $file || ( -e $file && ! -f $file ) ]]; then echo unsafe
+ elif [[ -f $file ]]; then git hash-object --no-filters -- "$file"
+ else echo missing; fi
+}
+community_target=$(community_hash .)
+community_before=$(community_hash "$commerce_previous")
+case "$community_before" in
+ "$community_target"|missing|b5a980ce6dfc15fdacdc44f385b162f6b5ce9276|4fa182b9f06c348824335cb838b535b8d4ff81e1) ;;
+ *) echo COMMERCE_LIVE_SUPPORT_VERSION_REVIEW_REQUIRED; exit 1 ;;
+esac
 commerce_target=$(commerce_fingerprint .)
 commerce_before=$(commerce_fingerprint "$commerce_previous")
 # Legacy releases contained only the three commerce modules. New releases also fingerprint their history reader and verification code.
 case "$commerce_before" in
  "$commerce_target"|\
+ e2dc460016caa3679f70bcda5d1c810a448b01ed/493d9b5dd388ce84dc559565de3c2f438b813422/3c1cb19872b14b8cca44a370eefe81411c1ef42a/54cd1fc7f99320df137426c2fd9cbc460c0c52c9/63990e2f3f47f40b3d77d5ae702a2767b3e25c11/d6c8962294ff26a940462d3d33b99d3946e9e193/e66c5ce9912c3265465256b73bc407b1241aeb0f|\
  5cae7c3c414386fecb82a0226b43237c3445001d/missing/missing|\
  3455a60264a754cc6a558737ded964391d517109/967e427df79f212b956e11724c331ac26326e426/missing|\
  3455a60264a754cc6a558737ded964391d517109/317ae1adc05081ee2e0ee3f6cc36e8d6535918ec/missing|\
@@ -88,9 +101,10 @@ for(const key of ['COMMUNITY_DATA_FILE','V2_COMMUNITY_DATA_FILE','DAILY_ACTIVITY
 }
 JS
 node --check server/trades-api.mjs
+node --check server/community.mjs
 node --check server/commerce-ebay.mjs
 node --check server/trading-activity.mjs
-node --test test/commerce-ebay.test.mjs test/trading-activity.test.mjs test/v3-member-history-api.test.mjs
+node --test test/commerce-ebay.test.mjs test/trading-activity.test.mjs test/v3-member-history-api.test.mjs test/v3-portfolio-support.test.mjs
 commerce_stage=$(mktemp -d /opt/global-commerce-check.XXXXXX)
 trap 'rm -rf -- "$commerce_stage"' EXIT
 for file in "${history_modules[@]}"; do node --check "$file"; done
@@ -124,8 +138,9 @@ install -d -m 700 /var/lib/globaldroptrade/commerce-api-install
 exec 9>/var/lib/globaldroptrade/commerce-api-install/installer.lock
 flock -n 9 || { echo COMMERCE_API_INSTALL_LOCKED; exit 1; }
 [[ "$(readlink -f "$commerce_current")" == "$commerce_previous" &&
+   "$(community_hash "$commerce_previous")" == "$community_before" &&
    "$(commerce_fingerprint "$commerce_previous")" == "$commerce_before" ]] || { echo COMMERCE_API_CHANGED_DURING_PREFLIGHT; exit 1; }
-if [[ "$commerce_before" == "$commerce_target" && "$credential_was" == "$credential_wanted" ]] &&
+if [[ "$commerce_before" == "$commerce_target" && "$community_before" == "$community_target" && "$credential_was" == "$credential_wanted" ]] &&
  [[ -f $commerce_previous/server/v3-history-profiles.json && ! -L $commerce_previous/server/v3-history-profiles.json ]] &&
  cmp -s "$commerce_stage/profiles.json" "$commerce_previous/server/v3-history-profiles.json"; then
  python3 scripts/v3-history-install.py probe "$commerce_stage/profiles.json" local
@@ -135,7 +150,7 @@ commerce_release=$(mktemp -d "$commerce_releases/commerce.XXXXXX")
 cp -a -- "$commerce_previous/." "$commerce_release/"
 chmod 755 "$commerce_release"
 install -m 644 server/trades-api.mjs "$commerce_release/server/trades-api.mjs"
-install -m 644 server/commerce-ebay.mjs server/trading-activity.mjs "$commerce_release/server/"
+install -m 644 server/community.mjs server/commerce-ebay.mjs server/trading-activity.mjs "$commerce_release/server/"
 [[ ! -L $commerce_release/scripts ]] || { echo COMMERCE_API_RELEASE_PATH_UNSAFE; exit 1; }
 install -d -m 755 "$commerce_release/scripts"
 for file in "${history_modules[@]}"; do install -m 644 "$file" "$commerce_release/$file"; done

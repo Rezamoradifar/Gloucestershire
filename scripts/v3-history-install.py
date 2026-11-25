@@ -63,7 +63,26 @@ def check_route(profiles, endpoint, required='optional'):
             raise ValueError('V3_HISTORY_API_IDENTITY_OR_COVERAGE_INVALID')
         return result
 
+    def check_support(proof):
+        vault = proof['vault'].lower()
+        for route, expected in [('announcements', 200), ('tickets?admin=1', 401)]:
+            payload = subprocess.check_output(['curl', '-sS', '--noproxy', '*', '--max-time', '15',
+                                               *transport, '-w', '\n%{http_code}',
+                                               f'{base}/api/v3/community/{vault}/{route}'])
+            body, _, status = payload.rpartition(b'\n')
+            if status != str(expected).encode():
+                raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
+            data = json.loads(body)
+            if data.get('chainId') != 97 or str(data.get('vault')).lower() != vault:
+                raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
+            if expected == 200 and (not isinstance(data.get('items'), list) or
+                                    any(item.get('published') is not True for item in data['items'])):
+                raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
+            if expected == 401 and ('items' in data or not data.get('error')):
+                raise ValueError('V3_SUPPORT_WORKSPACE_NOT_READY')
+
     for proof in profiles:
+        check_support(proof)
         result = read('member-history', proof)
         anchor = result.get('anchor', {})
         window = result.get('range', {})
@@ -104,5 +123,5 @@ if __name__ == '__main__':
         else:
             raise ValueError('V3_HISTORY_INSTALL_ARGUMENTS_INVALID')
     except (OSError, ValueError, AttributeError, TypeError, subprocess.SubprocessError) as exc:
-        print(str(exc) if str(exc).startswith('V3_HISTORY_') else 'V3_HISTORY_INSTALL_CHECK_FAILED', file=sys.stderr)
+        print(str(exc) if str(exc).startswith(('V3_HISTORY_', 'V3_SUPPORT_')) else 'V3_HISTORY_INSTALL_CHECK_FAILED', file=sys.stderr)
         sys.exit(1)

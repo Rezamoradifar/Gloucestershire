@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory() as temporary:
         (root / name).mkdir(parents=True, exist_ok=True)
     for name in ['scripts/install-commerce-api-only.sh', 'scripts/v3-history-install.py',
                  'scripts/v3-unified-release-pins.mjs', 'scripts/verify-v3-unified-release.mjs', 'scripts/verify-v3-unified-deployment.mjs',
-                 'server/v3-member-history.mjs', 'server/trades-api.mjs',
+                 'server/v3-member-history.mjs', 'server/trades-api.mjs', 'server/community.mjs', 'test/v3-portfolio-support.test.mjs',
                  'server/commerce-ebay.mjs', 'server/trading-activity.mjs', 'test/commerce-ebay.test.mjs', 'test/trading-activity.test.mjs', 'test/v3-member-history-api.test.mjs']:
         source = (repo / name).read_text()
         if name.endswith('.sh'):
@@ -81,6 +81,12 @@ while [[ $# -gt 0 ]]; do
  shift
 done
 case "$url" in
+ */api/v3/community/*)
+   part="${{url#*/api/v3/community/}}"; vault="${{part%%/*}}"
+   if [[ -f "{root}/wrong-support" ]]; then echo missing; echo 404
+   elif [[ "$part" == */announcements ]]; then
+    printf '{{"chainId":97,"vault":"%s","items":[]}}\\n200' "$vault"
+   else printf '{{"chainId":97,"vault":"%s","error":"Sign in"}}\\n401' "$vault"; fi ;;
  */api/v3/member-*)
    python3 - "$url" <<'PY'
 import json, sys
@@ -134,6 +140,7 @@ esac''',
     assert current.resolve() != previous
     assert (current / 'server/commerce-ebay.mjs').is_file()
     assert (current / 'server/trading-activity.mjs').is_file()
+    assert (current / 'server/community.mjs').read_bytes() == (repo/'server/community.mjs').read_bytes()
     assert (current / 'server/v3-member-history.mjs').is_file()
     assert (current / 'scripts/verify-v3-unified-release.mjs').is_file()
     exported = json.loads((current/'server/v3-history-profiles.json').read_text())
@@ -177,6 +184,31 @@ esac''',
                 assert not file.exists()
             else:
                 assert file.read_bytes() == historical_blob(blob)
+    prior = {
+        'server/trades-api.mjs': 'e2dc460016caa3679f70bcda5d1c810a448b01ed',
+        'server/commerce-ebay.mjs': '493d9b5dd388ce84dc559565de3c2f438b813422',
+        'server/trading-activity.mjs': '3c1cb19872b14b8cca44a370eefe81411c1ef42a',
+        'server/v3-member-history.mjs': '54cd1fc7f99320df137426c2fd9cbc460c0c52c9',
+        'server/community.mjs': 'b5a980ce6dfc15fdacdc44f385b162f6b5ce9276',
+        'scripts/v3-unified-release-pins.mjs': '63990e2f3f47f40b3d77d5ae702a2767b3e25c11',
+        'scripts/verify-v3-unified-release.mjs': 'd6c8962294ff26a940462d3d33b99d3946e9e193',
+        'scripts/verify-v3-unified-deployment.mjs': 'e66c5ce9912c3265465256b73bc407b1241aeb0f'
+    }
+    current.unlink()
+    current.symlink_to(previous)
+    for name, blob in prior.items():
+        (previous/name).parent.mkdir(exist_ok=True)
+        (previous/name).write_bytes(historical_blob(blob))
+    upgrade = run('--install')
+    assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
+    assert (current/'server/community.mjs').read_bytes() == (repo/'server/community.mjs').read_bytes()
+    current.unlink()
+    current.symlink_to(previous)
+    (previous/'server/community.mjs').write_text('local unpublished changes')
+    unknown_support = run('--check')
+    assert unknown_support.returncode != 0 and 'COMMERCE_LIVE_SUPPORT_VERSION_REVIEW_REQUIRED' in unknown_support.stdout
+    for name in prior:
+        (previous/name).unlink()
     modules[0].write_bytes(baseline)
     for file in modules[1:]:
         file.unlink(missing_ok=True)
@@ -204,7 +236,8 @@ esac''',
     assert not dropin.exists()
     (root/'wrong-history').unlink()
     for marker, message in [('wrong-log-page','V3_HISTORY_EVENT_PAGE_INVALID'),
-                            ('wrong-withdrawals','V3_HISTORY_WITHDRAWAL_PAGE_INVALID')]:
+                            ('wrong-withdrawals','V3_HISTORY_WITHDRAWAL_PAGE_INVALID'),
+                            ('wrong-support','V3_SUPPORT_WORKSPACE_NOT_READY')]:
         (root/marker).touch()
         failed_page = run('--install')
         assert failed_page.returncode != 0 and current.resolve() == previous

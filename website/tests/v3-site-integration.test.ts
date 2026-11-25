@@ -25,7 +25,7 @@ describe('Global V3 testnet site: no unverified balances or automatic V2 migrati
   expect(siteRoute('#v2-dashboard',opts)).toBe('v3');
   expect(siteRoute('#v3-dashboard',opts)).toBe('v3');
   expect(siteRoute('#dashboard',opts)).toBe('v3');
-  for(const hash of ['#dashboard/admin','#dashboard/history']){
+  for(const hash of ['#dashboard/admin','#dashboard/history','#dashboard/tickets','#dashboard/announcements']){
    expect(siteRoute(hash,opts)).toBe('v3');
    expect(siteRoute(hash,{...opts,v3Only:false})).toBe('landing');
   }
