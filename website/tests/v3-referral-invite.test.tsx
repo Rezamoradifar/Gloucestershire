@@ -22,6 +22,11 @@ describe('V3 referral invitation',()=>{
   vi.stubEnv('VITE_V3_UNIFIED_PRIMARY','');
   expect(renderToStaticMarkup(<V3ReferralInvite view={view}/>)).toContain('/hourly-test/?ref='+wallet+'#dashboard');
  });
+ it('keeps a plan-portfolio invitation on the isolated route',()=>{
+  vi.stubGlobal('window',{location:{origin:'https://globaldroptrade.com',pathname:'/'}});vi.stubEnv('VITE_V3_UNIFIED_PRIMARY','plan-portfolio-testnet');
+  const view={wallet,registered:true,singleCapital:true,baseProfitReferrals:true,portfolio:true,planPortfolio:true} as V3Snapshot;
+  expect(renderToStaticMarkup(<V3ReferralInvite view={view}/>)).toContain('/plan-portfolio-test/?ref='+wallet+'#dashboard');
+ });
  it('explains daily referral eligibility at maturity even if posting is delayed',()=>{
   const view={wallet,registered:true,eligible:true,dailyPlan:true} as V3Snapshot;
   const html=renderToStaticMarkup(<V3ReferralInvite view={view}/>);

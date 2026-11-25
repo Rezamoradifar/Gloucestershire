@@ -55,8 +55,10 @@ bash() {
   esac
 }
 curl() {
-  echo "https ${!#}" >> "$TRACE"
-  printf '%s\n' "$ACTIVITY_BODY"
+  local url=${!#}
+  echo "https $url" >> "$TRACE"
+  if [[ -n $ACTIVITY_BODY ]]; then printf '%s\n' "$ACTIVITY_BODY"
+  else printf '{"source":"%s","status":"not_configured","rows":[]}\n' "${url##*=}"; fi
 }
 sleep() { :; }
 apply_release "$REVISION" "$TEST_PROOF" "${DEPLOY_OPTION:-}"
@@ -74,7 +76,7 @@ class ApplyTestnet(unittest.TestCase):
         env = dict(os.environ, SOURCE=str(SOURCE), REVISION=REVISION, TEST_PROOF=str(self.proof),
                    TRACE=str(self.trace), DIGEST=DIGEST, WORKER_RESULT="0", VERIFY_RESULT="0",
                    CHECK_RESULT="0", SITE_RESULT="0", DEPLOY_RESULT="0", RECOVER_RESULT="0", PRIMARY_RESULT="0",
-                   COMMERCE_RESULT="0", ACTIVITY_BODY='{"source":"kraken","status":"not_configured","rows":[]}')
+                   COMMERCE_RESULT="0", ACTIVITY_BODY='')
         env.update(settings)
         self.trace.write_text("")
         proc = subprocess.run(["bash", "-c", HARNESS], env=env, capture_output=True, text=True)
@@ -228,14 +230,17 @@ class ApplyTestnet(unittest.TestCase):
         self.proof.write_bytes(PROOF)
         good, calls = self.apply(**options)
         self.assertEqual(good.returncode, 0, good.stderr)
-        self.assertEqual(calls[-3:], [f"--install {REVISION} {DIGEST} {SIGN_RPC} --account-reinvest",
+        self.assertEqual(calls[-5:], [f"--install {REVISION} {DIGEST} {SIGN_RPC} --account-reinvest",
                                       f"commerce {REVISION} --install",
-                                      "https https://globaldroptrade.com/api/commerce/activity?source=kraken"])
+                                      "https https://globaldroptrade.com/api/commerce/activity?source=kraken",
+                                      "https https://globaldroptrade.com/api/commerce/activity?source=amazon",
+                                      "https https://globaldroptrade.com/api/commerce/activity?source=ebay"])
         self.assertIn("GLOBAL_GLASS_PANEL_INSTALLED", good.stdout)
         bad_site, calls = self.apply(**options, PRIMARY_RESULT="7")
         self.assertEqual(bad_site.returncode, 7)
         self.assertFalse(any(call.startswith("commerce") for call in calls))
-        for settings in [dict(COMMERCE_RESULT="23"), dict(ACTIVITY_BODY='{"error":"Not found"}')]:
+        for settings in [dict(COMMERCE_RESULT="23"), dict(ACTIVITY_BODY='{"error":"Not found"}'),
+                         dict(ACTIVITY_BODY='{"source":"kraken","status":"not_configured","rows":[]}')]:
             partial, calls = self.apply(**options, **settings)
             self.assertNotEqual(partial.returncode, 0)
             self.assertIn("GLOBAL_SINGLE_CAPITAL_PRIMARY_AVAILABLE", partial.stdout)

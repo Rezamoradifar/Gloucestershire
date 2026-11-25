@@ -11,6 +11,13 @@ describe('commercial activity requires actual seller records',()=>{
   expect(readCommerceSummary(live,now)?.paidOrders).toBe(4);
   expect(readCommerceSummary(live,now)?.commercialProfit).toBeNull();
  });
+ it('accepts paid-order and performance totals spanning multiple provider pages',()=>{
+  const report={...live,paidOrders:457,performance:{orderCount:501,currencies:[
+   {currency:'USD',gross:'1000.00',recent:'234.00',netSales:null,profit:null}
+  ]}};
+  expect(readCommerceSummary(report,now)).toEqual(report);
+  expect(readCommerceSummary({...report,paidOrders:503},now)).toBeNull();
+ });
  it('rejects stale data, unverified profit and incomplete counts',()=>{
   expect(readCommerceSummary({...live,updatedAt:'2026-11-14T11:55:00Z'},now)).toBeNull();
   expect(readCommerceSummary({...live,commercialProfit:100},now)).toBeNull();

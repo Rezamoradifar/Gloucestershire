@@ -2,9 +2,9 @@
 // It cannot sign, broadcast, deploy, migrate accounts or update a website.
 // A successful estimate is not a release approval or an operational keeper.
 import {ContractFactory,Interface,getAddress,getCreateAddress,isAddress,keccak256,parseEther,toQuantity,ZeroAddress} from 'ethers';
-import {compileUnifiedTestnet,compileSingleCapitalTestnet,compileDailyCapitalTestnet,compileReferralProfitTestnet,compileManualReinvestTestnet,compileUplineRatesTestnet,compileAccountReinvestTestnet} from './compile-global-v3-unified-testnet.mjs';
+import {compileUnifiedTestnet,compileSingleCapitalTestnet,compileDailyCapitalTestnet,compileReferralProfitTestnet,compileManualReinvestTestnet,compileUplineRatesTestnet,compileAccountReinvestTestnet,compilePortfolioTestnet,compilePlanPortfolioTestnet} from './compile-global-v3-unified-testnet.mjs';
 
-import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER,UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_TOKEN,UNIFIED_TOKEN_RUNTIME_HASH,UNIFIED_MANAGER,UNIFIED_FEE_RECEIVER,UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE,PORTFOLIO_PROFILE,PLAN_PORTFOLIO_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TOKEN=getAddress(UNIFIED_TOKEN);
 const MANAGER=getAddress(UNIFIED_MANAGER);
@@ -14,6 +14,8 @@ const TOKEN_ABI=new Interface(['function decimals() view returns(uint8)']);
 const HASH=/^0x[0-9a-fA-F]{64}$/;
 
 export function deploymentArtifact(profile) {
+ if(profile===PLAN_PORTFOLIO_PROFILE)return {name:'GlobalV3PlanPortfolioTestnet',compile:compilePlanPortfolioTestnet};
+ if(profile===PORTFOLIO_PROFILE)return {name:'GlobalV3PortfolioTestnet',compile:compilePortfolioTestnet};
  if(profile===ACCOUNT_REINVEST_PROFILE)return {name:'GlobalV3AccountReinvestTestnet',compile:compileAccountReinvestTestnet};
  if(profile===UPLINE_RATES_PROFILE)return {name:'GlobalV3UplineRatesTestnet',compile:compileUplineRatesTestnet};
  if(profile===MANUAL_REINVEST_PROFILE)return {name:'GlobalV3SingleCapitalTestnet',compile:compileManualReinvestTestnet};

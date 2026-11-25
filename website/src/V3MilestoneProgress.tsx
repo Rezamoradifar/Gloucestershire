@@ -1,5 +1,5 @@
 import {useId} from 'react';
-import {formatV3Amount as money} from './v3-format';
+import {formatShare,formatV3Amount as money} from './v3-format';
 import {stageBranchCapBps} from './v3-network-preview';
 import type {V3NetworkGroup} from './v3-chain';
 
@@ -18,11 +18,11 @@ export default function V3MilestoneProgress({group}:{group:V3NetworkGroup}){
   return <li key={index}><span>Branch {index+1}
    {address&&<small title={address}>{address.slice(0,8)}…{address.slice(-6)}</small>}</span>
    <meter min={0} max={10000} value={Number(amount*10000n/cap)} aria-label={'Branch '+(index+1)+' share of branch cap'}
-    aria-valuetext={money(amount)+' of '+money(cap)+' test USDT'}/><b>{money(amount)}</b></li>;
+    aria-valuetext={money(amount)+' of '+money(cap)+' test USDT'}/><b>{money(amount)} · {formatShare(amount,target)}</b></li>;
  }
  return <figure className="gv3-stage-progress" aria-labelledby={id+'-title'}>
   <figcaption id={id+'-title'}>{exact?'Eligible stage volume':'Confirmed prepared volume'}</figcaption>
-  <div className="gv3-stage-total"><strong>{money(counted)}</strong><span>of {money(target)} test USDT</span></div>
+  <div className="gv3-stage-total"><strong>{money(counted)}</strong><span>of {money(target)} test USDT · {formatShare(counted,target)}</span></div>
   <progress value={scale} max={10000} aria-labelledby={id+'-title'} aria-valuetext={money(counted)+' of '+money(target)+' test USDT'}/>
   <div className="gv3-stage-outlook"><div><span>{complete?'Stage status':exact?'Still needed':'Volume preview'}</span>
    <b>{complete?'Target reached':exact?money(target-counted)+' test USDT':'Partial view'}</b></div>

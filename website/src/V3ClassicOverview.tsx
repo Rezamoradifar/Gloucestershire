@@ -2,7 +2,7 @@ import {useState,type FormEvent,type ReactNode} from 'react';
 import {V3_HOURLY_TEST} from './v3-site-config';
 import {ArrowDownLeft,ArrowRight,ArrowUpRight,Coins,Layers,LockKeyhole,Wallet} from 'lucide-react';
 import DigitalValue from './DigitalValue';
-import {formatV3Amount as money} from './v3-format';
+import {formatV3Amount as money,v3TierName} from './v3-format';
 import {v3PrepareUserClaims} from './v3-claim-balance';
 import V3UnifiedReinvestSummary from './V3UnifiedReinvestSummary';
 import type {V3Snapshot} from './v3-chain';
@@ -90,7 +90,7 @@ export default function V3ClassicOverview(props:Props){
    </section>
    <aside className="gv1-side-panels">
     <section className="gv1-panel gv1-plan" aria-labelledby="gv1-plan-title">
-     <div className="gv1-panel-title"><h2 id="gv1-plan-title">Your plan</h2><span className="gv1-plan-tag">{view?(view.registered?(['Starter','Basic','Growth','Pro','VIP'][view.tier]??'Member'):'Not registered'):connected?accountReadStatus:'Not connected'}</span></div>
+     <div className="gv1-panel-title"><h2 id="gv1-plan-title">Your plan</h2><span className="gv1-plan-tag">{view?(view.registered?v3TierName(view.tier):'Not registered'):connected?accountReadStatus:'Not connected'}</span></div>
      <div className="gv1-plan-figure"><span className="gv1-plan-symbol">◆</span><div>
       <strong><DigitalValue value={view?String(view.dailyRateBps/100):'—'} unit="%"/></strong><small>Daily test rate · conditional</small></div></div>
      <div className="gv1-plan-detail"><span>Recorded capital value</span><b>{view?money(view.capital):'—'} USDT</b></div>

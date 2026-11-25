@@ -58,6 +58,17 @@ esac''')
         self.assertEqual(Path(stage).parent.parent, self.stages)
         self.assertEqual(list(self.stages.iterdir()), [])
 
+    def test_plan_portfolio_forwards_isolated_actions_and_preserves_primary(self):
+        for flags in [(), ("--deploy-testnet",)]:
+            with self.subTest(flags=flags):
+                result = self.invoke(PIN, "--plan-portfolio", *flags)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.log.read_text().split()[2:], ["--plan-portfolio", *flags])
+                self.log.unlink()
+        for primary in ["--primary", "--primary-with-commerce"]:
+            self.assertIn("UNIFIED_START_INVALID_PROFILE", self.invoke(PIN, "--plan-portfolio", primary).stderr)
+            self.assertFalse(self.log.exists())
+
     def test_mismatch_and_wrong_host_never_start_apply(self):
         self.env["RECEIVED_SHA"] = "0" * 40
         self.assertIn("UNIFIED_START_FETCHED_SHA_MISMATCH", self.invoke(PIN).stderr)

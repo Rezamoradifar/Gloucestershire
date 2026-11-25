@@ -5,20 +5,29 @@ import {v3ReadSession,V3_TEST_TOKEN_ABI} from './v3-chain';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
 import {v3WithdrawalFee} from './v3-withdrawal-form';
 
+import type {PortfolioAction} from './v3-portfolio';
+
 type Request=Extract<V3Action,{kind:'requestProfit'|'requestPrincipal'|'requestReferral'|'requestNetworkReward'}>;
 type Settlement=Extract<V3Action,{kind:'approveWithdrawal'|'rejectWithdrawal'|'reserveExistingCash'|'payWithdrawal'}>|
  {kind:'fundPlanReserve';gross:bigint}|{kind:'cancelWithdrawal';id:number}|{kind:'fundWithdrawal';id:number;gross:bigint;beneficiary:string};
-export type UnifiedWithdrawal=Request|Settlement;
+export type UnifiedWithdrawal=Request|PortfolioAction|Settlement;
 const requestKind={requestProfit:0,requestPrincipal:1,requestReferral:2,requestNetworkReward:3} as const;
 
 export function isUnifiedWithdrawal(action:V3Action|UnifiedWithdrawal):action is UnifiedWithdrawal{
- return Object.hasOwn(requestKind,action.kind)||['approveWithdrawal','rejectWithdrawal','reserveExistingCash',
+ return action.kind==='requestAccountWithdrawal'||Object.hasOwn(requestKind,action.kind)||['approveWithdrawal','rejectWithdrawal','reserveExistingCash',
   'fundWithdrawal','payWithdrawal','cancelWithdrawal','fundPlanReserve'].includes(action.kind);
 }
 export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:string,action:UnifiedWithdrawal,
  config:V3SiteReleaseConfig|null,options:{enabled:boolean;onProgress?:V3TransactionProgressCallback}){
  if(!options.enabled||!config?.unified)throw Error('The unified testnet preview is read-only.');
  const who=getAddress(wallet);
+ if(action.kind==='requestAccountWithdrawal'){
+  const p=action.parts;
+  if(!config.unified.portfolio||[p.personal,p.referral,p.network,p.principal].some(v=>v<0n)||
+   p.personal+p.referral+p.network+p.principal!==action.amount||
+   ![action.profitStart,action.principalStart].every(v=>Number.isSafeInteger(v)&&v>=0))
+   throw Error('The combined withdrawal allocation is invalid for this account.');
+ }else if(config.unified.portfolio&&'amount' in action)throw Error('Use the combined withdrawal form on this contract.');
  if(action.kind==='fundPlanReserve'&&(!config.unified.dailyPlan||action.gross<=0n))throw Error('A positive amount and a verified daily plan are required.');
  if('id' in action&&(!Number.isSafeInteger(action.id)||action.id<0))throw Error('Invalid withdrawal request ID.');
  if('amount' in action&&action.amount<=0n)throw Error('Enter a positive USDT amount.');
@@ -68,7 +77,7 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
   if('positionId' in action&&BigInt(await vault.reinvestmentPositionPlusOne(who,session.options))===BigInt(action.positionId)+1n)
    throw Error('Select the reinvestment additions page to request profit or principal from that position.');
   const row='id' in action?await vault.withdrawalOf(action.id,session.options):null;
-  const args=action.kind==='fundPlanReserve'?[action.gross]:'id' in action?[action.id]:'positionId' in action?[action.positionId,action.amount]:[action.amount];
+  const args=action.kind==='requestAccountWithdrawal'?[action.parts,action.profitStart,action.principalStart]:action.kind==='fundPlanReserve'?[action.gross]:'id' in action?[action.id]:'positionId' in action?[action.positionId,action.amount]:[action.amount];
   const receipt=await submit(vault,action.kind,args,action.kind==='fundPlanReserve'?'Fund plan reserve':'Test withdrawal');
   try{
    const logs=receipt.logs.flatMap(log=>{
@@ -80,6 +89,15 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
    }
    if(action.kind==='fundPlanReserve'){
     find('PlanReserveFunded',({args:a})=>getAddress(a.funder)===who&&a.amount===action.gross);
+   }else if(action.kind==='requestAccountWithdrawal'){
+    const p=action.parts;
+    const fee=v3WithdrawalFee(action.amount-p.principal,false,true)+v3WithdrawalFee(p.principal,true);
+    const requests=logs.filter(e=>e.name==='WithdrawalRequested');
+    if(requests.length!==1)throw Error('Expected one withdrawal request.');
+    const a=requests[0].args;
+    if(getAddress(a.user)!==who||a.kind!==4n||a.gross!==action.amount||a.fee!==fee)throw Error('Combined withdrawal amount mismatch.');
+    find('AccountWithdrawalAllocated',({args:b})=>b.id===a.id&&getAddress(b.user)===who&&b.personal===p.personal&&
+     b.referral===p.referral&&b.network===p.network&&b.principal===p.principal);
    }else if('amount' in action){
     const kind=requestKind[action.kind],fee=v3WithdrawalFee(action.amount,kind===1,config.unified.manualReinvest);
     find('WithdrawalRequested',({args:a})=>getAddress(a.user)===who&&Number(a.kind)===kind&&a.gross===action.amount&&a.fee===fee);

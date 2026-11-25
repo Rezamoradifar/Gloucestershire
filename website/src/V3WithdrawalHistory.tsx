@@ -5,11 +5,12 @@ import {formatUtcTime} from './utc-time';
 import {readV3WithdrawalPage,type V3WithdrawalAnchor,type V3WithdrawalPage} from './v3-withdrawal-history';
 import type {V3SiteReleaseConfig} from './v3-site-config';
 
-const kinds=['Profit','Principal','Referral','Network milestone'];
+const kinds=['Profit','Principal','Referral','Network milestone','Combined withdrawal'];
 const statuses=['Requested','Manager approved','Cash escrowed','Paid','Rejected','Cancelled'];
 export default function V3WithdrawalHistory({wallet,config}:{wallet:string;config:V3SiteReleaseConfig}){
  const [page,setPage]=useState(0),[version,setVersion]=useState(0);
  const [data,setData]=useState<V3WithdrawalPage|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+ const [status,setStatus]=useState('all');
  const anchor=useRef<V3WithdrawalAnchor|null>(null);
  useEffect(()=>{
   let alive=true;
@@ -27,9 +28,15 @@ export default function V3WithdrawalHistory({wallet,config}:{wallet:string;confi
   {loading&&<p role="status">Loading verified requests…</p>}{error&&<p className="gv2-error" role="alert">{error}</p>}
   {data&&<>
    <p className="gv3-history-range">{data.total} total · confirmed block {data.anchor.block.toLocaleString('en-US')}</p>
-   {data.items.map(r=><article className="gv3-withdrawal-row" key={r.id}>
+   <div className="gdp-filters"><label>Request status on this page<select value={status} onChange={e=>setStatus(e.target.value)}>
+    <option value="all">All statuses</option>{statuses.map((label,i)=><option key={label} value={i}>{label}</option>)}</select></label></div>
+   {data.items.length>0&&status!=='all'&&!data.items.some(r=>String(r.status)===status)&&<p>No requests match this status on this page.</p>}
+   {data.items.filter(r=>status==='all'||String(r.status)===status).map(r=><article className="gv3-withdrawal-row" key={r.id}>
     <div><strong>Request #{r.id+1} · {kinds[r.kind]??'Unknown'}</strong>
-     <small>{formatUtcTime(r.requestedAt)}</small></div>
+     <small>{formatUtcTime(r.requestedAt)}</small>
+     {r.allocation&&<details className="gdp-member-more"><summary>Withdrawal breakdown</summary><dl>
+      {([['personal','Personal profit'],['referral','Referral commission'],['network','Network rewards'],['principal','Principal']] as const).map(([key,label])=>
+       <div key={key}><dt>{label}</dt><dd>{formatV3Amount(r.allocation![key])} test USDT</dd></div>)}</dl></details>}</div>
     <div><b>{formatV3Amount(r.gross)} USDT</b><small>Net {formatV3Amount(r.gross-r.fee)} · Fee {formatV3Amount(r.fee)}</small></div>
     <div><span className="gv3-request-status">{statuses[r.status]??'Unverified'}</span></div>
    </article>)}

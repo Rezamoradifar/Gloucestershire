@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,createHmac} from 'node:crypto';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {createCommerceStatus} from '../server/commerce-ebay.mjs';
 import {createTradingActivity} from '../server/trading-activity.mjs';
 import {createApiServer} from '../server/trades-api.mjs';
@@ -78,4 +81,180 @@ test('same-origin activity endpoint accepts only GET and the named account sourc
   });
   assert.equal((await call('POST','ebay')).status,405);assert.equal((await call('GET','other')).status,400);
   assert.equal((await call('GET','amazon')).body.status,'not_configured');
+});
+
+async function privateInputs(t, catalog, orders=[]) {
+  const dir=await mkdtemp(join(tmpdir(),'dropshipping-feed-'));
+  t.after(()=>rm(dir,{recursive:true,force:true}));
+  const productsFile=join(dir,'products.json'), ledgerFile=join(dir,'statements.json');
+  await Promise.all([
+    writeFile(productsFile,JSON.stringify({version:1,products:catalog}),{mode:0o600}),
+    writeFile(ledgerFile,JSON.stringify({version:1,orders}),{mode:0o600}),
+  ]);
+  return {COMMERCE_PRODUCT_CATALOG_FILE:productsFile,EBAY_SELLER_RECONCILIATION_FILE:ledgerFile};
+}
+
+const paidOrder={
+  orderId:'private-order-20',orderPaymentStatus:'PAID',creationDate:when,lastModifiedDate:when,
+  pricingSummary:{total:{value:'100.00',currency:'USD'}},
+  lineItems:[
+    {legacyItemId:'111111111111',legacyVariationId:'221122112211',quantity:2,title:'Headline headphones',
+      variationAspects:[{name:'Model',value:'Listed M'},{name:'Type',value:'Headset'}],sku:'private-seller-sku'},
+    {legacyItemId:'111111111111',legacyVariationId:'332233223322',quantity:1,title:'Portable case',
+      variationAspects:[{name:'Model Number',value:'Case-22'},{name:'Type',value:'Case'},{name:'Product type',value:'Sleeve'}],
+      compatibilityProperties:[{propertyName:'Model',propertyValue:'private-vehicle'}]},
+  ],
+};
+const statement={orderId:paidOrder.orderId,orderRevision:when,currency:'USD',gross:'100',refunds:'0',supplierCost:'107.30',fees:'2.70',otherCosts:'1.42'};
+
+function saleActivity(env,order=paidOrder) {
+  const settings={...sellerEnv,EBAY_SELLER_PUBLIC_ACTIVITY:'1',...env};
+  const fetcher=async url=>url.includes('oauth2/token')?ok({access_token:'token',expires_in:7200}):ok({total:1,orders:[order]});
+  return createTradingActivity({env:settings,seller:createCommerceStatus({env:settings,now:()=>time,fetcher}),now:()=>time}).get('ebay');
+}
+
+test('live sale retains one gross and one reconciled P&L across exact product variations',async t=>{
+  const files=await privateInputs(t,[
+    {source:'ebay',id:'111111111111',variationId:'221122112211',model:'M42',type:'Headphones',internal:'private memo'},
+    {source:'ebay',id:'111111111111',model:'Wrong parent model',type:'Wrong parent type'},
+  ],[statement]);
+  const feed=await saleActivity({...files,DROPSHIPPING_PUBLIC_DETAILS:'1'});
+  assert.equal(feed.status,'connected');
+  assert.equal(feed.rows.length,1);
+  const [row]=feed.rows;
+  assert.equal(row.amount,'100.00');
+  assert.equal(row.productCount,2);
+  assert.deepEqual(row.products,[
+    {name:'Headline headphones',model:'M42',type:'Headphones',quantity:2},
+    {name:'Portable case',model:'Case-22',type:null,quantity:1},
+  ]);
+  assert.deepEqual(row.profit,{net:'-11.42',netSales:'100.0',costs:'111.42'});
+  assert.doesNotMatch(JSON.stringify(row),/private|111111111111|332233223322|Wrong parent/);
+  const legacy=await saleActivity({...files,EBAY_SELLER_PUBLIC_PERFORMANCE:'1'});
+  assert.equal(legacy.rows[0].products,undefined);
+  assert.equal(legacy.rows[0].profit,undefined);
+});
+
+test('stale, incomplete, duplicate or mismatched reconciliation preserves the sale with P&L withheld',async t=>{
+  const files=await privateInputs(t,[],[]);
+  const env={...files,DROPSHIPPING_PUBLIC_DETAILS:'1'};
+  for(const rows of [
+    [{...statement,orderRevision:'2020-01-01T00:00:00Z'}],[{...statement,otherCosts:null}],
+    [{...statement,gross:'101'}],[{...statement,currency:'CAD'}],[{...statement,refunds:'5'}],
+    [{...statement,orderId:'another-order'}],[statement,statement],
+  ]) {
+    await writeFile(files.EBAY_SELLER_RECONCILIATION_FILE,JSON.stringify({version:1,orders:rows}));
+    const [row]=(await saleActivity(env)).rows;
+    assert.equal(row.profit,undefined);
+    assert.equal(row.products[0].model,'Listed M');
+    assert.equal(row.products[0].type,'Headset');
+    assert.equal(row.products[1].type,null);
+  }
+  await writeFile(files.EBAY_SELLER_RECONCILIATION_FILE,JSON.stringify({version:1,orders:[{...statement,supplierCost:'100',fees:'0',otherCosts:'0'}]}));
+  assert.deepEqual((await saleActivity(env)).rows[0].profit,{net:'0.0',netSales:'100.0',costs:'100.0'});
+  assert.deepEqual((await saleActivity(env,{...paidOrder,orderPaymentStatus:'PENDING'})).rows,[]);
+});
+
+test('opted-in refunded sales retain one original gross with net sales and losses after refunds',async t=>{
+  const files=await privateInputs(t,[],[]);
+  const env={...files,DROPSHIPPING_PUBLIC_DETAILS:'1'};
+  for(const [payment,refundStatus,refunds,netSales,net] of [
+    ['PARTIALLY_REFUNDED','partial','20.00','80.0','8.0'],
+    ['FULLY_REFUNDED','full','100.00','0.0','-72.0'],
+  ]) {
+    const order={...paidOrder,orderPaymentStatus:payment};
+    const settled={...statement,supplierCost:'63',fees:'7',otherCosts:'2',refunds};
+    await writeFile(files.EBAY_SELLER_RECONCILIATION_FILE,JSON.stringify({version:1,orders:[settled]}));
+    const feed=await saleActivity(env,order);
+    assert.equal(feed.rows.length,1);
+    const [sale]=feed.rows;
+    assert.equal(sale.side,'sell');
+    assert.equal(sale.refundStatus,refundStatus);
+    assert.equal(sale.time,when);
+    assert.equal(sale.amount,'100.00');
+    assert.equal(sale.productCount,2);
+    assert.deepEqual(sale.profit,{net,netSales,costs:'72.0'});
+    assert.deepEqual((await saleActivity(files,order)).rows,[]);
+    assert.deepEqual((await saleActivity(env,{...order,cancelStatus:{cancelState:'CANCEL_CLOSED_WITH_REFUND'}})).rows,[]);
+    await writeFile(files.EBAY_SELLER_RECONCILIATION_FILE,JSON.stringify({version:1,orders:[{...settled,refunds:'0.00'}]}));
+    const [unsettled]=(await saleActivity(env,order)).rows;
+    assert.equal(unsettled.refundStatus,refundStatus);
+    assert.equal(unsettled.profit,undefined);
+  }
+});
+
+test('temporary store outages keep the last confirmed snapshot for ten minutes without extending its timestamp',async()=>{
+  let clock=time, status=200, reads=0;
+  const env={...sellerEnv,EBAY_SELLER_PUBLIC_ACTIVITY:'1'};
+  const fetcher=async url=>{
+    if(url.includes('oauth2/token'))return ok({access_token:'token',expires_in:7200});
+    reads++;
+    return status===200?ok({total:1,orders:[paidOrder]}):{ok:false,status};
+  };
+  const seller=createCommerceStatus({env,fetcher,now:()=>clock});
+  const desk=createTradingActivity({seller,env,now:()=>clock});
+  const confirmed=await desk.get('ebay');
+  clock+=31000;status=503;
+  const delayed=await desk.get('ebay');
+  assert.deepEqual(delayed,{source:'ebay',status:'unavailable',updatedAt:null,rows:[],lastConfirmed:confirmed});
+  clock+=31000;status=429;
+  const [limited,duplicate]=await Promise.all([desk.get('ebay'),desk.get('ebay')]);
+  assert.deepEqual(limited,duplicate);
+  assert.deepEqual(limited.lastConfirmed,confirmed);assert.equal(limited.status,'rate_limited');assert.equal(reads,3);
+  clock=time+599999;assert.deepEqual((await desk.get('ebay')).lastConfirmed,confirmed);
+  clock++;assert.equal((await desk.get('ebay')).lastConfirmed,undefined);
+  clock+=91000;status=200;
+  const recovered=await desk.get('ebay');
+  assert.equal(recovered.status,'connected');assert.equal(recovered.updatedAt,new Date(clock).toISOString());
+  clock+=31000;status=403;
+  assert.deepEqual(await desk.get('ebay'),{source:'ebay',status:'unavailable',updatedAt:null,rows:[]});
+  clock+=31000;status=503;assert.equal((await desk.get('ebay')).lastConfirmed,undefined);
+});
+
+test('a store opt-out, reduced disclosure or replaced credential clears cached and in-flight rows',async()=>{
+  const env={...amazonEnv,DROPSHIPPING_PUBLIC_DETAILS:'1'};
+  const tx={transactionId:'test',transactionType:'CHARGE',transactionDate:when,amount:{currencyCode:'USD',amount:'25.00'}};
+  let clock=time, status=200, finish,requestStarted;
+  const started=new Promise(resolve=>{requestStarted=resolve;});
+  const fetcher=async url=>{
+    if(url.includes('auth/o2/token'))return ok({access_token:'token',expires_in:7200});
+    if(status===0){requestStarted();await new Promise(resolve=>{finish=resolve;});}
+    return status===503?{ok:false,status}:ok({transactions:[tx]});
+  };
+  const desk=createTradingActivity({env,fetcher,now:()=>clock});
+  assert.deepEqual((await desk.get('amazon')).rows[0].products,[]);
+  env.DROPSHIPPING_PUBLIC_DETAILS='0';status=503;
+  assert.equal((await desk.get('amazon')).lastConfirmed,undefined);
+  clock+=31000;status=200;assert.equal((await desk.get('amazon')).rows[0].products,undefined);
+  const off={source:'amazon',status:'not_configured',updatedAt:null,rows:[]};
+  env.AMAZON_BUSINESS_PUBLIC_ACTIVITY='0';assert.deepEqual(await desk.get('amazon'),off);
+  env.AMAZON_BUSINESS_PUBLIC_ACTIVITY='1';status=0;
+  const pending=desk.get('amazon');await started;
+  env.AMAZON_BUSINESS_REFRESH_TOKEN='replacement';
+  assert.deepEqual(await desk.get('amazon'),off);
+  finish();assert.deepEqual(await pending,off);
+});
+
+test('Amazon reports an actual charge with bounded public catalog lines and quantities, never a sale profit',async t=>{
+  const files=await privateInputs(t,[{source:'amazon',id:'B000ABC123',name:'Portable audio',model:'ABC-123',type:'Speaker'}]);
+  const tx={transactionId:'private-charge',transactionType:'CHARGE',transactionDate:when,
+    amount:{currencyCode:'GBP',amount:'89.97'},transactionLineItems:[
+      {asin:'B000ABC123',productTitle:'Source title',itemQuantity:2,unspsc:'52161500',orderId:'private-order',budgetId:'private-budget'},
+      ...Array.from({length:12},()=>({asin:'B000XYZ456',productTitle:'Keyboard',itemQuantity:1,unspsc:'43211706',
+        merchantLegalName:'private supplier',businessOrderInfo:{model:'private account ref'}})),
+    ]};
+  const fetcher=async url=>url.includes('auth/o2/token')?ok({access_token:'token',expires_in:3600}):ok({transactions:[tx,{...tx,transactionType:'REFUND'}]});
+  const read=(env)=>createTradingActivity({env:{...amazonEnv,...files,...env},now:()=>time,fetcher}).get('amazon');
+  const [row]=(await read({DROPSHIPPING_PUBLIC_DETAILS:'1'})).rows;
+  assert.equal(row.side,'buy');
+  assert.equal(row.amount,'89.97');
+  assert.equal(row.unit,'GBP');
+  assert.equal(row.profit,undefined);
+  assert.equal(row.productCount,13);
+  assert.equal(row.products.length,12);
+  assert.deepEqual(row.products[0],{name:'Portable audio',model:'ABC-123',type:'Speaker',quantity:2});
+  assert.deepEqual(row.products[1],{name:'Keyboard',model:null,type:'UNSPSC 43211706',quantity:1});
+  assert.doesNotMatch(JSON.stringify(row),/private|B000ABC123|B000XYZ456/);
+  assert.equal((await read({})).rows[0].products,undefined);
+  assert.equal((await read({AMAZON_BUSINESS_PUBLIC_ACTIVITY:'0',DROPSHIPPING_PUBLIC_DETAILS:'1'})).status,'not_configured');
 });

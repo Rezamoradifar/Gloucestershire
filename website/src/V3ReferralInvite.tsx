@@ -1,6 +1,6 @@
 import {useMemo,useState} from 'react';
 import {Copy,Link2,Users} from 'lucide-react';
-import {referralReleaseMode} from './v3-site-config';
+import {referralReleaseMode,V3_PLAN_PORTFOLIO_PATH} from './v3-site-config';
 import {referralLink} from './referral-invite';
 import type {V3Snapshot} from './v3-chain';
 
@@ -10,11 +10,12 @@ export default function V3ReferralInvite({view}:{view:V3Snapshot}){
  const link=useMemo(()=>{
   if(!address||typeof window==='undefined')return '';
   const primary=import.meta.env.VITE_V3_UNIFIED_PRIMARY;
-  const publishedAtRoot=!view.dailyPlan&&view.singleCapital&&(view.baseProfitReferrals?primary===referralReleaseMode(view):
+  const publishedAtRoot=!view.dailyPlan&&!view.planPortfolio&&view.singleCapital&&(view.baseProfitReferrals?primary===referralReleaseMode(view):
    primary==='single-capital-testnet'&&['/','/index.html','/hourly-test','/hourly-test/'].includes(window.location.pathname));
-  try{return referralLink(address,window.location.origin,publishedAtRoot?'/':window.location.pathname);}
+  const path=view.planPortfolio?V3_PLAN_PORTFOLIO_PATH:publishedAtRoot?'/':window.location.pathname;
+  try{return referralLink(address,window.location.origin,path);}
   catch{return '';}
- },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals,view.manualReinvest,view.uplineRates,view.accountReinvest]);
+ },[address,view.singleCapital,view.dailyPlan,view.baseProfitReferrals,view.manualReinvest,view.uplineRates,view.accountReinvest,view.portfolio,view.planPortfolio]);
  async function copy(value:string){
   if(!value)return;
   try{

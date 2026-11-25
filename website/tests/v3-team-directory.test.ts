@@ -18,7 +18,7 @@ function source(index:number,failAt=-1){
   }),
   users:vi.fn(async(a:string,at:{blockTag:number})=>{
    expect(at.blockTag).toBe(block);const n=Number(BigInt(a));
-   return {registered:true,referrer:parents[n-1]?addr(parents[n-1]):ZeroAddress,capital:n===3?0n:100n,suspended:n===9};
+   return {registered:true,lastCheckIn:1730000000n,originalDeposits:100n,reinvestments:0n,referrer:parents[n-1]?addr(parents[n-1]):ZeroAddress,capital:n===3?0n:100n,suspended:n===9};
   }),
   tierOf:vi.fn(async()=>0n),referralBps:vi.fn(async(_tier:number,level:number)=>[800n,400n,200n,0n][level]),
   isEligible:vi.fn(async(a:string,at:{blockTag:number})=>{expect(at.blockTag).toBe(block);return ![3,9].includes(Number(BigInt(a)));})

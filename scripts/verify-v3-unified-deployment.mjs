@@ -1,7 +1,7 @@
 // Read-only identity check for an operator-pinned, actual chain-97 deployment.
 // This is not a deployer, a migration mechanism or a financial/security audit.
 import {Contract,getAddress,isAddress,keccak256,toQuantity,ZeroAddress} from 'ethers';
-import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE} from './v3-unified-release-pins.mjs';
+import {UNIFIED_PROFILE,SINGLE_CAPITAL_PROFILE,DAILY_CAPITAL_PROFILE,REFERRAL_PROFIT_PROFILE,MANUAL_REINVEST_PROFILE,UPLINE_RATES_PROFILE,ACCOUNT_REINVEST_PROFILE,PORTFOLIO_PROFILE,PLAN_PORTFOLIO_PROFILE} from './v3-unified-release-pins.mjs';
 
 const TEST_TOKEN=getAddress('0x000Cdf5F6E3B4761721a5F76205bAE6c8523Ab89');
 const FEE_1=getAddress('0x7037cc199499d7a3431285a01e435454eae51265');
@@ -15,7 +15,7 @@ const VAULT_ABI=[
  'function canSettleEarnedDays(address) view returns(bool)',
  'function nextAccrual(address,uint256) view returns(uint256 due,uint16 bps,uint8 tier)',
  'function SINGLE_CAPITAL_VERSION() view returns(uint256)','function PROFIT_FEE_BPS() view returns(uint256)',
- 'function PRINCIPAL_PENALTY_BPS() view returns(uint256)',
+ 'function PRINCIPAL_PENALTY_BPS() view returns(uint256)','function planWithdrawalBps(uint256) view returns(uint16)',
  'function FEE_WALLET_1() view returns(address)','function FEE_WALLET_2() view returns(address)',
  'function OPERATIONS_WALLET() view returns(address)','function DEPOSIT_FEE_EACH_BPS() view returns(uint256)',
  'function DEFAULT_ADMIN_ROLE() view returns(bytes32)','function MANAGER_ROLE() view returns(bytes32)',
@@ -61,7 +61,7 @@ export async function recheckUnifiedBlock(provider,block){
 }
 
 export function validateUnifiedProof(raw){
- if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status,REFERRAL_PROFIT_PROFILE.status,MANUAL_REINVEST_PROFILE.status,UPLINE_RATES_PROFILE.status,ACCOUNT_REINVEST_PROFILE.status].includes(raw.status)||raw.chainId!==97||
+ if(!raw||![UNIFIED_PROFILE.status,SINGLE_CAPITAL_PROFILE.status,DAILY_CAPITAL_PROFILE.status,REFERRAL_PROFIT_PROFILE.status,MANUAL_REINVEST_PROFILE.status,UPLINE_RATES_PROFILE.status,ACCOUNT_REINVEST_PROFILE.status,PORTFOLIO_PROFILE.status,PLAN_PORTFOLIO_PROFILE.status].includes(raw.status)||raw.chainId!==97||
     !Number.isSafeInteger(raw.deploymentBlock)||raw.deploymentBlock<1||
     ![raw.vaultRuntimeHash,raw.bookRuntimeHash,raw.networkRuntimeHash,raw.deploymentTx].every(x=>typeof x==='string'&&pattern.test(x)))
   throw Error('INVALID_UNIFIED_DEPLOYMENT_PROOF');
@@ -100,12 +100,18 @@ export async function verifyUnifiedDeployment(provider,raw,{makeContract=(at,abi
  const vault=makeContract(proof.vault,VAULT_ABI),book=makeContract(proof.book,BOOK_ABI);
  const network=makeContract(proof.network,CHILD_ABI),at={blockTag:number};
  const daily=proof.status===DAILY_CAPITAL_PROFILE.status;
- const accountReinvest=proof.status===ACCOUNT_REINVEST_PROFILE.status;
+ const planPortfolio=proof.status===PLAN_PORTFOLIO_PROFILE.status;
+ const portfolio=planPortfolio||proof.status===PORTFOLIO_PROFILE.status;
+ const accountReinvest=portfolio||proof.status===ACCOUNT_REINVEST_PROFILE.status;
  const uplineRates=accountReinvest||proof.status===UPLINE_RATES_PROFILE.status;
  if(uplineRates||proof.status===MANUAL_REINVEST_PROFILE.status){
   const [version,fee,principalFee,autoGroup]=await Promise.all([vault.SINGLE_CAPITAL_VERSION(at),vault.PROFIT_FEE_BPS(at),
    vault.PRINCIPAL_PENALTY_BPS(at),network.AUTO_REWARD_GROUP_VERSION(at)]);
-  if(version!==(accountReinvest?6n:uplineRates?5n:4n)||fee!==200n||principalFee!==3000n||autoGroup!==1n)throw Error('MANUAL_REINVEST_TERMS_MISMATCH');
+  if(version!==(planPortfolio?8n:portfolio?7n:accountReinvest?6n:uplineRates?5n:4n)||fee!==200n||principalFee!==3000n||autoGroup!==1n)throw Error('MANUAL_REINVEST_TERMS_MISMATCH');
+ }
+ if(planPortfolio){
+  const rates=await Promise.all([0,1,2,3,4].map(tier=>vault.planWithdrawalBps(tier,at)));
+  if(rates.some(rate=>rate>10000n))throw Error('PLAN_PORTFOLIO_TERMS_MISMATCH');
  }
  if(daily){
   const [version,bookPeriod,volume,reward]=await Promise.all([vault.SINGLE_CAPITAL_VERSION(at),book.PERIOD(at),network.CYCLE_VOLUME(at),network.CYCLE_REWARD(at)]);

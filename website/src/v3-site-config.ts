@@ -15,10 +15,14 @@ export const V3_REFERRAL_PROFIT_PATH='/referral-profit-test/';
 export const V3_MANUAL_REINVEST_PATH='/manual-reinvest-test/';
 export const V3_UPLINE_RATES_PATH='/upline-rates-test/';
 export const V3_ACCOUNT_REINVEST_PATH='/account-reinvest-test/';
-export const V3_ACCOUNT_REINVEST=import.meta.env.VITE_V3_UNIFIED_MODE==='account-reinvest-testnet';
+export const V3_PORTFOLIO_PATH='/portfolio-test/';
+export const V3_PLAN_PORTFOLIO_PATH='/plan-portfolio-test/';
+export const V3_PLAN_PORTFOLIO=import.meta.env.VITE_V3_UNIFIED_MODE==='plan-portfolio-testnet';
+export const V3_PORTFOLIO=V3_PLAN_PORTFOLIO||import.meta.env.VITE_V3_UNIFIED_MODE==='portfolio-testnet';
+export const V3_ACCOUNT_REINVEST=V3_PORTFOLIO||import.meta.env.VITE_V3_UNIFIED_MODE==='account-reinvest-testnet';
 export const V3_UPLINE_RATES=V3_ACCOUNT_REINVEST||import.meta.env.VITE_V3_UNIFIED_MODE==='upline-rates-testnet';
 export const V3_MANUAL_REINVEST=V3_UPLINE_RATES||import.meta.env.VITE_V3_UNIFIED_MODE==='manual-reinvest-testnet';
-export type V3UnifiedConfig={book:string;bookRuntimeHash:string;network:string;networkRuntimeHash:string;singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;accountReinvest?:true;keeper?:string};
+export type V3UnifiedConfig={book:string;bookRuntimeHash:string;network:string;networkRuntimeHash:string;singleCapital?:true;dailyPlan?:true;baseProfitReferrals?:true;manualReinvest?:true;uplineRates?:true;accountReinvest?:true;portfolio?:true;planPortfolio?:true;keeper?:string};
 export type V3SiteReleaseConfig={address:string;runtimeHash:string;deploymentTx:string;unified?:V3UnifiedConfig};
 const hash=(v:unknown):v is string=>typeof v==='string'&&/^0x[a-fA-F0-9]{64}$/.test(v);
 export function v3ParseReleaseConfig(raw:{
@@ -31,7 +35,7 @@ export function v3ParseReleaseConfig(raw:{
  if(address===ZeroAddress||address===V3_OLD_V2_ADDRESS)return null;
  let unified:V3UnifiedConfig|undefined;
  if(raw.unifiedMode!==undefined&&raw.unifiedMode!==''){
-  if((raw.unifiedMode!=='unified-testnet'&&raw.unifiedMode!=='single-capital-testnet'&&raw.unifiedMode!=='daily-capital-testnet'&&raw.unifiedMode!=='referral-profit-testnet'&&raw.unifiedMode!=='manual-reinvest-testnet'&&raw.unifiedMode!=='upline-rates-testnet'&&raw.unifiedMode!=='account-reinvest-testnet')||
+  if((raw.unifiedMode!=='unified-testnet'&&raw.unifiedMode!=='single-capital-testnet'&&raw.unifiedMode!=='daily-capital-testnet'&&raw.unifiedMode!=='referral-profit-testnet'&&raw.unifiedMode!=='manual-reinvest-testnet'&&raw.unifiedMode!=='upline-rates-testnet'&&raw.unifiedMode!=='account-reinvest-testnet'&&raw.unifiedMode!=='portfolio-testnet'&&raw.unifiedMode!=='plan-portfolio-testnet')||
     typeof raw.book!=='string'||!isAddress(raw.book)||
     typeof raw.network!=='string'||!isAddress(raw.network)||!hash(raw.bookRuntimeHash)||!hash(raw.networkRuntimeHash))return null;
   const book=getAddress(raw.book),network=getAddress(raw.network);
@@ -42,11 +46,13 @@ export function v3ParseReleaseConfig(raw:{
    keeper=getAddress(raw.keeper);
    if([ZeroAddress,address,book,network,V3_TEST_TOKEN].includes(keeper))return null;
   }
-  const accountReinvest=raw.unifiedMode==='account-reinvest-testnet';
+  const planPortfolio=raw.unifiedMode==='plan-portfolio-testnet';
+  const portfolio=planPortfolio||raw.unifiedMode==='portfolio-testnet';
+  const accountReinvest=portfolio||raw.unifiedMode==='account-reinvest-testnet';
   const uplineRates=accountReinvest||raw.unifiedMode==='upline-rates-testnet';
   unified=Object.freeze({book,network,bookRuntimeHash:raw.bookRuntimeHash.toLowerCase(),
    networkRuntimeHash:raw.networkRuntimeHash.toLowerCase(),
-   ...(keeper?{keeper}:{}),
+   ...(keeper?{keeper}:{}),...(portfolio?{portfolio:true as const}:{}),...(planPortfolio?{planPortfolio:true as const}:{}),
    ...(raw.unifiedMode==='daily-capital-testnet'?{singleCapital:true as const,dailyPlan:true as const}:
     (raw.unifiedMode==='manual-reinvest-testnet'||uplineRates)?{singleCapital:true as const,baseProfitReferrals:true as const,manualReinvest:true as const,
      ...(uplineRates?{uplineRates:true as const}:{}),...(accountReinvest?{accountReinvest:true as const}:{})}:
@@ -59,7 +65,9 @@ export function v3ParseReleaseConfig(raw:{
  });
 }
 
-export function referralReleaseMode(account:Pick<V3UnifiedConfig,'accountReinvest'|'uplineRates'|'manualReinvest'>){
+export function referralReleaseMode(account:Pick<V3UnifiedConfig,'accountReinvest'|'uplineRates'|'manualReinvest'|'portfolio'|'planPortfolio'>){
+ if(account.planPortfolio)return 'plan-portfolio-testnet';
+ if(account.portfolio)return 'portfolio-testnet';
  if(account.accountReinvest)return 'account-reinvest-testnet';
  if(account.uplineRates)return 'upline-rates-testnet';
  return account.manualReinvest?'manual-reinvest-testnet':'referral-profit-testnet';
@@ -73,8 +81,8 @@ export function unifiedWalletEnabled(config:V3SiteReleaseConfig|null,path:string
  const daily=config?.unified?.dailyPlan===true;
  const corrected=config?.unified?.baseProfitReferrals===true;
  const manual=config?.unified?.manualReinvest===true;
- const route=config?.unified?.accountReinvest?V3_ACCOUNT_REINVEST_PATH:config?.unified?.uplineRates?V3_UPLINE_RATES_PATH:manual?V3_MANUAL_REINVEST_PATH:daily?V3_DAILY_CAPITAL_PATH:corrected?V3_REFERRAL_PROFIT_PATH:config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
- const root=!daily&&config?.unified?.singleCapital&&(corrected
+ const route=config?.unified?.planPortfolio?V3_PLAN_PORTFOLIO_PATH:config?.unified?.portfolio?V3_PORTFOLIO_PATH:config?.unified?.accountReinvest?V3_ACCOUNT_REINVEST_PATH:config?.unified?.uplineRates?V3_UPLINE_RATES_PATH:manual?V3_MANUAL_REINVEST_PATH:daily?V3_DAILY_CAPITAL_PATH:corrected?V3_REFERRAL_PROFIT_PATH:config?.unified?.singleCapital?V3_SINGLE_CAPITAL_PATH:'/unified-test/';
+ const root=!daily&&!config?.unified?.planPortfolio&&config?.unified?.singleCapital&&(corrected
   ?unifiedPrimary===referralReleaseMode(config.unified)&&page==='/'
   :unifiedPrimary==='single-capital-testnet'&&(page==='/'||page==='/hourly-test/'||page==='/hourly-test'));
  return Boolean(config?.unified)&&(daily?!hourly:hourly)&&primary==='verified-testnet'&&mode==='verified-isolated-testnet'&&

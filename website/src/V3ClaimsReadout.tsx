@@ -8,7 +8,7 @@ import {formatV3Amount} from './v3-format';
 import V3ClaimValue from './V3ClaimValue';
 import './v3-claims-readout.css';
 
-export default function V3ClaimsReadout({verifiedLedger,manualReinvest=false}:{verifiedLedger:V3ClaimLedger;manualReinvest?:boolean}){
+export default function V3ClaimsReadout({verifiedLedger,manualReinvest=false,showRequestLimit=true}:{verifiedLedger:V3ClaimLedger;manualReinvest?:boolean;showRequestLimit?:boolean}){
  let claims:ReturnType<typeof v3PrepareUserClaims>;
  try{claims=v3PrepareUserClaims(verifiedLedger);}
  catch{return <section className="gv3-claims-readout gv3-claims-error" role="alert">
@@ -32,8 +32,8 @@ export default function V3ClaimsReadout({verifiedLedger,manualReinvest=false}:{v
     <strong><V3ClaimValue value={claims.outstandingNetwork} block={claims.block}/></strong></div>
    <div><small>Reserved for pending requests</small>
     <strong><V3ClaimValue value={claims.pendingInternal} block={claims.block}/></strong></div>
-   <div><small>Maximum for one new request under current cooldown/cap</small>
-    <strong><V3ClaimValue value={claims.maxSingleRequest} block={claims.block}/></strong></div>
+   {showRequestLimit&&<div><small>Maximum for one new request under current cooldown/cap</small>
+    <strong><V3ClaimValue value={claims.maxSingleRequest} block={claims.block}/></strong></div>}
   </div>
   <p className="gv3-claims-warning"><Info size={17}/> Recorded claims are not wallet funds.
    V3 test-token funding shortfall: {formatV3Amount(claims.overallUnfundedLiability)} {unit}.

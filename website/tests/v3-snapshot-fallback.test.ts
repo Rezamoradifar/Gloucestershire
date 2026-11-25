@@ -5,7 +5,7 @@ import type {V3SiteReleaseConfig} from '../src/v3-site-config';
 const state=vi.hoisted(()=>({readers:[] as number[],destroyed:[] as number[],
  failures:new Set<number>(),hanging:new Set<number>(),wrongRuntime:new Set<number>(),wrongAnchor:new Set<number>(),
  verificationDelay:new Map<number,number>(),accountDelay:new Map<number,number>(),
- walletChanged:false,changeWalletOnFailure:false,browserReaders:0,reads:[] as {reader:number;method:string}[]}));
+ version:1n,walletChanged:false,changeWalletOnFailure:false,browserReaders:0,reads:[] as {reader:number;method:string}[]}));
 vi.mock('../src/v3-site-config',async original=>({
  ...(await original<typeof import('../src/v3-site-config')>()),V3_HOURLY_TEST:true
 }));
@@ -37,7 +37,9 @@ vi.mock('ethers',async original=>{
     asset:[V3_TEST_TOKEN],feeReceiver:['0x74015dedf36677485793f1714ec7bd4893907b26'],
     MANAGER_ROLE:['0x'+'d'.repeat(64)],FUNDER_ROLE:['0x'+'e'.repeat(64)],
     FEE_WALLET_1:[V3_DEPOSIT_FEE_1],FEE_WALLET_2:[V3_DEPOSIT_FEE_2],OPERATIONS_WALLET:[V3_OPERATIONS],
-    DEPOSIT_FEE_EACH_BPS:[1000n],ACCRUAL_PERIOD:[3600n],SINGLE_CAPITAL_VERSION:[1n],hasRole:[true],
+    DEPOSIT_FEE_EACH_BPS:[1000n],ACCRUAL_PERIOD:[3600n],SINGLE_CAPITAL_VERSION:[state.version],hasRole:[true],
+    PROFIT_FEE_BPS:[200n],PRINCIPAL_PENALTY_BPS:[3000n],AUTO_REWARD_GROUP_VERSION:[1n],
+    PROFIT_WITHDRAWAL_CAP_BPS:[1000n],planWithdrawalBps:[325n],
     reinvestmentBook:[config.unified!.book],networkPlan:[config.unified!.network],vault:[config.address],
     users:[ZeroAddress,true,false,false,999n,0n,false,0n,0n,0n,0n,0n,0n],
     isEligible:[false],positionCount:[0n],userWithdrawalCount:[0n],withdrawalCount:[0n],
@@ -68,7 +70,7 @@ const walletProvider={request:vi.fn(async({method}:{method:string})=>
  method==='eth_chainId'?'0x61':method==='eth_accounts'?(state.walletChanged?[]:[wallet]):undefined)};
 
 beforeEach(()=>{
- state.readers=[];state.destroyed=[];state.failures.clear();state.hanging.clear();state.wrongRuntime.clear();state.wrongAnchor.clear();
+ state.version=1n;state.readers=[];state.destroyed=[];state.failures.clear();state.hanging.clear();state.wrongRuntime.clear();state.wrongAnchor.clear();
  state.verificationDelay.clear();state.accountDelay.clear();
  state.reads=[];state.walletChanged=false;state.changeWalletOnFailure=false;state.browserReaders=0;
  walletProvider.request.mockClear();
@@ -177,4 +179,21 @@ describe('complete verified account snapshot fallback',()=>{
   expect(state.destroyed).toEqual([0]);
   expect(state.browserReaders).toBe(0);
  });
+});
+
+
+it('uses the version-specific withdrawal rate getter for empty V7 and V8 accounts',async()=>{
+ const portfolio={...config,unified:{...config.unified!,portfolio:true as const,accountReinvest:true as const,manualReinvest:true as const}};
+ state.version=7n;
+ const legacy=await readV3Snapshot(walletProvider,wallet,portfolio);
+ expect(legacy.earningsCapBps).toBe(1000);
+ expect(legacy.ledger.requestCap).toBe(0n);
+ expect(state.reads.some(r=>r.method==='planWithdrawalBps')).toBe(false);
+ state.reads=[];state.version=8n;
+ const plan=await readV3Snapshot(walletProvider,wallet,{...portfolio,unified:{...portfolio.unified,planPortfolio:true}});
+ expect(plan.planPortfolio).toBe(true);
+ expect(plan.earningsCapBps).toBe(325);
+ expect(plan.ledger.requestCap).toBe(0n);
+ expect(state.reads.some(r=>r.method==='planWithdrawalBps')).toBe(true);
+ expect(state.reads.some(r=>r.method==='PROFIT_WITHDRAWAL_CAP_BPS')).toBe(false);
 });

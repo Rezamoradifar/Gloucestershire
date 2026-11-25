@@ -64,7 +64,10 @@ case "$url" in
  */api/health) printf '{{"status":"ok"}}' > "$target" ;;
  */api/config) if [[ -f "{root}/fail" && -f "{root}/restarts" ]]; then printf '{{"vault":"changed"}}' > "$target"; else printf '{{"vault":"original"}}' > "$target"; fi ;;
  */api/marketplace*) printf '{{"providers":[{{}},{{}}]}}' > "$target" ;;
- */api/commerce/activity*) printf '{{"source":"kraken","status":"not_configured","rows":[]}}' > "$target" ;;
+ */api/commerce/activity*)
+   source="${{url##*=}}"
+   if [[ -f "{root}/wrong-seller" && "$source" == ebay ]]; then source=kraken; fi
+   printf '{{"source":"%s","status":"not_configured","rows":[]}}' "$source" > "$target" ;;
  */api/commerce/status) printf '{{"version":1,"source":"ebay","status":"not_configured","commercialProfit":null,"profitStatus":"unverified_costs_and_fees"}}' > "$target" ;;
  *) exit 1 ;;
 esac''',
@@ -98,6 +101,8 @@ esac''',
     for hashes in [
             (summary_api, '967e427df79f212b956e11724c331ac26326e426', None),
             (summary_api, '317ae1adc05081ee2e0ee3f6cc36e8d6535918ec', None),
+            ('c94269f994a19dbb641f30430441df776d78e065', '6f21e279898a3326790a7a856e3a2b9d7c2bd040', 'cbe54780136ea3fc4afc21c3ee6bfca7588474ee'),
+            ('c94269f994a19dbb641f30430441df776d78e065', '780c0035f2727a4325c2ae56efba2acd4df896e6', 'beaa81c538b393513ac1e96a7e490709130b9ac3'),
             ('e786a10d90a6918f95187ff1cdf982b0e4490a40', 'd8ebad0e2f064bd4c7ac0ad177da17b32b51e124', 'cbe54780136ea3fc4afc21c3ee6bfca7588474ee')]:
         current.unlink()
         current.symlink_to(previous)
@@ -125,6 +130,13 @@ esac''',
     assert 'COMMERCE_PREVIOUS_API_RESTORED' in failed.stdout
     assert envfile.read_bytes() == original_env and unit.read_bytes() == original_unit
     assert (root / 'restarts').read_text().count('restart') == 2
+    (root / 'fail').unlink()
+    (root / 'wrong-seller').touch()
+    wrong_source = run('--install')
+    assert wrong_source.returncode != 0 and current.resolve() == previous
+    assert 'TRADING_ACTIVITY_RESPONSE_INVALID' in wrong_source.stderr
+    assert 'COMMERCE_PREVIOUS_API_RESTORED' in wrong_source.stdout
+    (root / 'wrong-seller').unlink()
     (previous / 'server/trades-api.mjs').write_text('unreviewed')
     (root / 'restarts').unlink()
     refused = run('--install')
@@ -147,5 +159,9 @@ esac''',
     envfile.write_text('TRADES_CHAIN_ID=97\nCOMMUNITY_DATA_FILE=relative/community.json\n')
     relative = run('--install')
     assert relative.returncode != 0 and 'COMMERCE_RELATIVE_DATA_PATH_REVIEW_REQUIRED' in relative.stderr
+    assert not (root / 'restarts').exists() and current.resolve() == previous
+    envfile.write_text('COMMERCE_PRODUCT_CATALOG_FILE=relative/model-catalog.json\n')
+    product_path = run('--install')
+    assert product_path.returncode != 0 and 'COMMERCE_RELATIVE_DATA_PATH_REVIEW_REQUIRED=COMMERCE_PRODUCT_CATALOG_FILE' in product_path.stderr
     assert not (root / 'restarts').exists() and current.resolve() == previous
     print('PASS: historical commerce upgrades, idempotence, rollback, configuration preservation and unknown-module diagnostics')
