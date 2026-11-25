@@ -3,7 +3,7 @@ import {createMarketplace} from './marketplace.mjs';
 import {createCommerceStatus} from './commerce-ebay.mjs';
 import {createTradingActivity} from './trading-activity.mjs';
 import {realpathSync} from 'node:fs';
-import {createCommunity} from './community.mjs';
+import {createCommunity,createPortfolioCommunity} from './community.mjs';
 import {pathToFileURL} from 'node:url';
 import {Block,Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress,keccak256} from 'ethers';
 import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
@@ -134,10 +134,11 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  let response;
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
-export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),activity=createTradingActivity({seller:commerce}),migration,dailyActivity,historyRelay,memberHistory,teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),activity=createTradingActivity({seller:commerce}),migration,dailyActivity,historyRelay,memberHistory,portfolioCommunity=createPortfolioCommunity(memberHistory),teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
  return http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
+  if(await portfolioCommunity(req,res))return;
   if(v2ReadGateway&&await v2ReadGateway(req,res))return;
   if(v2Community&&await v2Community(req,res))return;
   if(community&&await community(req,res))return;

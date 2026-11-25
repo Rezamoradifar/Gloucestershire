@@ -10,6 +10,14 @@ The main-domain release command uses `--portfolio --primary-with-commerce`. Befo
 
 ## Manager and funder access
 
-Open `/#dashboard/admin` or choose **Funding & settlement** in the dashboard menu and connect the authorized wallet. Newest requests load first. Search by the request number displayed to the member, or browse older requests. Review the beneficiary, personal profit, referral commission, network rewards, unlocked principal, deductions and net payout before choosing a settlement action. The available actions depend on the verified wallet role and request status.
+Open `/#dashboard/admin` or choose **Admin panel** in the dashboard menu and connect the authorized wallet. Open **Withdrawals & funding**. Newest requests load first. Search by the request number displayed to the member, or browse older requests. Review the beneficiary, personal profit, referral commission, network rewards, unlocked principal, deductions and net payout before choosing a settlement action. The available actions depend on the verified wallet role and request status.
 
-Managers can also look up a registered member by full wallet address to review or revoke the member's VIP flag. The wallet review identifies the member and the change; the app verifies the resulting on-chain status before reporting success.
+The **Members** section lists registered wallets. Select a member or search by full wallet address to review the plan, principal, external deposits, reinvestments, rewards and withdrawal count. Managers can review VIP verification. A manager with the guardian role can also review suspension or reactivation. Each change requires wallet confirmation and a verified receipt.
+
+## Support and announcements
+
+Members can use **Support tickets** in the dashboard menu or open `/#dashboard/tickets`. Sign the wallet message to open a private thread, follow replies, close a resolved ticket or reopen it. Managers use **Admin panel → Support inbox** to search conversations by subject, wallet or ticket ID and filter by status.
+
+Published notices are available at `/#dashboard/announcements` with or without a connected wallet. Managers use **Admin panel → Announcements** to publish, edit, unpublish or republish a notice. Unpublished notices remain in the manager archive.
+
+The API keeps threads and notices in the service state directory under `v3/<vault>/community.json`. Each portfolio has its own records and wallet sessions. The server checks the confirmed and latest manager role before opening the private inbox or moderating announcements. The primary installer checks the public notice feed and the signed-access requirement for the private inbox before switching the site.

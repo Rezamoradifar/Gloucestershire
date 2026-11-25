@@ -87,6 +87,8 @@ export const V3_ABI=[
  'function memberAt(uint256) view returns(address)',
  'function MANAGER_ROLE() view returns(bytes32)',
  'function FUNDER_ROLE() view returns(bytes32)',
+ 'function GUARDIAN_ROLE() view returns(bytes32)',
+ 'function setSuspended(address member,bool suspended)',
  'function hasRole(bytes32,address) view returns(bool)',
  'function cashStatus() view returns(uint256 cash,uint256 principal,uint256 accruedProfit,uint256 escrowedCash,uint256 totalCashShortfall)',
  'function register(address)',

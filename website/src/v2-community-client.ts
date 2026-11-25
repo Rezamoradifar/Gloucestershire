@@ -1,6 +1,5 @@
-import {BrowserProvider,isAddress} from 'ethers';
+import {signInSupport} from './support-sign-in';
 import {V2_ADDRESS,V2_CHAIN_ID} from './v2-chain';
-import {getWalletProvider} from './wallet';
 
 export class V2SupportError extends Error{
  constructor(message:string,public status:number){super(message);}
@@ -21,42 +20,8 @@ export async function v2SupportApi<T>(route:string,method='GET',body?:unknown,to
   (json as {error?:string}).error||'V2 support operation failed.',res.status);
  return json as T;
 }
-export async function signInV2Support(who:string,valid:()=>boolean,request=v2SupportApi):Promise<string>{
- if(!isAddress(who))throw Error('Connect a valid V2 wallet.');
- const wallet=getWalletProvider();if(!wallet)throw Error('Connect a wallet before signing in.');
- const check=async()=>{
-  if(!valid()||wallet!==getWalletProvider())throw Error('Wallet context changed.');
-  const [chain,accounts]=await Promise.all([
-   wallet.request({method:'eth_chainId'}),wallet.request({method:'eth_accounts'})
-  ]);
-  if(!valid()||Number(chain)!==V2_CHAIN_ID||!Array.isArray(accounts)||
-    accounts[0]?.toLowerCase()!==who.toLowerCase())
-   throw Error('Connect the same wallet on BNB Testnet (97).');
- };
- await check();
- const challenge=await request<{nonce:string;message:string}>('challenge','POST',{wallet:who});
- const origin=window.location.origin;
- const allowed=[origin];
- if(origin==='https://www.globaldroptrade.com')allowed.push('https://globaldroptrade.com');
- if(origin==='https://globaldroptrade.com')allowed.push('https://www.globaldroptrade.com');
- const lines=challenge.message?.split('\n');
- if(!/^[a-f0-9]{48}$/.test(challenge.nonce)||lines?.length!==8||
-  lines[0]!=='GlobalDropTrade support sign-in'||!lines[1]?.startsWith('Origin: ')||
-  !allowed.includes(lines[1].slice(8))||lines[2]!=='Chain: '+V2_CHAIN_ID||
-  lines[3]?.toLowerCase()!=='Contract: '.concat(V2_ADDRESS).toLowerCase()||
-  lines[4]?.toLowerCase()!=='Wallet: '.concat(who).toLowerCase()||
-  lines[5]!=='Nonce: '+challenge.nonce||!lines[6]?.startsWith('Expires: ')||
-  !Number.isFinite(Date.parse(lines[6].slice(9)))||
-  lines[7]!=='This signature authenticates support access only. It does not authorize a transaction.')
-  throw Error('Support challenge does not belong to NEW V2 account.');
- const provider=new BrowserProvider(wallet);
- try{
-  await check();
-  const signature=await (await provider.getSigner(who)).signMessage(challenge.message);
-  await check();
-  const result=await request<{token:string}>('session','POST',{nonce:challenge.nonce,signature});
-  await check();return result.token;
- }finally{provider.destroy();}
+export function signInV2Support(who:string,valid:()=>boolean,request=v2SupportApi):Promise<string>{
+ return signInSupport(who,V2_ADDRESS,V2_CHAIN_ID,valid,request);
 }
 export async function withV2SupportSession<T>(token:string,authenticate:()=>Promise<string>,
  remember:(value:string)=>void,action:(session:string)=>Promise<T>):Promise<T>{
