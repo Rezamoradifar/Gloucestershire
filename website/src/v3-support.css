@@ -51,3 +51,16 @@
  .gv3-workspace .gv3-community-links svg:last-child {display:none;}
  .gv3-workspace .gv3-support-tools label {flex-basis:100%;}
 }
+.gv3-workspace .top-actions .gv3-notification-bell {
+ position:relative;display:inline-grid;place-items:center;min-width:40px;min-height:40px;padding:.45rem;
+ border:1px solid var(--glass-line);border-radius:50%;color:var(--glass-ink);background:var(--glass-inset);cursor:pointer;
+}
+.gv3-workspace .gv3-notification-bell span {
+ position:absolute;top:-.3rem;right:-.3rem;min-width:1rem;padding:.08rem .2rem;border-radius:1rem;
+ font-size:.67rem;font-weight:700;color:var(--glass-on-accent);background:var(--glass-accent);
+}
+.gv3-workspace .gv3-support details summary {cursor:pointer;padding:.5rem 0;}
+@media(max-width:430px){
+ .gv3-workspace .gv2-classic-topbar .top-actions {gap:.25rem;}
+ .gv3-workspace .gv2-classic-topbar .breadcrumb strong {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+}

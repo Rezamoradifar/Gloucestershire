@@ -24,6 +24,7 @@ credential_dir="$commerce_unit.d"
 credential_dropin="$credential_dir/40-v3-history-read-rpc.conf"
 archive_rpc=/etc/globaldroptrade/archive-rpc-url
 history_state=/var/lib/globaldroptrade
+support_modules=(server/portfolio-notifications.mjs server/portfolio-telegram.mjs scripts/configure-portfolio-telegram.py)
 history_modules=(server/v3-member-history.mjs scripts/v3-unified-release-pins.mjs scripts/verify-v3-unified-release.mjs scripts/verify-v3-unified-deployment.mjs)
 [[ -L "$commerce_current" && -d "$commerce_releases" && ! -L "$commerce_releases" ]] || { echo COMMERCE_EXISTING_API_REQUIRED; exit 1; }
 [[ -f "$commerce_env" && ! -L "$commerce_env" && "$(stat -c %u "$commerce_env")" == 0 ]] || { echo COMMERCE_ENV_REQUIRED; exit 1; }
@@ -50,6 +51,9 @@ commerce_fingerprint(){
  local -a hashes=()
  local -a files=(server/trades-api.mjs server/commerce-ebay.mjs server/trading-activity.mjs)
  if [[ -e $dir/server/v3-member-history.mjs || -L $dir/server/v3-member-history.mjs ]]; then files+=("${history_modules[@]}"); fi
+ for name in "${support_modules[@]}"; do
+  if [[ -e "$dir/$name" || -L "$dir/$name" ]]; then files+=("$name"); fi
+ done
  for name in "${files[@]}"; do
   file="$dir/$name"
   if [[ -L "$file" ]]; then hash=symlink
@@ -70,7 +74,7 @@ community_hash(){
 community_target=$(community_hash .)
 community_before=$(community_hash "$commerce_previous")
 case "$community_before" in
- "$community_target"|missing|b5a980ce6dfc15fdacdc44f385b162f6b5ce9276|4fa182b9f06c348824335cb838b535b8d4ff81e1) ;;
+ "$community_target"|missing|76de3615106767056c040290b939c5f74ca1ef9a|b5a980ce6dfc15fdacdc44f385b162f6b5ce9276|4fa182b9f06c348824335cb838b535b8d4ff81e1) ;;
  *) echo COMMERCE_LIVE_SUPPORT_VERSION_REVIEW_REQUIRED; exit 1 ;;
 esac
 commerce_target=$(commerce_fingerprint .)
@@ -78,6 +82,7 @@ commerce_before=$(commerce_fingerprint "$commerce_previous")
 # Legacy releases contained only the three commerce modules. New releases also fingerprint their history reader and verification code.
 case "$commerce_before" in
  "$commerce_target"|\
+ e9d2bed2d47f6dc0b61767f6a28178eae9eff9b0/493d9b5dd388ce84dc559565de3c2f438b813422/3c1cb19872b14b8cca44a370eefe81411c1ef42a/63f1f716ee9688cbf128ad4081a1b20864a5b6fc/63990e2f3f47f40b3d77d5ae702a2767b3e25c11/d6c8962294ff26a940462d3d33b99d3946e9e193/e66c5ce9912c3265465256b73bc407b1241aeb0f|\
  e2dc460016caa3679f70bcda5d1c810a448b01ed/493d9b5dd388ce84dc559565de3c2f438b813422/3c1cb19872b14b8cca44a370eefe81411c1ef42a/54cd1fc7f99320df137426c2fd9cbc460c0c52c9/63990e2f3f47f40b3d77d5ae702a2767b3e25c11/d6c8962294ff26a940462d3d33b99d3946e9e193/e66c5ce9912c3265465256b73bc407b1241aeb0f|\
  5cae7c3c414386fecb82a0226b43237c3445001d/missing/missing|\
  3455a60264a754cc6a558737ded964391d517109/967e427df79f212b956e11724c331ac26326e426/missing|\
@@ -104,7 +109,7 @@ node --check server/trades-api.mjs
 node --check server/community.mjs
 node --check server/commerce-ebay.mjs
 node --check server/trading-activity.mjs
-node --test test/commerce-ebay.test.mjs test/trading-activity.test.mjs test/v3-member-history-api.test.mjs test/v3-portfolio-support.test.mjs
+node --test test/commerce-ebay.test.mjs test/trading-activity.test.mjs test/v3-member-history-api.test.mjs test/v3-portfolio-support.test.mjs test/portfolio-telegram.test.mjs
 commerce_stage=$(mktemp -d /opt/global-commerce-check.XXXXXX)
 trap 'rm -rf -- "$commerce_stage"' EXIT
 for file in "${history_modules[@]}"; do node --check "$file"; done
@@ -153,7 +158,7 @@ install -m 644 server/trades-api.mjs "$commerce_release/server/trades-api.mjs"
 install -m 644 server/community.mjs server/commerce-ebay.mjs server/trading-activity.mjs "$commerce_release/server/"
 [[ ! -L $commerce_release/scripts ]] || { echo COMMERCE_API_RELEASE_PATH_UNSAFE; exit 1; }
 install -d -m 755 "$commerce_release/scripts"
-for file in "${history_modules[@]}"; do install -m 644 "$file" "$commerce_release/$file"; done
+for file in "${history_modules[@]}" "${support_modules[@]}"; do install -m 644 "$file" "$commerce_release/$file"; done
 install -m 644 "$commerce_stage/profiles.json" "$commerce_release/server/v3-history-profiles.json"
 [[ -d "$commerce_release/node_modules" ]] || { echo COMMERCE_API_DEPENDENCIES_MISSING; exit 1; }
 node --env-file="$commerce_env" --input-type=module - "$commerce_release/server/trades-api.mjs" <<'JS'

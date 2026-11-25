@@ -15,7 +15,7 @@ export class SupportError extends Error{
 }
 
 export function portfolioSupport(vault:string,wallet:string,session:SupportSession){
- const address=getAddress(vault),provider=getWalletProvider();
+ const address=getAddress(vault),provider=getWalletProvider(),events=new EventTarget();
  async function request<T>(route:string,method='GET',body?:unknown,token=''):Promise<T>{
   const response=await fetch('/api/v3/community/'+address.toLowerCase()+'/'+route,{
    method,credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(35000),
@@ -24,13 +24,14 @@ export function portfolioSupport(vault:string,wallet:string,session:SupportSessi
   });
   const data=await response.json().catch(()=>null);
   if(!response.ok){
-   if(response.status===401&&token===session.token)session.token='';
+   if(response.status===401&&token&&token===session.token){session.token='';events.dispatchEvent(new Event('expired'));}
    throw new SupportError(typeof data?.error==='string'?data.error:'Support is temporarily unavailable.',response.status);
   }
   if(data?.chainId!==97||data?.vault!==address)throw Error('The support response does not match this workspace.');
+  if(method!=='GET'&&!['challenge','session'].includes(route))events.dispatchEvent(new Event('change'));
   return data as T;
  }
- async function authenticate(valid:()=>boolean){
+ async function authenticate(valid:()=>boolean,interactive=true){
   if(!wallet||!valid())throw Error('Connect your wallet on BNB Testnet to use support.');
   if(!provider||provider!==getWalletProvider())throw Error('Wallet connection changed. Reconnect to open support.');
   if(session.token){
@@ -40,12 +41,13 @@ export function portfolioSupport(vault:string,wallet:string,session:SupportSessi
     session.token='';throw new SupportError('Wallet changed. Open support with the selected account.',401);
    }
   }else{
+   if(!interactive)throw new SupportError('Open your inbox to sign in again.',401);
    const token=await signInSupport(wallet,address,97,valid,request);
    if(!valid())throw Error('Wallet context changed.');
-   session.token=token;
+   session.token=token;events.dispatchEvent(new Event('signed-in'));
   }
   return session.token;
  }
- return {request,authenticate,session};
+ return {request,authenticate,session,events};
 }
 export type SupportClient=ReturnType<typeof portfolioSupport>;

@@ -26,6 +26,7 @@ with tempfile.TemporaryDirectory() as temporary:
         (root / name).mkdir(parents=True, exist_ok=True)
     for name in ['scripts/install-commerce-api-only.sh', 'scripts/v3-history-install.py',
                  'scripts/v3-unified-release-pins.mjs', 'scripts/verify-v3-unified-release.mjs', 'scripts/verify-v3-unified-deployment.mjs',
+                 'server/portfolio-notifications.mjs', 'server/portfolio-telegram.mjs', 'scripts/configure-portfolio-telegram.py', 'test/portfolio-telegram.test.mjs',
                  'server/v3-member-history.mjs', 'server/trades-api.mjs', 'server/community.mjs', 'test/v3-portfolio-support.test.mjs',
                  'server/commerce-ebay.mjs', 'server/trading-activity.mjs', 'test/commerce-ebay.test.mjs', 'test/trading-activity.test.mjs', 'test/v3-member-history-api.test.mjs']:
         source = (repo / name).read_text()
@@ -202,6 +203,17 @@ esac''',
     upgrade = run('--install')
     assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
     assert (current/'server/community.mjs').read_bytes() == (repo/'server/community.mjs').read_bytes()
+    current.unlink()
+    current.symlink_to(previous)
+    # Upgrade the exact previous primary support release, including its history reader.
+    for name, blob in {'server/trades-api.mjs':'e9d2bed2d47f6dc0b61767f6a28178eae9eff9b0',
+                       'server/v3-member-history.mjs':'63f1f716ee9688cbf128ad4081a1b20864a5b6fc',
+                       'server/community.mjs':'76de3615106767056c040290b939c5f74ca1ef9a'}.items():
+        (previous/name).write_bytes(historical_blob(blob))
+    upgrade = run('--install')
+    assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
+    for name in ['server/portfolio-notifications.mjs','server/portfolio-telegram.mjs','scripts/configure-portfolio-telegram.py']:
+        assert (current/name).read_bytes() == (repo/name).read_bytes()
     current.unlink()
     current.symlink_to(previous)
     (previous/'server/community.mjs').write_text('local unpublished changes')

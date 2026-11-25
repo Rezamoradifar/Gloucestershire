@@ -30,7 +30,7 @@ install -d -m 755 "$release/scripts" "$release/artifacts"
  umask 022
  # Retain the complete reviewed module closure across later RPC repairs.
  cp server/*.mjs "$release/server/"
- cp scripts/*.mjs "$release/scripts/"
+ cp scripts/*.mjs scripts/configure-portfolio-telegram.py "$release/scripts/"
  cp artifacts/TestnetDeferredMigrationVault.json "$release/artifacts/"
  cp package.json package-lock.json "$release/"
  cd "$release"

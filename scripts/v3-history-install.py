@@ -65,7 +65,7 @@ def check_route(profiles, endpoint, required='optional'):
 
     def check_support(proof):
         vault = proof['vault'].lower()
-        for route, expected in [('announcements', 200), ('tickets?admin=1', 401)]:
+        for route, expected in [('announcements', 200), ('tickets?admin=1', 401), ('notifications', 401), ('notifications?admin=1', 401)]:
             payload = subprocess.check_output(['curl', '-sS', '--noproxy', '*', '--max-time', '15',
                                                *transport, '-w', '\n%{http_code}',
                                                f'{base}/api/v3/community/{vault}/{route}'])
