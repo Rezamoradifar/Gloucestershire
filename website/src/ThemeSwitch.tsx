@@ -19,7 +19,7 @@ export function ThemeProvider({children}: {children: ReactNode}) {
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0b1720' : '#eaf3f5');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0a1326' : '#edf3fb');
     try { localStorage.setItem('global-theme', theme); } catch { /* Storage can be disabled. */ }
   }, [theme]);
   return <ThemeContext.Provider value={{theme, toggle}}>{children}</ThemeContext.Provider>;

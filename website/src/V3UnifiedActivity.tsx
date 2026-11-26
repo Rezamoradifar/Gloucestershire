@@ -10,8 +10,9 @@ export default function V3UnifiedActivity({view,busy,readOnly,onCheckIn}:{
  const cooldown=view.lastCheckIn>0&&view.asOf<view.lastCheckIn+3600;
  const needsCapital=view.dailyPlan&&(view.capital<10n*10n**18n||(view.capital>50000n*10n**18n&&!view.vipKyc));
  const disabled=needsCapital||busy||readOnly||!view.registered||view.suspended||view.paused||cooldown;
- return <section className="gv3-cycle" aria-label="Unified test account activity">
-  <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{view.eligible?'Account active':'Activate account'}</strong>
+ if(view.portfolio&&!view.keeper)return null;
+ return <section className="gv3-cycle" aria-label={view.portfolio?"Keeper status":"Unified test account activity"}>
+  {!view.portfolio&&<div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{view.eligible?'Account active':'Activate account'}</strong>
    {view.eligible&&<small>Activity expires at {formatUtcTime(view.lastCheckIn+86400)}.</small>}
    {!view.registered&&<small>Make your first deposit to register this wallet, then check in.</small>}
    {view.paused&&<small>The contract is paused.</small>}
@@ -21,7 +22,7 @@ export default function V3UnifiedActivity({view,busy,readOnly,onCheckIn}:{
    {needsCapital&&<small>Check-in requires at least 10 test USDT of principal and VIP verification above 50,000.</small>}
    {cooldown&&<small>Check-in cooldown ends at {formatUtcTime(view.lastCheckIn+3600)}.</small>}
    {readOnly&&<small>This test preview is read-only.</small>}</div>
-  <button type="button" disabled={disabled} onClick={onCheckIn}><RefreshCw size={14}/> Check in</button></div>
+  <button type="button" disabled={disabled} onClick={onCheckIn}><RefreshCw size={14}/> Check in</button></div>}
   {view.keeper&&<div className="gv3-cycle-copy" role="status">
    <strong>{view.keeper.gasWei===null?'Keeper gas status unavailable':
     view.keeper.gasWei<1000000000000000n?'Automatic profit waiting for tBNB':'Keeper gas available'}</strong>

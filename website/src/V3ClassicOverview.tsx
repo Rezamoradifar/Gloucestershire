@@ -98,8 +98,8 @@ export default function V3ClassicOverview(props:Props){
      <div className="gv1-plan-detail"><span>Eligible volume</span><b>{view?`${money(view.qualifiedVolume)} / ${money(view.requiredVolume)}`:'—'}</b></div>
      <button type="button" className="gv1-text-button" onClick={onNetwork}>Explore referral network <ArrowRight size={15}/></button>
     </section>
-    <section className="gv1-panel gv1-cycle-preview"><ClockIcon/><div><h3>{V3_HOURLY_TEST?'One-hour test cycle':'24-hour daily cycle'}</h3>
-     <p>{view?'The live timer and separate profit details are shown below.':connected?'Cycle details appear after the account is verified.':'Connect your wallet to load the live cycle.'}</p></div></section>
+    {!view?.portfolio&&<section className="gv1-panel gv1-cycle-preview"><ClockIcon/><div><h3>{V3_HOURLY_TEST?'One-hour test cycle':'24-hour daily cycle'}</h3>
+     <p>{view?'The live timer and separate profit details are shown below.':connected?'Cycle details appear after the account is verified.':'Connect your wallet to load the live cycle.'}</p></div></section>}
    </aside>
   </div>
  </section>;

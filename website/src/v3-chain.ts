@@ -197,7 +197,7 @@ export type V3Withdrawal={
 export type V3NetworkBranch={address:string;volume:bigint;grouped:boolean};
 export type V3NetworkGroup={id:number;stage:number;prepared:bigint;branches:number;target:bigint;reward:bigint;preview:V3NetworkPreview|null;branchAddresses?:string[]};
 export type V3Snapshot={
- wallet:string;block:number;asOf:number;hash:string;registered:boolean;
+ wallet:string;block:number;asOf:number;hash:string;observedAtMs?:number;registered:boolean;
  suspended:boolean;vipKyc:boolean;eligible:boolean;
  referrer:string;lastCheckIn:number;nextRequestAt:number;
  pendingWithdrawal:boolean;capital:bigint;originalDeposits:bigint;
@@ -249,6 +249,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
   ]);
   if(Number(BigInt(String(chainId)))!==97)throw Error('V3 source returned a different chain.');
   if(height<4||height-3<minimumBlock)throw Error('The confirmed BNB Testnet block is behind the transaction receipt.');
+  const observedAtMs=Date.now();
   const [block,code,receipt]=await Promise.all([
    provider.getBlock(height-3),provider.getCode(config.address,'latest'),
    provider.getTransactionReceipt(config.deploymentTx)
@@ -310,7 +311,7 @@ export async function v3ReadSession(walletProvider:Eip1193Provider,wallet:string
   const canonical=await provider.getBlock(block.number);
   if(!canonical?.hash||canonical.hash.toLowerCase()!==block.hash.toLowerCase())
    throw Error('The verified V3 block changed.');
-  return {provider,vault,network,book,options,block,config,deploymentBlock:receipt.blockNumber};
+  return {provider,vault,network,book,options,block,config,observedAtMs,deploymentBlock:receipt.blockNumber};
  };
  // Try independent sources sequentially; retain the successful provider only
  // for the scoped read, so its connection is not destroyed prematurely.
@@ -514,7 +515,7 @@ async function readVerifiedV3Snapshot(session:Awaited<ReturnType<typeof v3ReadSe
    throw Error('The confirmed unified account block changed.');
  }
  return {
-  wallet,block:block.number,asOf:block.timestamp,hash:block.hash!,
+  wallet,block:block.number,asOf:block.timestamp,hash:block.hash!,observedAtMs:session.observedAtMs,
   registered:Boolean(user.registered),suspended:Boolean(user.suspended),
   vipKyc:Boolean(user.vipKyc),eligible:Boolean(eligible),
   referrer:getAddress(user.referrer),lastCheckIn:Number(user.lastCheckIn),

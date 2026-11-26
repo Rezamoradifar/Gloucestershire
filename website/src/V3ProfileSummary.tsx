@@ -38,6 +38,7 @@ export default function V3ProfileSummary({view,contract}:Props){
     ['Manual reinvestments',money(view.reinvestments)+' test USDT'],['Available earnings',money(totalAccountEarnings(availableAccountEarnings(view)))+' test USDT'],
     ['Test-token wallet balance',money(view.walletTestTokenBalance)+' test USDT'],['Wallet gas',formatEther(view.gasWei)+' tBNB'],
     ['Withdrawal requests',String(view.withdrawCount)],['Next request',view.paused?'Contract paused':view.suspended?'Account suspended':!view.registered?'Registration required':view.pendingWithdrawal?'Open request pending':view.nextRequestAt>view.asOf?formatUtcTime(view.nextRequestAt):'Available now']])}</dl></div></div>
-  <p className="gdp-caption">Verified block {view.block.toLocaleString('en-US')} · {formatUtcTime(view.asOf)}</p>
+  <p className="gdp-caption">Verified block {view.block.toLocaleString('en-US')} · {formatUtcTime(view.asOf)}
+   {view.portfolio&&<> · <a href={'https://repo.sourcify.dev/97/'+contract} target="_blank" rel="noreferrer">Contract source <ExternalLink size={13}/></a></>}</p>
  </section>;
 }

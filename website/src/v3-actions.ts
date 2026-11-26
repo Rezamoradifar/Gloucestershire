@@ -34,7 +34,7 @@ export type V3Action=
  | {kind:'reserveExistingCash';id:number}
  | {kind:'payWithdrawal';id:number};
 export type V3TransactionProgress={
- step:'preflight'|'simulation'|'wallet_request'|'verification'|'confirmed';
+ step:'preflight'|'simulation'|'signature'|'wallet_request'|'verification'|'confirmed';
  action:'registration'|'allowance_reset'|'token_approval'|'test_deposit'|'network_group'|'reinvestment'|'withdrawal_request'|'withdrawal_settlement'|'check_in'|'vip_verification'|'member_status';
  hash?:string;blockNumber?:number;
 };
@@ -57,17 +57,23 @@ const MAX_TESTNET_ACTION_GAS=8_000_000n;
 const MAX_TESTNET_GAS_PRICE=100_000_000_000n;
 const MAX_TESTNET_ACTION_FEE=10_000_000_000_000_000n;
 type CheckedTestGas={gasLimit:bigint;gasPrice:bigint};
-export async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
- name:string,args:unknown[],wallet:string):Promise<CheckedTestGas>{
+export async function checkedGasLimit(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
+ name:string,args:unknown[],wallet:string,gasPrice?:0n){
  const method=contract.getFunction(name);
- const result=await method.staticCall(...args,{from:wallet,...session.options});
+ const sender=gasPrice===undefined?{from:wallet}:{from:wallet,gasPrice};
+ const result=await method.staticCall(...args,{...sender,...session.options});
  if(result===false)throw Error('TESTNET token simulation returned false.');
- const estimate=BigInt(await method.estimateGas(...args,{from:wallet}));
+ const estimate=BigInt(await method.estimateGas(...args,sender));
  const latest=await session.provider.getBlock('latest');
  if(estimate<=0n||!latest||latest.gasLimit<=0n)throw Error('Unable to verify the TESTNET gas estimate.');
  const limit=(estimate*125n+99n)/100n;
  if(limit>MAX_TESTNET_ACTION_GAS||limit>latest.gasLimit)
   throw Error('TESTNET action exceeds the permitted gas limit.');
+ return limit;
+}
+export async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession>>,contract:Contract,
+ name:string,args:unknown[],wallet:string):Promise<CheckedTestGas>{
+ const limit=await checkedGasLimit(session,contract,name,args,wallet);
  // Read the network fee independently; never guess or fall back after a send.
  let gasPrice:bigint;
  try{
@@ -79,7 +85,7 @@ export async function checkedGas(session:Awaited<ReturnType<typeof v3ReadSession
   throw Error('TESTNET estimated gas fee exceeds the permitted limit.');
  return {gasLimit:limit,gasPrice};
 }
-async function checkWalletStillSelected(provider:Eip1193Provider,wallet:string){
+export async function checkWalletStillSelected(provider:Eip1193Provider,wallet:string){
  const {chainId:chain,accounts}=await readWalletSelection(provider);
  if(Number(BigInt(String(chain)))!==97||!Array.isArray(accounts)||
   !accounts.some(a=>typeof a==='string'&&a.toLowerCase()===wallet.toLowerCase()))
@@ -129,6 +135,11 @@ export async function submitVerified(walletProvider:Eip1193Provider,wallet:strin
  }),label,hash=>progress(onProgress,{step:'verification',action,hash}));
  if(typeof hash!=='string'||!/^0x[0-9a-fA-F]{64}$/.test(hash))
   throw Error(label+' returned an invalid transaction reference. Check wallet history before retrying.');
+ return confirmV3Transaction(walletProvider,wallet,config,to,data,hash,label,action,onProgress);
+}
+export async function confirmV3Transaction(walletProvider:Eip1193Provider,wallet:string,
+ config:V3SiteReleaseConfig,to:string,data:string,hash:string,label:string,action:V3TransactionProgress['action'],
+ onProgress?:V3TransactionProgressCallback,requireZeroGas=false):Promise<TransactionReceipt>{
  progress(onProgress,{step:'verification',action,hash});
  let session:Awaited<ReturnType<typeof v3ReadSession>>|undefined;
  try{
@@ -152,6 +163,7 @@ export async function submitVerified(walletProvider:Eip1193Provider,wallet:strin
   if(!tx||tx.hash.toLowerCase()!==hash.toLowerCase()||tx.chainId!==97n||
      getAddress(tx.from)!==getAddress(wallet)||!tx.to||getAddress(tx.to)!==getAddress(to)||
      tx.data.toLowerCase()!==data.toLowerCase()||tx.value!==0n||
+     (requireZeroGas&&(tx.gasPrice!==0n||receipt.gasPrice!==0n||again?.gasPrice!==0n))||
      receipt.hash.toLowerCase()!==hash.toLowerCase()||!receipt.to||
      getAddress(receipt.from)!==getAddress(wallet)||getAddress(receipt.to)!==getAddress(to)||
      !canonical?.hash||canonical.hash.toLowerCase()!==receipt.blockHash.toLowerCase()||

@@ -1,21 +1,21 @@
 /* Colors belong to the account workspace; the public landing has its own palette. */
 :root .gv2.gv3-workspace {
-  --glass-ink:#edf6f4; --glass-muted:#aec2c8; --glass-line:#9bcdd235; --glass-accent:#91e5c8;
-  --glass-warm:#f3d696; --glass-sell:#ffb7a5; --glass-on-accent:#08241d;
-  --glass-bg:#0a1620; --glass-surface:linear-gradient(124deg,#203744da,#13242fdd 72%);
-  --glass-inset:#10232ecf; --glass-nav:#10232eea; --glass-tab:#81cfb91c; --glass-edge:#e1fffc27;
-  --glass-shadow:0 10px 34px #020b142e; --glass-aura:#1c645953; --glass-haze:#33447552;
-  --glass-hero-shade:linear-gradient(90deg,#10252afa 8%,#11282edb 44%,#14242927 84%);
+  --glass-ink:#f0f5ff; --glass-muted:#b1c1d6; --glass-line:#94b4e03d; --glass-accent:#8edff7;
+  --glass-warm:#ffd48c; --glass-success:#80dfba; --glass-sell:#ffa7ae; --glass-on-accent:#092337;
+  --glass-bg:#0a1326; --glass-surface:linear-gradient(125deg,#192c49f5,#101d34f2 82%);
+  --glass-inset:#111f37; --glass-nav:#0c182bef; --glass-tab:#61c9ee1d; --glass-edge:#d7eaff27;
+  --glass-shadow:0 12px 38px #03081946; --glass-aura:#13547650; --glass-haze:#44478b40;
+  --glass-hero-shade:linear-gradient(92deg,#0b1831fc 8%,#112c46df 46%,#0b193627 86%);
   --gv1-muted:var(--glass-muted); --gv1-border:var(--glass-line); --ink:var(--glass-ink); --muted:var(--glass-muted);
   background:var(--glass-bg); color:var(--glass-ink); font-family:Inter,system-ui,sans-serif;
 }
 :root[data-theme='light'] .gv2.gv3-workspace {
-  --glass-ink:#152f39; --glass-muted:#455f69; --glass-line:#3c6b7238; --glass-accent:#10614e;
-  --glass-warm:#745017; --glass-sell:#943e31; --glass-on-accent:#fff;
-  --glass-bg:#e9f2f3; --glass-surface:linear-gradient(124deg,#ffffffea,#f1fbf8cc 76%);
-  --glass-inset:#f6fcfbe8; --glass-nav:#f5fbf9ed; --glass-tab:#15796415; --glass-edge:#ffffffef;
-  --glass-shadow:0 10px 32px #1c545916; --glass-aura:#83cab769; --glass-haze:#b4c4dd71;
-  --glass-hero-shade:linear-gradient(90deg,#ecf7f5 8%,#e7f3eee8 46%,#f1eee54a 86%);
+  --glass-ink:#132946; --glass-muted:#465c74; --glass-line:#456c953f; --glass-accent:#185989;
+  --glass-warm:#805111; --glass-success:#116747; --glass-sell:#a33046; --glass-on-accent:#fff;
+  --glass-bg:#edf3fb; --glass-surface:linear-gradient(125deg,#fffffffa,#f4f8ffed 82%);
+  --glass-inset:#f7faff; --glass-nav:#f9fbffef; --glass-tab:#21679712; --glass-edge:#fff;
+  --glass-shadow:0 10px 30px #233d6614; --glass-aura:#c0e1ee94; --glass-haze:#d8d9f080;
+  --glass-hero-shade:linear-gradient(92deg,#f2f7fffc 8%,#e5f1f9ec 46%,#c0d6ef50 86%);
 }
 :root .gv3-workspace.gv2-classic .gv2-workspace {
   background:radial-gradient(ellipse 58rem 38rem at 5% 3%,var(--glass-aura),transparent 74%),
@@ -220,4 +220,37 @@
  .gv3-workspace .gdp-sources>div {gap:6px}
  .gv3-workspace .gdp-ledger-entry summary {grid-template-columns:25px minmax(0,1fr) minmax(0,33%);gap:7px;font-size:.85rem}
  .gv3-workspace .gdp-ledger-entry summary>i {width:25px;height:30px}
+}
+
+.gv3-workspace.gv2-classic :focus-visible {outline:3px solid var(--glass-accent);outline-offset:3px}
+.gv3-workspace .gv3-trade-side.buy,.gv3-workspace .gv3-tape-state[data-state=live] {color:var(--glass-success)}
+.gv3-workspace .gdp-timing {margin:16px 0;min-width:0;padding:clamp(14px,2.4vw,26px)}
+.gv3-workspace .gdp-timing header,.gv3-workspace .gdp-timing-actions {
+ display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px
+}
+.gv3-workspace .gdp-timing h2 {margin:0;font-size:clamp(18px,2vw,24px);color:var(--glass-ink)}
+.gv3-workspace .gdp-clocks {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.gv3-workspace .gdp-clock {
+ min-width:0;padding:clamp(14px,2vw,22px);border:1px solid var(--glass-line);border-radius:14px;
+ background:linear-gradient(120deg,var(--glass-tab),transparent 70%),var(--glass-inset)
+}
+.gv3-workspace .gdp-clock h3 {display:flex;align-items:center;gap:8px;margin:0;color:var(--glass-ink);font-size:15px}
+:root .gv3-workspace.gv2-classic .gdp-clock .gv3-digital {--digit-height:clamp(28px,4vw,43px);justify-content:flex-start;margin:14px 0;color:var(--glass-warm)}
+:root .gv3-workspace.gv2-classic .gdp-activity-clock .gv3-digital {color:var(--glass-accent)}
+.gv3-workspace .gdp-clock p {margin:0 0 4px;color:var(--glass-ink);font-size:13px;font-variant-numeric:tabular-nums}
+.gv3-workspace .gdp-clock small,.gv3-workspace .gdp-timing-actions span {color:var(--glass-muted);font-size:12px}
+.gv3-workspace .gdp-activity-clock[data-active=true] small {color:var(--glass-success)}
+.gv3-workspace.gv2-classic .gdp-timing button {
+ display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:7px 14px;
+ border:1px solid var(--glass-line);border-radius:10px;background:var(--glass-inset);color:var(--glass-accent);
+ font-family:inherit;font-size:13px;font-weight:600;line-height:1.4;cursor:pointer
+}
+.gv3-workspace.gv2-classic .gdp-timing .gdp-free-check {background:var(--glass-accent);color:var(--glass-on-accent);border-color:transparent}
+.gv3-workspace.gv2-classic .gdp-timing button:disabled {opacity:.6;cursor:default}
+.gv3-workspace .gdp-timing details {margin-top:10px;border-top:1px solid var(--glass-line)}
+.gv3-workspace .gdp-timing summary {padding:13px 0;color:var(--glass-muted);font-size:13px;cursor:pointer}
+@media(max-width:550px) {
+ .gv3-workspace .gdp-clocks {grid-template-columns:minmax(0,1fr);gap:9px}
+ .gv3-workspace .gdp-clock {padding:14px 16px}
+ .gv3-workspace .gdp-timing-actions {row-gap:10px}
 }

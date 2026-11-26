@@ -27,6 +27,7 @@ import V3CycleCard from './V3CycleCard';
 import V3UnifiedActivity from './V3UnifiedActivity';
 import V3SeparateTestAccounts from './V3SeparateTestAccounts';
 import {sendV3UnifiedCheckIn} from './v3-unified-checkin';
+import {SponsorUnavailable} from './v3-sponsored-checkin';
 import V3NetworkPanel from './V3NetworkPanel';
 import V3TeamDirectory from './V3TeamDirectory';
 import {isUnifiedNetworkAction,sendUnifiedNetworkAction,networkActionTarget} from './v3-unified-network';
@@ -109,6 +110,7 @@ export default function V3Dashboard(){
  const [connecting,setConnecting]=useState(false),[loading,setLoading]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[readError,setReadError]=useState(''),[notice,setNotice]=useState('');
  const [txHash,setTxHash]=useState(''),[view,setView]=useState<V3Snapshot|null>(null);
+ const [sponsorIssue,setSponsorIssue]=useState<{scope:string;message:string}|null>(null);
  const [transactionProgress,setTransactionProgress]=useState<V3TransactionProgress|null>(null);
  const [reviewRequired,setReviewRequired]=useState(false);
  const [reviewDetail,setReviewDetail]=useState<{message:string;hash?:string}|null>(null);
@@ -242,7 +244,12 @@ export default function V3Dashboard(){
   if(!background)setLoading(true);
   try{
    const result=await readV3Snapshot(provider,wallet,config,tab==='team'?{branches:branchPage,groups:groupPage}:null,unifiedPageStart,withdrawalCoverage,confirmedBlock.current);
-   if(id===revision.current&&getWalletProvider()===provider){setView(result);setReadError('');}
+   if(id===revision.current&&getWalletProvider()===provider){
+    confirmedBlock.current=Math.max(confirmedBlock.current,result.block);
+    setView(previous=>previous?.hash===result.hash&&previous.wallet===result.wallet
+     ?{...result,observedAtMs:previous.observedAtMs??result.observedAtMs}:result);
+    setReadError('');
+   }
   }catch(e){
    if(id===revision.current){
     if(!background)setView(null);
@@ -466,14 +473,17 @@ export default function V3Dashboard(){
  }
  const claims=view?v3PrepareUserClaims(view.ledger):null;
  const due=view?.positions.filter(p=>(!config?.unified||!p.fromReinvestment)&&p.principal>0n&&view.asOf>=p.lastAccruedAt+V3_PERIOD_SECONDS).slice(0,20).map(p=>p.id)??[];
- async function checkInUnified(){
+ async function checkInUnified(selfFunded=false){
   if(busy||inFlight.current)return;
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your BNB Testnet account.');return;}
   if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   if(!view.registered||view.suspended||view.paused){setError('This test account cannot check in.');return;}
-  if(view.gasWei===0n){setError('This wallet needs tBNB on BNB Testnet (97) to sign its check-in.');return;}
-  if(!await confirmAction('Review check-in','Record your account activity? This requires a wallet transaction and testnet gas. It does not credit or transfer profit.'))return;
+  const sponsored=config.unified.portfolio&&!selfFunded;
+  if(!sponsored&&view.gasWei===0n){setError('This wallet needs tBNB for a wallet-paid renewal.');return;}
+  if(!await confirmAction(sponsored?'Review sponsored renewal':'Review wallet-paid renewal',sponsored
+   ?'Renew the 24-hour activity window if a sponsor covers the network fee? Your wallet pays zero.'
+   :'Record activity on chain and pay the network fee from your wallet? This renews your 24-hour activity window.'))return;
   const p=getWalletProvider();if(!p){setError('Wallet disconnected.');return;}
   inFlight.current=true;setBusy(true);setError('');setNotice('Checking test account activity…');setTxHash('');setTransactionProgress(null);
   const tracker=new V3PersistentTransactionTracker(reviewScope!);let progressHash:string|undefined;
@@ -483,9 +493,13 @@ export default function V3Dashboard(){
     confirmedBlock.current=Math.max(confirmedBlock.current,detail.blockNumber);
    if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
-   const result=await sendV3UnifiedCheckIn(p,wallet,config,{enabled:unifiedEnabled,onProgress:report});
-   tracker.complete();setTxHash(result.hash);setNotice('Test check-in confirmed. Eligible claims require separate accrual.');await refresh();
-  }catch(e){const message=e instanceof Error?e.message:'V3 check-in not confirmed.';setNotice('');setError(message);
+   const result=await sendV3UnifiedCheckIn(p,wallet,config,{enabled:unifiedEnabled,onProgress:report,...(selfFunded?{selfFunded:true as const}:{})});
+   tracker.complete();setSponsorIssue(null);setTxHash(result.hash);
+   setNotice(sponsored?'Activity renewed. Your wallet paid zero gas.':'Test check-in confirmed. Eligible claims require separate accrual.');
+   await refresh();
+  }catch(e){const message=e instanceof Error?e.message:'V3 check-in not confirmed.';setNotice('');
+   if(sponsored&&reviewKey&&e instanceof SponsorUnavailable)setSponsorIssue({scope:reviewKey,message});
+   else setError(message);
    if(tracker.needsReview(message)){showPendingReview(reviewScope,{message,hash:progressHash});}}
   finally{inFlight.current=false;setBusy(false);}
  }
@@ -631,6 +645,11 @@ export default function V3Dashboard(){
   setMenuOpen(false);setError('');setValue(accountWithdrawal?'':nextValue);
   if(accountWithdrawal)setWithdrawalAmount(nextValue);
  };
+ const portfolioTiming=view?.portfolio?<V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly}
+  onStatus={()=>void refresh()} checking={loading} onCheckIn={checkIn} onPositions={()=>navigate('positions')}
+  sponsorIssue={sponsorIssue?.scope===reviewKey?sponsorIssue?.message:undefined}
+  onSelfFundedRenewal={()=>void checkInUnified(true)}
+  unifiedEnabled={unifiedEnabled}/>:null;
  return <div className="gv2 shell gv2-classic gv3-workspace" dir="ltr">
   <aside id="v3-dashboard-menu" className={'sidebar gv2-sidebar '+(menuOpen?'open':'')} aria-label="Global V3 testnet navigation" inert={smallScreen&&!menuOpen}>
    <button className="gv2-sidebar-close" onClick={()=>{setMenuOpen(false);menuTrigger.current?.focus();}} aria-label="Close navigation"><X size={18}/></button>
@@ -671,7 +690,7 @@ export default function V3Dashboard(){
     {error&&<p ref={actionError} className="gv2-error" role="alert">{error}</p>}
     {readError&&!independentTab&&<p className="gv2-error" role="alert">{readError}</p>}
     {notice&&<p className="gv2-message" role="status">{notice} {txHash&&<a href={V3_EXPLORER+'/tx/'+txHash} target="_blank" rel="noreferrer">Verified TX <ExternalLink size={14}/></a>}</p>}
-    {config.unified&&notice&&txHash&&view?.registered&&!view.eligible&&!view.suspended&&!view.paused&&transactionProgress?.action==='test_deposit'&&transactionProgress.step==='confirmed'&&
+    {config.unified&&!view?.portfolio&&notice&&txHash&&view?.registered&&!view.eligible&&!view.suspended&&!view.paused&&transactionProgress?.action==='test_deposit'&&transactionProgress.step==='confirmed'&&
      <button type="button" className="gv2-primary" disabled={busy||reviewRequired||unifiedReadOnly||view.asOf<view.lastCheckIn+3600} onClick={checkIn}>Activate account</button>}
     {transactionProgress&&<p className="gv2-message" role="status">{busy?'Current step: ':'Last step: '}{v3TransactionProgressText(transactionProgress)}{' '}
      {transactionProgress.hash&&<a href={V3_EXPLORER+'/tx/'+transactionProgress.hash} target="_blank" rel="noreferrer">View transaction <ExternalLink size={14}/></a>}</p>}
@@ -709,6 +728,7 @@ export default function V3Dashboard(){
      selectedPosition={selectedPosition} onPosition={setSelectedPosition}
      onDeposit={()=>void deposit()} onWithdraw={()=>{setRequestKind('profit');navigate('withdrawals',value);}} onReinvest={reinvest} onAccountWithdraw={singleCapital?()=>{setRequestKind('profit');navigate('withdrawals');}:undefined} onAccountReinvest={config?.unified?.accountReinvest?()=>navigate('positions','','reinvest'):undefined}
      onNetwork={()=>navigate('team')} onConnect={openWalletPicker} onWalletConnect={()=>void connect('walletconnect')}>
+     {portfolioTiming}
      <V3TradingDesk view={view}/>
     </V3ClassicOverview>}
     {wallet&&tab==='history'&&(config.unified?.portfolio||view)&&<div className="gv2-content">
@@ -733,7 +753,7 @@ export default function V3Dashboard(){
     {tab==='tickets'&&support&&(!wallet||chain===97)&&<V3SupportTickets key={supportKey} client={support} wallet={wallet} admin={false} initialTicket={selection} onConnect={openWalletPicker}/>}
     {view&&tab!=='history'&&!communityTab&&<div className="gv2-content">
      {tab==='overview'&&<>
-      <V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly} onCheckIn={checkIn} onPositions={()=>navigate('positions')} unifiedEnabled={unifiedEnabled}/>
+      {!view.portfolio&&<V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly} onCheckIn={checkIn} onPositions={()=>navigate('positions')} unifiedEnabled={unifiedEnabled}/>}
       {config.unified&&<V3UnifiedActivity view={view} busy={busy||reviewRequired} readOnly={unifiedReadOnly} onCheckIn={checkIn}/>}
       {view.wallet.toLowerCase()===wallet.toLowerCase()&&<V3ClaimsReadout key={(config?.address??'').toLowerCase()+':'+view.wallet.toLowerCase()} showRequestLimit={!view.portfolio} verifiedLedger={view.ledger} manualReinvest={view.manualReinvest}/>}
       <div className="gv2-summary">
@@ -746,6 +766,7 @@ export default function V3Dashboard(){
        {!config.unified&&` ${due.length} positions due at the last verified block.`} Automatic posting needs an eligible check-in and a funded testnet keeper.</div>
      </>}
      {tab==='positions'&&<>
+      {portfolioTiming}
       {singleCapital&&view.wallet.toLowerCase()===wallet.toLowerCase()&&<>
        {view.portfolio?<V3PortfolioWithdrawal key={config.address+':'+wallet} view={view} value={withdrawalAmount}
         onValue={setWithdrawalAmount} onPage={setUnifiedPageStart} busy={busy||loading||reviewRequired} readOnly={unifiedReadOnly}

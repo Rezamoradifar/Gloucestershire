@@ -39,6 +39,17 @@ describe('V3 cycle eligibility presentation',()=>{
    expect(html).not.toContain('The full daily test rate is applied once per eligible one-hour test cycle');
   }
  });
+ it('preserves elapsed time across a remount and separates free reads from renewal',()=>{
+  const html=render({portfolio:true,unifiedPage:null,observedAtMs:Date.now()-4000});
+  expect(html).toContain('aria-label="Earnings countdown"');
+  expect(html).toContain('aria-label="Activity countdown"');
+  expect(html).toContain('aria-label="23:43:16"');
+  expect(html).toContain('Check status · Free');
+  expect(html).toContain('Starts with an active deposit');
+  const expired=render({portfolio:true,unifiedPage:null,observedAtMs:Date.now()-86400000});
+  expect(expired).toContain('aria-label="00:00:00"');
+  expect(expired).toContain('Expired 1970-01-02 02:30:00 UTC');
+ });
  it('derives the single-account hourly timer from its additions and labels partial coverage',()=>{
   const page={start:0,totalLots:2,lots:[
    {principal:parseEther('1000'),basis:parseEther('7'),lastAccruedAt:9000},
