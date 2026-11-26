@@ -473,13 +473,13 @@ export default function V3Dashboard(){
  }
  const claims=view?v3PrepareUserClaims(view.ledger):null;
  const due=view?.positions.filter(p=>(!config?.unified||!p.fromReinvestment)&&p.principal>0n&&view.asOf>=p.lastAccruedAt+V3_PERIOD_SECONDS).slice(0,20).map(p=>p.id)??[];
- async function checkInUnified(selfFunded=false){
+ async function checkInUnified(){
   if(busy||inFlight.current)return;
   if(unifiedReadOnly){setError('The unified testnet preview is read-only.');return;}
   if(!wallet||!config?.unified||chain!==97||!view){setError('Connect and verify your BNB Testnet account.');return;}
   if(pendingReviewGate()){setError('Check your wallet transaction history before trying again.');return;}
   if(!view.registered||view.suspended||view.paused){setError('This test account cannot check in.');return;}
-  const sponsored=config.unified.portfolio&&!selfFunded;
+  const sponsored=config.unified.portfolio===true;
   if(!sponsored&&view.gasWei===0n){setError('This wallet needs tBNB for a wallet-paid renewal.');return;}
   if(!await confirmAction(sponsored?'Review sponsored renewal':'Review wallet-paid renewal',sponsored
    ?'Renew the 24-hour activity window if a sponsor covers the network fee? Your wallet pays zero.'
@@ -493,7 +493,7 @@ export default function V3Dashboard(){
     confirmedBlock.current=Math.max(confirmedBlock.current,detail.blockNumber);
    if(detail.step==='wallet_request')progressHash=undefined;if(detail.hash)progressHash=detail.hash;setTransactionProgress(detail);};
   try{
-   const result=await sendV3UnifiedCheckIn(p,wallet,config,{enabled:unifiedEnabled,onProgress:report,...(selfFunded?{selfFunded:true as const}:{})});
+   const result=await sendV3UnifiedCheckIn(p,wallet,config,{enabled:unifiedEnabled,onProgress:report});
    tracker.complete();setSponsorIssue(null);setTxHash(result.hash);
    setNotice(sponsored?'Activity renewed. Your wallet paid zero gas.':'Test check-in confirmed. Eligible claims require separate accrual.');
    await refresh();
@@ -648,7 +648,6 @@ export default function V3Dashboard(){
  const portfolioTiming=view?.portfolio?<V3CycleCard view={view} busy={busy||reviewRequired||unifiedReadOnly}
   onStatus={()=>void refresh()} checking={loading} onCheckIn={checkIn} onPositions={()=>navigate('positions')}
   sponsorIssue={sponsorIssue?.scope===reviewKey?sponsorIssue?.message:undefined}
-  onSelfFundedRenewal={()=>void checkInUnified(true)}
   unifiedEnabled={unifiedEnabled}/>:null;
  return <div className="gv2 shell gv2-classic gv3-workspace" dir="ltr">
   <aside id="v3-dashboard-menu" className={'sidebar gv2-sidebar '+(menuOpen?'open':'')} aria-label="Global V3 testnet navigation" inert={smallScreen&&!menuOpen}>

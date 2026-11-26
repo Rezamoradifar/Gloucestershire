@@ -7,8 +7,8 @@ import {formatV3Amount as money} from './v3-format';
 import DigitalValue from './DigitalValue';
 import {formatUtcTime} from './utc-time';
 
-export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnabled=false,onStatus,checking=false,sponsorIssue,onSelfFundedRenewal}:{
- view:V3Snapshot;busy:boolean;unifiedEnabled?:boolean;onStatus?:()=>void;checking?:boolean;onCheckIn:()=>void;onPositions:()=>void;sponsorIssue?:string;onSelfFundedRenewal?:()=>void;
+export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnabled=false,onStatus,checking=false,sponsorIssue}:{
+ view:V3Snapshot;busy:boolean;unifiedEnabled?:boolean;onStatus?:()=>void;checking?:boolean;onCheckIn:()=>void;onPositions:()=>void;sponsorIssue?:string;
 }){
  const now=useV3ChainClock(view);
  const elapsed=now-view.asOf;
@@ -74,9 +74,8 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
     </div>
    </div>
    <div className="gdp-timing-actions"><span>{checkInWait>0?'Renewal opens '+formatUtcTime(view.lastCheckIn+3600):'Viewing status uses no gas or signature.'}</span>
-    <button type="button" disabled={activityDisabled} onClick={onCheckIn}>Renew with sponsor</button></div>
-   {sponsorIssue&&<div className="gdp-timing-actions"><p role="status">{sponsorIssue}</p>
-    <button type="button" disabled={activityDisabled} onClick={onSelfFundedRenewal}>Renew with my wallet (network fee)</button></div>}
+    <button type="button" disabled={activityDisabled} onClick={onCheckIn}>Renew activity · Free</button></div>
+   {sponsorIssue&&<p className="gdp-sponsor-status" role="status">{sponsorIssue}</p>}
    <details><summary>Cycle estimate and positions</summary>{forecast}
     <button type="button" onClick={onPositions}>View investment account <ArrowRight size={15}/></button></details>
   </section>;

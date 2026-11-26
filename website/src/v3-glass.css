@@ -240,6 +240,7 @@
 .gv3-workspace .gdp-clock p {margin:0 0 4px;color:var(--glass-ink);font-size:13px;font-variant-numeric:tabular-nums}
 .gv3-workspace .gdp-clock small,.gv3-workspace .gdp-timing-actions span {color:var(--glass-muted);font-size:12px}
 .gv3-workspace .gdp-activity-clock[data-active=true] small {color:var(--glass-success)}
+.gv3-workspace .gdp-sponsor-status {margin:12px 0;font-size:13px;color:var(--glass-warm)}
 .gv3-workspace.gv2-classic .gdp-timing button {
  display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:7px 14px;
  border:1px solid var(--glass-line);border-radius:10px;background:var(--glass-inset);color:var(--glass-accent);

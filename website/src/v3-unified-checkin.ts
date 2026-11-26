@@ -9,7 +9,7 @@ import type {V3SiteReleaseConfig} from './v3-site-config';
 
 const events=new Interface(V3_ABI);
 export async function sendV3UnifiedCheckIn(walletProvider:Eip1193Provider,wallet:string,
- config:V3SiteReleaseConfig|null,options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback;selfFunded?:true}={}){
+ config:V3SiteReleaseConfig|null,options:{enabled?:boolean;onProgress?:V3TransactionProgressCallback}={}){
  if(options.enabled!==true)throw Error('The unified testnet preview is read-only.');
  if(!config?.unified)throw Error('The verified unified testnet contract is required.');
  const who=getAddress(wallet),notify=(step:'preflight'|'simulation')=>{
@@ -32,7 +32,7 @@ export async function sendV3UnifiedCheckIn(walletProvider:Eip1193Provider,wallet
   if(previous!==0n&&BigInt(block.timestamp)<previous+3600n)
    throw Error('Check-in is still on cooldown.');
   notify('simulation');
-  const sponsored=config.unified.portfolio&&!options.selfFunded;
+  const sponsored=config.unified.portfolio===true;
   const gas=sponsored?{gasLimit:await checkedGasLimit(session,vault,'checkIn',[],who,0n),gasPrice:0n}:
    await checkedGas(session,vault,'checkIn',[],who);
   const canonical=await provider.send('eth_getBlockByNumber',[toQuantity(block.number),false]);
