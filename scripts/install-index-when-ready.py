@@ -47,7 +47,7 @@ def status_state(value, now):
 
 def read_status(timeout):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    request = urllib.request.Request('http://127.0.0.1:3115/api/automation/status',
+    request = urllib.request.Request('http://127.0.0.1:3115/api/automation/status?vault=legacy',
                                      headers={'Cache-Control': 'no-store'})
     with opener.open(request, timeout=timeout) as response:
         return json.load(response)

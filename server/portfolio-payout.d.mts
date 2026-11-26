@@ -1,0 +1,1 @@
+export function verifyPortfolioPayout(receipt:{status:number|null;logs:readonly {address:string;topics:readonly string[];data:string}[]},expected:{vault:string;token:string;feeReceiver:string;beneficiary:string;id:number;gross:bigint;fee:bigint}):void;

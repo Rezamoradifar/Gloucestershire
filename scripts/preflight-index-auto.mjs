@@ -89,7 +89,7 @@ async function main(){
  let provider;
  try{
   if(process.getuid?.()!==0||process.argv.length!==3||process.argv[2]!=='--check')fail('INDEX_PROBE_EXPLICIT_ROOT_CHECK_REQUIRED');
-  const [api,status]=await Promise.all([localJson('/api/config'),localJson('/api/automation/status')]);
+  const [api,status]=await Promise.all([localJson('/api/config'),localJson('/api/automation/status?vault=legacy')]);
   if(api?.chainId!==97||String(api.vaultAddress).toLowerCase()!==EXPECTED||status?.chainId!==97||String(status.vaultAddress).toLowerCase()!==EXPECTED)fail('INDEX_PROBE_LOCAL_API_TARGET_MISMATCH');
   const config=readConfig(parseEnv(readNewDeployerPrivateText('/etc/globaldroptrade/trades.env')));
   if(config.chainId!==97||String(config.address).toLowerCase()!==EXPECTED)fail('INDEX_PROBE_LOCAL_CONFIG_MISMATCH');

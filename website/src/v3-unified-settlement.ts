@@ -3,6 +3,7 @@ import {BrowserProvider,Contract,getAddress,type Eip1193Provider,type LogDescrip
 import {checkedGas,submitVerified,type V3Action,type V3TransactionProgressCallback} from './v3-actions';
 import {v3ReadSession,V3_TEST_TOKEN_ABI,type V3Withdrawal} from './v3-chain';
 import {V3_TEST_TOKEN,type V3SiteReleaseConfig} from './v3-site-config';
+import {verifyPortfolioPayout} from '../../server/portfolio-payout.mjs';
 import {readVerifiedWithdrawal} from './v3-withdrawal-history';
 import {v3WithdrawalFee} from './v3-withdrawal-form';
 
@@ -133,8 +134,9 @@ export async function sendUnifiedWithdrawal(provider:Eip1193Provider,wallet:stri
       find('WithdrawalReleased',({args:a})=>a.id===id&&Number(a.status)===(action.kind==='rejectWithdrawal'?4:5));break;
      case 'fundWithdrawal':find('WithdrawalEscrowFunded',({args:a})=>a.id===id&&getAddress(a.funder)===who&&a.gross===action.gross);break;
      case 'reserveExistingCash':find('WithdrawalExistingCashReserved',({args:a})=>a.id===id&&a.gross===row.gross);break;
-     case 'payWithdrawal':find('WithdrawalPaid',({args:a})=>a.id===id&&getAddress(a.beneficiary)===getAddress(row.beneficiary)&&
-      a.net===row.gross-row.fee&&a.fee===row.fee);break;
+     case 'payWithdrawal':
+      verifyPortfolioPayout(receipt,{vault:config.address,token:V3_TEST_TOKEN,feeReceiver:await vault.feeReceiver(session.options),
+       beneficiary:row.beneficiary,id:action.id,gross:row.gross,fee:row.fee});break;
     }
    }
   }catch{throw Error('Test withdrawal transaction '+receipt.hash+' was confirmed but its event could not be verified. Check wallet history before retrying.');}

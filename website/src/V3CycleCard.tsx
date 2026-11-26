@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useV3ChainClock} from './use-v3-chain-clock';
 import {ArrowRight,Clock3,RefreshCw,ShieldCheck} from 'lucide-react';
 import type {V3Snapshot} from './v3-chain';
 import {v3Countdown,v3CycleView,V3_PERIOD_SECONDS} from './v3-cycle';
@@ -7,17 +7,13 @@ import {formatV3Amount as money} from './v3-format';
 import DigitalValue from './DigitalValue';
 import {formatUtcTime} from './utc-time';
 
-export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnabled=false}:{
- view:V3Snapshot;busy:boolean;unifiedEnabled?:boolean;onCheckIn:()=>void;onPositions:()=>void;
+export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnabled=false,onStatus,checking=false,sponsorIssue}:{
+ view:V3Snapshot;busy:boolean;unifiedEnabled?:boolean;onStatus?:()=>void;checking?:boolean;onCheckIn:()=>void;onPositions:()=>void;sponsorIssue?:string;
 }){
- const [elapsed,setElapsed]=useState(0);
- useEffect(()=>{
-  const anchor=performance.now();setElapsed(0);
-  const timer=setInterval(()=>setElapsed(Math.max(0,Math.floor((performance.now()-anchor)/1000))),1000);
-  return()=>clearInterval(timer);
- },[view.asOf]);
+ const now=useV3ChainClock(view);
+ const elapsed=now-view.asOf;
  const unified=view.unifiedPage!==undefined;
- if(unified&&(!unifiedEnabled||!view.unifiedPage))return <section className="gv3-cycle" aria-label="Unified test cycle">
+ if(unified&&!view.portfolio&&(!unifiedEnabled||!view.unifiedPage))return <section className="gv3-cycle" aria-label="Unified test cycle">
   <div className="gv3-cycle-head"><div><span className="gv3-kicker">{view.dailyPlan?'DAILY CYCLE':'ONE-HOUR TEST CYCLE'}</span>
    <h2>Each addition has its own cycle</h2><p>Review accrual times in the {view.singleCapital?'investment account':'reinvestment position'}.</p></div></div>
   <div className="gv3-cycle-copy"><p>{unifiedEnabled?(view.manualReinvest?'See recorded earnings for each capital addition.':'See the recorded daily and compound claims for each addition.'):'Estimates are unavailable while the unified account is in read-only preview.'}</p>
@@ -25,10 +21,10 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
  </section>;
  const hourly=!view.dailyPlan&&(V3_HOURLY_TEST||unified);
  const periodSeconds=view.dailyPlan?86400:hourly?3600:V3_PERIOD_SECONDS;
- const positions=unified?view.unifiedPage!.lots.map(lot=>({
+ const positions=unified?(view.unifiedPage?.lots??[]).map(lot=>({
   principal:lot.principal,compoundedBasis:view.manualReinvest?0n:lot.basis,lastAccruedAt: view.dailyPlan?lot.nextAccrualAt-periodSeconds:lot.lastAccruedAt
  })):view.manualReinvest?view.positions.map(position=>({...position,compoundedBasis:0n})):view.positions;
- const partial=unified&&(view.unifiedPage!.start!==0||view.unifiedPage!.lots.length!==view.unifiedPage!.totalLots);
+ const partial=Boolean(view.unifiedPage&&(view.unifiedPage.start!==0||view.unifiedPage.lots.length!==view.unifiedPage.totalLots));
  let cycle:ReturnType<typeof v3CycleView>;
  try{cycle=v3CycleView(positions,view.asOf,elapsed,view.lastCheckIn,view.dailyRateBps,periodSeconds);}
  catch{return <section className="gv3-cycle-error" role="alert">Cycle timing could not be verified. Refresh the account before acting.</section>;}
@@ -48,6 +44,42 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
   !view.eligible?'Eligibility was not confirmed at the last verified block. Refresh your account.':
   'Check-in expires in '+v3Countdown(cycle.activityRemaining)+'.';
  const checkInWait=view.lastCheckIn>0?Math.max(0,view.lastCheckIn+3600-(view.asOf+elapsed)):0;
+ const forecast=<div className="gv3-cycle-forecast"><span className="gv3-kicker gv3-forecast-kicker">LIVE ESTIMATED PROGRESS</span>
+     <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="USDT"/></strong>
+     <p>{active?'A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.':'Progress is hidden while eligibility is not confirmed. Refresh or check in as needed.'}</p>
+     <div className="gv3-forecast-row gv3-forecast-row--daily"><span>{hourly?'Cycle base estimate so far':'Daily estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressDaily):'—'}/></b></div>
+     {!view.manualReinvest&&<div className="gv3-forecast-row gv3-forecast-row--compound"><span>Personal compound estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>}
+     <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="USDT"/></b></div>
+     <small>At the verified {view.dailyRateBps/100}% test rate, if each {unified?'addition':'position'} becomes eligible. {hourly&&'The full daily test rate is applied once per eligible one-hour test cycle; this is accelerated test accounting. '}Estimates are not recorded claims, cash or guaranteed profit.</small>
+    </div>;
+ if(view.portfolio){
+  const expiry=view.lastCheckIn?view.lastCheckIn+86400:null;
+  const activityDisabled=busy||needsCapital||!unifiedEnabled||!view.registered||view.suspended||view.paused||checkInWait>0;
+  return <section className="gv3-cycle gdp-timing" aria-labelledby="portfolio-timing-title">
+   <header><h2 id="portfolio-timing-title">Account timing</h2>
+    <button type="button" className="gdp-free-check" aria-busy={checking} disabled={checking} onClick={onStatus}>
+     <RefreshCw size={16} aria-hidden="true"/>{checking?'Checking status…':'Check status · Free'}</button></header>
+   <div className="gdp-clocks">
+    <div className="gdp-clock"><h3><Clock3 size={17} aria-hidden="true"/>Next earnings cycle</h3>
+     <div role="timer" aria-live="off" aria-label="Earnings countdown">
+      <DigitalValue size="clock" value={remaining===null?'--:--:--':v3Countdown(remaining)}/></div>
+     <p>{remaining===null?'Starts with an active deposit':due?'Due for keeper verification':formatUtcTime(cycle.nextAt!)}</p>
+     <small>{hourly?'1-hour test cycle':'24-hour cycle'}{partial?' · Loaded additions only':''}</small>
+    </div>
+    <div className="gdp-clock gdp-activity-clock" data-active={active}><h3><ShieldCheck size={17} aria-hidden="true"/>24-hour activity</h3>
+     <div role="timer" aria-live="off" aria-label="Activity countdown">
+      <DigitalValue size="clock" value={expiry===null?'--:--:--':v3Countdown(cycle.activityRemaining)}/></div>
+     <p>{expiry===null?'Awaiting first check-in':(cycle.activityRemaining?'Expires ':'Expired ')+formatUtcTime(expiry)}</p>
+     <small>{active?'Eligible':activityReason}</small>
+    </div>
+   </div>
+   <div className="gdp-timing-actions"><span>{checkInWait>0?'Renewal opens '+formatUtcTime(view.lastCheckIn+3600):'Viewing status uses no gas or signature.'}</span>
+    <button type="button" disabled={activityDisabled} onClick={onCheckIn}>Renew activity · Free</button></div>
+   {sponsorIssue&&<p className="gdp-sponsor-status" role="status">{sponsorIssue}</p>}
+   <details><summary>Cycle estimate and positions</summary>{forecast}
+    <button type="button" onClick={onPositions}>View investment account <ArrowRight size={15}/></button></details>
+  </section>;
+ }
  return <section className="gv3-cycle" aria-label={hourly?'One-hour test position cycle':'Twenty-four hour position cycle'}>
   <div className="gv3-cycle-head"><div><span className="gv3-kicker">{hourly?'YOUR ONE-HOUR TEST CYCLE':'YOUR DAILY CYCLE'}</span>
    <h2>Track every eligible period</h2><p>Each {unified?'addition':'position'} starts its own {hourly?'one-hour test':'24-hour'} cycle.</p>
@@ -70,14 +102,7 @@ export default function V3CycleCard({view,busy,onCheckIn,onPositions,unifiedEnab
     </div>
    </div>
    <div className="gv3-cycle-side">
-    <div className="gv3-cycle-forecast"><span className="gv3-kicker gv3-forecast-kicker">LIVE ESTIMATED PROGRESS</span>
-     <strong className="gv3-forecast-main"><DigitalValue value={active?money(cycle.progressDaily+cycle.progressCompound):'—'} unit="USDT"/></strong>
-     <p>{active?'A visual estimate through the current cycle. Claims are recorded only after an eligible, confirmed transaction.':'Progress is hidden while eligibility is not confirmed. Refresh or check in as needed.'}</p>
-     <div className="gv3-forecast-row gv3-forecast-row--daily"><span>{hourly?'Cycle base estimate so far':'Daily estimate so far'}</span><b><DigitalValue value={active?money(cycle.progressDaily):'—'}/></b></div>
-     {!view.manualReinvest&&<div className="gv3-forecast-row gv3-forecast-row--compound"><span>Personal compound estimate so far</span><b><DigitalValue value={active?money(cycle.progressCompound):'—'}/></b></div>}
-     <div className="gv3-forecast-row gv3-forecast-row--cycle"><span>CONDITIONAL CYCLE ESTIMATE</span><b><DigitalValue value={money(cycle.estimatedDaily+cycle.estimatedCompound)} unit="USDT"/></b></div>
-     <small>At the verified {view.dailyRateBps/100}% test rate, if each {unified?'addition':'position'} becomes eligible. {hourly&&'The full daily test rate is applied once per eligible one-hour test cycle; this is accelerated test accounting. '}Estimates are not recorded claims, cash or guaranteed profit.</small>
-    </div>
+    {forecast}
     <div className="gv3-activity"><ShieldCheck size={19}/><div><strong>{active?'Account eligible':'Eligibility needs attention'}</strong>
      <small>{activityReason}
       {checkInWait>0&&' · Next check-in in '+v3Countdown(checkInWait)}</small></div>

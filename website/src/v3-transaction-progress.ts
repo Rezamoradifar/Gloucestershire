@@ -7,6 +7,7 @@ const actionLabel:Record<V3TransactionProgress['action'],string>={
 const stepLabel:Record<V3TransactionProgress['step'],string>={
  preflight:'Checking the connected wallet and BNB Testnet.',
  simulation:'Checking the transaction and estimating testnet gas.',
+ signature:'Sign the zero-fee renewal in your wallet.',
  wallet_request:'Sending a request to the wallet. Check the wallet for a prompt.',
  verification:'A transaction reference was received. Checking confirmations.',
  confirmed:'The transaction was confirmed on BNB Testnet.'
@@ -21,7 +22,7 @@ export class V3TransactionProgressTracker {
  private last:V3TransactionProgress|null=null;
  record(detail:V3TransactionProgress){
   this.last=detail;
-  if(detail.step==='wallet_request')this.unresolved=true;
+  if(detail.step==='wallet_request'||detail.step==='verification')this.unresolved=true;
   if(detail.step==='confirmed')this.unresolved=false;
  }
  needsReview(message:string){

@@ -66,6 +66,13 @@ if ! getent passwd "$user" >/dev/null; then
   useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$user"
 fi
 [[ $(getent passwd "$user" | cut -d: -f6,7) == /nonexistent:/usr/sbin/nologin && $(id -u "$user") != 0 && $(id -Gn "$user") == "$user" ]]
+public_run=''
+if [[ ${profile[0]:-} == --portfolio || ${profile[0]:-} == --plan-portfolio ]]; then
+  public_dir="/var/lib/$unit-public"
+  [[ ! -L $public_dir && ( ! -e $public_dir || -d $public_dir ) ]]
+  install -d -m 0755 -o "$user" -g "$user" "$public_dir"
+  public_run=$(printf 'Environment=GLOBAL_PORTFOLIO_PUBLIC_RUN=%s\nReadWritePaths=%s' "$public_dir" "$public_dir")
+fi
 cat > "$work/$unit.service" <<UNIT
 [Unit]
 Description=Global V3 isolated unified testnet worker
@@ -75,6 +82,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 Environment=TZ=UTC
+$public_run
 $success_exit
 User=$user
 Group=$user
@@ -118,7 +126,11 @@ for ext in service timer; do
   mv -T "$target.new" "$target"
 done
 systemctl daemon-reload
-systemctl start "$unit.service"
+if [[ -n $public_run ]]; then
+  python3 scripts/start-v3-unified-portfolio-worker.py "$unit" "$gas_status"
+else
+  systemctl start "$unit.service"
+fi
 systemctl enable --now "$unit.timer"
 systemctl is-active --quiet "$unit.timer"
 if (( gas_status == 42 )); then

@@ -3,7 +3,7 @@ import {constants} from 'node:fs';
 import {access,mkdir,readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import path from 'node:path';
 import {getAddress,isAddress,verifyMessage} from 'ethers';
-import {initializeNotifications,communityEvent,notificationFeed} from './portfolio-notifications.mjs';
+import {initializeNotifications,communityEvent,notificationFeed,initialTestNotice,replaceInitialTestNotice} from './portfolio-notifications.mjs';
 import {telegramSettings,createTelegramDelivery,telegramStatus,reconcileTelegram,recoverTelegram} from './portfolio-telegram.mjs';
 const fail=(status,message)=>Object.assign(Error(message),{status});
 const text=(v,max)=>{if(typeof v!=='string'||!v.trim()||v.trim().length>max)throw fail(400,`Text must contain 1–${max} characters.`);return v.trim();};
@@ -15,7 +15,10 @@ export async function createCommunity({file,owner,isAdmin,chainId,contract,origi
  if(portfolio)await access(path.dirname(file),constants.W_OK);
  let queue=Promise.resolve();const challenges=new Map(),sessions=new Map(),rates=new Map();
  function mutate(fn){const result=queue.then(async()=>{const next=structuredClone(state),value=fn(next),tmp=file+'.'+randomUUID()+'.tmp';try{await writeFile(tmp,JSON.stringify(next),{mode:0o600,flag:'wx'});await rename(tmp,file);}finally{await unlink(tmp).catch(()=>{});}state=next;return value;});queue=result.catch(()=>{});return result;}
- if(portfolio){initializeNotifications(state);recoverTelegram(state);}
+ if(portfolio){
+  initializeNotifications(state);recoverTelegram(state);
+  if(initialTestNotice(state,contract))await mutate(next=>replaceInitialTestNotice(next,contract,new Date(now()).toISOString()));
+ }
  const delivery=portfolio ? telegram : null;
  const event=(s,kind,item,audience,at)=>{if(portfolio)communityEvent(s,kind,item,audience,at,delivery);};
  let delivering=false,closed=false;

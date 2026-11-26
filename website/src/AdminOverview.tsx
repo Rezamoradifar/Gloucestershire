@@ -15,7 +15,7 @@ export default function AdminOverview({data,asset,onNavigate}:{data:Snapshot;ass
   const refresh=async()=>{
    const [allocation,operation]=await Promise.allSettled([
      readAllocationStatus(),
-     fetch('/api/automation/status',{cache:'no-store',signal:AbortSignal.timeout(12000)}).then(async res=>{if(!res.ok)throw Error('Status unavailable');return res.json();})
+     fetch('/api/automation/status?vault=legacy',{cache:'no-store',signal:AbortSignal.timeout(12000)}).then(async res=>{if(!res.ok)throw Error('Status unavailable');return res.json();})
    ]);
    if(cancelled)return;
    if(allocation.status==='fulfilled'){setReport(allocation.value);setFailure('');}

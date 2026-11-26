@@ -6,6 +6,7 @@ import {Coins,Info,ShieldAlert} from 'lucide-react';
 import {v3PrepareUserClaims,type V3ClaimLedger} from './v3-claim-balance';
 import {formatV3Amount} from './v3-format';
 import V3ClaimValue from './V3ClaimValue';
+import {V3_HOURLY_TEST} from './v3-site-config';
 import './v3-claims-readout.css';
 
 export default function V3ClaimsReadout({verifiedLedger,manualReinvest=false,showRequestLimit=true}:{verifiedLedger:V3ClaimLedger;manualReinvest?:boolean;showRequestLimit?:boolean}){
@@ -20,9 +21,9 @@ export default function V3ClaimsReadout({verifiedLedger,manualReinvest=false,sho
    <small>Confirmed block {claims.block.toLocaleString('en-US')}</small></div>
   <div className="gv3-current-total"><small>Available internal account credit</small>
    <strong><V3ClaimValue size="hero" value={claims.internalCurrent} block={claims.block}/></strong>
-   <span>Recorded in your account; daily accrual does not transfer tokens to your wallet.</span></div>
+   <span>Claims accrue in your account. Confirmed withdrawals deliver tokens to your wallet.</span></div>
   <div className="gv3-claim-grid">
-   <div><small>Daily claims available</small>
+   <div><small>{V3_HOURLY_TEST?'Hourly test claims available':'Daily claims available'}</small>
     <strong><V3ClaimValue value={claims.outstandingDaily} block={claims.block}/></strong></div>
    {!manualReinvest&&<div><small>Available personal compound earnings</small>
     <strong><V3ClaimValue value={claims.outstandingCompound} block={claims.block}/></strong></div>}

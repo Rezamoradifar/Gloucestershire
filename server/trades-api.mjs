@@ -8,6 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {Block,Contract,FetchRequest,Interface,JsonRpcProvider,ZeroAddress,formatUnits,isAddress,getAddress,keccak256} from 'ethers';
 import {getCompleteLogs} from '../scripts/complete-rpc-logs.mjs';
 import {createAutomationStatusReader} from './automation-status.mjs';
+import {createPortfolioStatus} from './portfolio-status.mjs';
 import {createV3MemberHistory,memberHistoryFailure} from './v3-member-history.mjs';
 import {createHistoryRelay} from './history-relay.mjs';
 import {createTeamRelay} from './team-relay.mjs';
@@ -135,6 +136,9 @@ export function createTradeFeed(config,{provider,providers,metadata,now=Date.now
  return {configured,publicConfig:{version:1,chainId:config.chainId,vaultAddress:config.address||null},async get(){if(response&&now()<expires)return response;if(inflight)return inflight;inflight=refresh().then(value=>{response=value;expires=now()+ttlMs;return value;}).finally(()=>{inflight=null;});return inflight;},close(){provider?.destroy?.();}};
 }
 export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Community,v2ReadGateway,marketplace=createMarketplace(),commerce=createCommerceStatus(),activity=createTradingActivity({seller:commerce}),migration,dailyActivity,historyRelay,memberHistory,portfolioCommunity=createPortfolioCommunity(memberHistory),teamRelay,automationStatus=createAutomationStatusReader({chainId:feed.publicConfig?.chainId,vaultAddress:feed.publicConfig?.vaultAddress})}={}){
+ const readAutomation=createPortfolioStatus(memberHistory,async()=>{
+  const data=await automationStatus();return {code:['unavailable','stale'].includes(data.status)?503:200,data};
+ });
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
@@ -145,9 +149,9 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Commun
   if(dailyActivity&&await dailyActivity(req,res))return;
   if(req.method!=='GET'){res.setHeader('Allow','GET');return send(405,{error:'Method not allowed'});}
   const url=new URL(req.url,'http://localhost');
-  if(url.pathname==='/api/v3/member-history'||url.pathname==='/api/v3/member-withdrawals'){
+  if(url.pathname==='/api/v3/member-history'||url.pathname==='/api/v3/member-withdrawals'||url.pathname==='/api/v3/payout-receipt'){
    if(!memberHistory)return send(503,{error:'Verified member history is temporarily unavailable.'});
-   try{return send(200,await memberHistory.get(url.searchParams,url.pathname.endsWith('withdrawals')?'withdrawals':'events'));}
+   try{return send(200,await memberHistory.get(url.searchParams,url.pathname.endsWith('payout-receipt')?'payout':url.pathname.endsWith('withdrawals')?'withdrawals':'events'));}
    catch(error){const failure=memberHistoryFailure(error);return send(failure.status,{error:failure.error});}
   }
   if(url.pathname==='/api/commerce/activity'){
@@ -192,7 +196,7 @@ export function createApiServer(feed,{responseTimeoutMs=10000,community,v2Commun
   if(url.pathname==='/api/config')return send(feed.configured&&feed.publicConfig?200:503,feed.configured&&feed.publicConfig?feed.publicConfig:{error:'Contract not configured'});
   if(url.pathname==='/api/health')return send(200,{status:'ok',configured:feed.configured,source});
   if(url.pathname==='/api/automation/status'){
-   const status=await automationStatus();return send(['unavailable','stale'].includes(status.status)?503:200,status);
+   const result=await readAutomation(url.searchParams);return send(result.code,result.data);
   }
   if(url.pathname!=='/api/trades')return send(404,{error:'Not found'});
   let limit;try{limit=integer(url.searchParams.get('limit')??20,20,1,100);}catch{return send(400,{error:'limit must be an integer from 1 to 100'});}

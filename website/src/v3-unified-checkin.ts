@@ -2,7 +2,8 @@
 // Check-in records activity only. It neither accrues nor transfers rewards;
 // a separately verified keeper or user action is still required for accrual.
 import {BrowserProvider,Interface,getAddress,toQuantity,type Eip1193Provider} from 'ethers';
-import {checkedGas,submitVerified,type V3TransactionProgressCallback} from './v3-actions';
+import {checkedGas,checkedGasLimit,submitVerified,type V3TransactionProgressCallback} from './v3-actions';
+import {sendSponsoredCheckIn} from './v3-sponsored-checkin';
 import {V3_ABI,v3ReadSession} from './v3-chain';
 import type {V3SiteReleaseConfig} from './v3-site-config';
 
@@ -31,15 +32,23 @@ export async function sendV3UnifiedCheckIn(walletProvider:Eip1193Provider,wallet
   if(previous!==0n&&BigInt(block.timestamp)<previous+3600n)
    throw Error('Check-in is still on cooldown.');
   notify('simulation');
-  const gas=await checkedGas(session,vault,'checkIn',[],who);
+  const sponsored=config.unified.portfolio===true;
+  const gas=sponsored?{gasLimit:await checkedGasLimit(session,vault,'checkIn',[],who,0n),gasPrice:0n}:
+   await checkedGas(session,vault,'checkIn',[],who);
   const canonical=await provider.send('eth_getBlockByNumber',[toQuantity(block.number),false]);
   if(!block.hash||!canonical?.hash||String(canonical.hash).toLowerCase()!==block.hash.toLowerCase())
    throw Error('The verified check-in block changed; refresh before continuing.');
   const data=events.encodeFunctionData('checkIn',[]);
-  browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
-  const signer=await browser.getSigner(who);
-  const receipt=await submitVerified(walletProvider,who,signer,config,config.address,data,gas,
-   'Check-in','check_in',options.onProgress);
+  let receipt;
+  if(sponsored){
+   const nonce=await provider.getTransactionCount(who,'pending');
+   receipt=await sendSponsoredCheckIn(walletProvider,who,config,gas.gasLimit,nonce,options.onProgress);
+  }else{
+   browser=new BrowserProvider(walletProvider,undefined,{cacheTimeout:-1});
+   const signer=await browser.getSigner(who);
+   receipt=await submitVerified(walletProvider,who,signer,config,config.address,data,gas,
+    'Check-in','check_in',options.onProgress);
+  }
   try{
    const checkins=receipt.logs.flatMap(log=>{
     if(log.address.toLowerCase()!==config.address.toLowerCase())return [];

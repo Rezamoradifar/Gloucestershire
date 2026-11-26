@@ -54,7 +54,7 @@ def status():
  opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
  def read(route):
   with opener.open('http://127.0.0.1:3115'+route,timeout=8) as response: return json.load(response)
- config,automation=read('/api/config'),read('/api/automation/status')
+ config,automation=read('/api/config'),read('/api/automation/status?vault=legacy')
  for row in (config,automation):
   if row.get('chainId')!=97 or str(row.get('vaultAddress','')).lower()!=TARGET: raise RuntimeError('INDEX_SCAN_TARGET_MISMATCH')
  if automation.get('fresh') is not True or automation.get('dailyStatus') not in ('ready','not_due') or automation.get('blockers')!=[]:

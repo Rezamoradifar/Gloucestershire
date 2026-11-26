@@ -83,6 +83,7 @@ export function V3SupportTickets({client,admin,wallet,onConnect,initialTicket}:{
   await load(token,valid,index,next);if(valid()){setFilters(next);setTicket(null);setReply('');}
  });
  async function open(id:string){
+  if(ticket?.id===id){titleRef.current?.focus();return;}
   await run(async(token,valid)=>{
    const result=await client.request<Ticket>('tickets/'+id+(admin?'?admin=1':''),'GET',undefined,token);
    if(valid()){setTicket(result);setReply('');requestAnimationFrame(()=>titleRef.current?.focus());}
@@ -142,7 +143,7 @@ export function V3SupportTickets({client,admin,wallet,onConnect,initialTicket}:{
      <strong>{entry.admin?'Support team':'Account holder'}</strong><time dateTime={entry.createdAt}>{formatUtcTime(entry.createdAt)}</time><p>{entry.message}</p>
     </li>)}</ol>
     {ticket.status==='open'&&<form onSubmit={e=>{e.preventDefault();change({message:reply});}}>
-     <label>Reply<textarea required maxLength={4000} rows={3} value={reply} onChange={e=>setReply(e.target.value)}/></label>
+     <label>Reply<textarea required disabled={busy} maxLength={4000} rows={3} value={reply} onChange={e=>setReply(e.target.value)}/></label>
      <button className="gv2-primary" disabled={busy||!reply.trim()}>Send reply</button>
     </form>}
     <button disabled={busy} onClick={()=>change({status:ticket.status==='open'?'closed':'open'})}>{ticket.status==='open'?'Close ticket':'Reopen ticket'}</button>
@@ -212,6 +213,11 @@ export function V3Announcements({client,admin,initialPost}:Props&{initialPost?:s
   {(!admin||page)&&<div className="gv3-support-actions"><button disabled={busy} onClick={()=>reload(page?.page)}>{busy?'Loading…':'Refresh announcements'}</button></div>}
   {admin&&!page&&<button className="gv2-primary" disabled={busy} onClick={()=>reload()}>{busy?'Opening…':'Manage announcements'}</button>}
   {admin&&page&&<form className="gv3-support-compose" onSubmit={save}><h3>{editing?'Edit announcement':'New announcement'}</h3>
+   {editing&&<button type="button" disabled={busy} onClick={()=>{
+    setTitle('Welcome to the Global Drop Trade testnet');
+    setMessage('The dashboard runs on BNB Testnet. Use test USDT for deposits and withdrawals. Open History to check confirmed transactions. For account help, open Support tickets. Replies appear in Notifications.');
+    inputRef.current?.focus();
+   }}>Use testnet welcome text</button>}
    {!editing&&<details><summary>Channel profile and starter posts</summary><p><strong>{channelProfile.name}</strong><br/>{channelProfile.bio}</p>
     <label>Start from a post<select defaultValue="" onChange={e=>{const post=channelPosts[Number(e.target.value)];if(post){setStarterKey(post.key);setTitle(post.title);setMessage(post.message);}e.target.value='';}}>
      <option value="" disabled>Choose a draft</option>{channelPosts.map((post,i)=><option key={post.title} value={i}>{post.title}</option>)}</select></label>

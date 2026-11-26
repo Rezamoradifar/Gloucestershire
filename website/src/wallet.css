@@ -9,3 +9,9 @@
 .wallet-options strong{font-size:15px}.wallet-options small{font-size:12px;line-height:1.6}
 .connected-wallet{overflow-wrap:anywhere;font-size:12px;padding:12px;border-radius:8px;background:#bda36912}
 .wallet-connection-note{font-size:12px;line-height:1.7}
+
+@media(max-width:600px){
+ .wallet-picker{box-sizing:border-box;max-width:calc(100vw - 24px);max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
+ .wallet-picker .wallet-options button,.wallet-picker .icon-button,.wallet-picker .small-button{min-height:44px}
+ .wallet-picker .wallet-options span{min-width:0;overflow-wrap:anywhere}
+}

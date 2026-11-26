@@ -787,7 +787,7 @@ TimeoutStartSec=infinity
                 code, body = self.system.fetch('/?daily_release='+self.revision)
                 if code != 200 or body.encode() != (self.new_web/'index.html').read_bytes():
                     raise InstallError('LIVE_FRONTEND_RELEASE_MISMATCH')
-                for route in ('/automation-data/activation.json', '/deploy/zero-start-activation.json', '/api/automation/status'):
+                for route in ('/automation-data/activation.json', '/deploy/zero-start-activation.json', '/api/automation/status?vault=legacy'):
                     code, body = self.system.fetch(route)
                     status_report = json.loads(body)
                     if code not in (200, 503) or not isinstance(status_report, dict):
@@ -896,7 +896,7 @@ TimeoutStartSec=infinity
                         'waitingFor':report.get('waitingFor', []),
                         'orderedSchedulerActive':True, 'installerSignerOpened':False,
                         'financialStateReplaced':False, 'paymentReceiptVerified':False,
-                        'nextCheck':'https://globaldroptrade.com/api/automation/status'}
+                        'nextCheck':'https://globaldroptrade.com/api/automation/status?vault=legacy'}
             except BaseException:
                 try:
                     self.rollback()

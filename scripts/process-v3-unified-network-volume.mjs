@@ -186,7 +186,7 @@ export async function reconcileUnifiedNetworkVolume({provider, proof, operator, 
     await waitReceipt(provider, hash, {confirmations: 3});
   }
   receipt = await verifyReceipt({provider, hash, request: tx, operator: who, network, job});
-  state.lastConfirmed = {number: receipt.blockNumber, hash: receipt.blockHash};
+  state.lastConfirmed = {number: receipt.blockNumber, hash: receipt.blockHash, transactionHash:hash};
   delete state.pendingTransaction;
   save(state);
   return {status: 'VOLUME_CONFIRMED', hash};
